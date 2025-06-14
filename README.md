@@ -125,10 +125,37 @@ Secure key storage backends.
 See the `examples/` directory for more detailed usage examples:
 
 - `basic_usage.rs` - Basic key operations
+- `cim_leaf_integration.rs` - CIM Leaf three-level PKI integration with YubiKeys
+- `nats_tls_setup.rs` - NATS TLS configuration with YubiKey-backed certificates
 - `yubikey_piv.rs` - YubiKey PIV operations
 - `ssh_agent.rs` - SSH agent integration
 - `tls_server.rs` - TLS server with generated certificates
 - `gpg_signing.rs` - GPG signing and verification
+
+### CIM Leaf Integration
+
+The cim-keys module is designed to integrate seamlessly with the CIM Leaf three-level PKI infrastructure:
+
+1. **Operator Level**: System operations and disk encryption
+   - Operator Root CA and Intermediate CA
+   - YubiKey with operator certificates
+   - System-level operations
+
+2. **Domain Level**: Domain administration and user certificate signing
+   - Domain Root CA and Intermediate CA
+   - YubiKey with domain certificates
+   - Domain administration
+
+3. **User Level**: Day-to-day operations
+   - User certificates signed by Domain Intermediate CA
+   - YubiKey with user certificates
+   - Regular user operations
+
+Each YubiKey is configured with:
+- PIV slots (9A: Authentication, 9C: Digital Signature, 9D: Key Management)
+- FIDO2 for SSH authentication
+- OpenPGP for signing and encryption
+- OATH for TOTP
 
 ## License
 
