@@ -1,0 +1,79 @@
+[package]
+name = "cim-keys"
+version = "0.1.0"
+edition = "2021"
+authors = ["The Cowboy AI Team"]
+description = "Cryptographic key management and PKI support for CIM, including YubiKey integration"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/thecowboyai/cim-keys"
+keywords = ["yubikey", "pki", "gpg", "ssh", "x509"]
+categories = ["cryptography", "authentication"]
+
+[dependencies]
+# Core dependencies
+thiserror = "2.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+async-trait = "0.1"
+uuid = { version = "1.11", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+
+# Cryptography
+ring = "0.17"  # For general crypto operations
+rsa = "0.9"    # RSA support
+ed25519-dalek = "2.1"  # Ed25519 support
+x509-parser = "0.16"   # X.509 certificate parsing
+rcgen = "0.14"  # X.509 certificate generation
+p256 = { version = "0.13", features = ["ecdsa"] }  # ECDSA support
+
+# YubiKey support
+yubikey = { version = "0.8", features = ["untested"] }
+pcsc = "2.8"  # PC/SC smart card interface
+
+# GPG support
+sequoia-openpgp = "1.22"  # Modern OpenPGP implementation
+gpgme = { version = "0.11", optional = true }  # GPG Made Easy bindings
+
+# SSH support
+ssh-key = { version = "0.6", features = ["ed25519", "rsa", "ecdsa"] }
+ssh-encoding = "0.2"
+
+# TLS/PKI
+rustls = "0.23"
+rustls-pemfile = "2.2"
+webpki = "0.22"
+
+# Storage and encoding
+base64 = "0.22"
+hex = "0.4"
+pem = "3.0"
+der = "0.8"
+
+# Async runtime
+tokio = { version = "1.42", features = ["full"] }
+
+# Error handling and utilities
+zeroize = { version = "1.8", features = ["derive"] }  # Secure memory clearing
+secrecy = "0.10"  # Secret management
+
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile = "3.14"
+mockall = "0.13"
+
+[features]
+default = ["yubikey-support", "gpg-support"]
+yubikey-support = []
+gpg-support = ["gpgme"]
+test-utils = []
+
+[[example]]
+name = "yubikey_auth"
+required-features = ["yubikey-support"]
+
+[[example]]
+name = "pki_setup"
+
+[[example]]
+name = "ssh_key_gen"
