@@ -63,9 +63,9 @@ tempfile = "3.14"
 mockall = "0.13"
 
 [features]
-default = ["yubikey-support"]
-yubikey-support = []
-gpg-support = ["gpgme"]
+default = ["yubikey-support", "gpg-support"]
+yubikey-support = ["yubikey", "pcsc"]
+gpg-support = ["gpgme", "sequoia-openpgp"]
 test-utils = []
 
 [[example]]
