@@ -48,7 +48,7 @@ webpki = "0.22"
 base64 = "0.22"
 hex = "0.4"
 pem = "3.0"
-der = "0.8"
+der = "0.7"
 
 # Async runtime
 tokio = { version = "1.42", features = ["full"] }
