@@ -24,7 +24,7 @@ ring = "0.17"                                     # For general crypto operation
 rsa = "0.9"                                       # RSA support
 ed25519-dalek = "2.1"                             # Ed25519 support
 x509-parser = "0.16"                              # X.509 certificate parsing
-rcgen = "0.14"                                    # X.509 certificate generation
+rcgen = "0.13"                                    # X.509 certificate generation
 p256 = { version = "0.13", features = ["ecdsa"] } # ECDSA support
 
 # YubiKey support
