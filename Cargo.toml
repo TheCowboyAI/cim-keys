@@ -63,7 +63,7 @@ tempfile = "3.14"
 mockall = "0.13"
 
 [features]
-default = ["yubikey-support", "gpg-support"]
+default = ["yubikey-support"]
 yubikey-support = []
 gpg-support = ["gpgme"]
 test-utils = []
