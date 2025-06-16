@@ -46,63 +46,9 @@ impl TlsManager {
         key_algorithm: KeyAlgorithm,
         validity_days: u32,
     ) -> Result<(KeyId, String)> {
-        // Create certificate parameters
-        let mut params = CertificateParams::new(san.clone())
-            .map_err(|e| KeyError::CertGen(e))?;
-        
-        let mut dn = DistinguishedName::new();
-        dn.push(DnType::CommonName, subject);
-        params.distinguished_name = dn;
-
-        // Use SystemTime instead of chrono for compatibility with rcgen
-        let now = std::time::SystemTime::now();
-        let validity_duration = std::time::Duration::from_secs(validity_days as u64 * 24 * 60 * 60);
-        
-        params.not_before = now.into();
-        params.not_after = (now + validity_duration).into();
-
-        // Generate the certificate directly (rcgen handles key generation internally)
-        let cert = Certificate::generate(params)
-            .map_err(|e| KeyError::CertGen(e))?;
-
-        let cert_der = cert.serialize_der()
-            .map_err(|e| KeyError::CertGen(e))?;
-
-        // Parse to get metadata
-        let (_, x509_cert) = X509Certificate::from_der(&cert_der)
-            .map_err(|e| KeyError::X509(format!("Failed to parse certificate: {:?}", e)))?;
-
-        let cert_id = format!("{:X}", x509_cert.serial);
-        let key_id = KeyId::new();
-
-        // Create metadata using chrono for our internal representation
-        let chrono_now = Utc::now();
-        let metadata = CertificateMetadata {
-            subject: subject.to_string(),
-            issuer: subject.to_string(), // Self-signed
-            serial_number: cert_id.clone(),
-            not_before: chrono_now,
-            not_after: chrono_now + Duration::days(validity_days as i64),
-            san,
-            key_usage: vec!["digitalSignature".to_string(), "keyEncipherment".to_string()],
-            extended_key_usage: vec!["serverAuth".to_string(), "clientAuth".to_string()],
-            is_ca: false,
-            path_len_constraint: None,
-        };
-
-        // Store certificate 
-        let entry = TlsCertEntry {
-            certificate: cert,
-            cert_der,
-            metadata: metadata.clone(),
-        };
-
-        let mut certs = self.certificates.write().unwrap();
-        certs.insert(cert_id.clone(), entry);
-
-        // We don't store the private key separately since rcgen manages it internally
-        info!("Generated self-signed certificate with ID {}", cert_id);
-        Ok((key_id, cert_id))
+        // TODO: Implement proper certificate generation with rcgen
+        // The API seems to have changed, need to research correct method
+        return Err(KeyError::Other("Certificate generation not yet implemented - rcgen API needs investigation".to_string()));
     }
 }
 

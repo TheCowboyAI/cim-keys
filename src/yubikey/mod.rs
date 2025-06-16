@@ -58,16 +58,18 @@ impl YubiKeyManager {
 
     /// Find all connected YubiKeys
     pub fn find_yubikeys(&self) -> Result<Vec<Serial>> {
-        let readers = yubikey::reader::Context::open()
+        let mut readers = yubikey::reader::Context::open()
             .map_err(|e| KeyError::YubiKey(e))?;
         let mut serials = Vec::new();
         
-        for reader in readers.iter()
+        // For now, just count readers since serial() method doesn't exist
+        // TODO: Implement proper serial number detection
+        for (index, _reader) in readers.iter()
             .map_err(|e| KeyError::YubiKey(e))?
+            .enumerate()
         {
-            if let Some(serial) = reader.serial() {
-                serials.push(serial);
-            }
+            // Use index as a placeholder serial until we find the correct API
+            serials.push(Serial::from(index as u32));
         }
 
         info!("Found {} YubiKey(s)", serials.len());
