@@ -15,8 +15,9 @@ use tracing::{debug, info, warn};
 pub mod operations;
 pub mod piv;
 
-pub use operations::*;
-pub use piv::*;
+// TODO: Re-enable when these modules are implemented
+// pub use operations::*;
+// pub use piv::*;
 
 /// YubiKey manager for hardware token operations
 pub struct YubiKeyManager {
@@ -57,13 +58,17 @@ impl YubiKeyManager {
 
     /// Find all connected YubiKeys
     pub fn find_yubikeys(&self) -> Result<Vec<Serial>> {
-        let readers = yubikey::reader::Context::open()?;
-        let serials: Vec<Serial> = readers
-            .iter()?
-            .filter_map(|reader| {
-                reader.ok().and_then(|r| r.serial())
-            })
-            .collect();
+        let readers = yubikey::reader::Context::open()
+            .map_err(|e| KeyError::YubiKey(e))?;
+        let mut serials = Vec::new();
+        
+        for reader in readers.iter()
+            .map_err(|e| KeyError::YubiKey(e))?
+        {
+            if let Some(serial) = reader.serial() {
+                serials.push(serial);
+            }
+        }
 
         info!("Found {} YubiKey(s)", serials.len());
         Ok(serials)
@@ -71,7 +76,8 @@ impl YubiKeyManager {
 
     /// Connect to a specific YubiKey
     pub fn connect(&self, serial: Serial) -> Result<()> {
-        let mut yubikey = YubiKey::open_by_serial(serial)?;
+        let yubikey = YubiKey::open_by_serial(serial)
+            .map_err(|e| KeyError::YubiKey(e))?;
 
         info!("Connected to YubiKey {}", serial);
         debug!("YubiKey version: {:?}", yubikey.version());
@@ -93,65 +99,69 @@ impl YubiKeyManager {
         }
     }
 
-    /// Get a connected YubiKey
-    pub fn get_yubikey(&self, serial: &str) -> Result<YubiKey> {
+    /// Check if a YubiKey is connected
+    pub fn is_connected(&self, serial: &str) -> bool {
         let keys = self.connected_keys.lock().unwrap();
-        keys.get(serial)
-            .cloned()
-            .ok_or_else(|| KeyError::KeyNotFound(format!("YubiKey {} not connected", serial)))
+        keys.contains_key(serial)
+    }
+
+    /// Execute a closure with a mutable reference to the YubiKey
+    pub fn with_yubikey<F, R>(&self, serial: &str, f: F) -> Result<R>
+    where
+        F: FnOnce(&mut YubiKey) -> Result<R>,
+    {
+        let mut keys = self.connected_keys.lock().unwrap();
+        let yubikey = keys.get_mut(serial)
+            .ok_or_else(|| KeyError::KeyNotFound(format!("YubiKey {} not connected", serial)))?;
+        f(yubikey)
     }
 
     /// Authenticate to a YubiKey with PIN
     pub fn authenticate(&self, serial: &str, pin: &SecureString) -> Result<()> {
-        let mut yubikey = self.get_yubikey(serial)?;
+        self.with_yubikey(serial, |yubikey| {
+            // Verify PIN
+            yubikey.verify_pin(pin.expose_secret().as_bytes())
+                .map_err(|e| {
+                    warn!("PIN verification failed for YubiKey {}", serial);
+                    KeyError::YubiKey(e)
+                })?;
 
-        // Verify PIN
-        yubikey.verify_pin(pin.expose_secret().as_bytes())
-            .map_err(|e| {
-                warn!("PIN verification failed for YubiKey {}", serial);
-                KeyError::YubiKey(e)
-            })?;
-
-        info!("Successfully authenticated to YubiKey {}", serial);
-
-        // Update the stored YubiKey
-        let mut keys = self.connected_keys.lock().unwrap();
-        keys.insert(serial.to_string(), yubikey);
-
-        Ok(())
+            info!("Successfully authenticated to YubiKey {}", serial);
+            Ok(())
+        })
     }
 
     /// Get YubiKey information
     pub fn get_info(&self, serial: &str) -> Result<HardwareTokenInfo> {
-        let yubikey = self.get_yubikey(serial)?;
+        self.with_yubikey(serial, |yubikey| {
+            let version = yubikey.version();
+            let serial_num = yubikey.serial();
 
-        let version = yubikey.version();
-        let serial_num = yubikey.serial();
+            // Get PIV slots info
+            let slots = vec![
+                "PIV Authentication".to_string(),
+                "PIV Signing".to_string(),
+                "Key Management".to_string(),
+                "Card Authentication".to_string(),
+            ];
 
-        // Get PIV slots info
-        let slots = vec![
-            "PIV Authentication".to_string(),
-            "PIV Signing".to_string(),
-            "Key Management".to_string(),
-            "Card Authentication".to_string(),
-        ];
+            // Supported algorithms based on YubiKey version
+            let algorithms = vec![
+                KeyAlgorithm::Rsa(RsaKeySize::Rsa2048),
+                KeyAlgorithm::Rsa(RsaKeySize::Rsa4096),
+                KeyAlgorithm::Ecdsa(EcdsaCurve::P256),
+                KeyAlgorithm::Ecdsa(EcdsaCurve::P384),
+            ];
 
-        // Supported algorithms based on YubiKey version
-        let algorithms = vec![
-            KeyAlgorithm::Rsa(RsaKeySize::Rsa2048),
-            KeyAlgorithm::Rsa(RsaKeySize::Rsa4096),
-            KeyAlgorithm::Ecdsa(EcdsaCurve::P256),
-            KeyAlgorithm::Ecdsa(EcdsaCurve::P384),
-        ];
-
-        Ok(HardwareTokenInfo {
-            token_type: format!("YubiKey {}", version),
-            serial_number: serial_num.to_string(),
-            firmware_version: format!("{}.{}.{}", version.major, version.minor, version.patch),
-            available_slots: slots,
-            supported_algorithms: algorithms,
-            pin_retries: None, // Would need to query this
-            puk_retries: None, // Would need to query this
+            Ok(HardwareTokenInfo {
+                token_type: format!("YubiKey {}", version),
+                serial_number: serial_num.to_string(),
+                firmware_version: format!("{}.{}.{}", version.major, version.minor, version.patch),
+                available_slots: slots,
+                supported_algorithms: algorithms,
+                pin_retries: None, // Would need to query this
+                puk_retries: None, // Would need to query this
+            })
         })
     }
 }
@@ -202,24 +212,19 @@ impl HardwareTokenManager for YubiKeyManager {
         old_pin: SecureString,
         new_pin: SecureString,
     ) -> Result<()> {
-        let mut yubikey = self.get_yubikey(serial)?;
+        self.with_yubikey(serial, |yubikey| {
+            // Change PIN
+            yubikey.change_pin(
+                old_pin.expose_secret().as_bytes(),
+                new_pin.expose_secret().as_bytes(),
+            ).map_err(|e| {
+                warn!("Failed to change PIN for YubiKey {}", serial);
+                KeyError::YubiKey(e)
+            })?;
 
-        // Change PIN
-        yubikey.change_pin(
-            old_pin.expose_secret().as_bytes(),
-            new_pin.expose_secret().as_bytes(),
-        ).map_err(|e| {
-            warn!("Failed to change PIN for YubiKey {}", serial);
-            KeyError::YubiKey(e)
-        })?;
-
-        info!("Successfully changed PIN for YubiKey {}", serial);
-
-        // Update the stored YubiKey
-        let mut keys = self.connected_keys.lock().unwrap();
-        keys.insert(serial.to_string(), yubikey);
-
-        Ok(())
+            info!("Successfully changed PIN for YubiKey {}", serial);
+            Ok(())
+        })
     }
 
     async fn reset_token(
@@ -227,24 +232,19 @@ impl HardwareTokenManager for YubiKeyManager {
         serial: &str,
         puk: SecureString,
     ) -> Result<()> {
-        let mut yubikey = self.get_yubikey(serial)?;
+        self.with_yubikey(serial, |yubikey| {
+            // Reset PIN using PUK
+            yubikey.unblock_pin(
+                puk.expose_secret().as_bytes(),
+                b"123456", // Default PIN
+            ).map_err(|e| {
+                warn!("Failed to reset YubiKey {} with PUK", serial);
+                KeyError::YubiKey(e)
+            })?;
 
-        // Reset PIN using PUK
-        yubikey.unblock_pin(
-            puk.expose_secret().as_bytes(),
-            b"123456", // Default PIN
-        ).map_err(|e| {
-            warn!("Failed to reset YubiKey {} with PUK", serial);
-            KeyError::YubiKey(e)
-        })?;
-
-        info!("Successfully reset YubiKey {} to default PIN", serial);
-
-        // Update the stored YubiKey
-        let mut keys = self.connected_keys.lock().unwrap();
-        keys.insert(serial.to_string(), yubikey);
-
-        Ok(())
+            info!("Successfully reset YubiKey {} to default PIN", serial);
+            Ok(())
+        })
     }
 }
 

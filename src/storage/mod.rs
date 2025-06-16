@@ -86,9 +86,11 @@ impl FileKeyStorage {
     async fn save_index(&self) -> Result<()> {
         let index_path = self.base_dir.join("index.json");
 
-        let index = self.index.read().unwrap();
-        let data = serde_json::to_vec_pretty(&*index)
-            .map_err(|e| KeyError::Serialization(e))?;
+        let data = {
+            let index = self.index.read().unwrap();
+            serde_json::to_vec_pretty(&*index)
+                .map_err(|e| KeyError::Serialization(e))?
+        };
 
         fs::write(&index_path, data).await
             .map_err(|e| KeyError::Io(e))?;
@@ -163,9 +165,10 @@ impl KeyStorage for FileKeyStorage {
                     encrypted: false, // TODO: Add encryption support
                 };
 
-                let mut index = self.index.write().unwrap();
-                index.insert(*key_id, entry);
-                drop(index);
+                {
+                    let mut index = self.index.write().unwrap();
+                    index.insert(*key_id, entry);
+                }
 
                 // Save index
                 self.save_index().await?;
@@ -183,11 +186,12 @@ impl KeyStorage for FileKeyStorage {
         &self,
         key_id: &KeyId,
     ) -> Result<(Vec<u8>, KeyMetadata)> {
-        let index = self.index.read().unwrap();
-        let entry = index.get(key_id)
-            .ok_or_else(|| KeyError::KeyNotFound(key_id.to_string()))?
-            .clone();
-        drop(index);
+        let entry = {
+            let index = self.index.read().unwrap();
+            index.get(key_id)
+                .ok_or_else(|| KeyError::KeyNotFound(key_id.to_string()))?
+                .clone()
+        };
 
         match &entry.location {
             KeyLocation::File(path) => {
@@ -207,15 +211,19 @@ impl KeyStorage for FileKeyStorage {
         key_id: &KeyId,
         metadata: KeyMetadata,
     ) -> Result<()> {
-        let mut index = self.index.write().unwrap();
+        let updated = {
+            let mut index = self.index.write().unwrap();
+            if let Some(entry) = index.get_mut(key_id) {
+                entry.metadata = metadata;
+                true
+            } else {
+                false
+            }
+        };
 
-        if let Some(entry) = index.get_mut(key_id) {
-            entry.metadata = metadata;
-            drop(index);
-
+        if updated {
             // Save updated index
             self.save_index().await?;
-
             info!("Updated metadata for key {}", key_id);
             Ok(())
         } else {
