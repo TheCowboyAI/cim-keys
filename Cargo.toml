@@ -32,8 +32,8 @@ yubikey = { version = "0.8", features = ["untested"] }
 pcsc = "2.8"                                           # PC/SC smart card interface
 
 # GPG support
-sequoia-openpgp = "1.22"                      # Modern OpenPGP implementation
-gpgme = { version = "0.11", optional = true } # GPG Made Easy bindings
+sequoia-openpgp = "1.22" # Modern OpenPGP implementation
+gpgme = "0.11"           # GPG Made Easy bindings
 
 # SSH support
 ssh-key = { version = "0.6", features = ["ed25519", "rsa", "ecdsa"] }
@@ -64,8 +64,8 @@ mockall = "0.13"
 
 [features]
 default = ["yubikey-support", "gpg-support"]
-yubikey-support = ["yubikey", "pcsc"]
-gpg-support = ["gpgme", "sequoia-openpgp"]
+yubikey-support = []
+gpg-support = []
 test-utils = []
 
 [[example]]
