@@ -13,14 +13,17 @@ use std::sync::{Arc, RwLock};
 /// PKI manager for certificate authority operations
 pub struct PkiManager {
     /// Root CAs
+    #[allow(dead_code)]
     root_cas: Arc<RwLock<HashMap<String, CertificateAuthority>>>,
     /// Intermediate CAs
+    #[allow(dead_code)]
     intermediate_cas: Arc<RwLock<HashMap<String, CertificateAuthority>>>,
     /// Trust store
     trust_store: Arc<RwLock<TrustStore>>,
 }
 
 /// Certificate Authority
+#[allow(dead_code)]
 struct CertificateAuthority {
     /// CA certificate ID
     cert_id: String,
@@ -118,11 +121,11 @@ impl PkiManager {
 impl PkiOperations for PkiManager {
     async fn issue_certificate(
         &self,
-        ca_key_id: &KeyId,
-        csr: &[u8],
-        validity_days: u32,
-        is_ca: bool,
-        path_len_constraint: Option<u32>,
+        _ca_key_id: &KeyId,
+        _csr: &[u8],
+        _validity_days: u32,
+        _is_ca: bool,
+        _path_len_constraint: Option<u32>,
     ) -> Result<Vec<u8>> {
         // TODO: Implement certificate issuance
         Err(KeyError::Other("Certificate issuance not yet implemented".to_string()))
@@ -130,7 +133,7 @@ impl PkiOperations for PkiManager {
 
     async fn create_certificate_chain(
         &self,
-        cert_ids: &[String],
+        _cert_ids: &[String],
     ) -> Result<Vec<u8>> {
         // TODO: Implement certificate chain creation
         Err(KeyError::Other("Certificate chain creation not yet implemented".to_string()))
@@ -138,8 +141,8 @@ impl PkiOperations for PkiManager {
 
     async fn verify_certificate_chain(
         &self,
-        chain: &[u8],
-        trusted_roots: &[String],
+        _chain: &[u8],
+        _trusted_roots: &[String],
     ) -> Result<bool> {
         // TODO: Implement certificate chain verification
         Ok(false)
@@ -151,9 +154,9 @@ impl PkiOperations for PkiManager {
 impl KeyManager for PkiManager {
     async fn generate_key(
         &self,
-        algorithm: KeyAlgorithm,
-        label: String,
-        usage: KeyUsage,
+        _algorithm: KeyAlgorithm,
+        _label: String,
+        _usage: KeyUsage,
     ) -> Result<KeyId> {
         // TODO: Implement key generation for PKI
         Err(KeyError::Other("Key generation not implemented for PKI manager".to_string()))
@@ -161,23 +164,23 @@ impl KeyManager for PkiManager {
 
     async fn import_key(
         &self,
-        key_data: &[u8],
-        format: KeyExportFormat,
-        label: String,
+        _key_data: &[u8],
+        _format: KeyExportFormat,
+        _label: String,
     ) -> Result<KeyId> {
         Err(KeyError::Other("Key import not implemented for PKI manager".to_string()))
     }
 
     async fn export_key(
         &self,
-        key_id: &KeyId,
-        format: KeyExportFormat,
-        include_private: bool,
+        _key_id: &KeyId,
+        _format: KeyExportFormat,
+        _include_private: bool,
     ) -> Result<Vec<u8>> {
         Err(KeyError::Other("Key export not implemented for PKI manager".to_string()))
     }
 
-    async fn delete_key(&self, key_id: &KeyId) -> Result<()> {
+    async fn delete_key(&self, _key_id: &KeyId) -> Result<()> {
         Err(KeyError::Other("Key deletion not implemented for PKI manager".to_string()))
     }
 
@@ -185,7 +188,7 @@ impl KeyManager for PkiManager {
         Ok(vec![])
     }
 
-    async fn get_key_metadata(&self, key_id: &KeyId) -> Result<KeyMetadata> {
+    async fn get_key_metadata(&self, _key_id: &KeyId) -> Result<KeyMetadata> {
         Err(KeyError::KeyNotFound("Key not found in PKI manager".to_string()))
     }
 }
@@ -194,19 +197,19 @@ impl KeyManager for PkiManager {
 impl Signer for PkiManager {
     async fn sign(
         &self,
-        key_id: &KeyId,
-        data: &[u8],
-        format: SignatureFormat,
+        _key_id: &KeyId,
+        _data: &[u8],
+        _format: SignatureFormat,
     ) -> Result<Vec<u8>> {
         Err(KeyError::Other("Signing not implemented for PKI manager".to_string()))
     }
 
     async fn verify(
         &self,
-        key_id: &KeyId,
-        data: &[u8],
-        signature: &[u8],
-        format: SignatureFormat,
+        _key_id: &KeyId,
+        _data: &[u8],
+        _signature: &[u8],
+        _format: SignatureFormat,
     ) -> Result<bool> {
         Ok(false)
     }
@@ -216,18 +219,18 @@ impl Signer for PkiManager {
 impl Encryptor for PkiManager {
     async fn encrypt(
         &self,
-        recipient_keys: &[KeyId],
-        data: &[u8],
-        format: EncryptionFormat,
+        _recipient_keys: &[KeyId],
+        _data: &[u8],
+        _format: EncryptionFormat,
     ) -> Result<Vec<u8>> {
         Err(KeyError::Other("Encryption not implemented for PKI manager".to_string()))
     }
 
     async fn decrypt(
         &self,
-        key_id: &KeyId,
-        encrypted_data: &[u8],
-        format: EncryptionFormat,
+        _key_id: &KeyId,
+        _encrypted_data: &[u8],
+        _format: EncryptionFormat,
     ) -> Result<Vec<u8>> {
         Err(KeyError::Other("Decryption not implemented for PKI manager".to_string()))
     }
@@ -237,33 +240,33 @@ impl Encryptor for PkiManager {
 impl CertificateManager for PkiManager {
     async fn generate_csr(
         &self,
-        key_id: &KeyId,
-        subject: &str,
-        san: Vec<String>,
+        _key_id: &KeyId,
+        _subject: &str,
+        _san: Vec<String>,
     ) -> Result<Vec<u8>> {
         Err(KeyError::Other("CSR generation not implemented for PKI manager".to_string()))
     }
 
     async fn import_certificate(
         &self,
-        cert_data: &[u8],
-        format: CertificateFormat,
+        _cert_data: &[u8],
+        _format: CertificateFormat,
     ) -> Result<String> {
         Err(KeyError::Other("Certificate import not implemented for PKI manager".to_string()))
     }
 
     async fn export_certificate(
         &self,
-        cert_id: &str,
-        format: CertificateFormat,
-        include_chain: bool,
+        _cert_id: &str,
+        _format: CertificateFormat,
+        _include_chain: bool,
     ) -> Result<Vec<u8>> {
         Err(KeyError::Other("Certificate export not implemented for PKI manager".to_string()))
     }
 
     async fn get_certificate_metadata(
         &self,
-        cert_id: &str,
+        _cert_id: &str,
     ) -> Result<CertificateMetadata> {
         Err(KeyError::KeyNotFound("Certificate not found in PKI manager".to_string()))
     }

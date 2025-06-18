@@ -53,7 +53,7 @@ impl SshKeyManager {
                 let private = PrivateKey::random(
                     &mut OsRng,
                     Algorithm::Ed25519,
-                ).map_err(|e| KeyError::SshKey(e))?;
+                ).map_err(KeyError::SshKey)?;
                 let public = private.public_key().clone();
                 (private, public)
             }
@@ -66,7 +66,7 @@ impl SshKeyManager {
                 let private = PrivateKey::random(
                     &mut OsRng,
                     Algorithm::Rsa { hash: Some(HashAlg::Sha256) },
-                ).map_err(|e| KeyError::SshKey(e))?;
+                ).map_err(KeyError::SshKey)?;
                 let public = private.public_key().clone();
                 (private, public)
             }
@@ -79,12 +79,12 @@ impl SshKeyManager {
                 let private = PrivateKey::random(
                     &mut OsRng,
                     Algorithm::Ecdsa { curve: ssh_curve },
-                ).map_err(|e| KeyError::SshKey(e))?;
+                ).map_err(KeyError::SshKey)?;
                 let public = private.public_key().clone();
                 (private, public)
             }
             _ => return Err(KeyError::UnsupportedAlgorithm(
-                format!("Algorithm {:?} not supported for SSH keys", algorithm)
+                format!("Algorithm {algorithm:?} not supported for SSH keys")
             )),
         };
 
@@ -142,10 +142,10 @@ impl SshKeyManager {
         let pem_str = if let Some(_pass) = passphrase {
             // TODO: Implement encrypted key export
             entry.private_key.to_openssh(LineEnding::LF)
-                .map_err(|e| KeyError::SshKey(e))?
+                .map_err(KeyError::SshKey)?
         } else {
             entry.private_key.to_openssh(LineEnding::LF)
-                .map_err(|e| KeyError::SshKey(e))?
+                .map_err(KeyError::SshKey)?
         };
 
         Ok(pem_str.as_bytes().to_vec())
@@ -161,7 +161,7 @@ impl SshKeyManager {
             .ok_or_else(|| KeyError::KeyNotFound(key_id.to_string()))?;
 
         let public_str = entry.public_key.to_openssh()
-            .map_err(|e| KeyError::SshKey(e))?;
+            .map_err(KeyError::SshKey)?;
 
         Ok(public_str.as_bytes().to_vec())
     }
@@ -179,10 +179,10 @@ impl SshKeyManager {
         let private_key = if let Some(_pass) = passphrase {
             // TODO: Implement encrypted key import
             PrivateKey::from_openssh(key_str)
-                .map_err(|e| KeyError::SshKey(e))?
+                .map_err(KeyError::SshKey)?
         } else {
             PrivateKey::from_openssh(key_str)
-                .map_err(|e| KeyError::SshKey(e))?
+                .map_err(KeyError::SshKey)?
         };
 
         let public_key = private_key.public_key().clone();
@@ -252,12 +252,12 @@ impl SshKeyManager {
 
         let signature = entry.private_key
             .sign("", HashAlg::Sha256, data)
-            .map_err(|e| KeyError::SshKey(e))?;
+            .map_err(KeyError::SshKey)?;
 
         // Encode signature to bytes
         let mut sig_bytes = Vec::new();
         signature.encode(&mut sig_bytes)
-            .map_err(|e| KeyError::Other(format!("Failed to encode signature: {}", e)))?;
+            .map_err(|e| KeyError::Other(format!("Failed to encode signature: {e}")))?;
 
         Ok(sig_bytes)
     }
@@ -278,7 +278,7 @@ impl SshKeyManager {
         
         // Try to decode as raw signature bytes
         let sig = Signature::try_from(signature)
-            .map_err(|e| KeyError::Other(format!("Failed to decode signature: {}", e)))?;
+            .map_err(|e| KeyError::Other(format!("Failed to decode signature: {e}")))?;
 
         // Create a temporary SshSig for verification
         // Note: This is a simplified approach - in production you'd want proper namespace handling
@@ -287,7 +287,7 @@ impl SshKeyManager {
             "file", // Default namespace
             HashAlg::Sha256,
             sig,
-        ).map_err(|e| KeyError::Other(format!("Failed to create SSH signature: {}", e)))?;
+        ).map_err(|e| KeyError::Other(format!("Failed to create SSH signature: {e}")))?;
 
         // Verify the signature using the public key
         match entry.public_key.verify("file", data, &ssh_sig) {
@@ -322,7 +322,7 @@ impl KeyManager for SshKeyManager {
         match format {
             KeyExportFormat::SshPrivate => self.import_private_key(key_data, None, label),
             _ => Err(KeyError::InvalidKeyFormat(
-                format!("Format {:?} not supported for SSH key import", format)
+                format!("Format {format:?} not supported for SSH key import")
             )),
         }
     }
@@ -341,7 +341,7 @@ impl KeyManager for SshKeyManager {
                 self.export_public_key(key_id)
             }
             _ => Err(KeyError::InvalidKeyFormat(
-                format!("Format {:?} not supported for SSH key export", format)
+                format!("Format {format:?} not supported for SSH key export")
             )),
         }
     }
@@ -378,7 +378,7 @@ impl Signer for SshKeyManager {
         match format {
             SignatureFormat::Ssh | SignatureFormat::Raw => self.sign_ssh(key_id, data),
             _ => Err(KeyError::Other(
-                format!("Signature format {:?} not supported for SSH", format)
+                format!("Signature format {format:?} not supported for SSH")
             )),
         }
     }
@@ -393,7 +393,7 @@ impl Signer for SshKeyManager {
         match format {
             SignatureFormat::Ssh | SignatureFormat::Raw => self.verify_ssh(key_id, data, signature),
             _ => Err(KeyError::Other(
-                format!("Signature format {:?} not supported for SSH", format)
+                format!("Signature format {format:?} not supported for SSH")
             )),
         }
     }

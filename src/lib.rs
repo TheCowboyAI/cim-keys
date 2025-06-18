@@ -60,3 +60,55 @@ pub mod prelude {
     pub use crate::tls::TlsManager;
     pub use crate::pki::PkiManager;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_key_id_creation() {
+        let id1 = KeyId::new();
+        let id2 = KeyId::new();
+        
+        // Each KeyId should be unique
+        assert_ne!(id1, id2);
+        
+        // Display should work
+        let display = format!("{}", id1);
+        assert!(!display.is_empty());
+    }
+
+    #[test]
+    fn test_key_usage_default() {
+        let usage = KeyUsage::default();
+        
+        // Default should enable most operations
+        assert!(usage.sign);
+        assert!(usage.verify);
+        assert!(usage.encrypt);
+        assert!(usage.decrypt);
+        assert!(!usage.derive); // Derive is false by default
+        assert!(usage.authenticate);
+    }
+
+    #[test]
+    fn test_secure_string() {
+        let secret = SecureString::new("my-secret-password".to_string());
+        
+        // Debug should not expose the secret
+        let debug_str = format!("{:?}", secret);
+        assert_eq!(debug_str, "SecureString(***)");
+        
+        // But we can expose it when needed
+        assert_eq!(secret.expose_secret(), "my-secret-password");
+    }
+
+    #[test]
+    fn test_key_algorithm_variants() {
+        // Test that all algorithm variants are accessible
+        let _rsa = KeyAlgorithm::Rsa(RsaKeySize::Rsa2048);
+        let _ed25519 = KeyAlgorithm::Ed25519;
+        let _ecdsa = KeyAlgorithm::Ecdsa(EcdsaCurve::P256);
+        let _aes = KeyAlgorithm::Aes(AesKeySize::Aes256);
+    }
+}

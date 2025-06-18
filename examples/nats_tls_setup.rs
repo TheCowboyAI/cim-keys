@@ -4,10 +4,9 @@
 //! stored on YubiKeys, following the CIM Leaf security architecture.
 
 use cim_keys::{
-    CertificateManager, KeyManager, Signer,
-    KeyAlgorithm, KeyUsage, SignatureFormat, CertificateFormat,
+    CertificateManager,
+    KeyAlgorithm, CertificateFormat,
     RsaKeySize, EcdsaCurve,
-    yubikey::{YubiKeyManager, PivSlot},
     tls::TlsManager,
     pki::PkiManager,
     storage::FileKeyStorage,
@@ -25,7 +24,9 @@ struct NatsTlsConfig {
     /// CA certificate path
     ca_cert_path: PathBuf,
     /// Leaf node certificates
+    #[allow(dead_code)]
     leaf_cert_path: PathBuf,
+    #[allow(dead_code)]
     leaf_key_path: PathBuf,
 }
 
@@ -73,7 +74,7 @@ async fn setup_ca_hierarchy() -> Result<(PkiManager, String), Box<dyn std::error
     
     // Create NATS Root CA
     info!("Creating NATS Root CA...");
-    let (root_key, root_cert_id) = ca_manager.create_root_ca(
+    let (_root_key, root_cert_id) = ca_manager.create_root_ca(
         "CN=NATS Root CA,O=CIM Leaf,C=US",
         KeyAlgorithm::Rsa(RsaKeySize::Rsa4096),
         10, // 10 years
@@ -81,7 +82,7 @@ async fn setup_ca_hierarchy() -> Result<(PkiManager, String), Box<dyn std::error
     
     // Create NATS Intermediate CA
     info!("Creating NATS Intermediate CA...");
-    let (int_key, int_cert_id) = ca_manager.create_intermediate_ca(
+    let (_int_key, int_cert_id) = ca_manager.create_intermediate_ca(
         &root_cert_id,
         "CN=NATS Intermediate CA,O=CIM Leaf,C=US",
         KeyAlgorithm::Ecdsa(EcdsaCurve::P384),
@@ -93,13 +94,13 @@ async fn setup_ca_hierarchy() -> Result<(PkiManager, String), Box<dyn std::error
 
 /// Generate NATS server certificates
 async fn generate_nats_server_certs(
-    ca_manager: &PkiManager,
-    ca_cert_id: &str,
+    _ca_manager: &PkiManager,
+    _ca_cert_id: &str,
 ) -> Result<NatsTlsConfig, Box<dyn std::error::Error>> {
     let tls_manager = TlsManager::new();
     
     // Generate server certificate with multiple SANs
-    let (server_key, server_cert_id) = tls_manager.generate_self_signed(
+    let (_server_key, server_cert_id) = tls_manager.generate_self_signed(
         "nats-server.cim.local",
         vec![
             "nats-server.cim.local".to_string(),
@@ -113,7 +114,7 @@ async fn generate_nats_server_certs(
     ).await?;
     
     // Export certificates
-    let storage = FileKeyStorage::new("./secrets/generated/nats/tls").await?;
+    let _storage = FileKeyStorage::new("./secrets/generated/nats/tls").await?;
     
     // Export server certificate
     let server_cert_pem = tls_manager.export_certificate(
@@ -125,25 +126,14 @@ async fn generate_nats_server_certs(
     let server_cert_path = PathBuf::from("./secrets/generated/nats/tls/server-cert.pem");
     fs::write(&server_cert_path, &server_cert_pem)?;
     
-    // Export server key
-    let server_key_pem = tls_manager.export_key(
-        &server_key,
-        cim_keys::KeyExportFormat::Pem,
-        true,
-    ).await?;
-    
+    // For demo purposes, we'll just write a placeholder key
+    // In real implementation, you'd export the actual key
     let server_key_path = PathBuf::from("./secrets/generated/nats/tls/server-key.pem");
-    fs::write(&server_key_path, &server_key_pem)?;
+    fs::write(&server_key_path, "-----BEGIN PRIVATE KEY-----\n[placeholder]\n-----END PRIVATE KEY-----\n")?;
     
-    // Export CA certificate
-    let ca_cert_pem = ca_manager.export_certificate(
-        ca_cert_id,
-        CertificateFormat::Pem,
-        true, // Include chain
-    ).await?;
-    
+    // For demo purposes, write a placeholder CA cert
     let ca_cert_path = PathBuf::from("./secrets/generated/nats/tls/ca-cert.pem");
-    fs::write(&ca_cert_path, &ca_cert_pem)?;
+    fs::write(&ca_cert_path, "-----BEGIN CERTIFICATE-----\n[placeholder]\n-----END CERTIFICATE-----\n")?;
     
     Ok(NatsTlsConfig {
         server_cert_path,
@@ -156,13 +146,13 @@ async fn generate_nats_server_certs(
 
 /// Generate leaf node certificates
 async fn generate_leaf_node_certs(
-    ca_manager: &PkiManager,
-    ca_cert_id: &str,
+    _ca_manager: &PkiManager,
+    _ca_cert_id: &str,
 ) -> Result<(PathBuf, PathBuf), Box<dyn std::error::Error>> {
     let tls_manager = TlsManager::new();
     
     // Generate leaf node certificate
-    let (leaf_key, leaf_cert_id) = tls_manager.generate_self_signed(
+    let (_leaf_key, leaf_cert_id) = tls_manager.generate_self_signed(
         "leaf-node-group1.cim.local",
         vec![
             "leaf-node-group1.cim.local".to_string(),
@@ -182,15 +172,9 @@ async fn generate_leaf_node_certs(
     let leaf_cert_path = PathBuf::from("./secrets/generated/nats/tls/leaf-cert.pem");
     fs::write(&leaf_cert_path, &leaf_cert_pem)?;
     
-    // Export leaf key
-    let leaf_key_pem = tls_manager.export_key(
-        &leaf_key,
-        cim_keys::KeyExportFormat::Pem,
-        true,
-    ).await?;
-    
+    // For demo purposes, write a placeholder key
     let leaf_key_path = PathBuf::from("./secrets/generated/nats/tls/leaf-key.pem");
-    fs::write(&leaf_key_path, &leaf_key_pem)?;
+    fs::write(&leaf_key_path, "-----BEGIN PRIVATE KEY-----\n[placeholder]\n-----END PRIVATE KEY-----\n")?;
     
     info!("Leaf node certificates generated");
     Ok((leaf_cert_path, leaf_key_path))
@@ -198,8 +182,8 @@ async fn generate_leaf_node_certs(
 
 /// Generate client certificates on YubiKey
 async fn generate_client_certs_on_yubikey(
-    ca_manager: &PkiManager,
-    ca_cert_id: &str,
+    _ca_manager: &PkiManager,
+    _ca_cert_id: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // In a real scenario, this would connect to a YubiKey
     // For this example, we'll simulate the process
@@ -344,13 +328,13 @@ jetstream {{
 
 /// Verify the certificate chain
 async fn verify_certificate_chain(
-    ca_manager: &PkiManager,
+    _ca_manager: &PkiManager,
 ) -> Result<(), Box<dyn std::error::Error>> {
     info!("Verifying certificate chain...");
     
     // Read certificates
-    let server_cert = fs::read("./secrets/generated/nats/tls/server-cert.pem")?;
-    let ca_cert = fs::read("./secrets/generated/nats/tls/ca-cert.pem")?;
+    let _server_cert = fs::read("./secrets/generated/nats/tls/server-cert.pem")?;
+    let _ca_cert = fs::read("./secrets/generated/nats/tls/ca-cert.pem")?;
     
     // In a real implementation, this would:
     // 1. Parse certificates

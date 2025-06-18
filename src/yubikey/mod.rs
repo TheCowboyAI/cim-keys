@@ -41,31 +41,32 @@ impl YubiKeyManager {
         let mut ctx_guard = self.pcsc_context.lock().unwrap();
         if ctx_guard.is_none() {
             let ctx = pcsc::Context::establish(pcsc::Scope::User)
-                .map_err(|e| KeyError::PcSc(e))?;
+                .map_err(KeyError::PcSc)?;
             *ctx_guard = Some(ctx);
         }
         Ok(())
     }
 
     /// Get or create PC/SC context
+    #[allow(dead_code)]
     fn get_pcsc_context(&self) -> Result<pcsc::Context> {
         self.init_pcsc()?;
         let ctx_guard = self.pcsc_context.lock().unwrap();
         ctx_guard.as_ref()
             .ok_or_else(|| KeyError::Other("PC/SC context not initialized".to_string()))
-            .map(|ctx| ctx.clone())
+            .cloned()
     }
 
     /// Find all connected YubiKeys
     pub fn find_yubikeys(&self) -> Result<Vec<Serial>> {
         let mut readers = yubikey::reader::Context::open()
-            .map_err(|e| KeyError::YubiKey(e))?;
+            .map_err(KeyError::YubiKey)?;
         let mut serials = Vec::new();
         
         // For now, just count readers since serial() method doesn't exist
         // TODO: Implement proper serial number detection
         for (index, _reader) in readers.iter()
-            .map_err(|e| KeyError::YubiKey(e))?
+            .map_err(KeyError::YubiKey)?
             .enumerate()
         {
             // Use index as a placeholder serial until we find the correct API
@@ -79,7 +80,7 @@ impl YubiKeyManager {
     /// Connect to a specific YubiKey
     pub fn connect(&self, serial: Serial) -> Result<()> {
         let yubikey = YubiKey::open_by_serial(serial)
-            .map_err(|e| KeyError::YubiKey(e))?;
+            .map_err(KeyError::YubiKey)?;
 
         info!("Connected to YubiKey {}", serial);
         debug!("YubiKey version: {:?}", yubikey.version());
@@ -97,7 +98,7 @@ impl YubiKeyManager {
             info!("Disconnected from YubiKey {}", serial);
             Ok(())
         } else {
-            Err(KeyError::KeyNotFound(format!("YubiKey {} not connected", serial)))
+            Err(KeyError::KeyNotFound(format!("YubiKey {serial} not connected")))
         }
     }
 
@@ -114,7 +115,7 @@ impl YubiKeyManager {
     {
         let mut keys = self.connected_keys.lock().unwrap();
         let yubikey = keys.get_mut(serial)
-            .ok_or_else(|| KeyError::KeyNotFound(format!("YubiKey {} not connected", serial)))?;
+            .ok_or_else(|| KeyError::KeyNotFound(format!("YubiKey {serial} not connected")))?;
         f(yubikey)
     }
 
@@ -156,7 +157,7 @@ impl YubiKeyManager {
             ];
 
             Ok(HardwareTokenInfo {
-                token_type: format!("YubiKey {}", version),
+                token_type: format!("YubiKey {version}"),
                 serial_number: serial_num.to_string(),
                 firmware_version: format!("{}.{}.{}", version.major, version.minor, version.patch),
                 available_slots: slots,
@@ -253,5 +254,105 @@ impl HardwareTokenManager for YubiKeyManager {
 impl Default for YubiKeyManager {
     fn default() -> Self {
         Self::new().expect("Failed to create YubiKey manager")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_yubikey_manager_creation() {
+        // This should succeed even without pcscd running
+        let manager = YubiKeyManager::new();
+        assert!(manager.is_ok(), "Should create YubiKey manager");
+    }
+
+    #[test]
+    fn test_pcsc_context_initialization() {
+        let manager = YubiKeyManager::new().unwrap();
+        
+        // Try to initialize PC/SC context
+        // This might fail if pcscd is not running, which is expected
+        let result = manager.init_pcsc();
+        
+        // We don't assert success here because it depends on system state
+        // Just verify it doesn't panic
+        match result {
+            Ok(_) => println!("PC/SC context initialized successfully"),
+            Err(e) => println!("PC/SC initialization failed (expected if pcscd not running): {:?}", e),
+        }
+    }
+
+    #[test]
+    fn test_find_yubikeys_without_hardware() {
+        let manager = YubiKeyManager::new().unwrap();
+        
+        // This should not panic even without YubiKeys connected
+        let result = manager.find_yubikeys();
+        
+        match result {
+            Ok(serials) => {
+                println!("Found {} YubiKey(s)", serials.len());
+                // It's fine if no YubiKeys are found
+            }
+            Err(e) => {
+                println!("YubiKey search failed (expected without hardware): {:?}", e);
+                // This is expected without pcscd or YubiKeys
+            }
+        }
+    }
+
+    #[test]
+    fn test_is_connected_empty() {
+        let manager = YubiKeyManager::new().unwrap();
+        
+        // Should return false for any serial when nothing is connected
+        assert!(!manager.is_connected("12345678"));
+        assert!(!manager.is_connected("nonexistent"));
+    }
+
+    #[test]
+    fn test_disconnect_nonexistent() {
+        let manager = YubiKeyManager::new().unwrap();
+        
+        // Should return error when trying to disconnect non-connected device
+        let result = manager.disconnect("12345678");
+        assert!(result.is_err());
+        
+        match result {
+            Err(KeyError::KeyNotFound(_)) => {
+                // Expected error type
+            }
+            _ => panic!("Expected KeyNotFound error"),
+        }
+    }
+
+    #[test]
+    fn test_hardware_token_info_format() {
+        // Test that HardwareTokenInfo can be created and serialized
+        let info = HardwareTokenInfo {
+            token_type: "YubiKey 5C".to_string(),
+            serial_number: "12345678".to_string(),
+            firmware_version: "5.2.7".to_string(),
+            available_slots: vec![
+                "PIV Authentication".to_string(),
+                "PIV Signing".to_string(),
+            ],
+            supported_algorithms: vec![
+                KeyAlgorithm::Rsa(RsaKeySize::Rsa2048),
+                KeyAlgorithm::Ecdsa(EcdsaCurve::P256),
+            ],
+            pin_retries: Some(3),
+            puk_retries: Some(3),
+        };
+        
+        // Should be able to serialize to JSON
+        let json = serde_json::to_string(&info).unwrap();
+        assert!(json.contains("YubiKey 5C"));
+        
+        // And deserialize back
+        let deserialized: HardwareTokenInfo = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.serial_number, "12345678");
     }
 }

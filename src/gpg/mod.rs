@@ -14,6 +14,7 @@ use tracing::warn;
 
 /// GPG key manager implementation
 pub struct GpgKeyManager {
+    #[allow(dead_code)]
     keyring_path: std::path::PathBuf,
 }
 

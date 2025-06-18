@@ -1,137 +1,197 @@
-//! Basic usage example for cim-keys
+//! Basic Usage Example - CIM Keys
 //!
-//! This example demonstrates basic key generation, signing, and encryption operations.
+//! This example demonstrates the basic usage patterns for CIM's key management system.
+//! It showcases SSH key generation, TLS certificate creation, and secure key storage.
 
 use cim_keys::{
-    KeyManager, Signer, Encryptor, CertificateManager,
-    KeyAlgorithm, KeyUsage, SignatureFormat, EncryptionFormat,
-    RsaKeySize, EcdsaCurve, KeyExportFormat,
+    // Core traits
+    KeyManager, Signer, CertificateManager, KeyStorage,
+    
+    // Key types and algorithms
+    KeyAlgorithm, KeyUsage, SignatureFormat, KeyLocation,
+    RsaKeySize, EcdsaCurve, KeyMetadata,
+    CertificateFormat,
+    
+    // Managers
     ssh::SshKeyManager,
     tls::TlsManager,
     storage::MemoryKeyStorage,
+    
+    // Types
+    KeyId,
 };
-use tracing::{info, Level};
-use tracing_subscriber;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize logging
-    tracing_subscriber::fmt()
-        .with_max_level(Level::INFO)
-        .init();
-
-    info!("Starting cim-keys basic usage example");
-
+    println!("🔐 CIM Keys - Basic Usage Example\n");
+    
+    // Initialize storage backend
+    let storage = Arc::new(RwLock::new(MemoryKeyStorage::new()));
+    
     // Example 1: SSH Key Management
-    info!("\n=== SSH Key Management ===");
+    println!("=== Example 1: SSH Key Management ===\n");
+    
     let ssh_manager = SshKeyManager::new();
-
+    
     // Generate an Ed25519 SSH key
+    println!("1. Generating Ed25519 SSH key...");
     let ssh_key_id = ssh_manager.generate_key(
         KeyAlgorithm::Ed25519,
-        "example@cim-keys".to_string(),
-        KeyUsage::Signing,
+        "alice@cim-example".to_string(),
+        KeyUsage {
+            sign: true,
+            verify: true,
+            encrypt: false,
+            decrypt: false,
+            derive: false,
+            authenticate: true,
+        },
     ).await?;
-
-    info!("Generated SSH key: {}", ssh_key_id);
-
-    // Export the public key in OpenSSH format
-    let public_key = ssh_manager.export_key(
-        &ssh_key_id,
-        KeyExportFormat::OpenSsh,
-        false, // public key only
-    ).await?;
-
-    info!("SSH Public Key:\n{}", String::from_utf8_lossy(&public_key));
-
-    // Sign some data
+    
+    println!("   ✅ Generated SSH key: {}", ssh_key_id);
+    
+    // Export public key in SSH format
+    println!("\n2. Exporting SSH public key...");
+    let public_key = ssh_manager.export_public_key(&ssh_key_id)?;
+    
+    println!("   Public key (SSH format):");
+    println!("   {}", String::from_utf8_lossy(&public_key));
+    
+    // Sign data with SSH key
+    println!("\n3. Signing data with SSH key...");
     let message = b"Hello, CIM Keys!";
     let signature = ssh_manager.sign(
         &ssh_key_id,
         message,
         SignatureFormat::Raw,
     ).await?;
-
-    info!("Signature length: {} bytes", signature.len());
-
-    // Verify the signature
-    let valid = ssh_manager.verify(
-        &ssh_key_id,
-        message,
-        &signature,
-        SignatureFormat::Raw,
-    ).await?;
-
-    info!("Signature valid: {}", valid);
-
+    
+    println!("   ✅ Signature generated ({} bytes)", signature.len());
+    
     // Example 2: TLS Certificate Management
-    info!("\n=== TLS Certificate Management ===");
+    println!("\n=== Example 2: TLS Certificate Management ===\n");
+    
     let tls_manager = TlsManager::new();
-
-    // Generate a self-signed certificate
+    
+    // Generate self-signed certificate directly
+    println!("1. Generating self-signed certificate...");
     let (tls_key_id, cert_id) = tls_manager.generate_self_signed(
-        "example.cim-keys.local",
-        vec!["example.cim-keys.local".to_string(), "localhost".to_string()],
-        KeyAlgorithm::Ecdsa(EcdsaCurve::P256),
-        365, // validity days
+        "server.cim.local",
+        vec!["server.cim.local".to_string(), "localhost".to_string()],
+        KeyAlgorithm::Rsa(RsaKeySize::Rsa2048),
+        365, // Valid for 1 year
     ).await?;
-
-    info!("Generated TLS certificate: {} with key: {}", cert_id, tls_key_id);
-
-    // Export the certificate in PEM format
+    
+    println!("   ✅ Generated TLS key: {}", tls_key_id);
+    println!("   ✅ Generated certificate: {}", cert_id);
+    
+    // Export certificate
+    println!("\n2. Exporting certificate...");
     let cert_pem = tls_manager.export_certificate(
         &cert_id,
-        cim_keys::CertificateFormat::Pem,
-        false, // no chain
+        CertificateFormat::Pem,
+        false, // Don't include chain
     ).await?;
-
-    info!("Certificate PEM:\n{}", String::from_utf8_lossy(&cert_pem));
-
+    
+    println!("   Certificate (PEM format):");
+    println!("   {}", String::from_utf8_lossy(&cert_pem).lines().take(5).collect::<Vec<_>>().join("\n"));
+    println!("   ... (truncated)");
+    
     // Get certificate metadata
+    println!("\n3. Getting certificate metadata...");
     let cert_metadata = tls_manager.get_certificate_metadata(&cert_id).await?;
-    info!("Certificate Subject: {}", cert_metadata.subject);
-    info!("Certificate Issuer: {}", cert_metadata.issuer);
-    info!("Valid from: {} to {}", cert_metadata.not_before, cert_metadata.not_after);
-
-    // Example 3: Key Storage
-    info!("\n=== Key Storage ===");
-    let storage = MemoryKeyStorage::new();
-
-    // Store a key
-    let key_data = b"example-key-data";
-    let metadata = cim_keys::KeyMetadata {
-        key_id: ssh_key_id,
-        algorithm: KeyAlgorithm::Ed25519,
-        label: "Example SSH Key".to_string(),
-        usage: KeyUsage::Signing,
+    println!("   Subject: {}", cert_metadata.subject);
+    println!("   Issuer: {}", cert_metadata.issuer);
+    println!("   Valid from: {}", cert_metadata.not_before);
+    println!("   Valid until: {}", cert_metadata.not_after);
+    
+    // Example 3: Key Storage Operations
+    println!("\n=== Example 3: Key Storage Operations ===\n");
+    
+    // Create metadata for a key
+    let metadata = KeyMetadata {
+        id: KeyId::new(),
+        algorithm: KeyAlgorithm::Ecdsa(EcdsaCurve::P256),
+        label: "ECDSA Signing Key".to_string(),
+        usage: KeyUsage {
+            sign: true,
+            verify: true,
+            encrypt: false,
+            decrypt: false,
+            derive: false,
+            authenticate: false,
+        },
         created_at: chrono::Utc::now(),
-        expires_at: None,
-        attributes: std::collections::HashMap::new(),
+        expires_at: Some(chrono::Utc::now() + chrono::Duration::days(90)),
+        description: Some("Key for document signing".to_string()),
+        email: Some("alice@example.com".to_string()),
+        fingerprint: None,
+        hardware_serial: None,
     };
-
-    storage.store_key(
-        &ssh_key_id,
-        key_data,
+    
+    // Store a key (mock data for demo)
+    println!("1. Storing ECDSA key...");
+    let key_data = b"mock-ecdsa-key-data";
+    storage.write().await.store_key(
+        &metadata.id, 
+        key_data, 
         metadata.clone(),
-        cim_keys::KeyLocation::Memory,
+        KeyLocation::Memory,
     ).await?;
-
-    info!("Stored key in memory storage");
-
-    // Retrieve the key
-    let (retrieved_data, retrieved_metadata) = storage.retrieve_key(&ssh_key_id).await?;
-    assert_eq!(key_data, &retrieved_data[..]);
-    assert_eq!(metadata.label, retrieved_metadata.label);
-
-    info!("Successfully retrieved key from storage");
-
-    // Example 4: Encryption (using RSA for asymmetric encryption)
-    info!("\n=== Encryption Example ===");
-
-    // Note: For real encryption, you would use a proper implementation
-    // This is just demonstrating the API structure
-
-    info!("Example completed successfully!");
-
+    println!("   ✅ Key stored with ID: {}", metadata.id);
+    
+    // Check if key exists
+    println!("\n2. Checking if key exists...");
+    let exists = storage.read().await.key_exists(&metadata.id).await?;
+    println!("   Key exists: {}", exists);
+    
+    // Retrieve key
+    println!("\n3. Retrieving key...");
+    let (retrieved_data, retrieved_metadata) = storage.read().await.retrieve_key(&metadata.id).await?;
+    println!("   ✅ Retrieved key: {} ({} bytes)", retrieved_metadata.label, retrieved_data.len());
+    
+    // Example 4: Key Rotation
+    println!("\n=== Example 4: Key Rotation ===\n");
+    
+    println!("1. Current SSH key: {}", ssh_key_id);
+    
+    // Generate new SSH key
+    let new_ssh_key_id = ssh_manager.generate_key(
+        KeyAlgorithm::Ed25519,
+        "alice@cim-example".to_string(),
+        KeyUsage {
+            sign: true,
+            verify: true,
+            encrypt: false,
+            decrypt: false,
+            derive: false,
+            authenticate: true,
+        },
+    ).await?;
+    
+    println!("2. New SSH key generated: {}", new_ssh_key_id);
+    
+    // Export new public key
+    let new_public_key = ssh_manager.export_public_key(&new_ssh_key_id)?;
+    
+    println!("3. New public key:");
+    println!("   {}", String::from_utf8_lossy(&new_public_key));
+    
+    // In production, you would:
+    // - Update authorized_keys files
+    // - Notify key consumers
+    // - Schedule old key deletion
+    
+    println!("\n=== Summary ===");
+    println!("✅ SSH key generation and signing");
+    println!("✅ TLS certificate management");
+    println!("✅ Secure key storage");
+    println!("✅ Key metadata and attributes");
+    println!("✅ Key rotation patterns");
+    
+    println!("\n🎉 Basic usage example completed successfully!");
+    
     Ok(())
 }

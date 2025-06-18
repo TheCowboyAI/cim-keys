@@ -6,12 +6,10 @@ use crate::{KeyError, Result};
 use crate::types::*;
 use crate::traits::*;
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::path::{Path, PathBuf};
 use tokio::fs;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::{debug, info};
 
 /// File-based key storage
@@ -31,6 +29,9 @@ struct StorageEntry {
     encrypted: bool,
 }
 
+/// Stored key data type alias
+type StoredKeyData = (Vec<u8>, KeyMetadata);
+
 impl FileKeyStorage {
     /// Create a new file-based key storage
     pub async fn new<P: AsRef<Path>>(base_dir: P) -> Result<Self> {
@@ -38,18 +39,18 @@ impl FileKeyStorage {
 
         // Create directory if it doesn't exist
         fs::create_dir_all(&base_dir).await
-            .map_err(|e| KeyError::Io(e))?;
+            .map_err(KeyError::Io)?;
 
         // Set restrictive permissions (owner only)
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             let metadata = fs::metadata(&base_dir).await
-                .map_err(|e| KeyError::Io(e))?;
+                .map_err(KeyError::Io)?;
             let mut perms = metadata.permissions();
             perms.set_mode(0o700);
             fs::set_permissions(&base_dir, perms).await
-                .map_err(|e| KeyError::Io(e))?;
+                .map_err(KeyError::Io)?;
         }
 
         let storage = Self {
@@ -72,10 +73,10 @@ impl FileKeyStorage {
         }
 
         let data = fs::read(&index_path).await
-            .map_err(|e| KeyError::Io(e))?;
+            .map_err(KeyError::Io)?;
 
         let entries: HashMap<KeyId, StorageEntry> = serde_json::from_slice(&data)
-            .map_err(|e| KeyError::Serialization(e))?;
+            .map_err(KeyError::Serialization)?;
 
         let mut index = self.index.write().unwrap();
         *index = entries;
@@ -91,22 +92,22 @@ impl FileKeyStorage {
         let data = {
             let index = self.index.read().unwrap();
             serde_json::to_vec_pretty(&*index)
-                .map_err(|e| KeyError::Serialization(e))?
+                .map_err(KeyError::Serialization)?
         };
 
         fs::write(&index_path, data).await
-            .map_err(|e| KeyError::Io(e))?;
+            .map_err(KeyError::Io)?;
 
         // Set restrictive permissions
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             let metadata = fs::metadata(&index_path).await
-                .map_err(|e| KeyError::Io(e))?;
+                .map_err(KeyError::Io)?;
             let mut perms = metadata.permissions();
             perms.set_mode(0o600);
             fs::set_permissions(&index_path, perms).await
-                .map_err(|e| KeyError::Io(e))?;
+                .map_err(KeyError::Io)?;
         }
 
         Ok(())
@@ -114,7 +115,7 @@ impl FileKeyStorage {
 
     /// Get the file path for a key
     fn get_key_path(&self, key_id: &KeyId) -> PathBuf {
-        self.base_dir.join(format!("{}.key", key_id))
+        self.base_dir.join(format!("{key_id}.key"))
     }
 }
 
@@ -140,23 +141,23 @@ impl KeyStorage for FileKeyStorage {
                 // Ensure parent directory exists
                 if let Some(parent) = key_path.parent() {
                     fs::create_dir_all(parent).await
-                        .map_err(|e| KeyError::Io(e))?;
+                        .map_err(KeyError::Io)?;
                 }
 
                 // Write key data
                 fs::write(&key_path, key_data).await
-                    .map_err(|e| KeyError::Io(e))?;
+                    .map_err(KeyError::Io)?;
 
                 // Set restrictive permissions
                 #[cfg(unix)]
                 {
                     use std::os::unix::fs::PermissionsExt;
                     let metadata = fs::metadata(&key_path).await
-                        .map_err(|e| KeyError::Io(e))?;
+                        .map_err(KeyError::Io)?;
                     let mut perms = metadata.permissions();
                     perms.set_mode(0o600);
                     fs::set_permissions(&key_path, perms).await
-                        .map_err(|e| KeyError::Io(e))?;
+                        .map_err(KeyError::Io)?;
                 }
 
                 // Update index
@@ -198,7 +199,7 @@ impl KeyStorage for FileKeyStorage {
         match &entry.location {
             KeyLocation::File(path) => {
                 let key_data = fs::read(path).await
-                    .map_err(|e| KeyError::Io(e))?;
+                    .map_err(KeyError::Io)?;
 
                 Ok((key_data, entry.metadata))
             }
@@ -241,7 +242,7 @@ impl KeyStorage for FileKeyStorage {
 
 /// In-memory key storage (for testing and temporary keys)
 pub struct MemoryKeyStorage {
-    storage: Arc<RwLock<HashMap<KeyId, (Vec<u8>, KeyMetadata)>>>,
+    storage: Arc<RwLock<HashMap<KeyId, StoredKeyData>>>,
 }
 
 impl MemoryKeyStorage {

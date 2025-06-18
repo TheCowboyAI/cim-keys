@@ -19,11 +19,13 @@ pub struct TlsManager {
     /// Certificate storage
     certificates: Arc<RwLock<HashMap<String, TlsCertEntry>>>,
     /// Key storage
+    #[allow(dead_code)]
     keys: Arc<RwLock<HashMap<KeyId, KeyPair>>>,
 }
 
 /// Internal certificate storage entry
 struct TlsCertEntry {
+    #[allow(dead_code)]
     certificate: Certificate,
     cert_der: Vec<u8>,
     metadata: CertificateMetadata,
@@ -77,13 +79,15 @@ impl TlsManager {
         // Generate key pair based on algorithm
         let key_pair = match key_algorithm {
             KeyAlgorithm::Rsa(size) => {
-                let bits = match size {
+                let _bits = match size {
                     RsaKeySize::Rsa2048 => 2048,
                     RsaKeySize::Rsa3072 => 3072,
                     RsaKeySize::Rsa4096 => 4096,
                 };
+                // Note: rcgen doesn't support specifying RSA key size directly
+                // It uses the algorithm's default size
                 KeyPair::generate_for(&rcgen::PKCS_RSA_SHA256)
-                    .map_err(|e| KeyError::Other(format!("Failed to generate RSA key: {}", e)))?
+                    .map_err(|e| KeyError::Other(format!("Failed to generate RSA key: {e}")))?
             }
             KeyAlgorithm::Ecdsa(curve) => {
                 let alg = match curve {
@@ -96,16 +100,16 @@ impl TlsManager {
                     }
                 };
                 KeyPair::generate_for(alg)
-                    .map_err(|e| KeyError::Other(format!("Failed to generate ECDSA key: {}", e)))?
+                    .map_err(|e| KeyError::Other(format!("Failed to generate ECDSA key: {e}")))?
             }
             _ => return Err(KeyError::UnsupportedAlgorithm(
-                format!("Algorithm {:?} not supported for TLS certificates", key_algorithm)
+                format!("Algorithm {key_algorithm:?} not supported for TLS certificates")
             )),
         };
         
         // Generate certificate using the key pair
         let cert = params.self_signed(&key_pair)
-            .map_err(|e| KeyError::Other(format!("Failed to generate certificate: {}", e)))?;
+            .map_err(|e| KeyError::Other(format!("Failed to generate certificate: {e}")))?;
         
         // Get certificate DER
         let cert_der = cert.der()
@@ -178,13 +182,13 @@ impl CertificateManager for TlsManager {
                 ));
             }
             _ => return Err(KeyError::InvalidKeyFormat(
-                format!("Format {:?} not supported for import", format)
+                format!("Format {format:?} not supported for import")
             )),
         };
 
         // Parse certificate
         let (_, x509_cert) = X509Certificate::from_der(&cert_der)
-            .map_err(|e| KeyError::X509(format!("Failed to parse certificate: {:?}", e)))?;
+            .map_err(|e| KeyError::X509(format!("Failed to parse certificate: {e:?}")))?;
 
         let cert_id = format!("{:?}", x509_cert.serial);
 
@@ -192,7 +196,7 @@ impl CertificateManager for TlsManager {
         let subject = x509_cert.subject.to_string();
         let issuer = x509_cert.issuer.to_string();
 
-        let metadata = CertificateMetadata {
+        let _metadata = CertificateMetadata {
             subject,
             issuer,
             serial_number: cert_id.clone(),
@@ -205,6 +209,7 @@ impl CertificateManager for TlsManager {
             path_len_constraint: None, // TODO: Extract
         };
 
+        // TODO: Store the certificate with metadata
         info!("Imported certificate {}", cert_id);
         Ok(cert_id)
     }
@@ -213,11 +218,11 @@ impl CertificateManager for TlsManager {
         &self,
         cert_id: &str,
         format: CertificateFormat,
-        include_chain: bool,
+        _include_chain: bool,
     ) -> Result<Vec<u8>> {
         let certs = self.certificates.read().unwrap();
         let entry = certs.get(cert_id)
-            .ok_or_else(|| KeyError::KeyNotFound(format!("Certificate {} not found", cert_id)))?;
+            .ok_or_else(|| KeyError::KeyNotFound(format!("Certificate {cert_id} not found")))?;
 
         match format {
             CertificateFormat::Der => Ok(entry.cert_der.clone()),
@@ -235,7 +240,7 @@ impl CertificateManager for TlsManager {
                 Ok(pem_string.into_bytes())
             }
             _ => Err(KeyError::InvalidKeyFormat(
-                format!("Format {:?} not supported for export", format)
+                format!("Format {format:?} not supported for export")
             )),
         }
     }
@@ -247,7 +252,7 @@ impl CertificateManager for TlsManager {
         let certs = self.certificates.read().unwrap();
         certs.get(cert_id)
             .map(|entry| entry.metadata.clone())
-            .ok_or_else(|| KeyError::KeyNotFound(format!("Certificate {} not found", cert_id)))
+            .ok_or_else(|| KeyError::KeyNotFound(format!("Certificate {cert_id} not found")))
     }
 
     async fn validate_certificate(

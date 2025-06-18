@@ -62,6 +62,7 @@ secrecy = "0.10"                                     # Secret management
 tokio-test = "0.4"
 tempfile = "3.14"
 mockall = "0.13"
+tracing-subscriber = "0.3"
 
 [features]
 default = ["yubikey-support", "gpg-support"]
@@ -77,3 +78,6 @@ name = "cim_leaf_integration"
 
 [[example]]
 name = "nats_tls_setup"
+
+[[example]]
+name = "yubikey_demo"
