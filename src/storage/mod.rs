@@ -6,11 +6,13 @@ use crate::{KeyError, Result};
 use crate::types::*;
 use crate::traits::*;
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::path::{Path, PathBuf};
 use tokio::fs;
-use tracing::{debug, info, warn};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tracing::{debug, info};
 
 /// File-based key storage
 pub struct FileKeyStorage {

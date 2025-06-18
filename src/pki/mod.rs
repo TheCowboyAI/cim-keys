@@ -56,9 +56,9 @@ impl PkiManager {
     /// Create a new root CA
     pub async fn create_root_ca(
         &self,
-        subject: &str,
-        key_algorithm: KeyAlgorithm,
-        validity_years: u32,
+        _subject: &str,
+        _key_algorithm: KeyAlgorithm,
+        _validity_years: u32,
     ) -> Result<(KeyId, String)> {
         // TODO: Implement root CA creation
         Err(KeyError::Other("Root CA creation not yet implemented".to_string()))
@@ -67,10 +67,10 @@ impl PkiManager {
     /// Create an intermediate CA
     pub async fn create_intermediate_ca(
         &self,
-        root_ca_id: &str,
-        subject: &str,
-        key_algorithm: KeyAlgorithm,
-        validity_years: u32,
+        _root_ca_id: &str,
+        _subject: &str,
+        _key_algorithm: KeyAlgorithm,
+        _validity_years: u32,
     ) -> Result<(KeyId, String)> {
         // TODO: Implement intermediate CA creation
         Err(KeyError::Other("Intermediate CA creation not yet implemented".to_string()))
@@ -91,7 +91,7 @@ impl PkiManager {
     pub async fn revoke_certificate(
         &self,
         cert_id: &str,
-        reason: &str,
+        _reason: &str,
     ) -> Result<()> {
         let mut trust_store = self.trust_store.write().unwrap();
         trust_store.revoked_certs.insert(
@@ -99,6 +99,18 @@ impl PkiManager {
             chrono::Utc::now(),
         );
         Ok(())
+    }
+
+    /// Issue a certificate
+    pub async fn issue_certificate(
+        &self,
+        _subject: &str,
+        _key_algorithm: KeyAlgorithm,
+        _validity_days: u32,
+        _ca_cert_id: Option<&str>,
+    ) -> Result<(KeyId, String)> {
+        // TODO: Implement certificate issuance
+        Err(KeyError::Other("Certificate issuance not yet implemented".to_string()))
     }
 }
 
@@ -258,8 +270,8 @@ impl CertificateManager for PkiManager {
 
     async fn validate_certificate(
         &self,
-        cert_id: &str,
-        ca_cert_id: Option<&str>,
+        _cert_id: &str,
+        _ca_cert_id: Option<&str>,
     ) -> Result<bool> {
         Ok(false)
     }

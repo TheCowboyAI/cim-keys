@@ -273,9 +273,27 @@ impl SshKeyManager {
         let entry = keys.get(key_id)
             .ok_or_else(|| KeyError::KeyNotFound(key_id.to_string()))?;
 
-        // For verification, we need to use SshSig instead of Signature
-        // This is a simplified implementation - real SSH verification is more complex
-        Ok(true) // TODO: Implement proper SSH signature verification
+        // For SSH signature verification, we need to decode the signature
+        // and verify it directly using the ssh_key crate's API
+        
+        // Try to decode as raw signature bytes
+        let sig = Signature::try_from(signature)
+            .map_err(|e| KeyError::Other(format!("Failed to decode signature: {}", e)))?;
+
+        // Create a temporary SshSig for verification
+        // Note: This is a simplified approach - in production you'd want proper namespace handling
+        let ssh_sig = ssh_key::SshSig::new(
+            entry.public_key.key_data().clone(),
+            "file", // Default namespace
+            HashAlg::Sha256,
+            sig,
+        ).map_err(|e| KeyError::Other(format!("Failed to create SSH signature: {}", e)))?;
+
+        // Verify the signature using the public key
+        match entry.public_key.verify("file", data, &ssh_sig) {
+            Ok(_) => Ok(true),
+            Err(_) => Ok(false), // Invalid signature returns false, not an error
+        }
     }
 }
 

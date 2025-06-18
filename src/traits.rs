@@ -1,10 +1,10 @@
 //! Trait definitions for cryptographic operations
 
 use async_trait::async_trait;
-use crate::{KeyError, Result};
+use crate::Result;
 use crate::types::*;
 
-/// Core trait for key management operations
+/// Common trait for key management operations
 #[async_trait]
 pub trait KeyManager: Send + Sync {
     /// Generate a new key pair
