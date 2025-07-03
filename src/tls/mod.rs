@@ -229,14 +229,13 @@ impl CertificateManager for TlsManager {
             CertificateFormat::Pem => {
                 // Manual PEM encoding since pem::encode doesn't exist in this version
                 let encoded = general_purpose::STANDARD.encode(&entry.cert_der);
-                let pem_string = format!(
-                    "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
-                    encoded.chars().collect::<Vec<_>>()
-                        .chunks(64)
-                        .map(|chunk| chunk.iter().collect::<String>())
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                );
+                let chunked = encoded.chars()
+                    .collect::<Vec<_>>()
+                    .chunks(64)
+                    .map(|chunk| chunk.iter().collect::<String>())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let pem_string = format!("-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n", chunked);
                 Ok(pem_string.into_bytes())
             }
             _ => Err(KeyError::InvalidKeyFormat(

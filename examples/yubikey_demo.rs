@@ -23,7 +23,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             manager
         }
         Err(e) => {
-            println!("❌ Failed to initialize YubiKey manager: {}", e);
+            println!("❌ Failed to initialize YubiKey manager: {e}");
             println!("\nMake sure:");
             println!("  - A YubiKey is connected");
             println!("  - PC/SC daemon (pcscd) is running");
@@ -44,12 +44,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             
             println!("✅ Found {} YubiKey(s):", serials.len());
             for (idx, serial) in serials.iter().enumerate() {
-                println!("  #{}: Serial {}", idx + 1, serial);
+                println!("  #{idx + 1}: Serial {serial}");
             }
             serials
         }
         Err(e) => {
-            println!("❌ Failed to find YubiKeys: {}", e);
+            println!("❌ Failed to find YubiKeys: {e}");
             return Err(e.into());
         }
     };
@@ -57,12 +57,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Connect to the first YubiKey
     let serial = &serials[0];
     println!("\n=== Connecting to YubiKey ===\n");
-    println!("Connecting to YubiKey with serial: {}", serial);
+    println!("Connecting to YubiKey with serial: {serial}");
     
     match yubikey_manager.connect(*serial) {
         Ok(()) => println!("✅ Successfully connected to YubiKey"),
         Err(e) => {
-            println!("❌ Failed to connect: {}", e);
+            println!("❌ Failed to connect: {e}");
             return Err(e.into());
         }
     }
@@ -71,17 +71,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match yubikey_manager.get_info(&serial.to_string()) {
         Ok(info) => {
             println!("\nYubiKey Information:");
-            println!("  Type: {}", info.token_type);
-            println!("  Serial: {}", info.serial_number);
-            println!("  Firmware: {}", info.firmware_version);
+            println!("  Type: {info.token_type}");
+            println!("  Serial: {info.serial_number}");
+            println!("  Firmware: {info.firmware_version}");
             println!("  Available Slots: {:?}", info.available_slots);
             println!("  Supported Algorithms: {:?}", info.supported_algorithms);
             if let Some(pin_retries) = info.pin_retries {
-                println!("  PIN Retries: {}", pin_retries);
+                println!("  PIN Retries: {pin_retries}");
             }
         }
         Err(e) => {
-            println!("⚠️  Failed to get YubiKey info: {}", e);
+            println!("⚠️  Failed to get YubiKey info: {e}");
         }
     }
     
@@ -90,19 +90,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match yubikey_manager.list_tokens().await {
         Ok(tokens) => {
             for token in tokens {
-                println!("Token: {}", token.token_type);
-                println!("  Serial: {}", token.serial_number);
-                println!("  Firmware: {}", token.firmware_version);
+                println!("Token: {token.token_type}");
+                println!("  Serial: {token.serial_number}");
+                println!("  Firmware: {token.firmware_version}");
                 println!("  Available Slots: {:?}", token.available_slots);
                 println!("  Supported Algorithms: {:?}", token.supported_algorithms);
                 if let Some(pin_retries) = token.pin_retries {
-                    println!("  PIN Retries: {}", pin_retries);
+                    println!("  PIN Retries: {pin_retries}");
                 }
                 println!();
             }
         }
         Err(e) => {
-            println!("⚠️  Failed to list tokens: {}", e);
+            println!("⚠️  Failed to list tokens: {e}");
         }
     }
     

@@ -114,8 +114,7 @@ impl KeyLifecycleManager {
         }
 
         // Generate new key ID
-        let new_key_id = format!("{}_rotated_{}", old_key_id, 
-            SystemTime::now()
+        let new_key_id = format!("{old_key_id}_rotated_{SystemTime::now(}")
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
                 .as_secs()
@@ -191,8 +190,7 @@ impl KeyArchivalService {
         tokio::time::sleep(Duration::from_millis(20)).await;
 
         // Generate archive location
-        let archive_location = format!("archive://keys/{}/{}", 
-            SystemTime::now()
+        let archive_location = format!("archive://keys/{SystemTime::now(}/{}")
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
                 .as_secs() / (365 * 24 * 60 * 60), // Year

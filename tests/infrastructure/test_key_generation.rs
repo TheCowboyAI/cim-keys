@@ -74,7 +74,7 @@ impl MockKeyGenerator {
             }
             KeyType::ECDSA { curve } => {
                 if !["P-256", "P-384", "P-521"].contains(&curve.as_str()) {
-                    return Err(format!("Unsupported ECDSA curve: {}", curve));
+                    return Err(format!("Unsupported ECDSA curve: {curve}"));
                 }
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
@@ -142,9 +142,9 @@ impl KeyMetadataManager {
         meta.insert("purpose".to_string(), purpose);
         
         meta.insert("algorithm".to_string(), match key_type {
-            KeyType::RSA { bits } => format!("RSA-{}", bits),
+            KeyType::RSA { bits } => format!("RSA-{bits}"),
             KeyType::Ed25519 => "Ed25519".to_string(),
-            KeyType::ECDSA { curve } => format!("ECDSA-{}", curve),
+            KeyType::ECDSA { curve } => format!("ECDSA-{curve}"),
         });
 
         meta.insert("key_id".to_string(), key_id.clone());

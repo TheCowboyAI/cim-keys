@@ -74,7 +74,7 @@ mod tests {
         assert_ne!(id1, id2);
         
         // Display should work
-        let display = format!("{}", id1);
+        let display = format!("{id1}");
         assert!(!display.is_empty());
     }
 

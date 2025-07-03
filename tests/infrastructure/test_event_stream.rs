@@ -41,7 +41,7 @@ impl Cid {
         let mut context = Context::new(&SHA256);
         context.update(data);
         let digest = context.finish();
-        Self(format!("Qm{}", STANDARD.encode(digest.as_ref())))
+        Self(format!("Qm{STANDARD.encode(digest.as_ref(}"))))
     }
 }
 
@@ -128,7 +128,7 @@ impl MockKeyEventStore {
         &mut self,
         event: KeyDomainEvent,
     ) -> Result<(String, Cid, Option<Cid>), String> {
-        let event_id = format!("evt_{}", uuid::Uuid::new_v4());
+        let event_id = format!("evt_{uuid::Uuid::new_v4(}"));
         let previous_cid = self.events.last().map(|e| e.cid.clone());
         
         // Calculate CID including previous CID
@@ -161,10 +161,7 @@ impl MockKeyEventStore {
             let previous = &self.events[i - 1];
             
             if current.previous_cid.as_ref() != Some(&previous.cid) {
-                return Err(format!(
-                    "Chain broken at sequence {}: expected {:?}, got {:?}",
-                    i, previous.cid, current.previous_cid
-                ));
+                return Err(format!("Chain broken at sequence {i}: expected {:?}, got {:?}", previous.cid, current.previous_cid));
             }
         }
 
@@ -239,9 +236,7 @@ impl KeyEventStreamValidator {
 
     pub fn validate(&self) -> Result<(), String> {
         if self.captured_events.len() != self.expected_events.len() {
-            return Err(format!(
-                "Event count mismatch: expected {}, got {}",
-                self.expected_events.len(),
+            return Err(format!("Event count mismatch: expected {self.expected_events.len(}, got {}"),
                 self.captured_events.len()
             ));
         }
@@ -251,10 +246,7 @@ impl KeyEventStreamValidator {
             .enumerate()
         {
             if expected != actual {
-                return Err(format!(
-                    "Event mismatch at position {}: expected {:?}, got {:?}",
-                    i, expected, actual
-                ));
+                return Err(format!("Event mismatch at position {i}: expected {:?}, got {:?}", expected, actual));
             }
         }
 
@@ -405,7 +397,7 @@ mod tests {
         // Add some events
         for i in 0..5 {
             store.append_event(KeyDomainEvent::KeyGenerated {
-                key_id: format!("snapshot-key-{}", i),
+                key_id: format!("snapshot-key-{i}"),
                 algorithm: "AES-256".to_string(),
                 purpose: "encryption".to_string(),
                 timestamp: SystemTime::now(),

@@ -231,9 +231,7 @@ impl NatsEventStreamValidator {
 
     pub fn validate(&self) -> Result<(), String> {
         if self.captured_events.len() != self.expected_events.len() {
-            return Err(format!(
-                "Event count mismatch: expected {}, got {}",
-                self.expected_events.len(),
+            return Err(format!("Event count mismatch: expected {self.expected_events.len(}, got {}"),
                 self.captured_events.len()
             ));
         }
@@ -243,10 +241,7 @@ impl NatsEventStreamValidator {
             .enumerate()
         {
             if expected != actual {
-                return Err(format!(
-                    "Event mismatch at position {}: expected {:?}, got {:?}",
-                    i, expected, actual
-                ));
+                return Err(format!("Event mismatch at position {i}: expected {:?}, got {:?}", expected, actual));
             }
         }
 
@@ -513,7 +508,7 @@ mod tests {
         for i in 0..5 {
             let payload = KeyEventPayload {
                 event_type: "key_generated".to_string(),
-                key_id: format!("order-test-{}", i),
+                key_id: format!("order-test-{i}"),
                 algorithm: "RSA-2048".to_string(),
                 timestamp: SystemTime::now(),
                 metadata: HashMap::new(),
@@ -531,7 +526,7 @@ mod tests {
         // Verify consumption order
         let events = client.consume_events("keys.>").await.unwrap();
         for i in 0..events.len() {
-            assert_eq!(events[i].1.key_id, format!("order-test-{}", i));
+            assert_eq!(events[i].1.key_id, format!("order-test-{i}"));
         }
     }
 } 

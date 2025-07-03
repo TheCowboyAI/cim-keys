@@ -50,14 +50,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     ).await?;
     
-    println!("   ✅ Generated SSH key: {}", ssh_key_id);
+    println!("   ✅ Generated SSH key: {ssh_key_id}");
     
     // Export public key in SSH format
     println!("\n2. Exporting SSH public key...");
     let public_key = ssh_manager.export_public_key(&ssh_key_id)?;
     
     println!("   Public key (SSH format):");
-    println!("   {}", String::from_utf8_lossy(&public_key));
+    println!("   {String::from_utf8_lossy(&public_key}"));
     
     // Sign data with SSH key
     println!("\n3. Signing data with SSH key...");
@@ -68,7 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         SignatureFormat::Raw,
     ).await?;
     
-    println!("   ✅ Signature generated ({} bytes)", signature.len());
+    println!("   ✅ Signature generated ({signature.len(} bytes)"));
     
     // Example 2: TLS Certificate Management
     println!("\n=== Example 2: TLS Certificate Management ===\n");
@@ -84,8 +84,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         365, // Valid for 1 year
     ).await?;
     
-    println!("   ✅ Generated TLS key: {}", tls_key_id);
-    println!("   ✅ Generated certificate: {}", cert_id);
+    println!("   ✅ Generated TLS key: {tls_key_id}");
+    println!("   ✅ Generated certificate: {cert_id}");
     
     // Export certificate
     println!("\n2. Exporting certificate...");
@@ -96,16 +96,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ).await?;
     
     println!("   Certificate (PEM format):");
-    println!("   {}", String::from_utf8_lossy(&cert_pem).lines().take(5).collect::<Vec<_>>().join("\n"));
+    println!("   {String::from_utf8_lossy(&cert_pem}").lines().take(5).collect::<Vec<_>>().join("\n"));
     println!("   ... (truncated)");
     
     // Get certificate metadata
     println!("\n3. Getting certificate metadata...");
     let cert_metadata = tls_manager.get_certificate_metadata(&cert_id).await?;
-    println!("   Subject: {}", cert_metadata.subject);
-    println!("   Issuer: {}", cert_metadata.issuer);
-    println!("   Valid from: {}", cert_metadata.not_before);
-    println!("   Valid until: {}", cert_metadata.not_after);
+    println!("   Subject: {cert_metadata.subject}");
+    println!("   Issuer: {cert_metadata.issuer}");
+    println!("   Valid from: {cert_metadata.not_before}");
+    println!("   Valid until: {cert_metadata.not_after}");
     
     // Example 3: Key Storage Operations
     println!("\n=== Example 3: Key Storage Operations ===\n");
@@ -140,22 +140,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         metadata.clone(),
         KeyLocation::Memory,
     ).await?;
-    println!("   ✅ Key stored with ID: {}", metadata.id);
+    println!("   ✅ Key stored with ID: {metadata.id}");
     
     // Check if key exists
     println!("\n2. Checking if key exists...");
     let exists = storage.read().await.key_exists(&metadata.id).await?;
-    println!("   Key exists: {}", exists);
+    println!("   Key exists: {exists}");
     
     // Retrieve key
     println!("\n3. Retrieving key...");
     let (retrieved_data, retrieved_metadata) = storage.read().await.retrieve_key(&metadata.id).await?;
-    println!("   ✅ Retrieved key: {} ({} bytes)", retrieved_metadata.label, retrieved_data.len());
+    println!("   ✅ Retrieved key: {retrieved_metadata.label} ({retrieved_data.len(} bytes)"));
     
     // Example 4: Key Rotation
     println!("\n=== Example 4: Key Rotation ===\n");
     
-    println!("1. Current SSH key: {}", ssh_key_id);
+    println!("1. Current SSH key: {ssh_key_id}");
     
     // Generate new SSH key
     let new_ssh_key_id = ssh_manager.generate_key(
@@ -171,13 +171,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     ).await?;
     
-    println!("2. New SSH key generated: {}", new_ssh_key_id);
+    println!("2. New SSH key generated: {new_ssh_key_id}");
     
     // Export new public key
     let new_public_key = ssh_manager.export_public_key(&new_ssh_key_id)?;
     
     println!("3. New public key:");
-    println!("   {}", String::from_utf8_lossy(&new_public_key));
+    println!("   {String::from_utf8_lossy(&new_public_key}"));
     
     // In production, you would:
     // - Update authorized_keys files

@@ -142,8 +142,8 @@ impl KeyOperationHandler for MockKeyGenerationHandler {
                 tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
                 
                 Ok(KeyResponse::KeyGenerated {
-                    key_id: format!("key-{}", uuid::Uuid::new_v4()),
-                    fingerprint: format!("FP:{}:{}", algorithm, uuid::Uuid::new_v4()),
+                    key_id: format!("key-{uuid::Uuid::new_v4(}")),
+                    fingerprint: format!("FP:{algorithm}:{uuid::Uuid::new_v4(}")),
                 })
             }
             _ => Err("Unsupported operation".to_string()),
@@ -179,7 +179,7 @@ impl KeyOperationHandler for MockKeyLifecycleHandler {
             KeyCommand::RotateKey { key_id, .. } => {
                 Ok(KeyResponse::KeyRotated {
                     old_key_id: key_id,
-                    new_key_id: format!("key-{}", uuid::Uuid::new_v4()),
+                    new_key_id: format!("key-{uuid::Uuid::new_v4(}")),
                 })
             }
             KeyCommand::RevokeKey { key_id, .. } => {
@@ -298,13 +298,13 @@ impl KeyOperationRouter {
                 let response = handler.handle_command(command).await?;
                 Ok((handler_id, response))
             } else {
-                Err(format!("Handler {} not found", handler_id))
+                Err(format!("Handler {handler_id} not found"))
             }
         } else if let Some(ref fallback) = self.fallback_handler {
             let response = fallback.handle_command(command).await?;
             Ok(("fallback".to_string(), response))
         } else {
-            Err(format!("No handler for operation {}", operation))
+            Err(format!("No handler for operation {operation}"))
         }
     }
 
@@ -349,9 +349,7 @@ impl RoutingEventStreamValidator {
 
     pub fn validate(&self) -> Result<(), String> {
         if self.captured_events.len() != self.expected_events.len() {
-            return Err(format!(
-                "Event count mismatch: expected {}, got {}",
-                self.expected_events.len(),
+            return Err(format!("Event count mismatch: expected {self.expected_events.len(}, got {}"),
                 self.captured_events.len()
             ));
         }
@@ -361,10 +359,7 @@ impl RoutingEventStreamValidator {
             .enumerate()
         {
             if expected != actual {
-                return Err(format!(
-                    "Event mismatch at position {}: expected {:?}, got {:?}",
-                    i, expected, actual
-                ));
+                return Err(format!("Event mismatch at position {i}: expected {:?}, got {:?}", expected, actual));
             }
         }
 
