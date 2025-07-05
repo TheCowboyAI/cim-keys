@@ -235,7 +235,7 @@ impl CertificateManager for TlsManager {
                     .map(|chunk| chunk.iter().collect::<String>())
                     .collect::<Vec<_>>()
                     .join("\n");
-                let pem_string = format!("-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n", chunked);
+                let pem_string = format!("-----BEGIN CERTIFICATE-----\n{chunked}\n-----END CERTIFICATE-----\n");
                 Ok(pem_string.into_bytes())
             }
             _ => Err(KeyError::InvalidKeyFormat(
