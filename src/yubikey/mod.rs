@@ -15,9 +15,8 @@ use tracing::{debug, info, warn};
 pub mod operations;
 pub mod piv;
 
-// TODO: Re-enable when these modules are implemented
-// pub use operations::*;
-// pub use piv::*;
+pub use operations::{YubiKeyOperations, slot_from_name};
+pub use piv::{YubiKeyPivManager, PivSlotInfo};
 
 /// YubiKey manager for hardware token operations
 pub struct YubiKeyManager {

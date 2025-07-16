@@ -160,12 +160,36 @@ impl TlsManager {
 impl CertificateManager for TlsManager {
     async fn generate_csr(
         &self,
-        _key_id: &KeyId,
-        _subject: &str,
-        _san: Vec<String>,
+        key_id: &KeyId,
+        subject: &str,
+        san: Vec<String>,
     ) -> Result<Vec<u8>> {
-        // TODO: Implement CSR generation
-        Err(KeyError::Other("CSR generation not yet implemented".to_string()))
+        info!("Generating CSR for subject: {}", subject);
+        
+        // Create CSR parameters
+        let mut params = CertificateParams::default();
+        
+        // Set subject
+        let mut dn = DistinguishedName::new();
+        dn.push(DnType::CommonName, subject);
+        params.distinguished_name = dn;
+        
+        // Add SANs
+        params.subject_alt_names = san.into_iter()
+            .map(|s| rcgen::SanType::DnsName(rcgen::Ia5String::try_from(s).unwrap()))
+            .collect();
+        
+        // Get the key pair from storage
+        let keys = self.keys.read().unwrap();
+        let key_pair = keys.get(key_id)
+            .ok_or_else(|| KeyError::KeyNotFound(format!("Key {} not found", key_id)))?;
+        
+        // Generate CSR
+        let csr = params.serialize_request(key_pair)
+            .map_err(|e| KeyError::Other(format!("Failed to generate CSR: {}", e)))?;
+        
+        debug!("Generated CSR for subject: {}", subject);
+        Ok(csr.der().to_vec())
     }
 
     async fn import_certificate(
