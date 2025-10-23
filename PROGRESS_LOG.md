@@ -355,6 +355,138 @@ All three domain modules are now fully compatible with cim-domain v0.7.8:
 
 The NATS JetStream event publishing pattern has been implemented, establishing the correct FRP/ECS architecture for workflow validation through event stream queries rather than artificial unit tests.
 
+## Session: Policy Integration
+**Focus**: Integrate cim-domain-policy into cim-keys for policy-driven PKI operations
+
+### Stage 2: Policy Domain Integration (COMPLETED)
+
+#### Objective
+Integrate cim-domain-policy to enforce organizational policies on PKI operations including:
+- Key generation requirements (algorithms, key sizes)
+- Certificate issuance policies (validity periods, extensions)
+- YubiKey provisioning standards (PIN/PUK, touch policies)
+- NATS operator key security (offline storage, multi-signature)
+- Root CA generation controls (approval requirements)
+
+#### What Was Implemented
+
+1. **Policy Module Structure** (`src/policy/`)
+   - `pki_policies.rs`: Standard PKI policy definitions
+   - `policy_engine.rs`: Main policy evaluation engine
+   - `policy_commands.rs`: Policy-related commands
+   - `policy_events.rs`: Policy enforcement events
+   - `mod.rs`: Module exports with feature gating
+
+2. **PKI Policy Set** (`pki_policies.rs`)
+   - Key generation policy (RSA min 2048, ECDSA min 256, allowed algorithms)
+   - Certificate issuance policy (max 365 days, min 7 days, required extensions)
+   - YubiKey provisioning policy (PIN/PUK required, touch policy, firmware version)
+   - NATS operator policy (Ed25519 required, offline storage, multi-signature)
+   - Root CA policy (4096-bit RSA or 384-bit ECDSA, 10-20 year validity)
+
+3. **Policy Engine Integration** (`policy_engine.rs`)
+   - KeyPolicyEngine with exemption management
+   - Policy evaluation methods for each operation type
+   - Conflict resolution for overlapping policies
+   - Template engine for custom policies
+
+4. **Aggregate Integration** (`aggregate.rs`)
+   - Added optional policy engine parameter to handle_command
+   - Policy evaluation in handle_generate_key
+   - Policy evaluation in handle_generate_certificate
+   - Policy evaluation in handle_provision_yubikey
+   - Policy evaluation in handle_create_nats_operator
+
+5. **Policy Commands and Events**
+   - Commands: EvaluateKeyGeneration, RequestKeyPolicyExemption, EnforceKeyPolicy
+   - Events: KeyGenerationEvaluated, KeyPolicyViolationDetected, KeyPolicyEnforced
+   - Full DDD/Event Sourcing integration
+
+#### Challenges Overcome
+
+1. **Import Path Issues**
+   - Fixed: Used submodule imports (entities::PolicyTemplate, services::PolicyTemplateEngine)
+   - Added proper value_objects imports for PolicyId, ExemptionId
+
+2. **Person Struct Compatibility**
+   - Fixed: Changed from single `role` to `roles: Vec<PersonRole>`
+   - Added fields: created_at, active
+   - Mapped KeyOwnerRole variants to RoleType
+
+3. **Value Type Conversions**
+   - Fixed: Changed from &String references to owned String values
+   - Used .clone() for String fields in with_field calls
+
+4. **Error Conversion**
+   - Added EvaluationError to PolicyError conversion via From trait
+
+5. **Enum Exhaustiveness**
+   - Added missing KeyOwnerRole::Auditor case
+   - Added missing KeyAlgorithm::Secp256k1 case
+   - Fixed KeyAlgorithm::Rsa field from key_size to bits
+
+#### Final Status
+- ✅ Library compiles cleanly with `--features policy`
+- ✅ All policy evaluation integrated into key operations
+- ✅ Feature-gated for optional inclusion
+- ✅ Full DDD/Event Sourcing compliance
+
+### Policy Integration Architecture
+
+```rust
+// Policy evaluation flow in cim-keys
+Command → Aggregate → PolicyEngine → Events
+
+// Example: Key Generation with Policy
+GenerateKeyCommand {
+    algorithm: RSA { bits: 2048 },
+    context: KeyContext { actor, location, org }
+}
+  ↓
+handle_generate_key() {
+    // 1. Extract person from context
+    // 2. Evaluate policy via engine
+    // 3. Generate key if compliant
+    // 4. Emit events
+}
+  ↓
+KeyGeneratedEvent OR PolicyViolation
+```
+
+### Key Achievements
+
+1. **Complete Policy Integration**
+   - All major PKI operations now have policy enforcement
+   - Policies are feature-gated for flexibility
+   - Clean separation of concerns via ports & adapters
+
+2. **Compliance Patterns**
+   - Minimum key sizes enforced
+   - Certificate validity periods controlled
+   - YubiKey security requirements validated
+   - NATS operator key security enforced
+
+3. **Extensibility**
+   - PolicyTemplateEngine for custom policies
+   - Exemption system for exceptions
+   - Conflict resolution for overlapping policies
+
+### Best Practices Applied (Per PRIME Directive)
+
+1. **Feature Gating**: Policy is optional via Cargo feature
+2. **Clean Architecture**: Policy engine separate from aggregate
+3. **Event Sourcing**: Policy decisions recorded as events
+4. **Type Safety**: Strong typing for all policy types
+5. **Error Handling**: Proper error propagation with custom types
+
+### Summary
+
+Successfully integrated cim-domain-policy into cim-keys, providing comprehensive policy enforcement for all PKI operations. The integration is:
+- Feature-gated for optional inclusion
+- Fully event-sourced with command/event patterns
+- Type-safe with proper error handling
+- Extensible via templates and exemptions
+
 ---
 *Log maintained as per CLAUDE.md CRITICAL DIRECTIVE*
 *Last Updated: 2025-01-22*

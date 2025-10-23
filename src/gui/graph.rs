@@ -93,15 +93,16 @@ impl OrganizationGraph {
     }
 
     pub fn add_edge(&mut self, from: Uuid, to: Uuid, edge_type: EdgeType) {
+        let color = match &edge_type {
+            EdgeType::Hierarchy => Color::from_rgb(0.3, 0.3, 0.7),
+            EdgeType::Delegation(_) => Color::from_rgb(0.3, 0.7, 0.3),
+            EdgeType::Trust => Color::from_rgb(0.7, 0.5, 0.3),
+        };
         self.edges.push(GraphEdge {
             from,
             to,
             edge_type,
-            color: match edge_type {
-                EdgeType::Hierarchy => Color::from_rgb(0.3, 0.3, 0.7),
-                EdgeType::Delegation(_) => Color::from_rgb(0.3, 0.7, 0.3),
-                EdgeType::Trust => Color::from_rgb(0.7, 0.5, 0.3),
-            },
+            color,
         });
     }
 
@@ -139,12 +140,12 @@ impl OrganizationGraph {
 
     fn role_to_color(&self, role: &KeyOwnerRole) -> Color {
         match role {
-            KeyOwnerRole::SecurityOfficer => Color::from_rgb(0.8, 0.2, 0.2),
-            KeyOwnerRole::SystemAdministrator => Color::from_rgb(0.2, 0.2, 0.8),
-            KeyOwnerRole::KeyCustodian => Color::from_rgb(0.2, 0.8, 0.2),
-            KeyOwnerRole::Auditor => Color::from_rgb(0.8, 0.8, 0.2),
+            KeyOwnerRole::RootAuthority => Color::from_rgb(0.8, 0.2, 0.2),
+            KeyOwnerRole::SecurityAdmin => Color::from_rgb(0.2, 0.2, 0.8),
             KeyOwnerRole::Developer => Color::from_rgb(0.5, 0.5, 0.8),
-            KeyOwnerRole::BackupOperator => Color::from_rgb(0.8, 0.5, 0.2),
+            KeyOwnerRole::ServiceAccount => Color::from_rgb(0.2, 0.8, 0.2),
+            KeyOwnerRole::BackupHolder => Color::from_rgb(0.8, 0.5, 0.2),
+            KeyOwnerRole::Auditor => Color::from_rgb(0.8, 0.8, 0.2),
         }
     }
 }

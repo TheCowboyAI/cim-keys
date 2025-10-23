@@ -165,7 +165,7 @@ pub enum KeyOwnerRole {
 }
 
 /// Key delegation to another person
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct KeyDelegation {
     pub delegated_to: Uuid,
 
@@ -174,7 +174,7 @@ pub struct KeyDelegation {
 }
 
 /// Permissions that can be delegated
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum KeyPermission {
     Sign,
     Encrypt,

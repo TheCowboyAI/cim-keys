@@ -45,7 +45,7 @@ use crate::events::{
 /// ```
 pub struct OfflineKeyProjection {
     /// Root path to the encrypted partition
-    root_path: PathBuf,
+    pub root_path: PathBuf,
 
     /// Current manifest state
     manifest: KeyManifest,
@@ -416,7 +416,7 @@ impl OfflineKeyProjection {
     }
 
     /// Save the manifest to disk
-    fn save_manifest(&self) -> Result<(), ProjectionError> {
+    pub fn save_manifest(&self) -> Result<(), ProjectionError> {
         let manifest_path = self.root_path.join("manifest.json");
 
         let manifest_json = serde_json::to_string_pretty(&self.manifest)

@@ -95,6 +95,8 @@ pub struct GenerateCertificateCommand {
     pub key_usage: Vec<String>,
     pub extended_key_usage: Vec<String>,
     pub requestor: String,
+    /// Domain context for the certificate operation
+    pub context: Option<KeyContext>,
 }
 
 /// Command to sign a certificate
@@ -149,6 +151,8 @@ pub struct ProvisionYubiKeyCommand {
     pub slots: Vec<YubiKeySlotConfig>,
     pub management_key: Option<Vec<u8>>,
     pub requestor: String,
+    /// Domain context for the YubiKey provisioning operation
+    pub context: Option<KeyContext>,
 }
 
 /// Command to generate SSH key
@@ -210,6 +214,8 @@ pub struct CreateNatsOperatorCommand {
     pub requestor: String,
     /// Organization this operator represents
     pub organization_id: Option<Uuid>,
+    /// Domain context for the NATS operator operation
+    pub context: Option<KeyContext>,
 }
 
 /// Command to create NATS account

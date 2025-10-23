@@ -5,7 +5,7 @@
 
 use clap::{Parser, Subcommand};
 use cim_keys::prelude::*;
-use cim_domain::{CommandId};
+use cim_domain::{CommandId, DomainEvent};
 use std::path::PathBuf;
 use uuid::Uuid;
 use chrono::Utc;
@@ -133,7 +133,8 @@ enum Commands {
     },
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     // Setup logging
@@ -180,10 +181,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 label,
                 hardware_backed: hardware,
                 requestor: "cli".to_string(),
+                context: None,
             });
 
             // Process command through aggregate
-            let events = aggregate.handle_command(command, &projection)?;
+            let events = aggregate.handle_command(command, &projection, None).await?;
 
             // Apply events to projection
             for event in events {
@@ -237,7 +239,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 requestor: "cli".to_string(),
             });
 
-            let events = aggregate.handle_command(command, &projection)?;
+            let events = aggregate.handle_command(command, &projection, None).await?;
             for event in events {
                 projection.apply(&event)?;
             }
@@ -265,9 +267,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 slots: slot_configs,
                 management_key: None,
                 requestor: "cli".to_string(),
+                context: None,
             });
 
-            let events = aggregate.handle_command(command, &projection)?;
+            let events = aggregate.handle_command(command, &projection, None).await?;
             for event in events {
                 projection.apply(&event)?;
             }
@@ -285,7 +288,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 requestor: "cli".to_string(),
             });
 
-            let events = aggregate.handle_command(command, &projection)?;
+            let events = aggregate.handle_command(command, &projection, None).await?;
             for event in events {
                 projection.apply(&event)?;
             }

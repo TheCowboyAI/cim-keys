@@ -29,6 +29,7 @@
           gnumake
           llvmPackages.libclang
           llvmPackages.clang
+          stdenv.cc
         ];
 
         buildInputs = with pkgs; [
@@ -102,9 +103,13 @@
           export GPGME_LIB_DIR="${pkgs.gpgme}/lib"
           export GPGME_INCLUDE_DIR="${pkgs.gpgme}/include"
 
-          # Clang for bindgen
+          # Clang for bindgen and C compilation
           export LIBCLANG_PATH="${pkgs.llvmPackages.libclang.lib}/lib"
-          export BINDGEN_EXTRA_CLANG_ARGS="-I${pkgs.pcsclite}/include/PCSC -I${pkgs.gpgme}/include"
+          export BINDGEN_EXTRA_CLANG_ARGS="-I${pkgs.pcsclite}/include/PCSC -I${pkgs.gpgme}/include -I${pkgs.stdenv.cc.libc.dev}/include"
+          export CC="${pkgs.clang}/bin/clang"
+          export CXX="${pkgs.clang}/bin/clang++"
+          export CFLAGS="-I${pkgs.stdenv.cc.libc.dev}/include"
+          export CXXFLAGS="-I${pkgs.stdenv.cc.libc.dev}/include"
 
           # macOS specific
           ${if pkgs.stdenv.isDarwin then ''

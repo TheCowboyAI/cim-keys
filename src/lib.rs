@@ -56,6 +56,10 @@ pub mod domain;
 #[cfg(feature = "gui")]
 pub mod gui;
 
+// Policy integration for PKI operations
+#[cfg(feature = "policy")]
+pub mod policy;
+
 // Re-export core types
 pub use events::{KeyEvent, KeyAlgorithm, KeyPurpose, KeyMetadata};
 pub use commands::{KeyCommand, GenerateKeyCommand, GenerateCertificateCommand};
@@ -73,12 +77,23 @@ pub use cim_domain::{
     CausationId, CorrelationId, EntityId
 };
 
+// Re-export policy types when feature is enabled
+#[cfg(feature = "policy")]
+pub use policy::{
+    KeyPolicyEngine, PkiPolicySet, PolicyError,
+    KeyPolicyCommand, KeyPolicyEvent,
+    YubikeyConfig
+};
+
 /// Prelude module for convenient imports
 pub mod prelude {
     pub use crate::events::*;
     pub use crate::commands::*;
     pub use crate::aggregate::*;
     pub use crate::projections::*;
+
+    #[cfg(feature = "policy")]
+    pub use crate::policy::*;
 }
 
 /// Library version

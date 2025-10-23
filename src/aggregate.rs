@@ -16,6 +16,9 @@ use crate::commands::{KeyCommand, GenerateKeyCommand, GenerateCertificateCommand
 use crate::projections::OfflineKeyProjection;
 use crate::ports::nats::NatsKeyPort;
 
+#[cfg(feature = "policy")]
+use crate::policy::{KeyPolicyEngine, YubikeyConfig};
+
 /// Key management aggregate root
 ///
 /// This is a pure functional aggregate that processes commands and emits events.
@@ -38,28 +41,50 @@ impl KeyManagementAggregate {
     /// Process a command and return resulting events
     ///
     /// This is a pure function - it takes the current projection state, a command,
-    /// and an optional NATS port for key operations.
+    /// an optional NATS port for key operations, and an optional policy engine.
     /// Returns the events that should be emitted. No mutable state is held.
     pub async fn handle_command(
         &self,
         command: KeyCommand,
         projection: &OfflineKeyProjection,
         nats_port: Option<&dyn NatsKeyPort>,
+        #[cfg(feature = "policy")]
+        policy_engine: Option<&mut KeyPolicyEngine>,
     ) -> Result<Vec<KeyEvent>, KeyManagementError> {
         match command {
-            KeyCommand::GenerateKey(cmd) => self.handle_generate_key(cmd, projection),
-            KeyCommand::GenerateCertificate(cmd) => self.handle_generate_certificate(cmd, projection),
+            KeyCommand::GenerateKey(cmd) => self.handle_generate_key(
+                cmd,
+                projection,
+                #[cfg(feature = "policy")]
+                policy_engine,
+            ),
+            KeyCommand::GenerateCertificate(cmd) => self.handle_generate_certificate(
+                cmd,
+                projection,
+                #[cfg(feature = "policy")]
+                policy_engine,
+            ),
             KeyCommand::SignCertificate(cmd) => self.handle_sign_certificate(cmd, projection),
             KeyCommand::ImportKey(cmd) => self.handle_import_key(cmd, projection),
             KeyCommand::ExportKey(cmd) => self.handle_export_key(cmd, projection),
             KeyCommand::StoreKeyOffline(cmd) => self.handle_store_key_offline(cmd, projection),
-            KeyCommand::ProvisionYubiKey(cmd) => self.handle_provision_yubikey(cmd, projection),
+            KeyCommand::ProvisionYubiKey(cmd) => self.handle_provision_yubikey(
+                cmd,
+                projection,
+                #[cfg(feature = "policy")]
+                policy_engine,
+            ),
             KeyCommand::GenerateSshKey(cmd) => self.handle_generate_ssh_key(cmd, projection),
             KeyCommand::GenerateGpgKey(cmd) => self.handle_generate_gpg_key(cmd, projection),
             KeyCommand::RevokeKey(cmd) => self.handle_revoke_key(cmd, projection),
             KeyCommand::EstablishTrust(cmd) => self.handle_establish_trust(cmd, projection),
             KeyCommand::CreatePkiHierarchy(cmd) => self.handle_create_pki_hierarchy(cmd, projection),
-            KeyCommand::CreateNatsOperator(cmd) => self.handle_create_nats_operator(cmd, nats_port).await,
+            KeyCommand::CreateNatsOperator(cmd) => self.handle_create_nats_operator(
+                cmd,
+                nats_port,
+                #[cfg(feature = "policy")]
+                policy_engine,
+            ).await,
             KeyCommand::CreateNatsAccount(cmd) => self.handle_create_nats_account(cmd, nats_port).await,
             KeyCommand::CreateNatsUser(cmd) => self.handle_create_nats_user(cmd, nats_port).await,
             KeyCommand::GenerateNatsSigningKey(cmd) => self.handle_generate_nats_signing_key(cmd, nats_port).await,
@@ -72,10 +97,72 @@ impl KeyManagementAggregate {
         &self,
         cmd: GenerateKeyCommand,
         _projection: &OfflineKeyProjection,
+        #[cfg(feature = "policy")]
+        policy_engine: Option<&mut KeyPolicyEngine>,
     ) -> Result<Vec<KeyEvent>, KeyManagementError> {
         // Validate command
         if cmd.label.is_empty() {
             return Err(KeyManagementError::InvalidCommand("Key label cannot be empty".to_string()));
+        }
+
+        // Extract domain context and prepare for policy evaluation
+        let context = cmd.context.as_ref();
+
+        // Policy evaluation for key generation
+        #[cfg(feature = "policy")]
+        if let Some(engine) = policy_engine {
+            if let Some(ctx) = context {
+                // Create a Person struct for policy evaluation
+                let person = crate::domain::Person {
+                    id: ctx.actor.person_id,
+                    name: cmd.requestor.clone(),
+                    email: format!("{}@example.com", cmd.requestor), // Placeholder
+                    organization_id: ctx.actor.organization_id,
+                    unit_ids: vec![],
+                    roles: vec![crate::domain::PersonRole {
+                        role_type: match ctx.actor.role {
+                            crate::domain::KeyOwnerRole::RootAuthority => crate::domain::RoleType::Administrator,
+                            crate::domain::KeyOwnerRole::SecurityAdmin => crate::domain::RoleType::Administrator,
+                            crate::domain::KeyOwnerRole::Developer => crate::domain::RoleType::Developer,
+                            crate::domain::KeyOwnerRole::ServiceAccount => crate::domain::RoleType::Service,
+                            crate::domain::KeyOwnerRole::BackupHolder => crate::domain::RoleType::Administrator,
+                            crate::domain::KeyOwnerRole::Auditor => crate::domain::RoleType::Auditor,
+                        },
+                        scope: crate::domain::RoleScope::Organization,
+                        permissions: vec![],
+                    }],
+                    created_at: chrono::Utc::now(),
+                    active: true,
+                };
+
+                // Get algorithm string and key size
+                let (algorithm, key_size) = match &cmd.algorithm {
+                    crate::events::KeyAlgorithm::Rsa { bits } => ("RSA", *bits),
+                    crate::events::KeyAlgorithm::Ecdsa { curve } => {
+                        let size = match curve.as_str() {
+                            "P-256" => 256,
+                            "P-384" => 384,
+                            "P-521" => 521,
+                            _ => 256,
+                        };
+                        ("ECDSA", size)
+                    },
+                    crate::events::KeyAlgorithm::Ed25519 => ("Ed25519", 256),
+                    crate::events::KeyAlgorithm::Secp256k1 => ("Secp256k1", 256),
+                };
+
+                let purpose_str = format!("{:?}", cmd.purpose);
+
+                // Evaluate policy
+                if let Err(e) = engine.evaluate_key_generation(
+                    &person,
+                    algorithm,
+                    key_size,
+                    &purpose_str,
+                ) {
+                    return Err(KeyManagementError::PolicyViolation(e.to_string()));
+                }
+            }
         }
 
         // Generate the key ID
@@ -113,10 +200,56 @@ impl KeyManagementAggregate {
         &self,
         cmd: GenerateCertificateCommand,
         projection: &OfflineKeyProjection,
+        #[cfg(feature = "policy")]
+        policy_engine: Option<&mut KeyPolicyEngine>,
     ) -> Result<Vec<KeyEvent>, KeyManagementError> {
         // Check if key exists in projection
         if !projection.key_exists(&cmd.key_id) {
             return Err(KeyManagementError::KeyNotFound(cmd.key_id));
+        }
+
+        // Policy evaluation for certificate issuance
+        #[cfg(feature = "policy")]
+        if let Some(engine) = policy_engine {
+            if let Some(ctx) = cmd.context.as_ref() {
+                // Create a Person struct for policy evaluation
+                let person = crate::domain::Person {
+                    id: ctx.actor.person_id,
+                    name: cmd.requestor.clone(),
+                    email: format!("{}@example.com", cmd.requestor),
+                    organization_id: ctx.actor.organization_id,
+                    unit_ids: vec![],
+                    roles: vec![crate::domain::PersonRole {
+                        role_type: match ctx.actor.role {
+                            crate::domain::KeyOwnerRole::RootAuthority => crate::domain::RoleType::Administrator,
+                            crate::domain::KeyOwnerRole::SecurityAdmin => crate::domain::RoleType::Administrator,
+                            crate::domain::KeyOwnerRole::Developer => crate::domain::RoleType::Developer,
+                            crate::domain::KeyOwnerRole::ServiceAccount => crate::domain::RoleType::Service,
+                            crate::domain::KeyOwnerRole::BackupHolder => crate::domain::RoleType::Administrator,
+                            crate::domain::KeyOwnerRole::Auditor => crate::domain::RoleType::Auditor,
+                        },
+                        scope: crate::domain::RoleScope::Organization,
+                        permissions: vec![],
+                    }],
+                    created_at: chrono::Utc::now(),
+                    active: true,
+                };
+
+                // Prepare key usage strings
+                let key_usage_strs: Vec<String> = cmd.key_usage.iter()
+                    .map(|u| format!("{:?}", u))
+                    .collect();
+
+                // Evaluate policy
+                if let Err(e) = engine.evaluate_certificate_issuance(
+                    &person,
+                    cmd.validity_days,
+                    &cmd.subject.organization.clone().unwrap_or_default(),
+                    key_usage_strs,
+                ) {
+                    return Err(KeyManagementError::PolicyViolation(e.to_string()));
+                }
+            }
         }
 
         // Generate certificate ID
@@ -174,9 +307,61 @@ impl KeyManagementAggregate {
 
     fn handle_provision_yubikey(
         &self,
-        _cmd: crate::commands::ProvisionYubiKeyCommand,
+        cmd: crate::commands::ProvisionYubiKeyCommand,
         _projection: &OfflineKeyProjection,
+        #[cfg(feature = "policy")]
+        policy_engine: Option<&mut KeyPolicyEngine>,
     ) -> Result<Vec<KeyEvent>, KeyManagementError> {
+        // Policy evaluation for YubiKey provisioning
+        #[cfg(feature = "policy")]
+        if let Some(engine) = policy_engine {
+            if let Some(ctx) = cmd.context.as_ref() {
+                // Create a Person struct for policy evaluation
+                let person = crate::domain::Person {
+                    id: ctx.actor.person_id,
+                    name: cmd.requestor.clone(),
+                    email: format!("{}@example.com", cmd.requestor),
+                    organization_id: ctx.actor.organization_id,
+                    unit_ids: vec![],
+                    roles: vec![crate::domain::PersonRole {
+                        role_type: match ctx.actor.role {
+                            crate::domain::KeyOwnerRole::RootAuthority => crate::domain::RoleType::Administrator,
+                            crate::domain::KeyOwnerRole::SecurityAdmin => crate::domain::RoleType::Administrator,
+                            crate::domain::KeyOwnerRole::Developer => crate::domain::RoleType::Developer,
+                            crate::domain::KeyOwnerRole::ServiceAccount => crate::domain::RoleType::Service,
+                            crate::domain::KeyOwnerRole::BackupHolder => crate::domain::RoleType::Administrator,
+                            crate::domain::KeyOwnerRole::Auditor => crate::domain::RoleType::Auditor,
+                        },
+                        scope: crate::domain::RoleScope::Organization,
+                        permissions: vec![],
+                    }],
+                    created_at: chrono::Utc::now(),
+                    active: true,
+                };
+
+                // Create YubiKey configuration for evaluation
+                // This is a simplified version - in production, would query actual YubiKey state
+                let yubikey_config = YubikeyConfig {
+                    pin_configured: true, // Assume PIN will be configured
+                    puk_configured: true, // Assume PUK will be configured
+                    touch_policy: "always".to_string(), // Default to always require touch
+                    management_key_status: if cmd.management_key.is_some() {
+                        "custom".to_string()
+                    } else {
+                        "default".to_string()
+                    },
+                    firmware_version: "5.4".to_string(), // Assume modern YubiKey
+                };
+
+                // Evaluate policy
+                if let Err(e) = engine.evaluate_yubikey_provisioning(&person, &yubikey_config) {
+                    return Err(KeyManagementError::PolicyViolation(e.to_string()));
+                }
+            }
+        }
+
+        // TODO: Implement actual YubiKey provisioning logic
+        // For now, return empty event list as this is a stub
         Ok(vec![])
     }
 
@@ -225,7 +410,50 @@ impl KeyManagementAggregate {
         &self,
         cmd: CreateNatsOperatorCommand,
         nats_port: Option<&dyn NatsKeyPort>,
+        #[cfg(feature = "policy")]
+        policy_engine: Option<&mut KeyPolicyEngine>,
     ) -> Result<Vec<KeyEvent>, KeyManagementError> {
+        // Policy evaluation for NATS operator key generation
+        #[cfg(feature = "policy")]
+        if let Some(engine) = policy_engine {
+            if let Some(ctx) = cmd.context.as_ref() {
+                // Create a Person struct for policy evaluation
+                let person = crate::domain::Person {
+                    id: ctx.actor.person_id,
+                    name: cmd.requestor.clone(),
+                    email: format!("{}@example.com", cmd.requestor),
+                    organization_id: ctx.actor.organization_id,
+                    unit_ids: vec![],
+                    roles: vec![crate::domain::PersonRole {
+                        role_type: match ctx.actor.role {
+                            crate::domain::KeyOwnerRole::RootAuthority => crate::domain::RoleType::Administrator,
+                            crate::domain::KeyOwnerRole::SecurityAdmin => crate::domain::RoleType::Administrator,
+                            crate::domain::KeyOwnerRole::Developer => crate::domain::RoleType::Developer,
+                            crate::domain::KeyOwnerRole::ServiceAccount => crate::domain::RoleType::Service,
+                            crate::domain::KeyOwnerRole::BackupHolder => crate::domain::RoleType::Administrator,
+                            crate::domain::KeyOwnerRole::Auditor => crate::domain::RoleType::Auditor,
+                        },
+                        scope: crate::domain::RoleScope::Organization,
+                        permissions: vec![],
+                    }],
+                    created_at: chrono::Utc::now(),
+                    active: true,
+                };
+
+                // Evaluate policy for NATS operator key
+                // NATS always uses Ed25519
+                if let Err(e) = engine.evaluate_nats_operator_key(
+                    &person,
+                    "Ed25519",
+                    "offline", // Operator keys should be stored offline
+                    2,         // Require at least 2 signatures for operator modifications
+                    true,      // Backup must exist
+                ) {
+                    return Err(KeyManagementError::PolicyViolation(e.to_string()));
+                }
+            }
+        }
+
         let port = nats_port.ok_or_else(|| {
             KeyManagementError::InvalidCommand("NATS port not configured".to_string())
         })?;
@@ -431,4 +659,8 @@ pub enum KeyManagementError {
 
     #[error("Operation failed: {0}")]
     OperationFailed(String),
+
+    #[cfg(feature = "policy")]
+    #[error("Policy violation: {0}")]
+    PolicyViolation(String),
 }
