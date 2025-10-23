@@ -6,13 +6,15 @@
 //! - Different colors indicate different roles and trust levels
 
 use iced::{
-    widget::{container, column, row, text, button, scrollable},
+    widget::{canvas, container, column, row, text, button, scrollable, Canvas},
     Color, Element, Length, Point, Rectangle, Size, Theme, Vector,
+    mouse, Renderer,
 };
+use iced::widget::text::{LineHeight, Shaping};
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::domain::{Person, KeyOwnership, KeyDelegation, KeyOwnerRole};
+use crate::domain::{Person, KeyDelegation, KeyOwnerRole};
 
 /// Graph visualization widget for organizational structure
 pub struct OrganizationGraph {
@@ -64,6 +66,8 @@ pub enum GraphMessage {
     ZoomOut,
     ResetView,
     Pan(Vector),
+    AutoLayout,
+    AddEdge { from: Uuid, to: Uuid, edge_type: EdgeType },
 }
 
 impl OrganizationGraph {
@@ -110,9 +114,29 @@ impl OrganizationGraph {
         self.selected_node = Some(node_id);
     }
 
+    pub fn auto_layout(&mut self) {
+        // Simple circular layout for nodes
+        let node_count = self.nodes.len();
+        if node_count == 0 {
+            return;
+        }
+
+        let center = Point { x: 400.0, y: 300.0 };
+        let radius = 200.0;
+
+        for (i, node) in self.nodes.values_mut().enumerate() {
+            let angle = (i as f32) * (2.0 * std::f32::consts::PI) / (node_count as f32);
+            node.position = Point {
+                x: center.x + radius * angle.cos(),
+                y: center.y + radius * angle.sin(),
+            };
+        }
+    }
+
     pub fn handle_message(&mut self, message: GraphMessage) {
         match message {
             GraphMessage::NodeClicked(id) => self.selected_node = Some(id),
+            GraphMessage::EdgeClicked { from: _, to: _ } => {}
             GraphMessage::ZoomIn => self.zoom = (self.zoom * 1.2).min(3.0),
             GraphMessage::ZoomOut => self.zoom = (self.zoom / 1.2).max(0.3),
             GraphMessage::ResetView => {
@@ -122,7 +146,12 @@ impl OrganizationGraph {
             GraphMessage::Pan(delta) => {
                 self.pan_offset = self.pan_offset + delta;
             }
-            _ => {}
+            GraphMessage::AutoLayout => {
+                self.auto_layout();
+            }
+            GraphMessage::AddEdge { from, to, edge_type } => {
+                self.add_edge(from, to, edge_type);
+            }
         }
     }
 
@@ -150,49 +179,203 @@ impl OrganizationGraph {
     }
 }
 
-/// Create a view element for the graph
-///
-/// Note: Canvas API has changed in Iced 0.13. For now, we provide a
-/// simplified view. Full canvas implementation will be added when the
-/// new Canvas API is better documented.
-pub fn view_graph(graph: &OrganizationGraph) -> Element<'_, GraphMessage> {
-    // Temporary simplified view until canvas API is updated
-    let mut items = column![];
+/// Implementation of canvas::Program for graph rendering
+impl canvas::Program<GraphMessage> for OrganizationGraph {
+    type State = ();
 
-    // Add header with graph info
-    items = items.push(
-        row![
-            text(format!("Organization Graph: {} people", graph.nodes.len())),
-            button("Zoom In").on_press(GraphMessage::ZoomIn),
-            button("Zoom Out").on_press(GraphMessage::ZoomOut),
-            button("Reset").on_press(GraphMessage::ResetView),
-        ]
-        .spacing(10)
-    );
+    fn draw(
+        &self,
+        _state: &Self::State,
+        renderer: &Renderer,
+        _theme: &Theme,
+        bounds: Rectangle,
+        _cursor: mouse::Cursor,
+    ) -> Vec<canvas::Geometry> {
+        let mut frame = canvas::Frame::new(renderer, bounds.size());
 
-    // List nodes as a temporary visualization
-    let mut node_list = column![].spacing(5);
-    for (id, node) in &graph.nodes {
-        let is_selected = graph.selected_node == Some(*id);
-        let style = if is_selected { ">>> " } else { "    " };
+        // Apply zoom and pan transformations
+        frame.translate(self.pan_offset);
+        frame.scale(self.zoom);
 
-        node_list = node_list.push(
-            button(
-                text(format!("{}{} ({})",
-                    style,
-                    node.person.name,
-                    format!("{:?}", node.role)
-                ))
-            )
-            .on_press(GraphMessage::NodeClicked(*id))
-        );
+        // Draw edges first (so they appear behind nodes)
+        for edge in &self.edges {
+            if let (Some(from_node), Some(to_node)) = (
+                self.nodes.get(&edge.from),
+                self.nodes.get(&edge.to),
+            ) {
+                let edge_path = canvas::Path::line(
+                    from_node.position,
+                    to_node.position,
+                );
+
+                let stroke = canvas::Stroke::default()
+                    .with_color(edge.color)
+                    .with_width(2.0);
+
+                frame.stroke(&edge_path, stroke);
+
+                // Draw arrow head for directed edges
+                let dx = to_node.position.x - from_node.position.x;
+                let dy = to_node.position.y - from_node.position.y;
+                let angle = dy.atan2(dx);
+
+                let arrow_size = 10.0;
+                let arrow_point1 = Point::new(
+                    to_node.position.x - arrow_size * (angle - 0.5).cos(),
+                    to_node.position.y - arrow_size * (angle - 0.5).sin(),
+                );
+                let arrow_point2 = Point::new(
+                    to_node.position.x - arrow_size * (angle + 0.5).cos(),
+                    to_node.position.y - arrow_size * (angle + 0.5).sin(),
+                );
+
+                let arrow = canvas::Path::new(|builder| {
+                    builder.move_to(to_node.position);
+                    builder.line_to(arrow_point1);
+                    builder.move_to(to_node.position);
+                    builder.line_to(arrow_point2);
+                });
+
+                frame.stroke(&arrow, stroke);
+            }
+        }
+
+        // Draw nodes
+        for (node_id, node) in &self.nodes {
+            let is_selected = self.selected_node == Some(*node_id);
+            let radius = if is_selected { 25.0 } else { 20.0 };
+
+            // Draw node circle
+            let circle = canvas::Path::circle(node.position, radius);
+            frame.fill(&circle, node.color);
+
+            // Draw selection ring if selected
+            if is_selected {
+                let selection_ring = canvas::Path::circle(node.position, radius + 3.0);
+                let stroke = canvas::Stroke::default()
+                    .with_color(Color::from_rgb(1.0, 1.0, 0.0))
+                    .with_width(3.0);
+                frame.stroke(&selection_ring, stroke);
+            }
+
+            // Draw border
+            let border_stroke = canvas::Stroke::default()
+                .with_color(Color::BLACK)
+                .with_width(if is_selected { 2.0 } else { 1.0 });
+            frame.stroke(&circle, border_stroke);
+
+            // Draw text label
+            let label_position = Point::new(
+                node.position.x,
+                node.position.y + radius + 15.0,
+            );
+
+            frame.fill_text(canvas::Text {
+                content: node.person.name.clone(),
+                position: label_position,
+                color: Color::BLACK,
+                size: iced::Pixels(12.0),
+                font: iced::Font::default(),
+                horizontal_alignment: iced::alignment::Horizontal::Center,
+                vertical_alignment: iced::alignment::Vertical::Top,
+                line_height: LineHeight::default(),
+                shaping: Shaping::Advanced,
+            });
+        }
+
+        vec![frame.into_geometry()]
     }
 
-    // Add the node list in a scrollable container
-    items = items.push(
-        scrollable(node_list)
-            .height(Length::Fixed(400.0))
-    );
+    fn update(
+        &self,
+        _state: &mut Self::State,
+        event: canvas::Event,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> (canvas::event::Status, Option<GraphMessage>) {
+        if let mouse::Cursor::Available(cursor_position) = cursor {
+            // Adjust cursor position for zoom and pan
+            let adjusted_position = Point::new(
+                (cursor_position.x - self.pan_offset.x) / self.zoom,
+                (cursor_position.y - self.pan_offset.y) / self.zoom,
+            );
+
+            match event {
+                canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                    // Check if click is on a node
+                    for (node_id, node) in &self.nodes {
+                        let distance = ((adjusted_position.x - node.position.x).powi(2)
+                            + (adjusted_position.y - node.position.y).powi(2))
+                        .sqrt();
+
+                        if distance <= 20.0 {
+                            return (
+                                canvas::event::Status::Captured,
+                                Some(GraphMessage::NodeClicked(*node_id)),
+                            );
+                        }
+                    }
+                }
+                canvas::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
+                    match delta {
+                        mouse::ScrollDelta::Lines { y, .. } => {
+                            if y > 0.0 {
+                                return (
+                                    canvas::event::Status::Captured,
+                                    Some(GraphMessage::ZoomIn),
+                                );
+                            } else if y < 0.0 {
+                                return (
+                                    canvas::event::Status::Captured,
+                                    Some(GraphMessage::ZoomOut),
+                                );
+                            }
+                        }
+                        mouse::ScrollDelta::Pixels { y, .. } => {
+                            if y > 0.0 {
+                                return (
+                                    canvas::event::Status::Captured,
+                                    Some(GraphMessage::ZoomIn),
+                                );
+                            } else if y < 0.0 {
+                                return (
+                                    canvas::event::Status::Captured,
+                                    Some(GraphMessage::ZoomOut),
+                                );
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        (canvas::event::Status::Ignored, None)
+    }
+
+}
+
+/// Create a view element for the graph
+pub fn view_graph(graph: &OrganizationGraph) -> Element<'_, GraphMessage> {
+    // Full Canvas-based graph visualization
+    let canvas = Canvas::new(graph)
+        .width(Length::Fill)
+        .height(Length::Fixed(500.0));
+
+    let controls = row![
+        button("Zoom In").on_press(GraphMessage::ZoomIn),
+        button("Zoom Out").on_press(GraphMessage::ZoomOut),
+        button("Reset").on_press(GraphMessage::ResetView),
+        button("Auto Layout").on_press(GraphMessage::AutoLayout),
+    ]
+    .spacing(10);
+
+    let mut items = column![
+        controls,
+        canvas,
+    ]
+    .spacing(10);
+
 
     // Show selected node details
     if let Some(selected_id) = graph.selected_node {

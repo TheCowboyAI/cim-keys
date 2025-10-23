@@ -143,7 +143,7 @@ pub struct KeyOwnership {
 }
 
 /// Role of a key owner
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KeyOwnerRole {
     /// Root key holder (highest authority)
     RootAuthority,
@@ -427,5 +427,19 @@ pub fn create_nats_identity(
         account_units: accounts,
         user_people: users,
         service_accounts: Vec::new(),
+    }
+}
+
+// Display implementation for GUI
+impl std::fmt::Display for KeyOwnerRole {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            KeyOwnerRole::RootAuthority => write!(f, "Root Authority"),
+            KeyOwnerRole::SecurityAdmin => write!(f, "Security Admin"),
+            KeyOwnerRole::Developer => write!(f, "Developer"),
+            KeyOwnerRole::ServiceAccount => write!(f, "Service Account"),
+            KeyOwnerRole::BackupHolder => write!(f, "Backup Holder"),
+            KeyOwnerRole::Auditor => write!(f, "Auditor"),
+        }
     }
 }

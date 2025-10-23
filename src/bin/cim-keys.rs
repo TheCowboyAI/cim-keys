@@ -5,7 +5,7 @@
 
 use clap::{Parser, Subcommand};
 use cim_keys::prelude::*;
-use cim_domain::{CommandId, DomainEvent};
+use cim_domain::CommandId;
 use std::path::PathBuf;
 use uuid::Uuid;
 use chrono::Utc;
@@ -185,7 +185,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
 
             // Process command through aggregate
-            let events = aggregate.handle_command(command, &projection, None).await?;
+            let events = aggregate.handle_command(
+                command,
+                &projection,
+                None,
+                #[cfg(feature = "policy")]
+                None
+            ).await?;
 
             // Apply events to projection
             for event in events {
@@ -239,7 +245,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 requestor: "cli".to_string(),
             });
 
-            let events = aggregate.handle_command(command, &projection, None).await?;
+            let events = aggregate.handle_command(
+                command,
+                &projection,
+                None,
+                #[cfg(feature = "policy")]
+                None
+            ).await?;
             for event in events {
                 projection.apply(&event)?;
             }
@@ -270,7 +282,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 context: None,
             });
 
-            let events = aggregate.handle_command(command, &projection, None).await?;
+            let events = aggregate.handle_command(
+                command,
+                &projection,
+                None,
+                #[cfg(feature = "policy")]
+                None
+            ).await?;
             for event in events {
                 projection.apply(&event)?;
             }
@@ -288,7 +306,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 requestor: "cli".to_string(),
             });
 
-            let events = aggregate.handle_command(command, &projection, None).await?;
+            let events = aggregate.handle_command(
+                command,
+                &projection,
+                None,
+                #[cfg(feature = "policy")]
+                None
+            ).await?;
             for event in events {
                 projection.apply(&event)?;
             }

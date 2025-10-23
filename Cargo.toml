@@ -1,6 +1,6 @@
 [package]
 name = "cim-keys"
-version = "0.1.0"
+version = "0.7.8"
 edition = "2021"
 authors = ["The Cowboy AI Team"]
 description = "Cryptographic key management and PKI support for CIM, including YubiKey integration"
@@ -66,7 +66,7 @@ der = "0.7"
 tokio = { version = "1.42", features = ["full"] }
 
 # GUI with Iced 0.13+ (native and WASM with async)
-iced = { version = "0.13", features = ["tokio"], optional = true }
+iced = { version = "0.13", features = ["tokio", "canvas"], optional = true }
 iced_widget = { version = "0.13", optional = true }
 iced_futures = { version = "0.13", optional = true }
 

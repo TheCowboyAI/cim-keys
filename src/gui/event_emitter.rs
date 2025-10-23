@@ -212,8 +212,10 @@ impl GuiEventSubscriber {
 
             let message = match event {
                 KeyGenerated(e) => GuiUpdateMessage::KeyAdded {
-                    owner_id: e.owner_id,
-                    key_type: format!("{:?}", e.key_type),
+                    owner_id: e.ownership.as_ref().map(|o| match o {
+                        crate::domain::KeyOwnership { person_id, .. } => *person_id
+                    }).unwrap_or_else(|| Uuid::nil()),
+                    key_type: format!("{:?}", e.algorithm),
                 },
 
                 NatsOperatorCreated(e) => GuiUpdateMessage::StatusUpdate {
@@ -221,14 +223,14 @@ impl GuiEventSubscriber {
                 },
 
                 TrustEstablished(e) => GuiUpdateMessage::GraphEdgeAdded {
-                    from: e.from_entity,
-                    to: e.to_entity,
+                    from: e.trustor_id,
+                    to: e.trustee_id,
                     edge_type: "trust".to_string(),
                 },
 
                 KeyRevoked(e) => GuiUpdateMessage::KeyRemoved {
                     key_id: e.key_id,
-                    reason: e.reason,
+                    reason: format!("{:?}", e.reason),  // Convert enum to string
                 },
 
                 _ => GuiUpdateMessage::StatusUpdate {
@@ -273,35 +275,47 @@ pub enum GuiUpdateMessage {
 impl KeyEvent {
     pub fn id(&self) -> Uuid {
         match self {
-            KeyEvent::KeyGenerated(e) => e.event_id,
-            KeyEvent::CertificateGenerated(e) => e.event_id,
-            KeyEvent::KeyStoredInYubiKey(e) => e.event_id,
-            KeyEvent::NatsOperatorCreated(e) => e.event_id,
-            KeyEvent::NatsAccountCreated(e) => e.event_id,
-            KeyEvent::NatsUserCreated(e) => e.event_id,
-            KeyEvent::TrustEstablished(e) => e.event_id,
-            KeyEvent::KeyRevoked(e) => e.event_id,
-            KeyEvent::DomainCreated(e) => e.event_id,
-            KeyEvent::PersonAdded(e) => e.event_id,
-            KeyEvent::OrganizationCreated(e) => e.event_id,
-            KeyEvent::LocationAdded(e) => e.event_id,
+            KeyEvent::KeyGenerated(e) => e.key_id,
+            KeyEvent::KeyImported(e) => e.key_id,
+            KeyEvent::CertificateGenerated(e) => e.cert_id,
+            KeyEvent::CertificateSigned(e) => e.cert_id,
+            KeyEvent::KeyExported(e) => e.key_id,
+            KeyEvent::KeyStoredOffline(e) => e.key_id,
+            KeyEvent::YubiKeyProvisioned(e) => Uuid::now_v7(), // Generate ID for YubiKey events
+            KeyEvent::SshKeyGenerated(e) => e.key_id,
+            KeyEvent::GpgKeyGenerated(e) => e.key_id,
+            KeyEvent::KeyRevoked(e) => e.key_id,
+            KeyEvent::TrustEstablished(e) => e.trustor_id, // Use trustor_id as event ID
+            KeyEvent::PkiHierarchyCreated(e) => e.root_ca_id,
+            KeyEvent::NatsOperatorCreated(e) => e.operator_id,
+            KeyEvent::NatsAccountCreated(e) => e.account_id,
+            KeyEvent::NatsUserCreated(e) => e.user_id,
+            KeyEvent::NatsSigningKeyGenerated(e) => Uuid::now_v7(), // Generate ID
+            KeyEvent::NatsPermissionsSet(e) => Uuid::now_v7(), // Generate ID
+            KeyEvent::NatsConfigExported(e) => Uuid::now_v7(), // Generate ID
         }
     }
 
     pub fn event_type(&self) -> &'static str {
         match self {
             KeyEvent::KeyGenerated(_) => "KeyGenerated",
+            KeyEvent::KeyImported(_) => "KeyImported",
             KeyEvent::CertificateGenerated(_) => "CertificateGenerated",
-            KeyEvent::KeyStoredInYubiKey(_) => "KeyStoredInYubiKey",
+            KeyEvent::CertificateSigned(_) => "CertificateSigned",
+            KeyEvent::KeyExported(_) => "KeyExported",
+            KeyEvent::KeyStoredOffline(_) => "KeyStoredOffline",
+            KeyEvent::YubiKeyProvisioned(_) => "YubiKeyProvisioned",
+            KeyEvent::SshKeyGenerated(_) => "SshKeyGenerated",
+            KeyEvent::GpgKeyGenerated(_) => "GpgKeyGenerated",
+            KeyEvent::KeyRevoked(_) => "KeyRevoked",
+            KeyEvent::TrustEstablished(_) => "TrustEstablished",
+            KeyEvent::PkiHierarchyCreated(_) => "PkiHierarchyCreated",
             KeyEvent::NatsOperatorCreated(_) => "NatsOperatorCreated",
             KeyEvent::NatsAccountCreated(_) => "NatsAccountCreated",
             KeyEvent::NatsUserCreated(_) => "NatsUserCreated",
-            KeyEvent::TrustEstablished(_) => "TrustEstablished",
-            KeyEvent::KeyRevoked(_) => "KeyRevoked",
-            KeyEvent::DomainCreated(_) => "DomainCreated",
-            KeyEvent::PersonAdded(_) => "PersonAdded",
-            KeyEvent::OrganizationCreated(_) => "OrganizationCreated",
-            KeyEvent::LocationAdded(_) => "LocationAdded",
+            KeyEvent::NatsSigningKeyGenerated(_) => "NatsSigningKeyGenerated",
+            KeyEvent::NatsPermissionsSet(_) => "NatsPermissionsSet",
+            KeyEvent::NatsConfigExported(_) => "NatsConfigExported",
         }
     }
 }

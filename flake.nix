@@ -79,6 +79,33 @@
           pkgs.darwin.apple_sdk.frameworks.PCSC
         ];
 
+        # GUI-specific dependencies for iced
+        guiBuildInputs = with pkgs; [
+          # Wayland
+          wayland
+          wayland-protocols
+          libxkbcommon
+
+          # X11
+          xorg.libX11
+          xorg.libXcursor
+          xorg.libXrandr
+          xorg.libXi
+
+          # Graphics
+          vulkan-loader
+          vulkan-headers
+          mesa
+          libGL
+
+          # Additional
+          fontconfig
+          freetype
+        ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
+          libxkbcommon
+          xorg.libxcb
+        ];
+
         # Environment variables for compilation
         envVars = ''
           export RUST_BACKTRACE=1
@@ -120,7 +147,8 @@
       in
       {
         devShells.default = pkgs.mkShell {
-          inherit nativeBuildInputs buildInputs;
+          inherit nativeBuildInputs;
+          buildInputs = buildInputs ++ guiBuildInputs;
 
           shellHook = ''
             echo "CIM Keys Development Environment"
@@ -185,15 +213,16 @@
           '';
         };
 
-        # Build package
+        # Build package (CLI)
         packages.default = pkgs.rustPlatform.buildRustPackage {
           pname = "cim-keys";
-          version = "0.1.0";
+          version = "0.7.8";
 
           src = ./.;
 
           cargoLock = {
             lockFile = ./Cargo.lock;
+            allowBuiltinFetchGit = true;
           };
 
           inherit nativeBuildInputs buildInputs;
@@ -211,6 +240,81 @@
             license = licenses.mit;
             maintainers = [];
           };
+        };
+
+        # Build GUI package
+        packages.cim-keys-gui = pkgs.rustPlatform.buildRustPackage {
+          pname = "cim-keys-gui";
+          version = "0.7.8";
+
+          src = ./.;
+
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+            allowBuiltinFetchGit = true;
+          };
+
+          inherit nativeBuildInputs;
+          buildInputs = buildInputs ++ guiBuildInputs;
+
+          # Build with GUI features
+          buildFeatures = [ "gui" ];
+
+          preBuild = ''
+            ${envVars}
+
+            # Additional GUI environment variables
+            export LD_LIBRARY_PATH="${pkgs.wayland}/lib:${pkgs.libGL}/lib:${pkgs.vulkan-loader}/lib:$LD_LIBRARY_PATH"
+          '';
+
+          # Only build the GUI binary
+          cargoBuildFlags = [ "--bin" "cim-keys-gui" "--features" "gui" ];
+
+          # Disable tests for GUI build
+          doCheck = false;
+
+          meta = with pkgs.lib; {
+            description = "GUI for CIM Keys - Cryptographic key management";
+            homepage = "https://github.com/thecowboyai/cim-keys";
+            license = licenses.mit;
+            maintainers = [];
+          };
+        };
+
+        # Apps for nix run
+        apps.default = {
+          type = "app";
+          program = "${self.packages.${system}.default}/bin/cim-keys";
+        };
+
+        # GUI app that properly sets runtime library paths
+        apps.gui = flake-utils.lib.mkApp {
+          drv = pkgs.writeShellScriptBin "cim-keys-gui" ''
+            OUTPUT_DIR="''${1:-/tmp/cim-keys-output}"
+
+            # Set up library paths for GUI dependencies
+            export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath (buildInputs ++ guiBuildInputs)}:''${LD_LIBRARY_PATH}"
+
+            # Ensure Wayland/X11 environment is set
+            export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+
+            # Reduce Vulkan validation verbosity
+            export VK_LOADER_DEBUG=error
+            export RUST_LOG="''${RUST_LOG:-warn}"
+
+            echo "🔐 CIM Keys GUI"
+            echo "📁 Output directory: $OUTPUT_DIR"
+
+            # Run from the current directory (not from nix store)
+            if [ -f ./target/debug/cim-keys-gui ]; then
+              echo "Starting GUI..."
+              exec ./target/debug/cim-keys-gui "$OUTPUT_DIR"
+            else
+              echo "GUI binary not found! Please build first with:"
+              echo "  nix develop -c cargo build --bin cim-keys-gui --features gui"
+              exit 1
+            fi
+          '';
         };
       });
 }
