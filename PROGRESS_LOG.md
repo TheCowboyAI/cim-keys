@@ -489,4 +489,123 @@ Successfully integrated cim-domain-policy into cim-keys, providing comprehensive
 
 ---
 *Log maintained as per CLAUDE.md CRITICAL DIRECTIVE*
+
+## 2025-10-23: Iced 0.13 Migration & Root CA Certificate Generation
+
+### Context
+Continued from previous session where cim-domain v0.7.8 compatibility was achieved. User requested: "Implement the remaining GUI features for iced 0.13" and later "continue with implementing Root CA generation".
+
+### Major Accomplishments
+
+#### 1. **Complete Iced 0.13 GUI Migration** ✅
+- Successfully migrated from iced 0.12 to 0.13 with new Application API
+- Fixed all compilation errors related to:
+  - New Application trait structure (no longer a trait, now a struct)
+  - Updated event handling with `update()` method
+  - Canvas widget API changes for graph visualization
+  - Theme handling with `Theme::Dark` as default
+- Implemented full Canvas-based organization graph with:
+  - Interactive node selection
+  - Zoom/pan controls
+  - Edge visualization for relationships
+  - Real-time graph updates
+
+#### 2. **Nix Flake Integration** ✅
+- Fixed runtime library dependencies (Wayland, X11, Vulkan)
+- Proper `LD_LIBRARY_PATH` configuration in flake.nix
+- Changed to `allowBuiltinFetchGit` for git dependencies
+- GUI now runs successfully with `nix run .#gui`
+
+#### 3. **Root CA Certificate Generation** ✅
+- Implemented complete X.509 certificate generation service
+- Using rcgen 0.14 with proper API:
+  - `self_signed()` for Root CA certificates
+  - `signed_by()` for intermediate/leaf certificates
+  - Time crate integration for validity periods
+- Successfully generates:
+  - 713-byte PEM certificates
+  - 241-byte private keys
+  - SHA256 fingerprints for verification
+  - 10-year validity periods
+  - Proper CA extensions (keyCertSign, cRLSign)
+
+#### 4. **Certificate Service Architecture**
+```rust
+// Event-driven certificate generation
+CertificateGeneratedEvent {
+    cert_id, key_id, subject, issuer,
+    not_before, not_after, is_ca,
+    san, key_usage, extended_key_usage
+}
+  ↓
+generate_root_ca_from_event()
+  ↓
+GeneratedCertificate {
+    certificate_pem: "-----BEGIN CERTIFICATE-----...",
+    private_key_pem: "-----BEGIN PRIVATE KEY-----...",
+    fingerprint: "5ec7587b116008ffb340d8ba..."
+}
+```
+
+### Technical Details
+
+#### GUI Migration Fixes
+- Replaced `Settings` with `()` in Application
+- Fixed Canvas `draw()` method signature
+- Added `line_height` and `shaping` to canvas Text
+- Removed obsolete `mouse_cursor()` calls
+- Implemented proper theme handling
+
+#### Certificate Generation Implementation
+- Full rcgen API integration with:
+  - CertificateParams::new() for initialization
+  - Distinguished name building (CN, O, OU, C, ST, L)
+  - Subject Alternative Names (DNS, Email, IP)
+  - Key usage and extended key usage flags
+  - Authority key identifier for chains
+
+#### Version Release
+- Released as cim-keys v0.7.8
+- Tagged and pushed to repository
+- All cim-domain dependencies locked to v0.7.8
+
+### Testing Results
+```
+✅ Root CA generated successfully!
+Certificate length: 713 bytes
+Private key length: 241 bytes
+Fingerprint: 5ec7587b116008ffb340d8ba6b42ffd2ef45e2c082b09b1cb7acf49c092eefe9
+```
+
+### Best Practices Applied
+
+1. **UUID v7 MANDATE**: Using `Uuid::now_v7()` throughout
+2. **Event Sourcing**: Certificate generation via events
+3. **Compilation Before Proceeding**: Fixed all errors before continuing
+4. **Context Awareness**: Properly identified cim-keys module context
+5. **Progress Documentation**: Maintaining this log at checkpoints
+6. **Clean Architecture**: Separated certificate service from aggregate
+7. **Type Safety**: Strong typing with rcgen types
+8. **Error Handling**: Proper Result<> propagation
+
+### Next Steps Planned
+
+1. **Certificate Persistence** - Save to encrypted projections
+2. **GUI Integration** - Connect Generate Root CA button
+3. **Certificate Chains** - Implement intermediate/leaf signing
+4. **YubiKey Storage** - Hardware token integration
+5. **NATS TLS Setup** - Use certificates for secure messaging
+
+### Summary
+
+Successfully completed major milestones:
+- Full iced 0.13 migration with working GUI
+- Functional Root CA certificate generation
+- Proper Nix flake integration
+- Event-sourced certificate service architecture
+
+The system now generates valid X.509 certificates that can be used for PKI infrastructure, with a working GUI ready for full integration.
+
+---
+*Log maintained as per CLAUDE.md CRITICAL DIRECTIVE*
 *Last Updated: 2025-01-22*
