@@ -419,8 +419,41 @@ impl CimKeysApp {
             Message::GenerateRootCA => {
                 self.status_message = "Generating Root CA certificate...".to_string();
                 self.key_generation_progress = 0.1;
-                // TODO: Implement actual root CA generation
-                Task::none()
+
+                let root_ca_command = crate::commands::KeyCommand::GenerateCertificate(
+                    crate::commands::GenerateCertificateCommand {
+                        command_id: cim_domain::EntityId::new(),
+                        key_id: uuid::Uuid::now_v7(),
+                        subject: crate::commands::CertificateSubject {
+                            common_name: format!("{} Root CA", self.organization_name),
+                            organization: Some(self.organization_domain.clone()),
+                            country: Some("US".to_string()),
+                            organizational_unit: Some("Security".to_string()),
+                            locality: None,
+                            state_or_province: None,
+                        },
+                        validity_days: 3650, // 10 years
+                        is_ca: true,
+                        san: vec![],
+                        key_usage: vec!["keyCertSign".to_string(), "cRLSign".to_string()],
+                        extended_key_usage: vec![],
+                        requestor: "GUI User".to_string(),
+                        context: None,
+                    }
+                );
+
+                let aggregate = self.aggregate.clone();
+                let projection = self.projection.clone();
+
+                Task::perform(
+                    async move {
+                        generate_root_ca(aggregate, projection).await
+                    },
+                    |result| match result {
+                        Ok(cert_id) => Message::UpdateStatus(format!("Root CA generated: {}", cert_id)),
+                        Err(e) => Message::ShowError(format!("Root CA generation failed: {}", e)),
+                    }
+                )
             }
 
             Message::GenerateSSHKeys => {
@@ -1088,6 +1121,109 @@ async fn generate_all_keys(
     }
 
     Ok(total_keys)
+}
+
+async fn generate_root_ca(
+    aggregate: Arc<RwLock<KeyManagementAggregate>>,
+    projection: Arc<RwLock<OfflineKeyProjection>>,
+) -> Result<Uuid, String> {
+    use crate::commands::{KeyCommand, GenerateCertificateCommand, CertificateSubject};
+    use crate::events::KeyEvent;
+    use crate::certificate_service;
+
+    // Create Root CA command
+    let cert_id = Uuid::now_v7();
+    let root_ca_cmd = GenerateCertificateCommand {
+        command_id: cim_domain::EntityId::new(),
+        key_id: Uuid::now_v7(),
+        subject: CertificateSubject {
+            common_name: "CIM Root CA".to_string(),
+            organization: Some("CIM Infrastructure".to_string()),
+            country: Some("US".to_string()),
+            organizational_unit: Some("Security".to_string()),
+            locality: None,
+            state_or_province: None,
+        },
+        validity_days: 3650,
+        is_ca: true,
+        san: vec![],
+        key_usage: vec!["keyCertSign".to_string(), "cRLSign".to_string()],
+        extended_key_usage: vec![],
+        requestor: "GUI User".to_string(),
+        context: None,
+    };
+
+    // Process through aggregate to get event
+    let aggregate = aggregate.read().await;
+    let projection_read = projection.read().await;
+
+    let events = aggregate.handle_command(
+        KeyCommand::GenerateCertificate(root_ca_cmd),
+        &*projection_read,
+        None,
+        #[cfg(feature = "policy")]
+        None
+    ).await
+    .map_err(|e| format!("Failed to generate Root CA: {}", e))?;
+
+    drop(projection_read);
+    drop(aggregate);
+
+    // Process the certificate generation event
+    let mut cert_id = Uuid::nil();
+    if !events.is_empty() {
+        let mut projection_write = projection.write().await;
+
+        for event in events {
+            match event {
+                KeyEvent::CertificateGenerated(e) => {
+                    cert_id = e.cert_id;
+
+                    // Generate actual certificate using the service
+                    let generated = certificate_service::generate_root_ca_from_event(&e)
+                        .map_err(|e| format!("Certificate generation failed: {}", e))?;
+
+                    // Save certificate to projection
+                    let cert_dir = projection_write.root_path.join("certificates").join("root-ca");
+                    std::fs::create_dir_all(&cert_dir)
+                        .map_err(|e| format!("Failed to create certificate directory: {}", e))?;
+
+                    // Save certificate PEM
+                    let cert_file = cert_dir.join(format!("{}.crt", e.cert_id));
+                    std::fs::write(&cert_file, generated.certificate_pem.as_bytes())
+                        .map_err(|e| format!("Failed to save certificate: {}", e))?;
+
+                    // Save private key PEM (should be encrypted in production)
+                    let key_file = cert_dir.join(format!("{}.key", e.cert_id));
+                    std::fs::write(&key_file, generated.private_key_pem.as_bytes())
+                        .map_err(|e| format!("Failed to save private key: {}", e))?;
+
+                    // Save metadata
+                    let metadata = serde_json::json!({
+                        "cert_id": e.cert_id,
+                        "subject": e.subject,
+                        "issuer": e.issuer,
+                        "not_before": e.not_before,
+                        "not_after": e.not_after,
+                        "is_ca": e.is_ca,
+                        "key_usage": e.key_usage,
+                        "fingerprint": generated.fingerprint,
+                    });
+
+                    let metadata_file = cert_dir.join(format!("{}.json", e.cert_id));
+                    std::fs::write(&metadata_file, serde_json::to_string_pretty(&metadata).unwrap())
+                        .map_err(|e| format!("Failed to save certificate metadata: {}", e))?;
+
+                    // Update manifest
+                    projection_write.save_manifest()
+                        .map_err(|e| format!("Failed to update manifest: {}", e))?;
+                },
+                _ => {}
+            }
+        }
+    }
+
+    Ok(cert_id)
 }
 
 async fn export_domain(

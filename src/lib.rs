@@ -52,6 +52,9 @@ pub mod adapters;
 // Master domain model - cim-keys owns the initial domain creation
 pub mod domain;
 
+// Certificate generation service
+pub mod certificate_service;
+
 // GUI for offline key generation (native and WASM)
 #[cfg(feature = "gui")]
 pub mod gui;
