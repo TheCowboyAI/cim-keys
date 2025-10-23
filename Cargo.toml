@@ -15,6 +15,7 @@ cim-domain = { git = "https://github.com/TheCowboyAI/cim-domain.git", tag = "v0.
 cim-domain-person = { git = "https://github.com/TheCowboyAI/cim-domain-person.git", tag = "v0.7.8", optional = true }
 cim-domain-organization = { git = "https://github.com/TheCowboyAI/cim-domain-organization.git", tag = "v0.7.8", optional = true }
 cim-domain-location = { git = "https://github.com/TheCowboyAI/cim-domain-location.git", tag = "v0.7.8", optional = true }
+cim-domain-policy = { git = "https://github.com/TheCowboyAI/cim-domain-policy.git", branch = "main", optional = true }
 
 # Core dependencies
 thiserror = "2.0"
@@ -90,8 +91,9 @@ tempfile = "3.14"
 mockall = "0.13"
 
 [features]
-default = ["gui"]
+default = ["gui", "policy"]
 gui = ["iced", "iced_widget", "iced_futures"]
+policy = ["cim-domain-policy", "cim-domain-organization", "cim-domain-person", "cim-domain-location"]
 yubikey-support = ["yubikey", "pcsc"]
 gpg-support = ["sequoia-openpgp", "gpgme"]
 test-utils = []
