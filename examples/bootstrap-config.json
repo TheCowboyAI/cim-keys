@@ -1,0 +1,35 @@
+{
+  "organization": {
+    "name": "example-org",
+    "display_name": "Example Organization",
+    "domain": "example.com"
+  },
+  "people": [
+    {
+      "person_id": "550e8400-e29b-41d4-a716-446655440001",
+      "name": "Alice Administrator",
+      "email": "alice@example.com",
+      "role": "RootAuthority"
+    },
+    {
+      "person_id": "550e8400-e29b-41d4-a716-446655440002",
+      "name": "Bob Security",
+      "email": "bob@example.com",
+      "role": "SecurityAdmin"
+    },
+    {
+      "person_id": "550e8400-e29b-41d4-a716-446655440003",
+      "name": "Carol Developer",
+      "email": "carol@example.com",
+      "role": "Developer"
+    }
+  ],
+  "nats_config": {
+    "operator_name": "EXAMPLE",
+    "accounts": [
+      "SYS",
+      "DEV",
+      "PROD"
+    ]
+  }
+}

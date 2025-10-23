@@ -114,6 +114,10 @@ impl OrganizationGraph {
         self.selected_node = Some(node_id);
     }
 
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+
     pub fn auto_layout(&mut self) {
         // Simple circular layout for nodes
         let node_count = self.nodes.len();

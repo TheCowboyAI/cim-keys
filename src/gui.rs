@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use crate::{
     aggregate::KeyManagementAggregate,
-    domain::{Organization, Person, Location, KeyOwnerRole},
+    domain::{Person, KeyOwnerRole},
     projections::OfflineKeyProjection,
 };
 
@@ -146,11 +146,35 @@ pub enum Message {
 /// Bootstrap configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BootstrapConfig {
-    pub organization: Organization,
-    pub people: Vec<Person>,
-    pub locations: Vec<Location>,
+    pub organization: Option<OrganizationInfo>,
+    pub people: Vec<PersonInfo>,
+    #[serde(default)]
+    pub locations: Vec<LocationInfo>,
+    #[serde(default)]
     pub yubikey_assignments: Vec<YubiKeyAssignment>,
-    pub nats_hierarchy: NatsHierarchy,
+    #[serde(rename = "nats_config", default)]
+    pub nats_hierarchy: Option<NatsHierarchy>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrganizationInfo {
+    pub name: String,
+    pub display_name: String,
+    pub domain: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersonInfo {
+    pub person_id: Uuid,
+    pub name: String,
+    pub email: String,
+    pub role: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocationInfo {
+    pub name: String,
+    pub location_type: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -257,11 +281,43 @@ impl CimKeysApp {
             Message::DomainLoaded(result) => {
                 match result {
                     Ok(config) => {
-                        self.bootstrap_config = Some(config.clone());
+                        // Update organization info
+                        if let Some(ref org) = config.organization {
+                            self.organization_name = org.name.clone();
+                            self.organization_domain = org.display_name.clone();
+                        }
+
+                        // Populate graph with people from config
+                        for person_config in &config.people {
+                            let person = Person {
+                                id: person_config.person_id,
+                                name: person_config.name.clone(),
+                                email: person_config.email.clone(),
+                                organization_id: Uuid::now_v7(), // TODO: Use actual org ID from config
+                                unit_ids: vec![],
+                                roles: vec![],
+                                active: true,
+                                created_at: chrono::Utc::now(),
+                            };
+
+                            // Map role string to enum
+                            let role = match person_config.role.as_str() {
+                                "RootAuthority" => KeyOwnerRole::RootAuthority,
+                                "SecurityAdmin" => KeyOwnerRole::SecurityAdmin,
+                                "Developer" => KeyOwnerRole::Developer,
+                                "ServiceAccount" => KeyOwnerRole::ServiceAccount,
+                                "BackupHolder" => KeyOwnerRole::BackupHolder,
+                                "Auditor" => KeyOwnerRole::Auditor,
+                                _ => KeyOwnerRole::Developer,
+                            };
+
+                            self.org_graph.add_node(person, role);
+                        }
+
+                        self.bootstrap_config = Some(config);
                         self.domain_loaded = true;
                         self.active_tab = Tab::Organization;
-                        self.status_message = "Domain configuration loaded successfully".to_string();
-                        // TODO: Populate graph from config
+                        self.status_message = format!("Loaded {} people from configuration", self.org_graph.node_count());
                     }
                     Err(e) => {
                         self.error_message = Some(format!("Failed to load domain: {}", e));
