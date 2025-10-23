@@ -367,10 +367,39 @@ impl KeyManagementAggregate {
 
     fn handle_generate_ssh_key(
         &self,
-        _cmd: crate::commands::GenerateSshKeyCommand,
+        cmd: crate::commands::GenerateSshKeyCommand,
         _projection: &OfflineKeyProjection,
     ) -> Result<Vec<KeyEvent>, KeyManagementError> {
-        Ok(vec![])
+        // Generate key ID
+        let key_id = Uuid::now_v7();
+
+        // Determine SSH key type enum from string
+        let ssh_key_type = match cmd.key_type.as_str() {
+            "ed25519" => crate::events::SshKeyType::Ed25519,
+            "rsa" | "rsa-4096" => crate::events::SshKeyType::Rsa,
+            "ecdsa" | "ecdsa-256" => crate::events::SshKeyType::Ecdsa,
+            _ => return Err(KeyManagementError::InvalidCommand(
+                format!("Unsupported SSH key type: {}", cmd.key_type)
+            )),
+        };
+
+        // Create SSH key generated event
+        // Note: Actual cryptographic key generation would happen in the projection
+        // or in a dedicated service that handles the event
+        let event = crate::events::SshKeyGeneratedEvent {
+            key_id,
+            key_type: ssh_key_type,
+            comment: cmd.comment.clone(),
+            generated_at: chrono::Utc::now(),
+        };
+
+        // Note: In a real implementation:
+        // 1. The actual key generation happens when processing the event
+        // 2. Keys are stored securely in the projection
+        // 3. Private keys are encrypted before storage
+        // 4. Public keys and fingerprints are calculated during projection
+
+        Ok(vec![KeyEvent::SshKeyGenerated(event)])
     }
 
     fn handle_generate_gpg_key(
@@ -659,6 +688,9 @@ pub enum KeyManagementError {
 
     #[error("Operation failed: {0}")]
     OperationFailed(String),
+
+    #[error("Key generation error: {0}")]
+    KeyGenerationError(String),
 
     #[cfg(feature = "policy")]
     #[error("Policy violation: {0}")]

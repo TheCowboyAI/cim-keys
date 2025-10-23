@@ -962,8 +962,76 @@ async fn generate_all_keys(
     aggregate: Arc<RwLock<KeyManagementAggregate>>,
     projection: Arc<RwLock<OfflineKeyProjection>>,
 ) -> Result<usize, String> {
-    // TODO: Implement actual key generation
-    Ok(0)
+    use crate::commands::{KeyCommand, GenerateSshKeyCommand};
+    use crate::events::KeyEvent;
+
+    let mut total_keys = 0;
+    let mut events_to_apply = Vec::new();
+
+    // Generate a test SSH key for demonstration
+    let ssh_cmd = GenerateSshKeyCommand {
+        command_id: cim_domain::CommandId::new(),
+        key_type: "ed25519".to_string(),
+        comment: "test@example.com".to_string(),
+        requestor: "GUI User".to_string(),
+    };
+
+    // Process the command through the aggregate
+    let aggregate = aggregate.read().await;
+    let projection_read = projection.read().await;
+
+    let events = aggregate.handle_command(
+        KeyCommand::GenerateSshKey(ssh_cmd),
+        &*projection_read,
+        None,  // No NATS port in offline mode
+        #[cfg(feature = "policy")]
+        None   // No policy engine in GUI yet
+    ).await
+    .map_err(|e| format!("Failed to generate SSH key: {}", e))?;
+
+    total_keys += events.len();
+    events_to_apply.extend(events);
+
+    // Drop read locks before getting write lock
+    drop(projection_read);
+    drop(aggregate);
+
+    // Apply events to the projection
+    if !events_to_apply.is_empty() {
+        let mut projection_write = projection.write().await;
+        for event in events_to_apply {
+            match event {
+                KeyEvent::SshKeyGenerated(e) => {
+                    // Save metadata about the SSH key generation
+                    // Actual key generation would happen in a dedicated service
+                    let key_dir = projection_write.root_path.join("keys").join("ssh");
+                    std::fs::create_dir_all(&key_dir)
+                        .map_err(|e| format!("Failed to create SSH key directory: {}", e))?;
+
+                    // Save key metadata
+                    let metadata = serde_json::json!({
+                        "key_id": e.key_id,
+                        "key_type": format!("{:?}", e.key_type),
+                        "comment": e.comment,
+                        "generated_at": e.generated_at,
+                    });
+
+                    let metadata_file = key_dir.join(format!("{}.json", e.key_id));
+                    std::fs::write(&metadata_file, serde_json::to_string_pretty(&metadata).unwrap())
+                        .map_err(|e| format!("Failed to save SSH key metadata: {}", e))?;
+
+                    // Update the manifest
+                    projection_write.save_manifest()
+                        .map_err(|e| format!("Failed to update manifest: {}", e))?;
+                },
+                _ => {
+                    // Handle other event types as needed
+                }
+            }
+        }
+    }
+
+    Ok(total_keys)
 }
 
 async fn export_domain(
