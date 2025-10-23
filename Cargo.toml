@@ -10,14 +10,25 @@ keywords = ["yubikey", "pki", "gpg", "ssh", "x509"]
 categories = ["cryptography", "authentication"]
 
 [dependencies]
+# CIM Foundation - Event-Driven FRP Architecture
+cim-domain = { git = "https://github.com/TheCowboyAI/cim-domain.git", tag = "v0.7.8" }
+cim-domain-person = { git = "https://github.com/TheCowboyAI/cim-domain-person.git", tag = "v0.7.8", optional = true }
+cim-domain-organization = { git = "https://github.com/TheCowboyAI/cim-domain-organization.git", tag = "v0.7.8", optional = true }
+cim-domain-location = { git = "https://github.com/TheCowboyAI/cim-domain-location.git", tag = "v0.7.8", optional = true }
+
 # Core dependencies
 thiserror = "2.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 async-trait = "0.1"
-uuid = { version = "1.11", features = ["v4", "serde"] }
+uuid = { version = "1.11", features = ["v4", "v7", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# CLI dependencies
+clap = { version = "4.5", features = ["derive"] }
+rand = "0.8"
 
 # Cryptography
 ring = "0.17"  # For general crypto operations
@@ -28,11 +39,11 @@ rcgen = "0.14"  # X.509 certificate generation
 p256 = { version = "0.13", features = ["ecdsa"] }  # ECDSA support
 
 # YubiKey support
-yubikey = { version = "0.8", features = ["untested"] }
-pcsc = "2.8"  # PC/SC smart card interface
+yubikey = { version = "0.8", features = ["untested"], optional = true }
+pcsc = { version = "2.8", optional = true }  # PC/SC smart card interface
 
 # GPG support
-sequoia-openpgp = "1.22"  # Modern OpenPGP implementation
+sequoia-openpgp = { version = "1.22", optional = true }  # Modern OpenPGP implementation
 gpgme = { version = "0.11", optional = true }  # GPG Made Easy bindings
 
 # SSH support
@@ -48,10 +59,26 @@ webpki = "0.22"
 base64 = "0.22"
 hex = "0.4"
 pem = "3.0"
-der = "0.8"
+der = "0.7"
 
 # Async runtime
 tokio = { version = "1.42", features = ["full"] }
+
+# GUI with Iced 0.13+ (native and WASM with async)
+iced = { version = "0.13", features = ["tokio"], optional = true }
+iced_widget = { version = "0.13", optional = true }
+iced_futures = { version = "0.13", optional = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rfd = "0.14"  # Native file dialogs
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["File", "FileReader", "FileList", "Blob", "Document", "HtmlElement", "Window"] }
+gloo-file = "0.3"  # File handling in browser
+console_error_panic_hook = "0.1"
+wasm-logger = "0.2"
 
 # Error handling and utilities
 zeroize = { version = "1.8", features = ["derive"] }  # Secure memory clearing
@@ -63,17 +90,21 @@ tempfile = "3.14"
 mockall = "0.13"
 
 [features]
-default = ["yubikey-support", "gpg-support"]
-yubikey-support = []
-gpg-support = ["gpgme"]
+default = ["gui"]
+gui = ["iced", "iced_widget", "iced_futures"]
+yubikey-support = ["yubikey", "pcsc"]
+gpg-support = ["sequoia-openpgp", "gpgme"]
 test-utils = []
 
 [[example]]
-name = "yubikey_auth"
-required-features = ["yubikey-support"]
+name = "basic_usage"
 
 [[example]]
-name = "pki_setup"
+name = "cim_leaf_integration"
 
 [[example]]
-name = "ssh_key_gen"
+name = "nats_tls_setup"
+
+[[bin]]
+name = "cim-keys"
+path = "src/bin/cim-keys.rs"

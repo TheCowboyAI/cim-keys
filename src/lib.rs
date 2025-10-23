@@ -1,62 +1,100 @@
-//! # CIM Keys - Cryptographic Key Management and PKI Support
+//! # CIM Keys - Event-Sourced Cryptographic Key Management
 //!
-//! This crate provides comprehensive cryptographic key management for the CIM architecture,
-//! including YubiKey hardware token support, PKI infrastructure, and various cryptographic
-//! operations.
-//!
-//! ## Features
-//!
-//! - **YubiKey Support**: Hardware token integration for secure key storage
-//! - **GPG Integration**: OpenPGP operations and key management
-//! - **SSH Keys**: SSH key generation, management, and authentication
-//! - **X.509/TLS**: Certificate generation, validation, and TLS operations
-//! - **PKI Infrastructure**: Complete PKI setup with CA, intermediate, and end-entity certificates
-//! - **Encryption/Decryption**: Symmetric and asymmetric encryption operations
-//! - **Digital Signatures**: Sign and verify data with various algorithms
+//! This crate provides event-sourced, functional reactive key management for the CIM architecture.
+//! All operations are modeled as immutable events with projections to offline storage.
 //!
 //! ## Architecture
 //!
-//! The crate is organized into several modules:
-//! - `yubikey`: YubiKey hardware token operations
-//! - `gpg`: GPG/OpenPGP functionality
-//! - `ssh`: SSH key management
-//! - `tls`: TLS/X.509 certificate operations
-//! - `pki`: PKI infrastructure and CA operations
-//! - `storage`: Secure key storage and retrieval
+//! - **Event-Sourced**: All operations produce immutable events
+//! - **FRP Design**: No mutable state, pure functions process commands to events
+//! - **Offline-First**: Designed for air-gapped key generation and storage
+//! - **Projection-Based**: State is projected to JSON files on encrypted partitions
+//!
+//! ## Key Features
+//!
+//! - YubiKey hardware token support for secure key storage
+//! - Complete PKI hierarchy generation for enterprise deployments
+//! - SSH and GPG key generation for developer authentication
+//! - X.509 certificate generation and management
+//! - Offline storage to encrypted SD cards for air-gapped security
+//!
+//! ## Usage Pattern
+//!
+//! ```rust,ignore
+//! use cim_keys::{KeyCommand, KeyEvent, OfflineKeyProjection};
+//!
+//! // Create projection to encrypted partition
+//! let mut projection = OfflineKeyProjection::new("/mnt/encrypted")?;
+//!
+//! // Process a command to generate events
+//! let command = GenerateKeyCommand { ... };
+//! let events = aggregate.handle_command(command)?;
+//!
+//! // Apply events to update projection (writes to disk)
+//! for event in events {
+//!     projection.apply(&event)?;
+//! }
+//! ```
 
 #![warn(missing_docs)]
 #![warn(rustdoc::missing_crate_level_docs)]
 
-pub mod error;
-pub mod types;
-pub mod traits;
+// Core modules following FRP/Event-sourcing
+pub mod events;
+pub mod commands;
+pub mod aggregate;
+pub mod projections;
 
-#[cfg(feature = "yubikey-support")]
-pub mod yubikey;
+// Ports & Adapters for external integrations
+pub mod ports;
+pub mod adapters;
 
-#[cfg(feature = "gpg-support")]
-pub mod gpg;
+// Master domain model - cim-keys owns the initial domain creation
+pub mod domain;
 
-pub mod ssh;
-pub mod tls;
-pub mod pki;
-pub mod storage;
+// GUI for offline key generation (native and WASM)
+#[cfg(feature = "gui")]
+pub mod gui;
 
-// Re-export commonly used types
-pub use error::{KeyError, Result};
-pub use types::*;
-pub use traits::*;
+// Re-export core types
+pub use events::{KeyEvent, KeyAlgorithm, KeyPurpose, KeyMetadata};
+pub use commands::{KeyCommand, GenerateKeyCommand, GenerateCertificateCommand};
+pub use aggregate::{KeyManagementAggregate, KeyManagementError};
+pub use projections::{OfflineKeyProjection, KeyManifest, ProjectionError};
+pub use domain::{
+    Organization, OrganizationUnit, Person, PersonRole, Location,
+    KeyOwnership, KeyStorageLocation, KeyContext, NatsIdentity,
+    OrganizationalPKI, ServiceAccount
+};
+
+// Re-export from cim-domain for convenience
+pub use cim_domain::{
+    DomainEvent, Command, CommandId, EventId,
+    CausationId, CorrelationId, EntityId
+};
 
 /// Prelude module for convenient imports
 pub mod prelude {
-    pub use crate::error::{KeyError, Result};
-    pub use crate::traits::*;
-    pub use crate::types::*;
+    pub use crate::events::*;
+    pub use crate::commands::*;
+    pub use crate::aggregate::*;
+    pub use crate::projections::*;
+}
 
-    #[cfg(feature = "yubikey-support")]
-    pub use crate::yubikey::YubiKeyManager;
+/// Library version
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-    pub use crate::ssh::SshKeyManager;
-    pub use crate::tls::TlsManager;
-    pub use crate::pki::PkiManager;
+/// Get the library version string
+pub fn version() -> &'static str {
+    VERSION
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_version() {
+        assert!(!version().is_empty());
+    }
 }

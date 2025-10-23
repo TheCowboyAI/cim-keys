@@ -215,12 +215,12 @@ impl CimKeysApp {
 
             Message::AddPerson => {
                 // Create a person and add to graph
-                let person_id = Uuid::new_v4();
+                let person_id = Uuid::now_v7();
                 let person = Person {
                     id: person_id,
                     name: self.person_name.clone(),
                     email: self.person_email.clone(),
-                    organization_id: Uuid::new_v4(), // TODO: Use actual org ID
+                    organization_id: Uuid::now_v7(), // TODO: Use actual org ID
                     unit_ids: vec![],
                     roles: vec![],
                     active: true,
@@ -281,7 +281,7 @@ impl CimKeysApp {
                 let root_ca_command = crate::commands::KeyCommand::GenerateCertificate(
                     crate::commands::GenerateCertificateCommand {
                         command_id: cim_domain::EntityId::new(),
-                        key_id: uuid::Uuid::new_v4(),
+                        key_id: uuid::Uuid::now_v7(),
                         subject: crate::commands::CertificateSubject {
                             common_name: self.org_name.clone(),
                             organization: Some(self.org_display_name.clone()),
