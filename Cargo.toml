@@ -72,7 +72,7 @@ time = { version = "0.3", features = ["formatting", "macros"] }
 tokio = { version = "1.42", features = ["full"] }
 
 # GUI with Iced 0.13+ (native and WASM with async)
-iced = { version = "0.13", features = ["tokio", "canvas", "wgpu"], optional = true }
+iced = { version = "0.13", features = ["tokio", "canvas", "wgpu", "image"], optional = true }
 iced_widget = { version = "0.13", optional = true }
 iced_futures = { version = "0.13", optional = true }
 bytemuck = { version = "1.14", optional = true }

@@ -5,7 +5,7 @@
 
 use iced::{
     application, executor,
-    widget::{button, column, container, row, text, text_input, Column, Container, horizontal_space, pick_list, progress_bar, checkbox, scrollable},
+    widget::{button, column, container, row, text, text_input, Column, Container, horizontal_space, pick_list, progress_bar, checkbox, scrollable, image},
     Task, Element, Length, Theme, Color, Background, Border, Font, Padding,
 };
 use iced_futures::Subscription;
@@ -696,23 +696,10 @@ impl CimKeysApp {
     fn view(&self) -> Element<Message> {
         use iced::widget::{stack, shader};
 
-        // Create a stylized text logo instead of emoji
-        let logo_text = column![
-            text("CIM").size(32).font(Font {
-                family: iced::font::Family::Monospace,
-                weight: iced::font::Weight::Bold,
-                stretch: iced::font::Stretch::Normal,
-                style: iced::font::Style::Normal,
-            }),
-            text("KEYS").size(24).font(Font {
-                family: iced::font::Family::Monospace,
-                weight: iced::font::Weight::Bold,
-                stretch: iced::font::Stretch::Normal,
-                style: iced::font::Style::Normal,
-            })
-        ]
-        .spacing(0)
-        .align_x(iced::Alignment::Center);
+        // Load the SVG logo using image widget
+        let logo_image = image("assets/logo.svg")
+            .width(Length::Fixed(80.0))
+            .height(Length::Fixed(80.0));
 
         // Tab bar
         let tab_bar = row![
@@ -771,7 +758,7 @@ impl CimKeysApp {
 
         // Header with logo and title
         let header = row![
-            logo_text,
+            logo_image,
             column![
                 text("CIM Keys - Offline Key Management System")
                     .size(24)
