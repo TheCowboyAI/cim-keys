@@ -259,17 +259,43 @@ fn vs_main(
 
     let firefly_id = f32(instance_idx);
 
-    // Calculate firefly movement
-    let angle = firefly_id * 0.618 + uniforms.time * 0.1;
-    let radius = 0.3 + noise(vec2<f32>(firefly_id * 0.1, uniforms.time * 0.05)) * 0.3;
+    // Random starting position based on firefly ID
+    let seed_x = hash(vec2<f32>(firefly_id * 1.234, 5.678));
+    let seed_y = hash(vec2<f32>(firefly_id * 9.012, 3.456));
 
+    // Random movement parameters per firefly
+    let move_speed = 0.05 + hash(vec2<f32>(firefly_id * 0.789, 1.234)) * 0.1;
+    let wander_scale = 0.2 + hash(vec2<f32>(firefly_id * 2.345, 6.789)) * 0.3;
+
+    // Calculate movement with Perlin-like noise for organic motion
+    let time_offset_x = uniforms.time * move_speed + firefly_id * 123.456;
+    let time_offset_y = uniforms.time * move_speed + firefly_id * 789.012;
+
+    // Combine base position with wandering movement
     var center = vec2<f32>(
-        0.5 + cos(angle) * radius + noise(vec2<f32>(uniforms.time * 0.2 + firefly_id, 0.0)) * 0.2,
-        0.5 + sin(angle) * radius + noise(vec2<f32>(0.0, uniforms.time * 0.3 + firefly_id)) * 0.2
+        seed_x + noise(vec2<f32>(time_offset_x, firefly_id)) * wander_scale,
+        seed_y + noise(vec2<f32>(firefly_id, time_offset_y)) * wander_scale
     );
 
-    // Keep within bounds
-    center = clamp(center, vec2<f32>(0.1), vec2<f32>(0.9));
+    // Add subtle drift patterns
+    center.x += sin(uniforms.time * 0.3 + firefly_id * 2.0) * 0.05;
+    center.y += cos(uniforms.time * 0.4 + firefly_id * 1.5) * 0.05;
+
+    // Keep within bounds with soft repulsion from edges
+    let edge_buffer = 0.1;
+    let edge_repulsion = 0.02;
+    if (center.x < edge_buffer) {
+        center.x = edge_buffer + abs(sin(uniforms.time + firefly_id)) * edge_repulsion;
+    }
+    if (center.x > 1.0 - edge_buffer) {
+        center.x = 1.0 - edge_buffer - abs(sin(uniforms.time + firefly_id)) * edge_repulsion;
+    }
+    if (center.y < edge_buffer) {
+        center.y = edge_buffer + abs(cos(uniforms.time + firefly_id)) * edge_repulsion;
+    }
+    if (center.y > 1.0 - edge_buffer) {
+        center.y = 1.0 - edge_buffer - abs(cos(uniforms.time + firefly_id)) * edge_repulsion;
+    }
 
     // Size varies per firefly
     let size = (0.03 + hash(vec2<f32>(firefly_id, 0.0)) * 0.02) * uniforms.scale;
