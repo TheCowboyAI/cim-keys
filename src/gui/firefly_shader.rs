@@ -36,8 +36,6 @@ impl<Message> shader::Program<Message> for FireflyShader {
         _cursor: mouse::Cursor,
         bounds: Rectangle,
     ) -> Self::Primitive {
-        // Debug: Print to verify draw is called with updated time
-        println!("Shader draw: time = {}", self.time);
         // Create primitive with current animation time
         Primitive::new(bounds.size(), self.time)
     }
@@ -109,8 +107,8 @@ impl shader::Primitive for Primitive {
         render_pass.set_pipeline(&pipeline.render_pipeline);
         render_pass.set_bind_group(0, &pipeline.bind_group, &[]);
 
-        // Draw many instances for all fireflies
-        render_pass.draw(0..6, 0..40); // 6 vertices per quad, 40 fireflies
+        // Draw fewer fireflies for better performance
+        render_pass.draw(0..6, 0..20); // 6 vertices per quad, 20 fireflies (reduced from 40)
     }
 }
 

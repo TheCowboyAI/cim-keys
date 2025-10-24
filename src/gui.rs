@@ -694,15 +694,25 @@ impl CimKeysApp {
     }
 
     fn view(&self) -> Element<Message> {
-        // Debug: Track view calls
-        eprintln!("View called with animation_time: {}", self.animation_time);
         use iced::widget::{stack, shader};
 
-        // For now, we'll use a text placeholder for the logo
-        // TODO: Convert SVG to PNG or use an SVG rendering solution for iced 0.13
-        let logo_text = text("🤠")
-            .size(50)
-            .color(CowboyTheme::text_primary());
+        // Create a stylized text logo instead of emoji
+        let logo_text = column![
+            text("CIM").size(32).font(Font {
+                family: iced::font::Family::Monospace,
+                weight: iced::font::Weight::Bold,
+                stretch: iced::font::Stretch::Normal,
+                style: iced::font::Style::Normal,
+            }),
+            text("KEYS").size(24).font(Font {
+                family: iced::font::Family::Monospace,
+                weight: iced::font::Weight::Bold,
+                stretch: iced::font::Stretch::Normal,
+                style: iced::font::Style::Normal,
+            })
+        ]
+        .spacing(0)
+        .align_x(iced::Alignment::Center);
 
         // Tab bar
         let tab_bar = row![
@@ -814,8 +824,8 @@ impl CimKeysApp {
         use iced::time;
         use std::time::Duration;
 
-        // Update animation at 60 FPS
-        time::every(Duration::from_millis(16)).map(|_| Message::AnimationTick)
+        // Update animation at 30 FPS instead of 60 to reduce resource usage
+        time::every(Duration::from_millis(33)).map(|_| Message::AnimationTick)
     }
 }
 
