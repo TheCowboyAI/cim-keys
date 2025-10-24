@@ -1288,7 +1288,7 @@ async fn export_domain(
 /// Run the GUI application
 pub async fn run(output_dir: String) -> iced::Result {
     application("CIM Keys", CimKeysApp::update, CimKeysApp::view)
-        .subscription(CimKeysApp::subscription)
-        .theme(CimKeysApp::theme)
+        .subscription(|app| app.subscription())
+        .theme(|app| app.theme())
         .run_with(|| CimKeysApp::new(output_dir))
 }
