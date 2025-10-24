@@ -27,11 +27,12 @@ pub mod cowboy_theme;
 pub mod animated_background;
 pub mod fireflies;
 pub mod firefly_shader;
+pub mod firefly_synchronization;
 
 use graph::{OrganizationGraph, GraphMessage};
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
-use firefly_shader::FireflyShader;
+use firefly_synchronization::FireflySynchronization;
 
 /// Main application state
 pub struct CimKeysApp {
@@ -684,7 +685,7 @@ impl CimKeysApp {
                 // Update animation time (60 FPS = ~0.016s per frame)
                 self.animation_time += 0.016;
                 // Debug: Print current time to verify animation is updating
-                println!("AnimationTick: time = {}", self.animation_time);
+                eprintln!("AnimationTick received: time = {}", self.animation_time);
                 // Force a redraw by returning a Task that triggers a view update
                 // In iced, returning from update() triggers a view refresh
                 Task::none()
@@ -693,6 +694,8 @@ impl CimKeysApp {
     }
 
     fn view(&self) -> Element<Message> {
+        // Debug: Track view calls
+        eprintln!("View called with animation_time: {}", self.animation_time);
         use iced::widget::{stack, shader};
 
         // For now, we'll use a text placeholder for the logo
@@ -795,9 +798,9 @@ impl CimKeysApp {
             .height(Length::Fill)
             .padding(20);
 
-        // Stack the firefly shader animation and main content
+        // Stack the firefly synchronization shader animation and main content
         stack![
-            shader(FireflyShader::with_time(self.animation_time))
+            shader(FireflySynchronization::with_time(self.animation_time))
                 .width(Length::Fill)
                 .height(Length::Fill),
             main_content
