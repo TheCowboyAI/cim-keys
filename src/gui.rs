@@ -23,9 +23,15 @@ use crate::{
 
 pub mod graph;
 pub mod event_emitter;
+pub mod cowboy_theme;
+pub mod animated_background;
+pub mod fireflies;
+pub mod firefly_shader;
 
 use graph::{OrganizationGraph, GraphMessage};
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
+use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
+use firefly_shader::FireflyShader;
 
 /// Main application state
 pub struct CimKeysApp {
@@ -76,6 +82,9 @@ pub struct CimKeysApp {
     // Status
     status_message: String,
     error_message: Option<String>,
+
+    // Animation
+    animation_time: f32,
 }
 
 /// Different tabs in the application
@@ -141,6 +150,9 @@ pub enum Message {
 
     // Graph interactions
     GraphMessage(GraphMessage),
+
+    // Animation
+    AnimationTick,
 }
 
 /// Bootstrap configuration
@@ -232,13 +244,10 @@ impl CimKeysApp {
                 export_password: String::new(),
                 status_message: String::from("🔐 Welcome to CIM Keys - Offline Key Management System"),
                 error_message: None,
+                animation_time: 0.0,
             },
             Task::none(),
         )
-    }
-
-    fn theme(&self) -> Theme {
-        Theme::Dark
     }
 
     fn title(&self) -> String {
@@ -670,10 +679,28 @@ impl CimKeysApp {
                 self.key_generation_progress = progress;
                 Task::none()
             }
+
+            Message::AnimationTick => {
+                // Update animation time (60 FPS = ~0.016s per frame)
+                self.animation_time += 0.016;
+                // Debug: Print current time to verify animation is updating
+                println!("AnimationTick: time = {}", self.animation_time);
+                // Force a redraw by returning a Task that triggers a view update
+                // In iced, returning from update() triggers a view refresh
+                Task::none()
+            }
         }
     }
 
     fn view(&self) -> Element<Message> {
+        use iced::widget::{stack, shader};
+
+        // For now, we'll use a text placeholder for the logo
+        // TODO: Convert SVG to PNG or use an SVG rendering solution for iced 0.13
+        let logo_text = text("🤠")
+            .size(50)
+            .color(CowboyTheme::text_primary());
+
         // Tab bar
         let tab_bar = row![
             button(text("Welcome").size(14))
@@ -704,41 +731,55 @@ impl CimKeysApp {
             Some(
                 container(
                     row![
-                        text(format!("❌ {}", error)).size(14),
+                        text(format!("❌ {}", error))
+                            .size(14)
+                            .color(CowboyTheme::text_primary()),
                         horizontal_space(),
-                        button("✕").on_press(Message::ClearError)
+                        button("✕")
+                            .on_press(Message::ClearError)
+                            .style(CowboyCustomTheme::glass_button())
                     ]
                     .padding(10)
                 )
-                .style(|theme: &Theme| container::Style {
-                    background: Some(Background::Color(Color::from_rgb(0.8, 0.2, 0.2))),
-                    text_color: Some(Color::WHITE),
+                .style(|_theme: &Theme| container::Style {
+                    background: Some(CowboyTheme::warning_gradient()),
+                    text_color: Some(CowboyTheme::text_primary()),
                     border: Border {
-                        color: Color::from_rgb(0.6, 0.1, 0.1),
+                        color: Color::from_rgba(1.0, 1.0, 1.0, 0.3),
                         width: 1.0,
-                        radius: 5.0.into(),
+                        radius: 10.0.into(),
                     },
-                    ..Default::default()
+                    shadow: CowboyTheme::glow_shadow(),
                 })
             )
         } else {
             None
         };
 
+        // Header with logo and title
+        let header = row![
+            logo_text,
+            column![
+                text("CIM Keys - Offline Key Management System")
+                    .size(24)
+                    .color(CowboyTheme::text_primary()),
+                text("The Cowboy AI Infrastructure")
+                    .size(14)
+                    .color(CowboyTheme::text_secondary()),
+            ]
+            .spacing(5),
+        ]
+        .spacing(20)
+        .align_y(iced::Alignment::Center);
+
         let mut main_column = column![
-            text("🔐 CIM Keys - Offline Key Management System").size(24),
-            text(&self.status_message).size(12),
+            header,
+            text(&self.status_message)
+                .size(12)
+                .color(CowboyTheme::text_secondary()),
             container(tab_bar)
                 .padding(10)
-                .style(|theme: &Theme| container::Style {
-                    background: Some(Background::Color(Color::from_rgb(0.1, 0.1, 0.1))),
-                    border: Border {
-                        color: Color::from_rgb(0.3, 0.3, 0.3),
-                        width: 1.0,
-                        radius: 5.0.into(),
-                    },
-                    ..Default::default()
-                }),
+                .style(CowboyCustomTheme::glass_container()),
         ]
         .spacing(10);
 
@@ -748,41 +789,61 @@ impl CimKeysApp {
 
         main_column = main_column.push(content);
 
-        container(main_column)
+        // Layer the animated background behind the main content
+        let main_content = container(main_column)
             .width(Length::Fill)
             .height(Length::Fill)
-            .padding(20)
-            .into()
+            .padding(20);
+
+        // Stack the firefly shader animation and main content
+        stack![
+            shader(FireflyShader::with_time(self.animation_time))
+                .width(Length::Fill)
+                .height(Length::Fill),
+            main_content
+        ]
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        Subscription::none()
+        use iced::time;
+        use std::time::Duration;
+
+        // Update animation at 60 FPS
+        time::every(Duration::from_millis(16)).map(|_| Message::AnimationTick)
     }
 }
 
 impl CimKeysApp {
+    /// Returns the Cowboy AI theme for the application
+    fn theme(&self) -> Theme {
+        CowboyCustomTheme::dark()
+    }
+
     fn tab_button_style(&self, _theme: &Theme, is_active: bool) -> button::Style {
         if is_active {
             button::Style {
-                background: Some(Background::Color(Color::from_rgb(0.2, 0.4, 0.8))),
-                text_color: Color::WHITE,
+                background: Some(CowboyTheme::primary_gradient()),
+                text_color: CowboyTheme::text_primary(),
                 border: Border {
-                    color: Color::from_rgb(0.3, 0.5, 0.9),
+                    color: CowboyTheme::border_hover_color(),
                     width: 1.0,
-                    radius: 5.0.into(),
+                    radius: 10.0.into(),
                 },
-                ..Default::default()
+                shadow: CowboyTheme::glow_shadow(),
             }
         } else {
             button::Style {
-                background: Some(Background::Color(Color::from_rgb(0.15, 0.15, 0.15))),
-                text_color: Color::from_rgb(0.8, 0.8, 0.8),
+                background: Some(CowboyTheme::glass_background()),
+                text_color: CowboyTheme::text_secondary(),
                 border: Border {
-                    color: Color::from_rgb(0.3, 0.3, 0.3),
+                    color: CowboyTheme::border_color(),
                     width: 1.0,
-                    radius: 5.0.into(),
+                    radius: 10.0.into(),
                 },
-                ..Default::default()
+                shadow: iced::Shadow::default(),
             }
         }
     }
@@ -799,16 +860,7 @@ impl CimKeysApp {
                 ]
                 .spacing(5)
             )
-            .style(|theme: &Theme| container::Style {
-                background: Some(Background::Color(Color::from_rgb(0.8, 0.6, 0.2))),
-                text_color: Some(Color::BLACK),
-                border: Border {
-                    color: Color::from_rgb(0.6, 0.4, 0.1),
-                    width: 2.0,
-                    radius: 5.0.into(),
-                },
-                ..Default::default()
-            })
+            .style(CowboyCustomTheme::card_container())
             .padding(20),
 
             if !self.domain_loaded {
@@ -817,15 +869,21 @@ impl CimKeysApp {
                     row![
                         text_input("Organization", &self.organization_name)
                             .on_input(Message::OrganizationNameChanged)
-                            .size(16),
+                            .size(16)
+                            .style(CowboyCustomTheme::glass_input()),
                         text_input("Domain", &self.organization_domain)
                             .on_input(Message::OrganizationDomainChanged)
-                            .size(16),
+                            .size(16)
+                            .style(CowboyCustomTheme::glass_input()),
                     ]
                     .spacing(10),
                     row![
-                        button("Load Existing Domain").on_press(Message::LoadExistingDomain),
-                        button("Create New Domain").on_press(Message::CreateNewDomain),
+                        button("Load Existing Domain")
+                            .on_press(Message::LoadExistingDomain)
+                            .style(CowboyCustomTheme::glass_button()),
+                        button("Create New Domain")
+                            .on_press(Message::CreateNewDomain)
+                            .style(CowboyCustomTheme::primary_button()),
                     ]
                     .spacing(10),
                 ]
@@ -864,36 +922,34 @@ impl CimKeysApp {
             // Add person form
             container(
                 column![
-                    text("Add Person to Organization").size(16),
+                    text("Add Person to Organization")
+                        .size(16)
+                        .color(CowboyTheme::text_primary()),
                     row![
                         text_input("Name", &self.new_person_name)
                             .on_input(Message::NewPersonNameChanged)
-                            .size(14),
+                            .size(14)
+                            .style(CowboyCustomTheme::glass_input()),
                         text_input("Email", &self.new_person_email)
                             .on_input(Message::NewPersonEmailChanged)
-                            .size(14),
+                            .size(14)
+                            .style(CowboyCustomTheme::glass_input()),
                         pick_list(
                             role_options,
                             self.new_person_role,
                             Message::NewPersonRoleSelected,
                         )
                         .placeholder("Select Role"),
-                        button("Add Person").on_press(Message::AddPerson)
+                        button("Add Person")
+                            .on_press(Message::AddPerson)
+                            .style(CowboyCustomTheme::primary_button())
                     ]
                     .spacing(10),
                 ]
                 .spacing(10)
             )
             .padding(15)
-            .style(|theme: &Theme| container::Style {
-                background: Some(Background::Color(Color::from_rgb(0.1, 0.1, 0.1))),
-                border: Border {
-                    color: Color::from_rgb(0.3, 0.3, 0.3),
-                    width: 1.0,
-                    radius: 5.0.into(),
-                },
-                ..Default::default()
-            }),
+            .style(CowboyCustomTheme::card_container()),
 
             // Graph visualization canvas
             Container::new(
@@ -928,30 +984,26 @@ impl CimKeysApp {
 
             container(
                 column![
-                    text("Key Generation Options").size(16),
+                    text("Key Generation Options")
+                        .size(16)
+                        .color(CowboyTheme::text_primary()),
                     button("Generate Root CA")
                         .on_press(Message::GenerateRootCA)
-                        .style(|theme: &Theme, _| button::primary(theme, button::Status::Active)),
+                        .style(CowboyCustomTheme::security_button()),
                     button("Generate SSH Keys for All")
-                        .on_press(Message::GenerateSSHKeys),
+                        .on_press(Message::GenerateSSHKeys)
+                        .style(CowboyCustomTheme::primary_button()),
                     button("Provision YubiKeys")
-                        .on_press(Message::ProvisionYubiKey),
+                        .on_press(Message::ProvisionYubiKey)
+                        .style(CowboyCustomTheme::glass_button()),
                     button("Generate All Keys")
                         .on_press(Message::GenerateAllKeys)
-                        .style(|theme: &Theme, _| button::success(theme, button::Status::Active)),
+                        .style(CowboyCustomTheme::security_button()),
                 ]
                 .spacing(10)
             )
             .padding(15)
-            .style(|theme: &Theme| container::Style {
-                background: Some(Background::Color(Color::from_rgb(0.1, 0.1, 0.1))),
-                border: Border {
-                    color: Color::from_rgb(0.3, 0.3, 0.3),
-                    width: 1.0,
-                    radius: 5.0.into(),
-                },
-                ..Default::default()
-            }),
+            .style(CowboyCustomTheme::card_container()),
 
             if self.key_generation_progress > 0.0 {
                 container(
@@ -982,9 +1034,12 @@ impl CimKeysApp {
 
             container(
                 column![
-                    text("Export Options").size(16),
+                    text("Export Options")
+                        .size(16)
+                        .color(CowboyTheme::text_primary()),
                     text_input("Output Directory", &self.export_path.display().to_string())
-                        .on_input(Message::ExportPathChanged),
+                        .on_input(Message::ExportPathChanged)
+                        .style(CowboyCustomTheme::glass_input()),
                     checkbox("Include public keys", self.include_public_keys)
                         .on_toggle(Message::TogglePublicKeys),
                     checkbox("Include certificates", self.include_certificates)
@@ -997,26 +1052,21 @@ impl CimKeysApp {
                         text_input("Encryption Password", &self.export_password)
                             .on_input(Message::ExportPasswordChanged)
                             .secure(true)
+                            .style(CowboyCustomTheme::glass_input())
                     } else {
-                        text_input("", "").on_input(Message::ExportPasswordChanged)
+                        text_input("", "")
+                            .on_input(Message::ExportPasswordChanged)
+                            .style(CowboyCustomTheme::glass_input())
                     },
                 ]
                 .spacing(10)
             )
             .padding(15)
-            .style(|theme: &Theme| container::Style {
-                background: Some(Background::Color(Color::from_rgb(0.1, 0.1, 0.1))),
-                border: Border {
-                    color: Color::from_rgb(0.3, 0.3, 0.3),
-                    width: 1.0,
-                    radius: 5.0.into(),
-                },
-                ..Default::default()
-            }),
+            .style(CowboyCustomTheme::card_container()),
 
             button("Export to Encrypted SD Card")
                 .on_press(Message::ExportToSDCard)
-                .style(|theme: &Theme, _| button::primary(theme, button::Status::Active))
+                .style(CowboyCustomTheme::security_button())
         ]
         .spacing(20)
         .padding(10);

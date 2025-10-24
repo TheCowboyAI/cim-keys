@@ -1222,6 +1222,7 @@ version = "0.7.8"
 dependencies = [
  "async-trait",
  "base64",
+ "bytemuck",
  "chrono",
  "cim-domain 0.7.8 (git+https://github.com/TheCowboyAI/cim-domain.git?tag=v0.7.8)",
  "cim-domain-location",
