@@ -268,7 +268,7 @@
           '';
 
           # Only build the GUI binary
-          cargoBuildFlags = [ "--bin" "cim-keys-gui" "--features" "gui" ];
+          cargoBuildFlags = [ "--bin" "cim-keys" "--features" "gui" ];
 
           # Disable tests for GUI build
           doCheck = false;
@@ -306,12 +306,12 @@
             echo "📁 Output directory: $OUTPUT_DIR"
 
             # Run from the current directory (not from nix store)
-            if [ -f ./target/debug/cim-keys-gui ]; then
+            if [ -f ./target/debug/cim-keys ]; then
               echo "Starting GUI..."
-              exec ./target/debug/cim-keys-gui "$OUTPUT_DIR"
+              exec ./target/debug/cim-keys gui "$OUTPUT_DIR"
             else
               echo "GUI binary not found! Please build first with:"
-              echo "  nix develop -c cargo build --bin cim-keys-gui --features gui"
+              echo "  nix develop -c cargo build --bin cim-keys --features gui"
               exit 1
             fi
           '';

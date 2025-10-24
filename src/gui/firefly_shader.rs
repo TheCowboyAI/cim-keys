@@ -274,17 +274,17 @@ fn vs_main(
     // Size varies per firefly
     let size = (0.03 + hash(vec2<f32>(firefly_id, 0.0)) * 0.02) * uniforms.scale;
 
-    // Create quad vertices
-    let vertices = array<vec2<f32>, 6>(
-        vec2<f32>(-1.0, -1.0),
-        vec2<f32>(1.0, -1.0),
-        vec2<f32>(-1.0, 1.0),
-        vec2<f32>(1.0, -1.0),
-        vec2<f32>(1.0, 1.0),
-        vec2<f32>(-1.0, 1.0)
-    );
-
-    let vertex_pos = vertices[vertex_idx];
+    // Create quad vertices using switch statement (WGSL doesn't allow dynamic array indexing)
+    var vertex_pos: vec2<f32>;
+    switch vertex_idx {
+        case 0u: { vertex_pos = vec2<f32>(-1.0, -1.0); }
+        case 1u: { vertex_pos = vec2<f32>(1.0, -1.0); }
+        case 2u: { vertex_pos = vec2<f32>(-1.0, 1.0); }
+        case 3u: { vertex_pos = vec2<f32>(1.0, -1.0); }
+        case 4u: { vertex_pos = vec2<f32>(1.0, 1.0); }
+        case 5u: { vertex_pos = vec2<f32>(-1.0, 1.0); }
+        default: { vertex_pos = vec2<f32>(0.0, 0.0); }
+    }
     let world_pos = center + vertex_pos * size;
 
     // Convert to clip space

@@ -131,6 +131,14 @@ enum Commands {
         #[arg(long)]
         include_private: bool,
     },
+
+    /// Launch the graphical user interface
+    #[cfg(feature = "gui")]
+    Gui {
+        /// Output directory for key operations
+        #[arg(default_value = "./output")]
+        output_dir: String,
+    },
 }
 
 #[tokio::main]
@@ -148,7 +156,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .init();
     }
 
-    // Create or load projection
+    // Handle GUI command separately to avoid projection creation
+    #[cfg(feature = "gui")]
+    if let Commands::Gui { output_dir } = &cli.command {
+        println!("🔐 Starting GUI with output directory: {}", output_dir);
+        return cim_keys::gui::run(output_dir.clone()).await.map_err(|e| e.into());
+    }
+
+    // Create or load projection for non-GUI commands
     let mut projection = OfflineKeyProjection::new(&cli.partition)?;
 
     // Create aggregate
@@ -353,6 +368,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Copy relevant files (in real implementation)
             println!("✓ Keys exported successfully");
             println!("  Import to leaf nodes using: cim-leaf import-keys {:?}", output);
+        }
+
+        #[cfg(feature = "gui")]
+        Commands::Gui { .. } => {
+            // Already handled above, this should never be reached
+            unreachable!("GUI command should have been handled earlier");
         }
     }
 

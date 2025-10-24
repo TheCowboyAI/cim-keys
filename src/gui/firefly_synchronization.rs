@@ -94,6 +94,7 @@ impl shader::Primitive for Primitive {
             interaction_radius: 150.0,  // R parameter
             noise_strength: 0.1,       // sigma parameter
             adaptation_rate: 0.01,      // epsilon parameter
+            _padding: 0.0,             // Padding for WGSL alignment
         };
 
         queue.write_buffer(&pipeline.params_buffer, 0, bytemuck::bytes_of(&params));
@@ -159,6 +160,7 @@ struct SimulationParams {
     interaction_radius: f32,
     noise_strength: f32,
     adaptation_rate: f32,
+    _padding: f32,  // Add padding to align to 40 bytes for WGSL
 }
 
 #[repr(C)]
@@ -398,6 +400,7 @@ struct SimulationParams {
     interaction_radius: f32,
     noise_strength: f32,
     adaptation_rate: f32,
+    _padding: f32,  // Padding for alignment
 }
 
 struct FireflyState {
@@ -515,6 +518,7 @@ struct SimulationParams {
     interaction_radius: f32,
     noise_strength: f32,
     adaptation_rate: f32,
+    _padding: f32,  // Padding for alignment
 }
 
 struct FireflyState {
@@ -547,17 +551,17 @@ fn vs_main(
 
     let firefly = fireflies[instance_idx];
 
-    // Create quad vertices
-    let vertices = array<vec2<f32>, 6>(
-        vec2<f32>(-1.0, -1.0),
-        vec2<f32>(1.0, -1.0),
-        vec2<f32>(-1.0, 1.0),
-        vec2<f32>(1.0, -1.0),
-        vec2<f32>(1.0, 1.0),
-        vec2<f32>(-1.0, 1.0)
-    );
-
-    let vertex_pos = vertices[vertex_idx];
+    // Create quad vertices using switch statement (WGSL doesn't allow dynamic array indexing)
+    var vertex_pos: vec2<f32>;
+    switch vertex_idx {
+        case 0u: { vertex_pos = vec2<f32>(-1.0, -1.0); }
+        case 1u: { vertex_pos = vec2<f32>(1.0, -1.0); }
+        case 2u: { vertex_pos = vec2<f32>(-1.0, 1.0); }
+        case 3u: { vertex_pos = vec2<f32>(1.0, -1.0); }
+        case 4u: { vertex_pos = vec2<f32>(1.0, 1.0); }
+        case 5u: { vertex_pos = vec2<f32>(-1.0, 1.0); }
+        default: { vertex_pos = vec2<f32>(0.0, 0.0); }
+    }
 
     // Scale based on intensity (bigger when flashing)
     let size = 0.01 * (1.0 + firefly.intensity * 2.0);
