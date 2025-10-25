@@ -4,14 +4,14 @@
 //! application and as a WASM application in the browser.
 
 use iced::{
-    application, executor,
-    widget::{button, column, container, row, text, text_input, Column, Container, horizontal_space, pick_list, progress_bar, checkbox, scrollable, image},
-    Task, Element, Length, Theme, Color, Background, Border, Font, Padding,
+    application,
+    widget::{button, column, container, row, text, text_input, Container, horizontal_space, pick_list, progress_bar, checkbox, scrollable},
+    Task, Element, Length, Color, Border, Font, Theme, Background,
 };
 use iced_futures::Subscription;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 

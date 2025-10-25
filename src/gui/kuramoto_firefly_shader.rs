@@ -198,8 +198,9 @@ impl shader::Primitive for Primitive {
         render_pass.set_pipeline(&pipeline.render_pipeline);
         render_pass.set_bind_group(0, &pipeline.bind_group, &[]);
 
-        // Draw all fireflies at once
-        render_pass.draw(0..6, 0..NUM_FIREFLIES);
+        // Draw all fireflies as a single batch of triangles
+        // 6 vertices per firefly * 40 fireflies = 240 vertices total
+        render_pass.draw(0..(6 * NUM_FIREFLIES), 0..1);
     }
 }
 
@@ -383,15 +384,18 @@ fn vs_main(
 ) -> VertexOutput {
     var output: VertexOutput;
 
-    let firefly_id = f32(instance_idx);
+    // Calculate which firefly this vertex belongs to
+    let firefly_idx = vertex_idx / 6u;  // Each firefly has 6 vertices
+    let firefly_id = f32(firefly_idx);
     output.firefly_id = firefly_id;
 
     // Get synchronized intensity from phase data
-    output.intensity = phase_intensities[instance_idx];
+    output.intensity = phase_intensities[firefly_idx];
 
-    // SUPER SIMPLE DEBUG: Just spread fireflies horizontally
-    let x_pos = (f32(instance_idx) + 0.5) / 40.0;  // Simple horizontal spread
-    var base_pos = vec2<f32>(x_pos, 0.5);  // All at center vertically
+    // DEBUG: Spread fireflies in a visible pattern
+    let x_pos = (f32(firefly_idx % 10u) * 0.1) + 0.05;  // 10 columns
+    let y_pos = (f32(firefly_idx / 10u) * 0.2) + 0.2;   // 4 rows
+    var base_pos = vec2<f32>(x_pos, y_pos);  // Grid pattern
 
     // Complex organic movement using multiple Lissajous frequencies - INCREASED AMPLITUDE
     let movement_phase = uniforms.time * 0.5 + firefly_id * 0.618033988749895;  // Increased speed
@@ -486,7 +490,7 @@ fn vs_main(
 
     // Create quad vertices (two triangles for a square)
     var vertex_pos: vec2<f32>;
-    let vtx = vertex_idx % 6u;
+    let vtx = vertex_idx % 6u;  // Need modulo for proper vertex generation
     switch vtx {
         case 0u: { vertex_pos = vec2<f32>(-1.0, -1.0); }
         case 1u: { vertex_pos = vec2<f32>(1.0, -1.0); }
@@ -497,8 +501,8 @@ fn vs_main(
         default: { vertex_pos = vec2<f32>(0.0, 0.0); }
     }
 
-    // Scale firefly based on intensity (synchronized pulsing) - DEBUG SIZE
-    let size = 0.03 + output.intensity * 0.01;  // Larger size for debugging
+    // Scale firefly based on intensity (synchronized pulsing) - BIGGER DEBUG SIZE
+    let size = 0.05;  // Fixed large size for debugging
     let world_pos = base_pos + vertex_pos * size;
 
     output.clip_position = vec4<f32>(world_pos * 2.0 - 1.0, 0.0, 1.0);
