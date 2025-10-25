@@ -231,20 +231,79 @@ struct VertexOutput {
 @group(0) @binding(0)
 var<uniform> uniforms: Uniforms;
 
+// Fast hash using integer bit operations (no sin!)
 fn hash(p: vec2<f32>) -> f32 {
-    let h = dot(p, vec2<f32>(127.1, 311.7));
-    return fract(sin(h) * 43758.5453);
+    // WGSL doesn't support bitwise ops on vectors, must do scalar operations
+    var hx = u32(p.x * 1597.0);
+    var hy = u32(p.y * 3797.0);
+
+    // Mix bits using XOR and multiplication (MurmurHash-inspired)
+    hx = ((hx >> 16u) ^ hx) * 0x45d9f3bu;
+    hx = ((hx >> 16u) ^ hx) * 0x45d9f3bu;
+    hx = (hx >> 16u) ^ hx;
+
+    hy = ((hy >> 16u) ^ hy) * 0x45d9f3bu;
+    hy = ((hy >> 16u) ^ hy) * 0x45d9f3bu;
+    hy = (hy >> 16u) ^ hy;
+
+    return f32(hx ^ hy) / 4294967296.0;
 }
 
-fn noise(p: vec2<f32>) -> f32 {
-    let i = floor(p);
-    let f = fract(p);
-    let u = f * f * (3.0 - 2.0 * f);
+// Vector hash for 2D output
+fn hash2(p: vec2<f32>) -> vec2<f32> {
+    // First hash for x component
+    var h1x = u32(p.x * 1597.0);
+    var h1y = u32(p.y * 3797.0);
 
-    return mix(
-        mix(hash(i), hash(i + vec2<f32>(1.0, 0.0)), u.x),
-        mix(hash(i + vec2<f32>(0.0, 1.0)), hash(i + vec2<f32>(1.0, 1.0)), u.x),
-        u.y
+    h1x = ((h1x >> 16u) ^ h1x) * 0x45d9f3bu;
+    h1x = ((h1x >> 16u) ^ h1x) * 0x45d9f3bu;
+    h1x = (h1x >> 16u) ^ h1x;
+
+    h1y = ((h1y >> 16u) ^ h1y) * 0x45d9f3bu;
+    h1y = ((h1y >> 16u) ^ h1y) * 0x45d9f3bu;
+    h1y = (h1y >> 16u) ^ h1y;
+
+    // Second hash for y component
+    var h2x = u32(p.x * 2711.0);
+    var h2y = u32(p.y * 1913.0);
+
+    h2x = ((h2x >> 16u) ^ h2x) * 0x3ad8b31u;
+    h2x = ((h2x >> 16u) ^ h2x) * 0x3ad8b31u;
+    h2x = (h2x >> 16u) ^ h2x;
+
+    h2y = ((h2y >> 16u) ^ h2y) * 0x3ad8b31u;
+    h2y = ((h2y >> 16u) ^ h2y) * 0x3ad8b31u;
+    h2y = (h2y >> 16u) ^ h2y;
+
+    return vec2<f32>(f32(h1x ^ h1y), f32(h2x ^ h2y)) / 4294967296.0;
+}
+
+// Linear interpolation for smooth transitions
+fn lerp2(a: vec2<f32>, b: vec2<f32>, t: f32) -> vec2<f32> {
+    return a + (b - a) * t;
+}
+
+// 2D rotation matrix (precomputed angles)
+fn rotate2D(v: vec2<f32>, angle_index: f32) -> vec2<f32> {
+    // Use pre-calculated rotation for common angles to avoid sin/cos
+    let idx = u32(angle_index * 7.999) & 7u;
+
+    // WGSL requires constant array indexing, use switch instead
+    var cs: vec2<f32>;
+    switch idx {
+        case 0u: { cs = vec2<f32>(1.0, 0.0); }      // 0°
+        case 1u: { cs = vec2<f32>(0.707, 0.707); }  // 45°
+        case 2u: { cs = vec2<f32>(0.0, 1.0); }      // 90°
+        case 3u: { cs = vec2<f32>(-0.707, 0.707); } // 135°
+        case 4u: { cs = vec2<f32>(-1.0, 0.0); }     // 180°
+        case 5u: { cs = vec2<f32>(-0.707, -0.707); }// 225°
+        case 6u: { cs = vec2<f32>(0.0, -1.0); }     // 270°
+        default: { cs = vec2<f32>(0.707, -0.707); } // 315°
+    }
+
+    return vec2<f32>(
+        v.x * cs.x - v.y * cs.y,
+        v.x * cs.y + v.y * cs.x
     );
 }
 
@@ -257,42 +316,61 @@ fn vs_main(
 
     let firefly_id = f32(instance_idx);
 
-    // Random starting position based on firefly ID
-    let seed_x = hash(vec2<f32>(firefly_id * 1.234, 5.678));
-    let seed_y = hash(vec2<f32>(firefly_id * 9.012, 3.456));
+    // Random starting position and movement vectors
+    let seed = hash2(vec2<f32>(firefly_id * 1.234, 5.678));
+    let params = hash2(vec2<f32>(firefly_id * 7.89, 10.11));
 
-    // Random movement parameters per firefly
-    let move_speed = 0.05 + hash(vec2<f32>(firefly_id * 0.789, 1.234)) * 0.1;
-    let wander_scale = 0.2 + hash(vec2<f32>(firefly_id * 2.345, 6.789)) * 0.3;
+    // Base position and velocity vector
+    var position = seed;
+    let velocity_magnitude = 0.1 + params.x * 0.15;
 
-    // Calculate movement with Perlin-like noise for organic motion
-    let time_offset_x = uniforms.time * move_speed + firefly_id * 123.456;
-    let time_offset_y = uniforms.time * move_speed + firefly_id * 789.012;
+    // Create movement using vector operations
+    let time_factor = uniforms.time * velocity_magnitude;
+    let time_int = u32(time_factor);
+    let time_fract = fract(time_factor);
 
-    // Combine base position with wandering movement
-    var center = vec2<f32>(
-        seed_x + noise(vec2<f32>(time_offset_x, firefly_id)) * wander_scale,
-        seed_y + noise(vec2<f32>(firefly_id, time_offset_y)) * wander_scale
-    );
+    // Generate keyframe positions using hash (no trig!)
+    let p1 = hash2(vec2<f32>(firefly_id, f32(time_int)));
+    let p2 = hash2(vec2<f32>(firefly_id, f32(time_int + 1u)));
+    let p3 = hash2(vec2<f32>(firefly_id, f32(time_int + 2u)));
 
-    // Add subtle drift patterns
-    center.x += sin(uniforms.time * 0.3 + firefly_id * 2.0) * 0.05;
-    center.y += cos(uniforms.time * 0.4 + firefly_id * 1.5) * 0.05;
+    // Cubic Bezier interpolation for smooth curves (pure linear algebra)
+    let t = time_fract;
+    let t2 = t * t;
+    let t3 = t2 * t;
+    let mt = 1.0 - t;
+    let mt2 = mt * mt;
+    let mt3 = mt2 * mt;
 
-    // Keep within bounds with soft repulsion from edges
+    // Control point for curve (creates the swooping motion)
+    let control = (p1 + p2) * 0.5 + vec2<f32>(params.y - 0.5, params.x - 0.5) * 0.3;
+
+    // Bezier curve calculation (no trig functions!)
+    var center = p1 * mt3 + control * 3.0 * mt2 * t + p2 * 3.0 * mt * t2 + p3 * t3;
+
+    // Add rotation using pre-computed rotation matrix
+    let rotation_speed = hash(vec2<f32>(firefly_id * 3.14, 2.71));
+    let angle_idx = fract(uniforms.time * rotation_speed * 0.5) * 8.0;
+    let offset = rotate2D(vec2<f32>(0.1, 0.0), angle_idx);
+    center += offset * params.y * 0.5;
+
+    // Simple linear boundary reflection (no trig!)
     let edge_buffer = 0.1;
-    let edge_repulsion = 0.02;
-    if (center.x < edge_buffer) {
-        center.x = edge_buffer + abs(sin(uniforms.time + firefly_id)) * edge_repulsion;
+    let bounds_min = vec2<f32>(edge_buffer);
+    let bounds_max = vec2<f32>(1.0 - edge_buffer);
+
+    // Clamp and reflect using linear operations
+    if (center.x < bounds_min.x) {
+        center.x = bounds_min.x + (bounds_min.x - center.x) * 0.5;
     }
-    if (center.x > 1.0 - edge_buffer) {
-        center.x = 1.0 - edge_buffer - abs(sin(uniforms.time + firefly_id)) * edge_repulsion;
+    if (center.x > bounds_max.x) {
+        center.x = bounds_max.x - (center.x - bounds_max.x) * 0.5;
     }
-    if (center.y < edge_buffer) {
-        center.y = edge_buffer + abs(cos(uniforms.time + firefly_id)) * edge_repulsion;
+    if (center.y < bounds_min.y) {
+        center.y = bounds_min.y + (bounds_min.y - center.y) * 0.5;
     }
-    if (center.y > 1.0 - edge_buffer) {
-        center.y = 1.0 - edge_buffer - abs(cos(uniforms.time + firefly_id)) * edge_repulsion;
+    if (center.y > bounds_max.y) {
+        center.y = bounds_max.y - (center.y - bounds_max.y) * 0.5;
     }
 
     // Size varies per firefly
@@ -339,17 +417,27 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // Distance from center of firefly for glow effect
     let dist = length(input.world_pos);
 
-    // Multi-layer glow effect
-    let core = exp(-dist * dist * 20.0);
-    let inner_glow = exp(-dist * dist * 5.0);
-    let outer_glow = exp(-dist * dist * 1.0);
+    // Linear algebra approach: Use simple inverse falloff instead of exponentials
+    // Much faster than exp() and gives similar visual results
 
-    // Combine glow layers
-    let glow = core + inner_glow * 0.5 + outer_glow * 0.2;
+    // Core brightness: Sharp falloff for center bright spot
+    // Using 1/(1+x) pattern which is pure division, no transcendentals
+    let core = 1.0 / (1.0 + dist * dist * 40.0);
+
+    // Inner glow: Medium falloff
+    let inner_glow = 1.0 / (1.0 + dist * dist * 10.0);
+
+    // Outer glow: Soft falloff using linear interpolation
+    // Clamp and lerp are simple min/max operations, very fast
+    let outer_factor = clamp(1.0 - dist * 0.7, 0.0, 1.0);
+    let outer_glow = outer_factor * outer_factor;  // Quadratic for smoothness
+
+    // Combine layers using weighted sum (pure linear algebra)
+    let glow = core * 1.2 + inner_glow * 0.4 + outer_glow * 0.15;
 
     // Apply intensity and color
     let final_color = input.color * input.intensity * 2.0;
-    let alpha = glow * input.intensity * 0.8;
+    let alpha = clamp(glow * input.intensity * 0.8, 0.0, 1.0);
 
     return vec4<f32>(final_color * glow, alpha);
 }

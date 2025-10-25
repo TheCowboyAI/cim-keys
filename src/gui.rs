@@ -28,11 +28,12 @@ pub mod animated_background;
 pub mod fireflies;
 pub mod firefly_shader;
 pub mod firefly_synchronization;
+pub mod kuramoto_firefly_shader;
 
 use graph::{OrganizationGraph, GraphMessage};
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
-use firefly_synchronization::FireflySynchronization;
+use kuramoto_firefly_shader::KuramotoFireflyShader;
 
 /// Main application state
 pub struct CimKeysApp {
@@ -86,6 +87,7 @@ pub struct CimKeysApp {
 
     // Animation
     animation_time: f32,
+    firefly_shader: KuramotoFireflyShader,
 }
 
 /// Different tabs in the application
@@ -246,6 +248,7 @@ impl CimKeysApp {
                 status_message: String::from("🔐 Welcome to CIM Keys - Offline Key Management System"),
                 error_message: None,
                 animation_time: 0.0,
+                firefly_shader: KuramotoFireflyShader::new(),
             },
             Task::none(),
         )
@@ -682,12 +685,13 @@ impl CimKeysApp {
             }
 
             Message::AnimationTick => {
-                // Update animation time (60 FPS = ~0.016s per frame)
-                self.animation_time += 0.016;
-                // Debug: Print current time to verify animation is updating
-                eprintln!("AnimationTick received: time = {}", self.animation_time);
-                // Force a redraw by returning a Task that triggers a view update
-                // In iced, returning from update() triggers a view refresh
+                // Update animation time with faster increment for more noticeable movement
+                self.animation_time += 0.05;
+                // Update shader's time to match
+                self.firefly_shader.time = self.animation_time;
+                // Update Kuramoto phases for synchronization
+                self.firefly_shader.update_kuramoto_phases(0.05);
+                // Trigger a view refresh
                 Task::none()
             }
         }
@@ -696,10 +700,41 @@ impl CimKeysApp {
     fn view(&self) -> Element<Message> {
         use iced::widget::{stack, shader};
 
-        // Load the SVG logo using image widget
-        let logo_image = image("assets/logo.svg")
-            .width(Length::Fixed(80.0))
-            .height(Length::Fixed(80.0));
+        // Create a text-based logo since iced doesn't support SVG directly
+        let logo_text = container(
+            column![
+                text("CIM").size(32).font(Font {
+                    family: iced::font::Family::Monospace,
+                    weight: iced::font::Weight::Bold,
+                    stretch: iced::font::Stretch::Normal,
+                    style: iced::font::Style::Normal,
+                }),
+                text("KEYS").size(24).font(Font {
+                    family: iced::font::Family::Monospace,
+                    weight: iced::font::Weight::Bold,
+                    stretch: iced::font::Stretch::Normal,
+                    style: iced::font::Style::Normal,
+                }),
+            ]
+            .align_x(iced::Alignment::Center)
+            .spacing(0)
+        )
+        .width(Length::Fixed(80.0))
+        .height(Length::Fixed(80.0))
+        .center(Length::Fixed(80.0))
+        .style(|theme: &Theme| {
+            let palette = theme.extended_palette();
+            container::Style {
+                background: Some(Background::Color(Color::from_rgba(0.1, 0.1, 0.2, 1.0))),
+                border: Border {
+                    color: palette.primary.strong.color,
+                    width: 2.0,
+                    radius: 8.0.into(),
+                },
+                text_color: Some(palette.primary.strong.color),
+                ..container::Style::default()
+            }
+        });
 
         // Tab bar
         let tab_bar = row![
@@ -758,7 +793,7 @@ impl CimKeysApp {
 
         // Header with logo and title
         let header = row![
-            logo_image,
+            logo_text,
             column![
                 text("CIM Keys - Offline Key Management System")
                     .size(24)
@@ -795,9 +830,9 @@ impl CimKeysApp {
             .height(Length::Fill)
             .padding(20);
 
-        // Stack the firefly synchronization shader animation and main content
+        // Stack the firefly shader animation with random movement and main content
         stack![
-            shader(FireflySynchronization::with_time(self.animation_time))
+            shader(self.firefly_shader.clone())
                 .width(Length::Fill)
                 .height(Length::Fill),
             main_content
