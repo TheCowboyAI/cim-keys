@@ -5,5 +5,7 @@
 //! not the concrete implementations.
 
 pub mod nats;
+pub mod storage;
 
 pub use nats::{NatsKeyPort, NatsKeyOperations};
+pub use storage::{StoragePort, StorageConfig, StorageMetadata, StorageError, SyncMode};
