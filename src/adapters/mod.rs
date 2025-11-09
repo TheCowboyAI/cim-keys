@@ -9,6 +9,8 @@
 
 pub mod nsc;
 pub mod in_memory;
+pub mod yubikey_mock;
 
 pub use nsc::NscAdapter;
 pub use in_memory::InMemoryStorageAdapter;
+pub use yubikey_mock::MockYubiKeyAdapter;
