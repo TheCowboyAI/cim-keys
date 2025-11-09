@@ -30,8 +30,8 @@ LLMs are **cognitive extensions**, not mechanical tools. They provide:
 ### IMPORTANT: Context Awareness
 **Check which repository you're in:**
 - If in `cim` → You're in the REGISTRY (source of truth, not an implementation)
-- If in `cim-*` → You're in a MODULE (provides specific functionality)
-- If in `cim-domain-*` → You're in a DOMAIN (assembles modules for business)
+- If in `cim-*` → You're in a Composition MODULE (provides specific functionality)
+- If in `cim-domain-*` → You're in a single Specific DOMAIN (assembles modules for business)
 
 ## What is a CIM?
 

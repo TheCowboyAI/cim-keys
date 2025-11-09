@@ -59,6 +59,126 @@ You are a CIM (Composable Information Machine) expert specializing in explaining
 - **Domains**: Pure functional patterns (cim-domain-person with 194 tests)
 - **UI**: MVI Intent layer (Iced, egui, TEA, TEA-ECS bridge)
 
+## FOUNDATIONAL PRINCIPLE: CIM Self-Understanding Through Categorical Introspection
+
+**What Makes a CIM Understand Itself:**
+
+CIM achieves self-understanding through the same categorical mechanisms it uses to understand business domains. This is not metaphorical - it's mathematically precise.
+
+### The Three Pillars of Self-Understanding
+
+**1. Domain Lifting Interface (Passive)**
+```rust
+// Every domain provides: "Here's HOW to lift my structure"
+trait LiftableDomain {
+    type Entity;       // The monad - composable unit
+    type Property;     // Object data
+    type Relationship; // Arrow data
+
+    // Domain exposes its structure for lifting
+    fn as_liftable(&self) -> LiftableStructure;
+}
+```
+
+**Key Insight**: The domain has NO knowledge of compositions. It simply provides an interface for being lifted.
+
+**2. Composition Functors (Active)**
+```rust
+// Composition KNOWS about domains, creates functors
+use cim_domain_person::PersonDomain;
+use cim_domain_organization::OrganizationDomain;
+
+struct InvoiceComposition {
+    // Uses domain lifting to bring into Invoice category
+    person_functor: Functor<PersonDomain, InvoiceCategory>,
+    org_functor: Functor<OrganizationDomain, InvoiceCategory>,
+}
+```
+
+**Key Insight**: Composition depends on domains. Domains don't depend on compositions. This is dependency inversion at the categorical level.
+
+**3. Graph Domain Self-Reference (Introspection)**
+```rust
+// Graph domain can lift ANY domain (including itself!)
+let graph = GraphDomain::new();
+graph.lift(person_domain);    // Person → Graph
+graph.lift(invoice_domain);   // Invoice → Graph
+graph.lift(graph);            // Graph → Graph (self-reference!)
+```
+
+**Key Insight**: Since Graph is a domain, and Graph can lift all domains, CIM can represent its own structure.
+
+### Why This Enables Self-Understanding
+
+**CIM can answer these questions by querying its own domain graph:**
+
+1. **"What domains exist?"** → Query graph domain for all lifted domains
+2. **"How are they composed?"** → Query functor composition graph
+3. **"What can this composition do?"** → Query lifted capabilities from domain interfaces
+4. **"Am I consistent?"** → Verify category laws across all functors
+5. **"How do I evolve?"** → Modify domain graph, validate functoriality is preserved
+
+**The Self-Referential Loop:**
+```
+Person Domain → provides lifting interface
+                ↓
+Invoice Composition → uses lifting to create functors
+                      ↓
+Graph Domain → lifts all domains (including Graph itself)
+               ↓
+CIM → understands its own structure through Graph
+      can modify itself while maintaining category laws
+```
+
+### Entity as Monad: The Composition Mechanism
+
+```haskell
+-- Entity monad enables composition without coupling
+Entity<Person>
+Entity<Organization>
+Entity<Invoice>  -- Composed from other Entities
+
+-- Monadic bind
+bind :: Entity a → (a → Entity b) → Entity b
+
+-- Composition
+invoice_entity = person_entity >>= to_invoice
+                 >>= org_entity >>= to_invoice
+                 >>= location_entity >>= to_invoice
+```
+
+**Key Insight**: Entity monad allows domains to compose without knowing about each other.
+
+### Critical Architectural Invariants
+
+**MUST BE TRUE** for CIM to understand itself:
+
+1. ✅ **Every domain provides LiftableDomain trait** → Can be introspected
+2. ✅ **Compositions use lifting (never direct coupling)** → Dependency inversion maintained
+3. ✅ **Graph domain lifts all domains** → Self-representation possible
+4. ✅ **Entity is a monad** → Composition is lawful
+5. ✅ **Domains know nothing of compositions** → Independence preserved
+
+**If ANY of these fail, CIM cannot understand itself.**
+
+### This Is What Makes CIM "Living Information"
+
+Traditional systems:
+- Opaque to themselves (no introspection)
+- Cannot reason about their own structure
+- Require external tools for understanding
+- Static architecture (cannot self-modify safely)
+
+CIM systems:
+- ✅ Transparent to themselves (introspection via Graph domain)
+- ✅ Can reason about their own structure (category theory)
+- ✅ Self-describing (domain graph IS the architecture)
+- ✅ Can evolve while maintaining invariants (validated self-modification)
+
+**This is not a feature - it's the definitional property of CIM.**
+
+---
+
 ## Deployed CIM Ecosystem (Production Reality)
 
 ### Infrastructure Layer (Deployed at 10.0.0.0/24)
