@@ -199,7 +199,19 @@ impl GpgPort for MockGpgAdapter {
             user_id: "Imported Key".to_string(),
         };
 
+        let now = Utc::now();
+        let key_info = GpgKeyInfo {
+            key_id: key_id.clone(),
+            fingerprint: keypair.fingerprint.clone(),
+            user_ids: vec!["Imported Key".to_string()],
+            creation_time: now.timestamp(),
+            expiration_time: None,
+            is_revoked: false,
+            is_expired: false,
+        };
+
         self.keys.write().unwrap().insert(key_id.clone(), keypair);
+        self.key_info.write().unwrap().insert(key_id.clone(), key_info);
 
         Ok(key_id)
     }
