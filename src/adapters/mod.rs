@@ -14,3 +14,10 @@ pub mod yubikey_mock;
 pub use nsc::NscAdapter;
 pub use in_memory::InMemoryStorageAdapter;
 pub use yubikey_mock::MockYubiKeyAdapter;
+
+// TODO: Implement additional adapters for new ports
+// - FileSystemStorageAdapter for StoragePort
+// - YubiKeyPCSCAdapter for YubiKeyPort (real hardware)
+// - RcgenX509Adapter for X509Port
+// - SequoiaGpgAdapter for GpgPort
+// - SshKeysAdapter for SshKeyPort

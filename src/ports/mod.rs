@@ -11,10 +11,28 @@
 pub mod nats;
 pub mod storage;
 pub mod yubikey;
+pub mod x509;
+pub mod gpg;
+pub mod ssh;
 
 pub use nats::{NatsKeyPort, NatsKeyOperations};
 pub use storage::{StoragePort, StorageConfig, StorageMetadata, StorageError, SyncMode};
 pub use yubikey::{
     YubiKeyPort, YubiKeyDevice, YubiKeyError, PivSlot, KeyAlgorithm,
     PublicKey, Signature, SecureString,
+};
+pub use x509::{
+    X509Port, Certificate, CertificateSubject, CertificateSigningRequest,
+    PrivateKey, KeyUsage, ExtendedKeyUsage, CertificateFormat,
+    RevokedCertificate, RevocationReason, CertificateRevocationList,
+    OcspStatus, OcspResponse, X509Error,
+};
+pub use gpg::{
+    GpgPort, GpgKeyId, GpgKeypair, GpgKeyType, GpgKeyInfo,
+    GpgVerification, RevocationReason as GpgRevocationReason, GpgError,
+};
+pub use ssh::{
+    SshKeyPort, SshKeyType, SshKeypair, SshPublicKey, SshPrivateKey,
+    SshSignature, SshPrivateKeyFormat, SshPublicKeyFormat,
+    FingerprintHashType, KeyConversionFormat, SshError,
 };
