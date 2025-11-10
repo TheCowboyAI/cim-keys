@@ -272,6 +272,160 @@ pub fn update(
             (updated, command)
         }
 
+        Intent::UiGenerateIntermediateCAClicked { name } => {
+            use crate::crypto::{generate_intermediate_ca, IntermediateCAParams};
+
+            // Get stored master seed
+            let master_seed = match &model.master_seed {
+                Some(seed) => seed.clone(),
+                None => {
+                    let updated = model
+                        .with_error(Some("Please derive master seed first".to_string()))
+                        .with_status_message("Error: Master seed not available".to_string());
+                    return (updated, Task::none());
+                }
+            };
+
+            // Get Root CA certificate and key
+            let root_ca_cert = match &model.key_generation_status.root_ca_certificate_pem {
+                Some(cert) => cert.clone(),
+                None => {
+                    let updated = model
+                        .with_error(Some("Please generate Root CA first".to_string()))
+                        .with_status_message("Error: Root CA not available".to_string());
+                    return (updated, Task::none());
+                }
+            };
+
+            let root_ca_key = match &model.key_generation_status.root_ca_private_key_pem {
+                Some(key) => key.clone(),
+                None => {
+                    let updated = model
+                        .with_error(Some("Root CA private key not available".to_string()))
+                        .with_status_message("Error: Root CA private key not available".to_string());
+                    return (updated, Task::none());
+                }
+            };
+
+            // Clone for async
+            let name_clone = name.clone();
+            let org_name = model.organization_name.clone();
+
+            let updated = model
+                .with_status_message(format!("Generating intermediate CA '{}'...", name))
+                .with_error(None);
+
+            let command = Task::perform(
+                async move {
+                    // Derive intermediate seed from master seed
+                    let intermediate_seed = master_seed.derive_child(&format!("intermediate-{}", name_clone));
+
+                    // Generate intermediate CA certificate
+                    let params = IntermediateCAParams {
+                        organization: org_name.clone(),
+                        organizational_unit: name_clone.clone(),
+                        common_name: format!("{} Intermediate CA", name_clone),
+                        country: Some("US".to_string()),
+                        validity_years: 10,
+                    };
+
+                    match generate_intermediate_ca(&intermediate_seed, params, &root_ca_cert, &root_ca_key) {
+                        Ok(cert) => Intent::PortX509IntermediateCAGenerated {
+                            name: name_clone,
+                            certificate_pem: cert.certificate_pem,
+                            private_key_pem: cert.private_key_pem,
+                            fingerprint: cert.fingerprint,
+                        },
+                        Err(e) => Intent::PortX509GenerationFailed {
+                            error: format!("Intermediate CA generation failed: {}", e),
+                        },
+                    }
+                },
+                |intent| intent,
+            );
+
+            (updated, command)
+        }
+
+        Intent::UiGenerateServerCertClicked {
+            common_name,
+            san_entries,
+            intermediate_ca_name,
+        } => {
+            use crate::crypto::{generate_server_certificate, ServerCertParams};
+
+            // Get stored master seed
+            let master_seed = match &model.master_seed {
+                Some(seed) => seed.clone(),
+                None => {
+                    let updated = model
+                        .with_error(Some("Please derive master seed first".to_string()))
+                        .with_status_message("Error: Master seed not available".to_string());
+                    return (updated, Task::none());
+                }
+            };
+
+            // Find the specified intermediate CA
+            let intermediate_ca = model.key_generation_status.intermediate_cas
+                .iter()
+                .find(|ca| ca.name == intermediate_ca_name)
+                .cloned();
+
+            let intermediate_ca = match intermediate_ca {
+                Some(ca) => ca,
+                None => {
+                    let updated = model
+                        .with_error(Some(format!("Intermediate CA '{}' not found", intermediate_ca_name)))
+                        .with_status_message("Error: Intermediate CA not found".to_string());
+                    return (updated, Task::none());
+                }
+            };
+
+            // Clone for async
+            let common_name_clone = common_name.clone();
+            let san_entries_clone = san_entries.clone();
+            let intermediate_ca_name_clone = intermediate_ca_name.clone();
+            let org_name = model.organization_name.clone();
+            let intermediate_cert_pem = intermediate_ca.certificate_pem.clone();
+            let intermediate_key_pem = intermediate_ca.private_key_pem.clone();
+
+            let updated = model
+                .with_status_message(format!("Generating server certificate for '{}'...", common_name))
+                .with_error(None);
+
+            let command = Task::perform(
+                async move {
+                    // Derive server seed from master seed
+                    let server_seed = master_seed.derive_child(&format!("server-{}", common_name_clone));
+
+                    // Generate server certificate
+                    let params = ServerCertParams {
+                        common_name: common_name_clone.clone(),
+                        san_entries: san_entries_clone.clone(),
+                        organization: org_name.clone(),
+                        organizational_unit: Some(intermediate_ca_name_clone.clone()),
+                        validity_days: 365, // 1 year
+                    };
+
+                    match generate_server_certificate(&server_seed, params, &intermediate_cert_pem, &intermediate_key_pem) {
+                        Ok(cert) => Intent::PortX509ServerCertGenerated {
+                            common_name: common_name_clone,
+                            certificate_pem: cert.certificate_pem,
+                            private_key_pem: cert.private_key_pem,
+                            fingerprint: cert.fingerprint,
+                            signed_by: intermediate_ca_name_clone,
+                        },
+                        Err(e) => Intent::PortX509GenerationFailed {
+                            error: format!("Server certificate generation failed: {}", e),
+                        },
+                    }
+                },
+                |intent| intent,
+            );
+
+            (updated, command)
+        }
+
         Intent::UiGenerateSSHKeysClicked => {
             use crate::ports::ssh::SshKeyType;
 
@@ -476,9 +630,60 @@ pub fn update(
             (updated, Task::none())
         }
 
+        Intent::PortX509IntermediateCAGenerated {
+            name,
+            certificate_pem,
+            private_key_pem,
+            fingerprint,
+        } => {
+            use crate::mvi::model::IntermediateCACert;
+
+            let intermediate = IntermediateCACert {
+                name: name.clone(),
+                certificate_pem,
+                private_key_pem,
+                fingerprint: fingerprint.clone(),
+            };
+
+            let updated = model
+                .with_intermediate_ca(intermediate)
+                .with_status_message(format!("Intermediate CA '{}' generated successfully\nFingerprint: {}", name, fingerprint));
+
+            // TODO: Save certificate and private key via storage port
+            (updated, Task::none())
+        }
+
+        Intent::PortX509ServerCertGenerated {
+            common_name,
+            certificate_pem,
+            private_key_pem,
+            fingerprint,
+            signed_by,
+        } => {
+            use crate::mvi::model::ServerCert;
+
+            let server_cert = ServerCert {
+                common_name: common_name.clone(),
+                certificate_pem,
+                private_key_pem,
+                fingerprint: fingerprint.clone(),
+                signed_by: signed_by.clone(),
+            };
+
+            let updated = model
+                .with_server_certificate(server_cert)
+                .with_status_message(format!(
+                    "Server certificate '{}' generated successfully\nSigned by: {}\nFingerprint: {}",
+                    common_name, signed_by, fingerprint
+                ));
+
+            // TODO: Save certificate and private key via storage port
+            (updated, Task::none())
+        }
+
         Intent::PortX509GenerationFailed { error } => {
             let updated = model
-                .with_error(Some(format!("Root CA generation failed: {}", error)))
+                .with_error(Some(format!("Certificate generation failed: {}", error)))
                 .with_key_progress(0.0);
 
             (updated, Task::none())
