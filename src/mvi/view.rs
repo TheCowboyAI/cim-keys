@@ -374,23 +374,48 @@ fn view_keys(model: &Model) -> Element<'_, Intent> {
         .padding(20)
     };
 
-    let key_status = column![
-        text("Key Generation Status").size(18),
+    let mut key_status_items = vec![
+        text("Key Generation Status").size(18).into(),
         text(format!(
             "Root CA: {}",
             if model.key_generation_status.root_ca_generated { "✓ Generated" } else { "Not generated" }
-        )).size(14),
+        )).size(14).into(),
+    ];
+
+    // Add certificate details if Root CA was generated
+    if let Some(fingerprint) = &model.key_generation_status.root_ca_fingerprint {
+        key_status_items.push(
+            text(format!("  Fingerprint: {}", fingerprint))
+                .size(12)
+                .into()
+        );
+    }
+
+    if let Some(cert_pem) = &model.key_generation_status.root_ca_certificate_pem {
+        let lines = cert_pem.lines().count();
+        key_status_items.push(
+            text(format!("  Certificate: {} lines", lines))
+                .size(12)
+                .into()
+        );
+    }
+
+    key_status_items.push(
         text(format!(
             "SSH Keys: {} generated",
             model.key_generation_status.ssh_keys_generated.len()
-        )).size(14),
+        )).size(14).into()
+    );
+    key_status_items.push(
         text(format!(
             "YubiKeys Provisioned: {}",
             model.key_generation_status.yubikeys_provisioned.len()
-        )).size(14),
-    ]
-    .spacing(10)
-    .padding(20);
+        )).size(14).into()
+    );
+
+    let key_status = Column::with_children(key_status_items)
+        .spacing(10)
+        .padding(20);
 
     let progress = column![
         text("Generation Progress").size(16),

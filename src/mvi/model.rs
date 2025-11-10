@@ -65,6 +65,8 @@ pub enum DomainStatus {
 #[derive(Debug, Clone)]
 pub struct KeyGenerationStatus {
     pub root_ca_generated: bool,
+    pub root_ca_certificate_pem: Option<String>,
+    pub root_ca_fingerprint: Option<String>,
     pub ssh_keys_generated: Vec<String>, // person IDs
     pub yubikeys_provisioned: Vec<String>, // person IDs
 }
@@ -91,6 +93,8 @@ impl Default for Model {
             domain_status: DomainStatus::NotCreated,
             key_generation_status: KeyGenerationStatus {
                 root_ca_generated: false,
+                root_ca_certificate_pem: None,
+                root_ca_fingerprint: None,
                 ssh_keys_generated: Vec::new(),
                 yubikeys_provisioned: Vec::new(),
             },
@@ -187,6 +191,14 @@ impl Model {
     /// Mark root CA as generated (pure function)
     pub fn with_root_ca_generated(mut self) -> Self {
         self.key_generation_status.root_ca_generated = true;
+        self
+    }
+
+    /// Store root CA certificate data (pure function)
+    pub fn with_root_ca_certificate(mut self, certificate_pem: String, fingerprint: String) -> Self {
+        self.key_generation_status.root_ca_generated = true;
+        self.key_generation_status.root_ca_certificate_pem = Some(certificate_pem);
+        self.key_generation_status.root_ca_fingerprint = Some(fingerprint);
         self
     }
 

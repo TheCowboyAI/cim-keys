@@ -217,39 +217,57 @@ pub fn update(
         }
 
         Intent::UiGenerateRootCAClicked => {
-            use crate::ports::x509::{CertificateSubject, PrivateKey};
+            use crate::crypto::{derive_master_seed, generate_root_ca, RootCAParams};
 
             // Clone values BEFORE moving model
+            let passphrase = model.passphrase.clone();
+            let org_id = model.organization_id.clone();
             let org_name = model.organization_name.clone();
-            let x509_clone = x509.clone();
+
+            // Validate that master seed was derived
+            if !model.master_seed_derived {
+                let updated = model
+                    .with_error(Some("Please derive master seed first".to_string()))
+                    .with_status_message("Error: Master seed not derived".to_string());
+                return (updated, Task::none());
+            }
 
             let updated = model
-                .with_status_message("Generating Root CA...".to_string())
-                .with_key_progress(0.1);
+                .with_status_message("Generating Root CA from master seed...".to_string())
+                .with_key_progress(0.1)
+                .with_error(None);
 
             let command = Task::perform(
                 async move {
-                    let subject = CertificateSubject {
+                    // Re-derive master seed from passphrase
+                    // TODO: Store seed securely instead of re-deriving
+                    let master_seed = match derive_master_seed(&passphrase, &org_id) {
+                        Ok(seed) => seed,
+                        Err(e) => {
+                            return Intent::PortX509GenerationFailed {
+                                error: format!("Failed to derive master seed: {}", e),
+                            };
+                        }
+                    };
+
+                    // Derive root CA seed from master seed
+                    let root_ca_seed = master_seed.derive_child("root-ca");
+
+                    // Generate root CA certificate
+                    let params = RootCAParams {
+                        organization: org_name.clone(),
                         common_name: format!("{} Root CA", org_name),
-                        organization: Some(org_name.clone()),
-                        organizational_unit: None,
                         country: Some("US".to_string()),
                         state: None,
                         locality: None,
-                        email: None,
+                        validity_years: 20,
                     };
 
-                    // For now, use mock key (production will use YubiKey-generated key)
-                    let key = PrivateKey {
-                        algorithm: "RSA-2048".to_string(),
-                        der: vec![],
-                        pem: String::new(),
-                    };
-
-                    match x509_clone.generate_root_ca(&subject, &key, 3650).await {
+                    match generate_root_ca(&root_ca_seed, params) {
                         Ok(cert) => Intent::PortX509RootCAGenerated {
-                            certificate_pem: cert.pem,
-                            private_key_pem: String::new(), // Mock for now
+                            certificate_pem: cert.certificate_pem,
+                            private_key_pem: cert.private_key_pem,
+                            fingerprint: cert.fingerprint,
                         },
                         Err(e) => Intent::PortX509GenerationFailed {
                             error: e.to_string(),
@@ -456,11 +474,11 @@ pub fn update(
             (updated, Task::none())
         }
 
-        Intent::PortX509RootCAGenerated { certificate_pem, private_key_pem } => {
+        Intent::PortX509RootCAGenerated { certificate_pem, private_key_pem, fingerprint } => {
             let updated = model
-                .with_root_ca_generated()
-                .with_status_message("Root CA generated successfully".to_string())
-                .with_key_progress(0.5);
+                .with_root_ca_certificate(certificate_pem.clone(), fingerprint.clone())
+                .with_status_message(format!("Root CA generated successfully\nFingerprint: {}", fingerprint))
+                .with_key_progress(1.0);
 
             // TODO: Save certificate and private key via storage port
             (updated, Task::none())

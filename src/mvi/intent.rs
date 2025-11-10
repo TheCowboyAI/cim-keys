@@ -130,6 +130,7 @@ pub enum Intent {
     PortX509RootCAGenerated {
         certificate_pem: String,
         private_key_pem: String,
+        fingerprint: String,
     },
 
     /// X509 port failed root CA generation
