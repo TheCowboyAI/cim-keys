@@ -425,7 +425,84 @@ fn view_keys(model: &Model) -> Element<'_, Intent> {
     .spacing(10)
     .padding(20);
 
+    // Step 2: Intermediate CA Generation
+    let intermediate_ca_section = {
+        let mut ca_list_items = vec![
+            text("Step 2: Intermediate CAs (Signing-Only, pathlen:0)").size(18).into(),
+            text("Generate intermediate CAs for different departments or purposes").size(11).into(),
+            text("").size(8).into(),
+        ];
+
+        // Display generated intermediate CAs
+        if !model.key_generation_status.intermediate_cas.is_empty() {
+            ca_list_items.push(text("Generated Intermediate CAs:").size(14).into());
+            for ca in &model.key_generation_status.intermediate_cas {
+                ca_list_items.push(
+                    text(format!("  ✓ {} - {}", ca.name, &ca.fingerprint[..16]))
+                        .size(12)
+                        .color(Color::from_rgb(0.3, 0.8, 0.3))
+                        .into()
+                );
+            }
+            ca_list_items.push(text("").size(8).into());
+        }
+
+        // Note: In a real implementation, this would have a text input for CA name
+        // For now, we'll just show placeholder buttons
+        ca_list_items.push(
+            text("(Intermediate CA generation requires input fields - see gui.rs for full UI)")
+                .size(11)
+                .color(Color::from_rgb(0.7, 0.7, 0.7))
+                .into()
+        );
+
+        Column::with_children(ca_list_items)
+            .spacing(5)
+            .padding(20)
+    };
+
+    // Step 3: Server Certificate Generation
+    let server_cert_section = {
+        let mut cert_list_items = vec![
+            text("Step 3: Server Certificates").size(18).into(),
+            text("Generate server certificates signed by intermediate CAs").size(11).into(),
+            text("").size(8).into(),
+        ];
+
+        // Display generated server certificates
+        if !model.key_generation_status.server_certificates.is_empty() {
+            cert_list_items.push(text("Generated Server Certificates:").size(14).into());
+            for cert in &model.key_generation_status.server_certificates {
+                cert_list_items.push(
+                    text(format!("  ✓ {} (signed by: {})", cert.common_name, cert.signed_by))
+                        .size(12)
+                        .color(Color::from_rgb(0.3, 0.8, 0.3))
+                        .into()
+                );
+                cert_list_items.push(
+                    text(format!("    Fingerprint: {}", &cert.fingerprint[..16]))
+                        .size(11)
+                        .color(Color::from_rgb(0.5, 0.5, 0.5))
+                        .into()
+                );
+            }
+            cert_list_items.push(text("").size(8).into());
+        }
+
+        cert_list_items.push(
+            text("(Server cert generation requires input fields - see gui.rs for full UI)")
+                .size(11)
+                .color(Color::from_rgb(0.7, 0.7, 0.7))
+                .into()
+        );
+
+        Column::with_children(cert_list_items)
+            .spacing(5)
+            .padding(20)
+    };
+
     let actions = column![
+        text("Step 4: Key Generation Actions").size(18),
         button(text("Generate Root CA").size(16))
             .width(Length::Fixed(250.0))
             .on_press(Intent::UiGenerateRootCAClicked),
@@ -465,6 +542,8 @@ fn view_keys(model: &Model) -> Element<'_, Intent> {
             container(text("")).height(Length::Fixed(20.0)), // Spacer
             key_status,
             progress,
+            intermediate_ca_section,
+            server_cert_section,
             actions,
             yubikey_provisioning,
         ]
