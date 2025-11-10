@@ -67,9 +67,33 @@ pub enum DomainStatus {
 pub struct KeyGenerationStatus {
     pub root_ca_generated: bool,
     pub root_ca_certificate_pem: Option<String>,
+    pub root_ca_private_key_pem: Option<String>,
     pub root_ca_fingerprint: Option<String>,
+
+    pub intermediate_cas: Vec<IntermediateCACert>,
+    pub server_certificates: Vec<ServerCert>,
+
     pub ssh_keys_generated: Vec<String>, // person IDs
     pub yubikeys_provisioned: Vec<String>, // person IDs
+}
+
+/// Intermediate CA certificate info
+#[derive(Debug, Clone)]
+pub struct IntermediateCACert {
+    pub name: String, // e.g., "Engineering"
+    pub certificate_pem: String,
+    pub private_key_pem: String,
+    pub fingerprint: String,
+}
+
+/// Server certificate info
+#[derive(Debug, Clone)]
+pub struct ServerCert {
+    pub common_name: String, // e.g., "api.example.com"
+    pub certificate_pem: String,
+    pub private_key_pem: String,
+    pub fingerprint: String,
+    pub signed_by: String, // Intermediate CA name
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,7 +120,10 @@ impl Default for Model {
             key_generation_status: KeyGenerationStatus {
                 root_ca_generated: false,
                 root_ca_certificate_pem: None,
+                root_ca_private_key_pem: None,
                 root_ca_fingerprint: None,
+                intermediate_cas: Vec::new(),
+                server_certificates: Vec::new(),
                 ssh_keys_generated: Vec::new(),
                 yubikeys_provisioned: Vec::new(),
             },
@@ -197,10 +224,23 @@ impl Model {
     }
 
     /// Store root CA certificate data (pure function)
-    pub fn with_root_ca_certificate(mut self, certificate_pem: String, fingerprint: String) -> Self {
+    pub fn with_root_ca_certificate(mut self, certificate_pem: String, private_key_pem: String, fingerprint: String) -> Self {
         self.key_generation_status.root_ca_generated = true;
         self.key_generation_status.root_ca_certificate_pem = Some(certificate_pem);
+        self.key_generation_status.root_ca_private_key_pem = Some(private_key_pem);
         self.key_generation_status.root_ca_fingerprint = Some(fingerprint);
+        self
+    }
+
+    /// Add intermediate CA certificate (pure function)
+    pub fn with_intermediate_ca(mut self, intermediate: IntermediateCACert) -> Self {
+        self.key_generation_status.intermediate_cas.push(intermediate);
+        self
+    }
+
+    /// Add server certificate (pure function)
+    pub fn with_server_certificate(mut self, server_cert: ServerCert) -> Self {
+        self.key_generation_status.server_certificates.push(server_cert);
         self
     }
 

@@ -47,6 +47,16 @@ pub enum Intent {
     /// User clicked "Generate Root CA"
     UiGenerateRootCAClicked,
 
+    /// User clicked "Generate Intermediate CA"
+    UiGenerateIntermediateCAClicked { name: String },
+
+    /// User clicked "Generate Server Certificate"
+    UiGenerateServerCertClicked {
+        common_name: String,
+        san_entries: Vec<String>,
+        intermediate_ca_name: String,
+    },
+
     /// User clicked "Generate SSH Keys"
     UiGenerateSSHKeysClicked,
 
@@ -134,7 +144,24 @@ pub enum Intent {
         fingerprint: String,
     },
 
-    /// X509 port failed root CA generation
+    /// X509 port completed intermediate CA generation
+    PortX509IntermediateCAGenerated {
+        name: String,
+        certificate_pem: String,
+        private_key_pem: String,
+        fingerprint: String,
+    },
+
+    /// X509 port completed server certificate generation
+    PortX509ServerCertGenerated {
+        common_name: String,
+        certificate_pem: String,
+        private_key_pem: String,
+        fingerprint: String,
+        signed_by: String,
+    },
+
+    /// X509 port failed certificate generation
     PortX509GenerationFailed {
         error: String,
     },
@@ -229,6 +256,8 @@ impl Intent {
                 | Intent::UiPersonEmailChanged { .. }
                 | Intent::UiRemovePersonClicked { .. }
                 | Intent::UiGenerateRootCAClicked
+                | Intent::UiGenerateIntermediateCAClicked { .. }
+                | Intent::UiGenerateServerCertClicked { .. }
                 | Intent::UiGenerateSSHKeysClicked
                 | Intent::UiGenerateAllKeysClicked
                 | Intent::UiExportClicked { .. }
@@ -243,6 +272,8 @@ impl Intent {
             Intent::PortStorageWriteCompleted { .. }
                 | Intent::PortStorageWriteFailed { .. }
                 | Intent::PortX509RootCAGenerated { .. }
+                | Intent::PortX509IntermediateCAGenerated { .. }
+                | Intent::PortX509ServerCertGenerated { .. }
                 | Intent::PortX509GenerationFailed { .. }
                 | Intent::PortSSHKeypairGenerated { .. }
                 | Intent::PortSSHGenerationFailed { .. }

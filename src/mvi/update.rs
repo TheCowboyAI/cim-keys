@@ -468,7 +468,7 @@ pub fn update(
 
         Intent::PortX509RootCAGenerated { certificate_pem, private_key_pem, fingerprint } => {
             let updated = model
-                .with_root_ca_certificate(certificate_pem.clone(), fingerprint.clone())
+                .with_root_ca_certificate(certificate_pem.clone(), private_key_pem.clone(), fingerprint.clone())
                 .with_status_message(format!("Root CA generated successfully\nFingerprint: {}", fingerprint))
                 .with_key_progress(1.0);
 
