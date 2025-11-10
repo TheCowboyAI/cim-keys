@@ -3,7 +3,7 @@
 ## 🎯 Goal
 Enable a single person to create, from a single master passphrase, an entire PKI for a small business running a CIM, with intermediate signing-only certificates for rotation flexibility.
 
-## ✅ Completed (Current Status: ~75% Complete)
+## ✅ Completed (Current Status: ~80% Complete)
 
 ### 1. MVI Architecture (100% Complete) ✅
 - **Intent Layer** (~295 lines): Unified event source abstraction
@@ -241,17 +241,22 @@ Located in **Keys** tab below passphrase section
 
 ### Lines of Code
 - **MVI Framework**: ~1,843 lines
-  - intent.rs: ~295 lines (was ~270)
-  - model.rs: ~332 lines (was ~265)
-  - update.rs: ~766 lines (was ~560) ← **+206 lines this session**
+  - intent.rs: ~295 lines
+  - model.rs: ~332 lines
+  - update.rs: ~766 lines
   - view.rs: ~450 lines
+- **GUI Layer**: ~1,251 lines (src/gui.rs)
+  - Message enum with certificate management variants
+  - CimKeysApp struct with input fields
+  - Update handlers for certificate UI
+  - view_keys() with hierarchical PKI workflow ← **+96 lines this session**
 - **Crypto Module**: ~1,263 lines
   - seed_derivation.rs: ~250 lines
   - passphrase.rs: ~200 lines
   - key_generation.rs: ~113 lines
   - x509.rs: ~700 lines
 - **Documentation**: ~2,000 lines (this file, PKI_HIERARCHY_DESIGN.md, etc.)
-- **Total**: ~5,106 lines (was ~4,800)
+- **Total**: ~5,202 lines (was ~5,106)
 
 ### Test Coverage
 - **Crypto tests**: 22/22 passing (100%) ✅
@@ -262,10 +267,16 @@ Located in **Keys** tab below passphrase section
 - **Build status**: ✅ Success
 - **Warnings**: Minor unused imports only
 
-### Recent Session Progress
-- ✅ Added 206 lines of update handler code
-- ✅ Complete PKI hierarchy generation (Root → Intermediate → Server)
+### Continuation Session Progress
+**Session 1**:
+- ✅ Added 206 lines of MVI update handler code
+- ✅ Complete PKI hierarchy backend (Root → Intermediate → Server)
 - ✅ All handlers follow MVI patterns
+
+**Session 2** (current):
+- ✅ Added 96 lines of GUI components
+- ✅ Message variants and input fields
+- ✅ view_keys() restructured with step-by-step workflow
 - ✅ Clean compilation with no errors
 
 ## 🔄 Complete Workflow (Implemented)
@@ -362,66 +373,51 @@ Server Certificates (api.example.com, etc.)
 
 ## 🚧 Next Steps
 
-### Immediate (Next Session) - GUI Integration
+### Immediate (Next Session) - Backend Integration (~20% remaining)
 1. **Implement intermediate CA generation** ✅ DONE
    - ✅ Crypto: generate_intermediate_ca() in x509.rs
    - ✅ MVI: UiGenerateIntermediateCAClicked handler in update.rs
    - ✅ Model: IntermediateCACert storage in model.rs
    - ✅ Intent: PortX509IntermediateCAGenerated response handler
-   - 🔲 GUI: Add UI controls in view.rs
+   - ✅ GUI: Added UI controls in gui.rs (src/gui.rs:1079-1138)
 
-2. **Implement server certificate generation** ✅ DONE (Backend)
+2. **Implement server certificate generation** ✅ DONE
    - ✅ Crypto: generate_server_certificate() in x509.rs
    - ✅ MVI: UiGenerateServerCertClicked handler in update.rs
    - ✅ Model: ServerCert storage in model.rs
    - ✅ Intent: PortX509ServerCertGenerated response handler
-   - 🔲 GUI: Add UI controls in view.rs
+   - ✅ GUI: Added UI controls in gui.rs
 
-3. **GUI Integration (Remaining Work - ~25% of project)**
+3. **GUI Integration** ✅ DONE (UI Layer)
 
-   **Step 3a: Extend CimKeysApp struct** (src/gui.rs)
-   ```rust
-   pub struct CimKeysApp {
-       // ... existing fields ...
-       intermediate_ca_name_input: String,
-       server_cert_cn_input: String,
-       server_cert_sans_input: String,
-       selected_intermediate_ca: Option<String>,
-   }
-   ```
+   **✅ Step 3a: Extend CimKeysApp struct** (src/gui.rs:81-85)
+   - Added `intermediate_ca_name_input: String`
+   - Added `server_cert_cn_input: String`
+   - Added `server_cert_sans_input: String`
+   - Added `selected_intermediate_ca: Option<String>`
 
-   **Step 3b: Add Message variants** (src/gui.rs)
-   ```rust
-   pub enum Message {
-       // ... existing variants ...
-       IntermediateCANameChanged(String),
-       GenerateIntermediateCA(String),
-       ServerCertCNChanged(String),
-       ServerCertSANsChanged(String),
-       SelectIntermediateCA(String),
-       GenerateServerCert {
-           common_name: String,
-           san_entries: Vec<String>,
-           intermediate_ca_name: String,
-       },
-   }
-   ```
+   **✅ Step 3b: Add Message variants** (src/gui.rs:139-144)
+   - Added `IntermediateCANameChanged(String)`
+   - Added `GenerateIntermediateCA`
+   - Added `ServerCertCNChanged(String)`
+   - Added `ServerCertSANsChanged(String)`
+   - Added `SelectIntermediateCA(String)`
+   - Added `GenerateServerCert`
 
-   **Step 3c: Update view_keys()** (src/gui.rs)
-   - Add intermediate CA section after "Generate Root CA"
-     - Text input for CA name
-     - "Generate Intermediate CA" button
-     - List of generated intermediate CAs with fingerprints
-   - Add server certificate section
-     - Text input for common name
-     - Text input for SANs (comma-separated)
-     - Dropdown/pick_list to select intermediate CA
-     - "Generate Server Certificate" button
-     - List of generated server certificates
+   **✅ Step 3c: Update view_keys()** (src/gui.rs:1079-1138)
+   - ✅ Restructured with hierarchical workflow (1. Root CA, 2. Intermediate CA, 3. Server Certs, 4. Other Keys)
+   - ✅ Intermediate CA section: text input + generate button
+   - ✅ Server certificate section: CN input, SANs input, CA selection display, generate button
+   - ✅ Clear step-by-step labels and helpful placeholders
+   - ✅ Cowboy theme consistent styling
 
-   **Step 3d: Map Messages to Intents** (src/gui.rs update() method)
-   - Message::GenerateIntermediateCA(name) → Intent::UiGenerateIntermediateCAClicked { name }
-   - Message::GenerateServerCert { ... } → Intent::UiGenerateServerCertClicked { ... }
+   **🔲 Step 3d: Connect to MVI Backend** (REMAINING WORK)
+   - Current: Message handlers update UI state only (src/gui.rs:493-532)
+   - TODO: Map GUI Messages to MVI Intents in handlers:
+     - `Message::GenerateIntermediateCA` → `Intent::UiGenerateIntermediateCAClicked { name }`
+     - `Message::GenerateServerCert` → `Intent::UiGenerateServerCertClicked { common_name, san_entries, intermediate_ca_name }`
+   - TODO: Wire up MVI update() return to GUI Task system
+   - TODO: Display generated certificates from Model in UI
 
 ### Short-term
 4. **YubiKey integration**
@@ -479,16 +475,18 @@ Server Certificates (api.example.com, etc.)
 
 ## 📈 Progress Metrics
 
-- **Completion**: ~70% of single-passphrase-to-PKI workflow ✅
+- **Completion**: ~80% of single-passphrase-to-PKI workflow ✅
 - **Core crypto**: 100% ✅
 - **MVI architecture**: 100% ✅
+- **GUI components**: 100% ✅ (UI layer complete, backend wiring pending)
 - **Passphrase UI**: 100% ✅
 - **Master seed storage**: 100% ✅
 - **X.509 generation**: 100% ✅
 - **Certificate validation**: 100% ✅
 - **Root CA generation**: 100% ✅
-- **Intermediate CA generation**: 100% ✅ (implemented, needs UI)
-- **Server cert generation**: 100% ✅ (implemented, needs UI)
+- **Intermediate CA generation**: 100% ✅ (backend + UI complete, wiring pending)
+- **Server cert generation**: 100% ✅ (backend + UI complete, wiring pending)
+- **Backend-to-GUI integration**: ~40% (handlers exist, need Intent mapping)
 - **YubiKey integration**: 0%
 - **SD card export**: 0%
 - **NATS credentials**: 0%
