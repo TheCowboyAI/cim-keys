@@ -3,23 +3,47 @@
 ## 🎯 Goal
 Enable a single person to create, from a single master passphrase, an entire PKI for a small business running a CIM, with intermediate signing-only certificates for rotation flexibility.
 
-## ✅ Completed (Current Status)
+## ✅ Completed (Current Status: ~75% Complete)
 
 ### 1. MVI Architecture (100% Complete) ✅
-- **Intent Layer** (~270 lines): Unified event source abstraction
+- **Intent Layer** (~295 lines): Unified event source abstraction
   - UI-originated intents (Ui*)
+    - UiGenerateIntermediateCAClicked
+    - UiGenerateServerCertClicked
   - Domain events (Domain*)
   - Port responses (Port*)
+    - PortX509IntermediateCAGenerated
+    - PortX509ServerCertGenerated
   - System events (System*)
 
-- **Model Layer** (~265 lines): Pure immutable state
+- **Model Layer** (~332 lines): Pure immutable state
   - Builder pattern with `with_*()` methods
   - Master seed storage with zeroization
-  - Certificate status tracking
+  - Complete certificate chain storage:
+    - `root_ca_private_key_pem: Option<String>`
+    - `intermediate_cas: Vec<IntermediateCACert>`
+    - `server_certificates: Vec<ServerCert>`
+  - IntermediateCACert struct (name, pems, fingerprint)
+  - ServerCert struct (common_name, pems, fingerprint, signed_by)
   - No mutable state, clone-before-move pattern
 
-- **Update Layer** (~560 lines): Pure state transitions
+- **Update Layer** (~766 lines): Pure state transitions
   - `(Model, Intent) → (Model, Task<Intent>)`
+  - ✅ Complete PKI hierarchy handlers:
+    - UiGenerateIntermediateCAClicked (lines 275-348)
+      - Validates master seed and Root CA
+      - Derives intermediate seed with "intermediate-{name}" path
+      - Generates CA with pathlen:0 constraint
+    - PortX509IntermediateCAGenerated (lines 634-655)
+      - Creates IntermediateCACert model object
+      - Stores via with_intermediate_ca()
+    - UiGenerateServerCertClicked (lines 350-428)
+      - Validates master seed and intermediate CA
+      - Derives server seed with "server-{common_name}" path
+      - Supports Subject Alternative Names
+    - PortX509ServerCertGenerated (lines 657-683)
+      - Creates ServerCert model object
+      - Stores via with_server_certificate()
   - Direct crypto integration (no ports needed for seed/cert generation)
   - Async operations via Task::perform
   - Comprehensive error handling
@@ -216,14 +240,18 @@ Located in **Keys** tab below passphrase section
 ## 📊 Architecture Statistics
 
 ### Lines of Code
-- **MVI Framework**: ~1,545 lines
+- **MVI Framework**: ~1,843 lines
+  - intent.rs: ~295 lines (was ~270)
+  - model.rs: ~332 lines (was ~265)
+  - update.rs: ~766 lines (was ~560) ← **+206 lines this session**
+  - view.rs: ~450 lines
 - **Crypto Module**: ~1,263 lines
   - seed_derivation.rs: ~250 lines
   - passphrase.rs: ~200 lines
   - key_generation.rs: ~113 lines
   - x509.rs: ~700 lines
 - **Documentation**: ~2,000 lines (this file, PKI_HIERARCHY_DESIGN.md, etc.)
-- **Total**: ~4,800 lines added across sessions
+- **Total**: ~5,106 lines (was ~4,800)
 
 ### Test Coverage
 - **Crypto tests**: 22/22 passing (100%) ✅
@@ -233,6 +261,12 @@ Located in **Keys** tab below passphrase section
   - 8 X.509 validation tests
 - **Build status**: ✅ Success
 - **Warnings**: Minor unused imports only
+
+### Recent Session Progress
+- ✅ Added 206 lines of update handler code
+- ✅ Complete PKI hierarchy generation (Root → Intermediate → Server)
+- ✅ All handlers follow MVI patterns
+- ✅ Clean compilation with no errors
 
 ## 🔄 Complete Workflow (Implemented)
 
@@ -328,21 +362,66 @@ Server Certificates (api.example.com, etc.)
 
 ## 🚧 Next Steps
 
-### Immediate (Next Session)
+### Immediate (Next Session) - GUI Integration
 1. **Implement intermediate CA generation** ✅ DONE
-   - Already implemented in x509.rs
-   - generate_intermediate_ca() working
-   - Tests passing
+   - ✅ Crypto: generate_intermediate_ca() in x509.rs
+   - ✅ MVI: UiGenerateIntermediateCAClicked handler in update.rs
+   - ✅ Model: IntermediateCACert storage in model.rs
+   - ✅ Intent: PortX509IntermediateCAGenerated response handler
+   - 🔲 GUI: Add UI controls in view.rs
 
-2. **Connect intermediate CA to UI**
-   - Add UiGenerateIntermediateCAClicked intent
-   - Store intermediate cert in Model
-   - Display in GUI
+2. **Implement server certificate generation** ✅ DONE (Backend)
+   - ✅ Crypto: generate_server_certificate() in x509.rs
+   - ✅ MVI: UiGenerateServerCertClicked handler in update.rs
+   - ✅ Model: ServerCert storage in model.rs
+   - ✅ Intent: PortX509ServerCertGenerated response handler
+   - 🔲 GUI: Add UI controls in view.rs
 
-3. **Implement server certificate generation**
-   - Add UiGenerateServerCertClicked intent
-   - SAN entry UI (DNS names, IP addresses)
-   - Store server cert in Model
+3. **GUI Integration (Remaining Work - ~25% of project)**
+
+   **Step 3a: Extend CimKeysApp struct** (src/gui.rs)
+   ```rust
+   pub struct CimKeysApp {
+       // ... existing fields ...
+       intermediate_ca_name_input: String,
+       server_cert_cn_input: String,
+       server_cert_sans_input: String,
+       selected_intermediate_ca: Option<String>,
+   }
+   ```
+
+   **Step 3b: Add Message variants** (src/gui.rs)
+   ```rust
+   pub enum Message {
+       // ... existing variants ...
+       IntermediateCANameChanged(String),
+       GenerateIntermediateCA(String),
+       ServerCertCNChanged(String),
+       ServerCertSANsChanged(String),
+       SelectIntermediateCA(String),
+       GenerateServerCert {
+           common_name: String,
+           san_entries: Vec<String>,
+           intermediate_ca_name: String,
+       },
+   }
+   ```
+
+   **Step 3c: Update view_keys()** (src/gui.rs)
+   - Add intermediate CA section after "Generate Root CA"
+     - Text input for CA name
+     - "Generate Intermediate CA" button
+     - List of generated intermediate CAs with fingerprints
+   - Add server certificate section
+     - Text input for common name
+     - Text input for SANs (comma-separated)
+     - Dropdown/pick_list to select intermediate CA
+     - "Generate Server Certificate" button
+     - List of generated server certificates
+
+   **Step 3d: Map Messages to Intents** (src/gui.rs update() method)
+   - Message::GenerateIntermediateCA(name) → Intent::UiGenerateIntermediateCAClicked { name }
+   - Message::GenerateServerCert { ... } → Intent::UiGenerateServerCertClicked { ... }
 
 ### Short-term
 4. **YubiKey integration**
