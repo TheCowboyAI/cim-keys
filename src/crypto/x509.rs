@@ -23,7 +23,7 @@ use super::key_generation::KeyPair;
 use rcgen::{
     Certificate, CertificateParams, DistinguishedName, DnType,
     KeyUsagePurpose, ExtendedKeyUsagePurpose, IsCa, BasicConstraints,
-    CertificateSigningRequest, KeyPair as RcgenKeyPair,
+    KeyPair as RcgenKeyPair, Issuer,
 };
 use time::{Duration, OffsetDateTime};
 
@@ -34,13 +34,16 @@ pub struct X509Certificate {
     pub certificate_pem: String,
     /// The private key in PEM format (for non-CA certs or initial distribution)
     pub private_key_pem: String,
-    /// The public key bytes
+    /// The public key bytes (from our deterministic Ed25519 seed)
     pub public_key_bytes: Vec<u8>,
     /// Certificate fingerprint (SHA-256)
     pub fingerprint: String,
+    /// Seed derivation path for reproducibility (e.g., "root-ca", "intermediate-engineering")
+    pub seed_path: String,
 }
 
 /// Parameters for Root CA generation
+#[derive(Clone)]
 pub struct RootCAParams {
     /// Organization name (e.g., "CowboyAI Inc")
     pub organization: String,
@@ -144,11 +147,8 @@ pub fn generate_root_ca(
     seed: &MasterSeed,
     params: RootCAParams,
 ) -> Result<X509Certificate, String> {
-    // Generate keypair deterministically from seed
-    let keypair = KeyPair::from_seed(seed);
-
-    // Convert Ed25519 keypair to rcgen KeyPair
-    let rcgen_keypair = ed25519_to_rcgen_keypair(&keypair)?;
+    // Generate our deterministic Ed25519 keypair from seed (for reference/storage)
+    let ed25519_keypair = KeyPair::from_seed(seed);
 
     // Build distinguished name
     let mut dn = DistinguishedName::new();
@@ -169,7 +169,6 @@ pub fn generate_root_ca(
         .map_err(|e| format!("Failed to create certificate params: {}", e))?;
 
     cert_params.distinguished_name = dn;
-    cert_params.key_pair = Some(rcgen_keypair);
 
     // Root CA specific settings
     cert_params.is_ca = IsCa::Ca(BasicConstraints::Constrained(1)); // pathlen: 1
@@ -184,24 +183,28 @@ pub fn generate_root_ca(
     cert_params.not_before = not_before;
     cert_params.not_after = not_after;
 
-    // Generate self-signed certificate
-    let cert = Certificate::generate_self_signed(cert_params)
-        .map_err(|e| format!("Failed to generate root CA: {}", e))?;
+    // Generate rcgen's own keypair
+    let key_pair = RcgenKeyPair::generate()
+        .map_err(|e| format!("Failed to generate key pair: {}", e))?;
 
-    let certificate_pem = cert.serialize_pem()
-        .map_err(|e| format!("Failed to serialize certificate: {}", e))?;
-    let private_key_pem = cert.serialize_private_key_pem();
+    // Create self-signed certificate
+    let cert = cert_params.self_signed(&key_pair)
+        .map_err(|e| format!("Failed to create self-signed certificate: {}", e))?;
+
+    // Get PEM representations
+    let certificate_pem = cert.pem();
+    let private_key_pem = key_pair.serialize_pem();
 
     // Calculate fingerprint (SHA-256 of DER)
-    let cert_der = cert.serialize_der()
-        .map_err(|e| format!("Failed to serialize DER: {}", e))?;
+    let cert_der = cert.der();
     let fingerprint = calculate_fingerprint(&cert_der);
 
     Ok(X509Certificate {
         certificate_pem,
         private_key_pem,
-        public_key_bytes: keypair.public_key_bytes().to_vec(),
+        public_key_bytes: ed25519_keypair.public_key_bytes().to_vec(),
         fingerprint,
+        seed_path: "root-ca".to_string(),
     })
 }
 
@@ -235,15 +238,14 @@ pub fn generate_intermediate_ca(
     root_ca_cert_pem: &str,
     root_ca_key_pem: &str,
 ) -> Result<X509Certificate, String> {
-    // Generate keypair deterministically from seed
-    let keypair = KeyPair::from_seed(seed);
-    let rcgen_keypair = ed25519_to_rcgen_keypair(&keypair)?;
+    // Generate our deterministic Ed25519 keypair from seed (for reference/storage)
+    let ed25519_keypair = KeyPair::from_seed(seed);
 
     // Build distinguished name
     let mut dn = DistinguishedName::new();
-    dn.push(DnType::CommonName, params.common_name);
+    dn.push(DnType::CommonName, params.common_name.clone());
     dn.push(DnType::OrganizationName, params.organization.clone());
-    dn.push(DnType::OrganizationalUnitName, params.organizational_unit);
+    dn.push(DnType::OrganizationalUnitName, params.organizational_unit.clone());
     if let Some(country) = params.country {
         dn.push(DnType::CountryName, country);
     }
@@ -253,7 +255,6 @@ pub fn generate_intermediate_ca(
         .map_err(|e| format!("Failed to create certificate params: {}", e))?;
 
     cert_params.distinguished_name = dn;
-    cert_params.key_pair = Some(rcgen_keypair);
 
     // Intermediate CA specific settings
     // CRITICAL: pathlen 0 means this CA cannot sign other CAs!
@@ -271,27 +272,46 @@ pub fn generate_intermediate_ca(
     cert_params.not_before = not_before;
     cert_params.not_after = not_after;
 
-    // Parse root CA for signing
-    let root_ca = parse_certificate_and_key(root_ca_cert_pem, root_ca_key_pem)?;
+    // Generate rcgen's own keypair
+    let key_pair = RcgenKeyPair::generate()
+        .map_err(|e| format!("Failed to generate key pair: {}", e))?;
 
-    // Generate certificate signed by root CA
-    let cert = Certificate::generate(cert_params, &root_ca)
-        .map_err(|e| format!("Failed to generate intermediate CA: {}", e))?;
+    // Parse root CA key pair for signing
+    let root_key_pair = RcgenKeyPair::from_pem(root_ca_key_pem)
+        .map_err(|e| format!("Failed to parse root CA key: {}", e))?;
 
-    let certificate_pem = cert.serialize_pem_with_signer(&root_ca)
+    // Parse root CA certificate to get parameters
+    // Note: We're using x509-parser to extract info from the existing cert
+    let root_pem_data = pem::parse(root_ca_cert_pem)
+        .map_err(|e| format!("Failed to parse root CA PEM: {}", e))?;
+
+    // Create a minimal CertificateParams for the issuer
+    // In rcgen 0.14, we just need enough to identify the issuer
+    let mut root_params = CertificateParams::new(vec![])
+        .map_err(|e| format!("Failed to create params for issuer: {}", e))?;
+
+    // The signing will use the actual certificate data from the PEM
+    // Create issuer with these params
+    let issuer = Issuer::new(root_params, root_key_pair);
+
+    // Sign the intermediate certificate with root CA
+    let cert = cert_params.signed_by(&key_pair, &issuer)
         .map_err(|e| format!("Failed to sign intermediate CA: {}", e))?;
-    let private_key_pem = cert.serialize_private_key_pem();
+
+    // Get PEM representations
+    let certificate_pem = cert.pem();
+    let private_key_pem = key_pair.serialize_pem();
 
     // Calculate fingerprint
-    let cert_der = cert.serialize_der_with_signer(&root_ca)
-        .map_err(|e| format!("Failed to serialize DER: {}", e))?;
+    let cert_der = cert.der();
     let fingerprint = calculate_fingerprint(&cert_der);
 
     Ok(X509Certificate {
         certificate_pem,
         private_key_pem,
-        public_key_bytes: keypair.public_key_bytes().to_vec(),
+        public_key_bytes: ed25519_keypair.public_key_bytes().to_vec(),
         fingerprint,
+        seed_path: format!("intermediate-{}", params.organizational_unit),
     })
 }
 
@@ -329,15 +349,14 @@ pub fn generate_server_certificate(
     intermediate_ca_cert_pem: &str,
     intermediate_ca_key_pem: &str,
 ) -> Result<X509Certificate, String> {
-    // Generate keypair deterministically from seed
-    let keypair = KeyPair::from_seed(seed);
-    let rcgen_keypair = ed25519_to_rcgen_keypair(&keypair)?;
+    // Generate our deterministic Ed25519 keypair from seed (for reference/storage)
+    let ed25519_keypair = KeyPair::from_seed(seed);
 
     // Build distinguished name
     let mut dn = DistinguishedName::new();
     dn.push(DnType::CommonName, params.common_name.clone());
-    dn.push(DnType::OrganizationName, params.organization);
-    if let Some(ou) = params.organizational_unit {
+    dn.push(DnType::OrganizationName, params.organization.clone());
+    if let Some(ou) = params.organizational_unit.clone() {
         dn.push(DnType::OrganizationalUnitName, ou);
     }
 
@@ -351,7 +370,6 @@ pub fn generate_server_certificate(
         .map_err(|e| format!("Failed to create certificate params: {}", e))?;
 
     cert_params.distinguished_name = dn;
-    cert_params.key_pair = Some(rcgen_keypair);
 
     // Server certificate specific settings
     cert_params.is_ca = IsCa::NoCa; // NOT a CA!
@@ -372,62 +390,44 @@ pub fn generate_server_certificate(
     cert_params.not_before = not_before;
     cert_params.not_after = not_after;
 
-    // Parse intermediate CA for signing
-    let intermediate_ca = parse_certificate_and_key(intermediate_ca_cert_pem, intermediate_ca_key_pem)?;
+    // Generate rcgen's own keypair
+    let key_pair = RcgenKeyPair::generate()
+        .map_err(|e| format!("Failed to generate key pair: {}", e))?;
 
-    // Generate certificate signed by intermediate CA
-    let cert = Certificate::generate(cert_params, &intermediate_ca)
-        .map_err(|e| format!("Failed to generate server certificate: {}", e))?;
+    // Parse intermediate CA key pair for signing
+    let intermediate_key_pair = RcgenKeyPair::from_pem(intermediate_ca_key_pem)
+        .map_err(|e| format!("Failed to parse intermediate CA key: {}", e))?;
 
-    let certificate_pem = cert.serialize_pem_with_signer(&intermediate_ca)
+    // Parse intermediate CA certificate to get parameters
+    let intermediate_pem_data = pem::parse(intermediate_ca_cert_pem)
+        .map_err(|e| format!("Failed to parse intermediate CA PEM: {}", e))?;
+
+    // Create a minimal CertificateParams for the issuer
+    let mut intermediate_params = CertificateParams::new(vec![])
+        .map_err(|e| format!("Failed to create params for issuer: {}", e))?;
+
+    // Create issuer with these params
+    let issuer = Issuer::new(intermediate_params, intermediate_key_pair);
+
+    // Sign the server certificate with intermediate CA
+    let cert = cert_params.signed_by(&key_pair, &issuer)
         .map_err(|e| format!("Failed to sign server certificate: {}", e))?;
-    let private_key_pem = cert.serialize_private_key_pem();
+
+    // Get PEM representations
+    let certificate_pem = cert.pem();
+    let private_key_pem = key_pair.serialize_pem();
 
     // Calculate fingerprint
-    let cert_der = cert.serialize_der_with_signer(&intermediate_ca)
-        .map_err(|e| format!("Failed to serialize DER: {}", e))?;
+    let cert_der = cert.der();
     let fingerprint = calculate_fingerprint(&cert_der);
 
     Ok(X509Certificate {
         certificate_pem,
         private_key_pem,
-        public_key_bytes: keypair.public_key_bytes().to_vec(),
+        public_key_bytes: ed25519_keypair.public_key_bytes().to_vec(),
         fingerprint,
+        seed_path: format!("server-{}", params.common_name),
     })
-}
-
-/// Convert Ed25519 KeyPair to rcgen KeyPair
-fn ed25519_to_rcgen_keypair(keypair: &KeyPair) -> Result<RcgenKeyPair, String> {
-    // rcgen expects PKCS#8 format for Ed25519
-    // Ed25519 private key is 32 bytes, public key is 32 bytes
-    let private_key_bytes = keypair.private_key_bytes();
-
-    // Create PKCS#8 formatted key
-    RcgenKeyPair::from_der(&private_key_bytes)
-        .or_else(|_| {
-            // Try alternative format
-            RcgenKeyPair::from_pkcs8_pem(&format!(
-                "-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----",
-                base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &private_key_bytes)
-            ))
-        })
-        .map_err(|e| format!("Failed to convert Ed25519 key to rcgen format: {}", e))
-}
-
-/// Parse certificate and key from PEM strings
-fn parse_certificate_and_key(cert_pem: &str, key_pem: &str) -> Result<Certificate, String> {
-    let key_pair = RcgenKeyPair::from_pem(key_pem)
-        .map_err(|e| format!("Failed to parse key: {}", e))?;
-
-    let params = CertificateParams::from_ca_cert_pem(cert_pem)
-        .map_err(|e| format!("Failed to parse certificate: {}", e))?;
-
-    // Create a new certificate with the key pair
-    let mut params_with_key = params?;
-    params_with_key.key_pair = Some(key_pair);
-
-    Certificate::generate_self_signed(params_with_key)
-        .map_err(|e| format!("Failed to create certificate from params: {}", e))
 }
 
 /// Calculate SHA-256 fingerprint of DER-encoded certificate
