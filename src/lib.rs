@@ -49,6 +49,10 @@ pub mod projections;
 pub mod ports;
 pub mod adapters;
 
+// MVI (Model-View-Intent) architecture for GUI
+#[cfg(feature = "gui")]
+pub mod mvi;
+
 // Master domain model - cim-keys owns the initial domain creation
 pub mod domain;
 

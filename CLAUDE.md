@@ -22,6 +22,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 8. **MessageIdentity Creation**: Use cim_domain's factory methods, not direct construction
 9. **Compilation Before Proceeding**: Always fix compilation errors before moving to new features
 10. **Context Awareness**: Check which repository/module you're in before making changes
+11. **MVI Pattern for GUI**: Use Model-View-Intent architecture with explicit event source categorization
+12. **Pure Update Functions**: Update functions must be pure - NO side effects except in Commands
+13. **Immutable Model Updates**: Use `with_*` methods that return new instances, NEVER mutate
+14. **Clone Before Move**: Clone model fields BEFORE calling methods that consume model
+15. **Intent Naming**: Prefix intents with origin: `Ui*`, `Port*`, `Domain*`, `System*`, `Error*`
+16. **Port Dependency Injection**: Inject ports into update function, call through Commands only
+17. **Hex Field Access**: Use correct field names (`data` not `key_data`, `data` not `public_key`)
 
 ## 🔴 CRITICAL DIRECTIVE: PROGRESS LOGGING
 
