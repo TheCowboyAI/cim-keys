@@ -1,36 +1,38 @@
 # Single Passphrase to Complete PKI - Implementation Progress
 
 ## 🎯 Goal
-Enable a single person to create, from a single master passphrase, an entire PKI for a small business running a CIM.
+Enable a single person to create, from a single master passphrase, an entire PKI for a small business running a CIM, with intermediate signing-only certificates for rotation flexibility.
 
-## ✅ Completed (Current Session)
+## ✅ Completed (Current Status)
 
-### 1. MVI Architecture (100% Complete)
-- **Intent Layer** (~260 lines): Unified event source abstraction
+### 1. MVI Architecture (100% Complete) ✅
+- **Intent Layer** (~270 lines): Unified event source abstraction
   - UI-originated intents (Ui*)
   - Domain events (Domain*)
   - Port responses (Port*)
   - System events (System*)
 
-- **Model Layer** (~240 lines): Pure immutable state
+- **Model Layer** (~265 lines): Pure immutable state
   - Builder pattern with `with_*()` methods
+  - Master seed storage with zeroization
+  - Certificate status tracking
   - No mutable state, clone-before-move pattern
-  - Passphrase state management
 
-- **Update Layer** (~450 lines): Pure state transitions
+- **Update Layer** (~560 lines): Pure state transitions
   - `(Model, Intent) → (Model, Task<Intent>)`
-  - Port dependency injection
+  - Direct crypto integration (no ports needed for seed/cert generation)
   - Async operations via Task::perform
-  - Complete error handling
+  - Comprehensive error handling
 
 - **View Layer** (~450 lines): Pure rendering functions
   - `Model → Element<Intent>`
   - Tab-based navigation
-  - Comprehensive passphrase UI
+  - Passphrase UI with strength indicator
+  - Certificate display with fingerprints
 
-### 2. Crypto Module (100% Complete)
+### 2. Crypto Module (100% Complete) ✅
 
-#### `src/crypto/seed_derivation.rs` (184 lines)
+#### `src/crypto/seed_derivation.rs` (~250 lines)
 - **Argon2id KDF**: Memory-hard password derivation
   - Production: 1GB memory, 10 iterations
   - Testing: 64MB memory, 3 iterations
@@ -42,11 +44,18 @@ Enable a single person to create, from a single master passphrase, an entire PKI
   - Deterministic child seed generation
   - Cryptographically independent seeds
 
-- **Tests**: 4/4 passing
+- **Zeroize Implementation**: Secure memory clearing
+  - Manual Zeroize trait for MasterSeed
+  - Drop implementation for automatic cleanup
+  - Redacted Debug (shows `<redacted>`)
+
+- **Tests**: 6/6 passing ✅
   - Deterministic derivation
   - Different org → different seed
   - Child seed derivation
   - Hierarchical derivation
+  - Seed zeroization
+  - Zeroization on drop
 
 #### `src/crypto/passphrase.rs` (200 lines)
 - **Entropy Estimation**:
@@ -61,7 +70,7 @@ Enable a single person to create, from a single master passphrase, an entire PKI
   - VeryStrong: ≥ 95 bits
 
 - **Validation**: Real-time feedback with suggestions
-- **Tests**: 4/4 passing
+- **Tests**: 4/4 passing ✅
 
 #### `src/crypto/key_generation.rs` (113 lines)
 - **Ed25519 Keypairs**: Deterministic from seeds
@@ -69,15 +78,54 @@ Enable a single person to create, from a single master passphrase, an entire PKI
   - Sign/verify operations
   - 32-byte public/private keys
 
-- **Tests**: 4/4 passing
+- **Tests**: 4/4 passing ✅
+
+#### `src/crypto/x509.rs` (~700 lines) ✅ NEW!
+- **Root CA Generation**:
+  - Self-signed with pathlen:1 (allows 1 intermediate level)
+  - KeyUsage: keyCertSign, cRLSign
+  - Configurable validity (default 20 years)
+  - Deterministic from seed
+
+- **Intermediate CA Generation** (Signing-Only):
+  - Signed by Root CA
+  - BasicConstraints: CA=true, pathlen:0 (CRITICAL!)
+  - KeyUsage: keyCertSign, cRLSign
+  - Can sign server certs, CANNOT create sub-CAs
+  - Enables rotation without expanding trust
+
+- **Server Certificate Generation**:
+  - Signed by Intermediate CA
+  - Subject Alternative Names (SAN)
+  - KeyUsage: digitalSignature, keyEncipherment
+  - Short validity (90 days default)
+
+- **Tests**: 8/8 passing ✅
+  - Root CA generation
   - Deterministic generation
-  - Different seeds → different keypairs
-  - Sign and verify
-  - Child seed keypairs
+  - Intermediate CA signing
+  - Basic constraints validation (Root: pathlen≥1)
+  - Intermediate pathlen:0 validation (CRITICAL TEST)
+  - Key usage validation
+  - Complete chain generation
+  - Certificate validity periods
 
-**Total: 12/12 crypto tests passing** ✅
+**Total: 22/22 crypto tests passing** ✅
 
-### 3. MVI-Crypto Integration (100% Complete)
+### 3. Security Enhancements (100% Complete) ✅
+
+#### Secure Seed Storage
+- **MasterSeed stored in Model** after derivation
+- **Automatic zeroization** when Model drops
+- **No re-derivation needed** for certificate generation
+- **Redacted Debug output** for security
+
+#### Performance Improvements
+- **Eliminated expensive Argon2id re-computation**
+- **Certificate generation now instant** after initial seed derivation
+- **Reduced passphrase exposure** in memory (only used once)
+
+### 4. MVI-Crypto Integration (100% Complete) ✅
 
 #### Model State Extensions
 ```rust
@@ -85,23 +133,35 @@ pub passphrase: String,
 pub passphrase_confirmed: String,
 pub passphrase_strength: Option<PassphraseStrength>,
 pub master_seed_derived: bool,
+pub master_seed: Option<MasterSeed>,  // NEW: Stored securely
+
+pub key_generation_status: KeyGenerationStatus {
+    root_ca_generated: bool,
+    root_ca_certificate_pem: Option<String>,  // NEW
+    root_ca_fingerprint: Option<String>,      // NEW
+    // ...
+}
 ```
 
 #### Intent Events
 - `UiPassphraseChanged(String)` - Real-time input
 - `UiPassphraseConfirmChanged(String)` - Confirmation input
 - `UiDeriveMasterSeedClicked` - Trigger derivation
-- `MasterSeedDerived { org_id, entropy }` - Success event
+- `MasterSeedDerived { org_id, entropy, seed }` - Success with seed
 - `MasterSeedDerivationFailed { error }` - Failure event
+- `UiGenerateRootCAClicked` - Generate Root CA
+- `PortX509RootCAGenerated { cert_pem, key_pem, fingerprint }` - CA generated
 
 #### Update Handlers
 - **Real-time strength validation**: Updates as user types
 - **Passphrase match verification**: Before derivation
 - **Strength requirement enforcement**: Prevents weak passphrases
 - **Async seed derivation**: Task::perform with Argon2id
+- **Seed storage**: Saves to Model after derivation
+- **Certificate generation**: Uses stored seed (no re-derivation!)
 - **Error feedback**: Clear messages to user
 
-### 4. Passphrase UI (100% Complete)
+### 5. Passphrase UI (100% Complete) ✅
 
 Located in **Keys** tab as "Step 1: Master Passphrase"
 
@@ -134,16 +194,43 @@ Located in **Keys** tab as "Step 1: Master Passphrase"
   - Shows entropy bits
   - Explains deterministic generation
 
+### 6. Certificate UI (100% Complete) ✅
+
+Located in **Keys** tab below passphrase section
+
+#### Features:
+- **Key Generation Status**
+  - Shows "Root CA: ✓ Generated" when complete
+  - Displays certificate fingerprint
+  - Shows certificate line count
+
+- **Generate Root CA Button**
+  - Uses stored master seed (no passphrase re-entry!)
+  - Generates deterministically from seed
+  - Updates UI with fingerprint
+
+- **Progress Feedback**
+  - Real-time status messages
+  - Error handling with clear messages
+
 ## 📊 Architecture Statistics
 
 ### Lines of Code
-- **MVI Framework**: ~1,400 lines
-- **Crypto Module**: ~500 lines
-- **Documentation**: ~1,500 lines (SINGLE_PASSPHRASE_WORKFLOW.md, etc.)
-- **Total**: ~3,400 lines added this session
+- **MVI Framework**: ~1,545 lines
+- **Crypto Module**: ~1,263 lines
+  - seed_derivation.rs: ~250 lines
+  - passphrase.rs: ~200 lines
+  - key_generation.rs: ~113 lines
+  - x509.rs: ~700 lines
+- **Documentation**: ~2,000 lines (this file, PKI_HIERARCHY_DESIGN.md, etc.)
+- **Total**: ~4,800 lines added across sessions
 
 ### Test Coverage
-- **Crypto tests**: 12/12 passing (100%)
+- **Crypto tests**: 22/22 passing (100%) ✅
+  - 6 seed derivation tests
+  - 4 passphrase tests
+  - 4 key generation tests
+  - 8 X.509 validation tests
 - **Build status**: ✅ Success
 - **Warnings**: Minor unused imports only
 
@@ -183,110 +270,146 @@ Located in **Keys** tab as "Step 1: Master Passphrase"
                            ↓
 ┌─────────────────────────────────────────────────────────┐
 │ 5. Success: MasterSeedDerived event                     │
-│    → Model updated: master_seed_derived = true          │
+│    → Model updated: master_seed = Some(seed)            │
+│    → master_seed_derived = true                         │
 │    → Status message: "Master seed derived (75.0 bits)"  │
 │    → UI shows ✓ with entropy                            │
-│    → Ready for hierarchical key generation              │
+│    → Seed stored securely (zeroized on drop)            │
+└─────────────────────────────────────────────────────────┘
+                           ↓
+┌─────────────────────────────────────────────────────────┐
+│ 6. User clicks "Generate Root CA"                       │
+│    → UiGenerateRootCAClicked                            │
+│    → Uses stored master_seed (NO RE-DERIVATION!)        │
+│    → root_ca_seed = master_seed.derive_child("root-ca") │
+└─────────────────────────────────────────────────────────┘
+                           ↓
+┌─────────────────────────────────────────────────────────┐
+│ 7. Async certificate generation                         │
+│    → generate_root_ca(root_ca_seed, params)             │
+│    → Self-signed X.509 certificate                      │
+│    → BasicConstraints: CA=true, pathlen:1               │
+│    → KeyUsage: keyCertSign, cRLSign                     │
+│    → 20-year validity                                   │
+└─────────────────────────────────────────────────────────┘
+                           ↓
+┌─────────────────────────────────────────────────────────┐
+│ 8. Success: PortX509RootCAGenerated                     │
+│    → Certificate PEM stored in Model                    │
+│    → Fingerprint displayed in UI                        │
+│    → Status: "Root CA generated successfully"           │
+│    → Ready for intermediate CA generation               │
 └─────────────────────────────────────────────────────────┘
 ```
 
-## 🎨 UI Screenshots (Text Description)
+## 🎨 PKI Hierarchy Design (Implemented)
 
-### Keys Tab - Step 1: Master Passphrase
+### Three-Level PKI Structure
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│ Step 1: Master Passphrase                              │18│
-│ All keys are derived from a single master passphrase   │11│
-│ using Argon2id (1GB memory, 10 iterations)                 │
-│                                                             │
-│ Master Passphrase:                                     │12│
-│ ┌──────────────────────────────────────────────────────┐   │
-│ │ correct horse battery staple mountain river          │   │
-│ └──────────────────────────────────────────────────────┘   │
-│ Strength: Strong (excellent)                           │12│
-│                                                             │
-│ Confirm Passphrase:                                    │12│
-│ ┌──────────────────────────────────────────────────────┐   │
-│ │ correct horse battery staple mountain river          │   │
-│ └──────────────────────────────────────────────────────┘   │
-│ ✓ Passphrases match                                    │11│
-│                                                             │
-│ ┌──────────────────────────┐                               │
-│ │  Derive Master Seed  │14 │                               │
-│ └──────────────────────────┘                               │
-│                                                             │
-│ ✓ Master Seed Derived                                  │14│
-│ All keys will be deterministically generated           │11│
-└────────────────────────────────────────────────────────────┘
+Root CA (pathlen:1)
+   ↓ signs
+Intermediate CA "Engineering" (pathlen:0, signing-only)
+   ↓ signs
+Server Certificates (api.example.com, etc.)
 ```
+
+**Critical Design Decision: pathlen:0 for Intermediates**
+- ✅ Intermediate CAs can sign server certificates
+- ❌ Intermediate CAs CANNOT create sub-CAs
+- 🔄 Enables rotation: compromise → revoke intermediate → issue new
+- 🛡️ Prevents trust expansion: compromised intermediate can't create new CAs
+
+### Validation Tests Confirm:
+- ✅ Root CA has pathlen ≥ 1 (allows intermediates)
+- ✅ Intermediate CA has pathlen = 0 (signing-only)
+- ✅ Server certs are NOT CAs
+- ✅ Key usage restrictions enforced
 
 ## 🚧 Next Steps
 
 ### Immediate (Next Session)
-1. **Store master seed securely** - Current TODO in update.rs line 180
-   - Consider using secrecy crate
-   - Zeroize on drop
-   - Memory protection
+1. **Implement intermediate CA generation** ✅ DONE
+   - Already implemented in x509.rs
+   - generate_intermediate_ca() working
+   - Tests passing
 
-2. **Connect seed to key generation**
-   - Update UiGenerateRootCAClicked to use derived seed
-   - Implement HKDF child derivation for Root CA
-   - Generate Ed25519 keypair from seed
-   - Create X.509 certificate with generated key
+2. **Connect intermediate CA to UI**
+   - Add UiGenerateIntermediateCAClicked intent
+   - Store intermediate cert in Model
+   - Display in GUI
+
+3. **Implement server certificate generation**
+   - Add UiGenerateServerCertClicked intent
+   - SAN entry UI (DNS names, IP addresses)
+   - Store server cert in Model
 
 ### Short-term
-3. **Implement hierarchical key derivation**
-   - Root CA seed: `master.derive_child("root-ca")`
-   - Intermediate CA seeds: `root.derive_child("intermediate-engineering")`
-   - User key seeds: `intermediate.derive_child("user-alice")`
-
 4. **YubiKey integration**
-   - Store derived keys in PIV slots
-   - 9A: Authentication
-   - 9C: Digital Signature
-   - 9D: Key Management
-   - 9E: Card Authentication
+   - Store Root CA private key in YubiKey slot 9D
+   - Signing operations via YubiKey
+   - PIN protection
+   - Certificate attestation
 
 5. **SD Card export**
    - LUKS encryption setup
-   - Export domain + keys to encrypted partition
-   - Manifest generation
+   - Export complete PKI to encrypted partition:
+     ```
+     /encrypted/
+       ├── root-ca/
+       │   ├── certificate.pem
+       │   └── fingerprint.txt
+       ├── intermediate-ca/
+       │   ├── engineering.pem
+       │   └── operations.pem
+       └── manifest.json
+     ```
 
 ### Long-term
 6. **NATS credential generation**
-   - Operator keys from seed
+   - Operator keys from master seed
    - Account keys from operator
    - User keys from accounts
+   - JWT credential files
 
-7. **Complete PKI hierarchy**
-   - Root CA → Intermediate CAs → Leaf certificates
-   - All deterministic from single passphrase
-   - Reproducible on any machine with same passphrase + org_id
+7. **Certificate revocation**
+   - CRL generation
+   - OCSP responder integration
+   - Revocation tracking in Model
 
 ## 🔐 Security Properties
 
-### Current Implementation
+### Current Implementation ✅
 - ✅ **Memory-hard KDF**: Argon2id with 1GB memory cost
 - ✅ **Time-hard KDF**: 10 iterations (production)
 - ✅ **Deterministic salt**: SHA-256(org_id)
 - ✅ **Cryptographic separation**: HKDF domain separation
 - ✅ **Strong entropy**: 70+ bits for Strong classification
 - ✅ **Real-time validation**: Prevents weak passphrases
+- ✅ **Zeroization**: Master seed cleared from memory on drop
+- ✅ **Secure storage**: Seed stored in Model (zeroized)
+- ✅ **No re-derivation**: Uses stored seed for cert generation
+- ✅ **Pathlen constraints**: Intermediate CAs are signing-only
+- ✅ **Key usage restrictions**: Proper X.509 extensions
 
 ### Future Enhancements
 - 🔲 Passphrase masking (if Iced adds `.secure()` method)
-- 🔲 Zeroize passphrases in memory
-- 🔲 Memory protection (mlock/mprotect)
-- 🔲 Hardware-backed storage (YubiKey)
+- 🔲 Hardware-backed storage (YubiKey for Root CA)
+- 🔲 Certificate pinning in NATS
+- 🔲 OCSP stapling
 
 ## 📈 Progress Metrics
 
-- **Completion**: ~40% of single-passphrase-to-PKI workflow
+- **Completion**: ~70% of single-passphrase-to-PKI workflow ✅
 - **Core crypto**: 100% ✅
 - **MVI architecture**: 100% ✅
 - **Passphrase UI**: 100% ✅
-- **Key generation from seed**: 0%
+- **Master seed storage**: 100% ✅
+- **X.509 generation**: 100% ✅
+- **Certificate validation**: 100% ✅
+- **Root CA generation**: 100% ✅
+- **Intermediate CA generation**: 100% ✅ (implemented, needs UI)
+- **Server cert generation**: 100% ✅ (implemented, needs UI)
 - **YubiKey integration**: 0%
 - **SD card export**: 0%
 - **NATS credentials**: 0%
@@ -299,43 +422,67 @@ Located in **Keys** tab as "Step 1: Master Passphrase"
 4. **Pure Functions**: No mutable state in MVI pattern
 5. **Intent Naming**: Prefix with origin (Ui*, Domain*, Port*, System*)
 6. **Async in Commands**: Never in update function body
-7. **Test-Driven Crypto**: Write tests first, fix implementation
+7. **Test-Driven Crypto**: Write tests first, validate constraints
 8. **Production vs Test Params**: Use cfg(test) for faster test execution
-9. **Salt Generation**: Hash input + Base64 encode without padding
-10. **Strength Thresholds**: Adjust for word-based vs character-based
+9. **Zeroize Patterns**: Manual implementation when derive not available
+10. **Certificate Constraints**: pathlen:0 for signing-only intermediates
+11. **X.509 Validation**: Always test with x509-parser, not just generation
+12. **Secure Storage**: Store derived values, not derivation inputs
 
 ## 📝 Documentation
 
-- ✅ `SINGLE_PASSPHRASE_WORKFLOW.md` (560 lines)
+- ✅ `PASSPHRASE_TO_PKI_PROGRESS.md` (this file) - Updated!
+- ✅ `PKI_HIERARCHY_DESIGN.md` - Three-level PKI with pathlen:0
 - ✅ `MVI_IMPLEMENTATION_GUIDE.md` (500+ lines)
 - ✅ `MVI_ARCHITECTURE_DIAGRAM.md`
-- ✅ `PASSPHRASE_TO_PKI_PROGRESS.md` (this file)
+- ✅ `SESSION_SUMMARY.md` - Continuation session notes
 - ✅ Comprehensive code comments
-- ✅ Test documentation
+- ✅ Test documentation with clear assertions
 
 ## 🔗 Related Files
 
 ### Source Code
-- `src/crypto/seed_derivation.rs` - Argon2id + HKDF
-- `src/crypto/passphrase.rs` - Validation & entropy
-- `src/crypto/key_generation.rs` - Ed25519 keypairs
-- `src/mvi/model.rs` - State management
-- `src/mvi/intent.rs` - Event types
-- `src/mvi/update.rs` - State transitions
-- `src/mvi/view.rs` - UI rendering
+- `src/crypto/seed_derivation.rs` - Argon2id + HKDF + Zeroize (250 lines)
+- `src/crypto/passphrase.rs` - Validation & entropy (200 lines)
+- `src/crypto/key_generation.rs` - Ed25519 keypairs (113 lines)
+- `src/crypto/x509.rs` - PKI hierarchy generation (700 lines) ✅ NEW!
+- `src/mvi/model.rs` - State management with seed storage (265 lines)
+- `src/mvi/intent.rs` - Event types (270 lines)
+- `src/mvi/update.rs` - State transitions (560 lines)
+- `src/mvi/view.rs` - UI rendering (450 lines)
 
-### Tests
-- `src/crypto/seed_derivation.rs` - 4 tests
-- `src/crypto/passphrase.rs` - 4 tests
-- `src/crypto/key_generation.rs` - 4 tests
+### Tests (22 total)
+- `src/crypto/seed_derivation.rs` - 6 tests ✅
+- `src/crypto/passphrase.rs` - 4 tests ✅
+- `src/crypto/key_generation.rs` - 4 tests ✅
+- `src/crypto/x509.rs` - 8 tests ✅ NEW!
 
 ### Configuration
-- `Cargo.toml` - Added argon2, hkdf dependencies
+- `Cargo.toml` - Dependencies: argon2, hkdf, rcgen, x509-parser
 - `flake.nix` - Nix development environment
+
+## 🏆 Recent Commits
+
+1. `feat: implement secure seed storage with zeroize` (0a40d0b)
+   - Manual Zeroize trait implementation
+   - Redacted Debug for security
+   - Tests for automatic zeroization
+
+2. `feat: store master seed in Model instead of re-deriving` (04965a5)
+   - Eliminates expensive Argon2id re-computation
+   - Instant certificate generation after initial derivation
+   - Automatic zeroization on Model drop
+
+3. `test: add comprehensive X.509 certificate validation tests` (5c1c810)
+   - 5 new validation tests using x509-parser
+   - Validates pathlen:0 constraint (CRITICAL!)
+   - Confirms key usage restrictions
+   - Tests complete certificate chain
 
 ---
 
-**Last Updated**: 2025-11-09
-**Session Duration**: ~2 hours
-**Commits**: 2 major commits
-**Status**: ✅ Core foundation complete, ready for key generation integration
+**Last Updated**: 2025-11-10 (continuation session)
+**Total Session Duration**: ~4 hours across sessions
+**Major Commits**: 6 (3 in continuation session)
+**Status**: ✅ Core passphrase-to-PKI complete with secure storage and comprehensive validation
+**Next**: UI for intermediate/server cert generation, then YubiKey integration
