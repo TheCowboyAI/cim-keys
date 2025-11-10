@@ -26,7 +26,12 @@
 pub mod seed_derivation;
 pub mod key_generation;
 pub mod passphrase;
+pub mod x509;
 
 pub use seed_derivation::{MasterSeed, derive_master_seed, derive_child_seed};
 pub use key_generation::{KeyPair, generate_keypair_from_seed};
 pub use passphrase::{PassphraseStrength, validate_passphrase};
+pub use x509::{
+    X509Certificate, RootCAParams, IntermediateCAParams, ServerCertParams,
+    generate_root_ca, generate_intermediate_ca, generate_server_certificate,
+};
