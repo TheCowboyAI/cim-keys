@@ -3,7 +3,7 @@
 ## 🎯 Goal
 Enable a single person to create, from a single master passphrase, an entire PKI for a small business running a CIM, with intermediate signing-only certificates for rotation flexibility.
 
-## ✅ Completed (Current Status: ~80% Complete)
+## ✅ Completed (Current Status: ~85% Complete)
 
 ### 1. MVI Architecture (100% Complete) ✅
 - **Intent Layer** (~295 lines): Unified event source abstraction
@@ -48,11 +48,15 @@ Enable a single person to create, from a single master passphrase, an entire PKI
   - Async operations via Task::perform
   - Comprehensive error handling
 
-- **View Layer** (~450 lines): Pure rendering functions
+- **View Layer** (~529 lines): Pure rendering functions
   - `Model → Element<Intent>`
   - Tab-based navigation
   - Passphrase UI with strength indicator
-  - Certificate display with fingerprints
+  - ✅ Certificate hierarchy display (view.rs:428-502) ← **+79 lines this session**
+    - Intermediate CA section with dynamic list
+    - Server certificate section with signer info
+    - Color-coded status (green for generated)
+    - Fingerprint display (first 16 chars)
 
 ### 2. Crypto Module (100% Complete) ✅
 
@@ -240,23 +244,23 @@ Located in **Keys** tab below passphrase section
 ## 📊 Architecture Statistics
 
 ### Lines of Code
-- **MVI Framework**: ~1,843 lines
+- **MVI Framework**: ~1,922 lines (was ~1,843)
   - intent.rs: ~295 lines
   - model.rs: ~332 lines
   - update.rs: ~766 lines
-  - view.rs: ~450 lines
+  - view.rs: ~529 lines (was ~450) ← **+79 lines this session**
 - **GUI Layer**: ~1,251 lines (src/gui.rs)
   - Message enum with certificate management variants
   - CimKeysApp struct with input fields
   - Update handlers for certificate UI
-  - view_keys() with hierarchical PKI workflow ← **+96 lines this session**
+  - view_keys() with hierarchical PKI workflow
 - **Crypto Module**: ~1,263 lines
   - seed_derivation.rs: ~250 lines
   - passphrase.rs: ~200 lines
   - key_generation.rs: ~113 lines
   - x509.rs: ~700 lines
 - **Documentation**: ~2,000 lines (this file, PKI_HIERARCHY_DESIGN.md, etc.)
-- **Total**: ~5,202 lines (was ~5,106)
+- **Total**: ~5,281 lines (was ~5,202)
 
 ### Test Coverage
 - **Crypto tests**: 22/22 passing (100%) ✅
@@ -273,11 +277,18 @@ Located in **Keys** tab below passphrase section
 - ✅ Complete PKI hierarchy backend (Root → Intermediate → Server)
 - ✅ All handlers follow MVI patterns
 
-**Session 2** (current):
-- ✅ Added 96 lines of GUI components
+**Session 2**:
+- ✅ Added 96 lines of GUI components (gui.rs)
 - ✅ Message variants and input fields
 - ✅ view_keys() restructured with step-by-step workflow
 - ✅ Clean compilation with no errors
+
+**Session 3** (current):
+- ✅ Added 79 lines of MVI view components
+- ✅ Certificate hierarchy display in MVI view layer
+- ✅ Dynamic lists for intermediate CAs and server certs
+- ✅ Color-coded status indicators
+- ✅ Clean compilation
 
 ## 🔄 Complete Workflow (Implemented)
 
@@ -475,18 +486,20 @@ Server Certificates (api.example.com, etc.)
 
 ## 📈 Progress Metrics
 
-- **Completion**: ~80% of single-passphrase-to-PKI workflow ✅
+- **Completion**: ~85% of single-passphrase-to-PKI workflow ✅
 - **Core crypto**: 100% ✅
 - **MVI architecture**: 100% ✅
-- **GUI components**: 100% ✅ (UI layer complete, backend wiring pending)
+- **MVI view layer**: 100% ✅ (certificate display complete)
+- **GUI components**: 100% ✅ (input UI in gui.rs complete)
 - **Passphrase UI**: 100% ✅
 - **Master seed storage**: 100% ✅
 - **X.509 generation**: 100% ✅
 - **Certificate validation**: 100% ✅
 - **Root CA generation**: 100% ✅
-- **Intermediate CA generation**: 100% ✅ (backend + UI complete, wiring pending)
-- **Server cert generation**: 100% ✅ (backend + UI complete, wiring pending)
-- **Backend-to-GUI integration**: ~40% (handlers exist, need Intent mapping)
+- **Intermediate CA generation**: 100% ✅ (backend + display complete)
+- **Server cert generation**: 100% ✅ (backend + display complete)
+- **Certificate display**: 100% ✅ (MVI view.rs complete)
+- **Backend-to-GUI integration**: ~50% (MVI complete, gui.rs needs Intent wiring)
 - **YubiKey integration**: 0%
 - **SD card export**: 0%
 - **NATS credentials**: 0%
