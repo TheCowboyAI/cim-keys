@@ -106,6 +106,7 @@ pub enum Intent {
     MasterSeedDerived {
         organization_id: String,
         entropy_bits: f64,
+        seed: crate::crypto::MasterSeed,
     },
 
     /// Master seed derivation failed

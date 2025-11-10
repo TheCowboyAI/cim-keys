@@ -19,8 +19,18 @@ use der::zeroize::Zeroize;
 ///
 /// Security: Implements `Zeroize` to securely clear memory when dropped,
 /// preventing the seed from remaining in memory after use.
+///
+/// Note: Debug implementation redacts the actual seed bytes for security.
 #[derive(Clone)]
 pub struct MasterSeed([u8; 32]);
+
+impl std::fmt::Debug for MasterSeed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("MasterSeed")
+            .field(&"<redacted>")
+            .finish()
+    }
+}
 
 impl Zeroize for MasterSeed {
     fn zeroize(&mut self) {

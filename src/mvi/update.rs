@@ -176,11 +176,11 @@ pub fn update(
             let command = Task::perform(
                 async move {
                     match derive_master_seed(&passphrase, &org_id) {
-                        Ok(_seed) => {
-                            // TODO: Store seed securely for later use
+                        Ok(seed) => {
                             Intent::MasterSeedDerived {
                                 organization_id: org_id,
                                 entropy_bits: validation.entropy_bits,
+                                seed,
                             }
                         }
                         Err(e) => Intent::MasterSeedDerivationFailed { error: e },
@@ -195,8 +195,10 @@ pub fn update(
         Intent::MasterSeedDerived {
             organization_id,
             entropy_bits,
+            seed,
         } => {
             let updated = model
+                .with_master_seed(seed)
                 .with_master_seed_derived(true)
                 .with_status_message(format!(
                     "Master seed derived successfully ({:.1} bits entropy)",
@@ -217,20 +219,21 @@ pub fn update(
         }
 
         Intent::UiGenerateRootCAClicked => {
-            use crate::crypto::{derive_master_seed, generate_root_ca, RootCAParams};
+            use crate::crypto::{generate_root_ca, RootCAParams};
 
             // Clone values BEFORE moving model
-            let passphrase = model.passphrase.clone();
-            let org_id = model.organization_id.clone();
             let org_name = model.organization_name.clone();
 
-            // Validate that master seed was derived
-            if !model.master_seed_derived {
-                let updated = model
-                    .with_error(Some("Please derive master seed first".to_string()))
-                    .with_status_message("Error: Master seed not derived".to_string());
-                return (updated, Task::none());
-            }
+            // Get the stored master seed
+            let master_seed = match &model.master_seed {
+                Some(seed) => seed.clone(),
+                None => {
+                    let updated = model
+                        .with_error(Some("Please derive master seed first".to_string()))
+                        .with_status_message("Error: Master seed not available".to_string());
+                    return (updated, Task::none());
+                }
+            };
 
             let updated = model
                 .with_status_message("Generating Root CA from master seed...".to_string())
@@ -239,18 +242,7 @@ pub fn update(
 
             let command = Task::perform(
                 async move {
-                    // Re-derive master seed from passphrase
-                    // TODO: Store seed securely instead of re-deriving
-                    let master_seed = match derive_master_seed(&passphrase, &org_id) {
-                        Ok(seed) => seed,
-                        Err(e) => {
-                            return Intent::PortX509GenerationFailed {
-                                error: format!("Failed to derive master seed: {}", e),
-                            };
-                        }
-                    };
-
-                    // Derive root CA seed from master seed
+                    // Derive root CA seed from stored master seed
                     let root_ca_seed = master_seed.derive_child("root-ca");
 
                     // Generate root CA certificate

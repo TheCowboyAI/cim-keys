@@ -21,6 +21,7 @@ pub struct Model {
     pub passphrase_confirmed: String,
     pub passphrase_strength: Option<crate::crypto::passphrase::PassphraseStrength>,
     pub master_seed_derived: bool,
+    pub master_seed: Option<crate::crypto::MasterSeed>,
 
     // ===== Display Projections =====
     pub domain_status: DomainStatus,
@@ -90,6 +91,7 @@ impl Default for Model {
             passphrase_confirmed: String::new(),
             passphrase_strength: None,
             master_seed_derived: false,
+            master_seed: None,
             domain_status: DomainStatus::NotCreated,
             key_generation_status: KeyGenerationStatus {
                 root_ca_generated: false,
@@ -244,6 +246,20 @@ impl Model {
     /// Mark master seed as derived (pure function)
     pub fn with_master_seed_derived(mut self, derived: bool) -> Self {
         self.master_seed_derived = derived;
+        self
+    }
+
+    /// Store the master seed securely (pure function)
+    pub fn with_master_seed(mut self, seed: crate::crypto::MasterSeed) -> Self {
+        self.master_seed = Some(seed);
+        self.master_seed_derived = true;
+        self
+    }
+
+    /// Clear the master seed from memory (pure function)
+    pub fn without_master_seed(mut self) -> Self {
+        self.master_seed = None;
+        self.master_seed_derived = false;
         self
     }
 }
