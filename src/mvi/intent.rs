@@ -59,6 +59,15 @@ pub enum Intent {
     /// User clicked "Provision YubiKey"
     UiProvisionYubiKeyClicked { person_index: usize },
 
+    /// User entered/changed master passphrase
+    UiPassphraseChanged(String),
+
+    /// User entered/changed passphrase confirmation
+    UiPassphraseConfirmChanged(String),
+
+    /// User clicked "Derive Master Seed"
+    UiDeriveMasterSeedClicked,
+
     // ===== Domain-Originated Intents =====
     /// Domain was successfully created
     DomainCreated {
@@ -91,6 +100,17 @@ pub enum Intent {
         person_id: String,
         yubikey_serial: String,
         slot: String,
+    },
+
+    /// Master seed was successfully derived from passphrase
+    MasterSeedDerived {
+        organization_id: String,
+        entropy_bits: f64,
+    },
+
+    /// Master seed derivation failed
+    MasterSeedDerivationFailed {
+        error: String,
     },
 
     // ===== Port-Originated Intents (Async Responses) =====

@@ -62,8 +62,10 @@ hex = "0.4"
 pem = "3.0"
 der = "0.7"
 
-# Hashing
+# Hashing and KDF
 sha2 = "0.10"
+argon2 = "0.5"  # Argon2id for passphrase derivation
+hkdf = "0.12"   # HMAC-based Key Derivation Function
 
 # Time handling (required by rcgen)
 time = { version = "0.3", features = ["formatting", "macros"] }

@@ -49,6 +49,9 @@ pub mod projections;
 pub mod ports;
 pub mod adapters;
 
+// Cryptographic primitives for deterministic key generation
+pub mod crypto;
+
 // MVI (Model-View-Intent) architecture for GUI
 #[cfg(feature = "gui")]
 pub mod mvi;

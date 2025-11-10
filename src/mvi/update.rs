@@ -118,6 +118,104 @@ pub fn update(
             (updated, Task::none())
         }
 
+        Intent::UiPassphraseChanged(passphrase) => {
+            use crate::crypto::passphrase::validate_passphrase;
+
+            // Validate passphrase strength as user types
+            let validation = validate_passphrase(&passphrase);
+            let updated = model
+                .with_passphrase(passphrase)
+                .with_passphrase_strength(Some(validation.strength));
+
+            (updated, Task::none())
+        }
+
+        Intent::UiPassphraseConfirmChanged(confirmed) => {
+            let updated = model.with_passphrase_confirmed(confirmed);
+            (updated, Task::none())
+        }
+
+        Intent::UiDeriveMasterSeedClicked => {
+            use crate::crypto::seed_derivation::derive_master_seed;
+
+            // Clone values BEFORE moving model
+            let passphrase = model.passphrase.clone();
+            let passphrase_confirmed = model.passphrase_confirmed.clone();
+            let org_id = model.organization_id.clone();
+
+            // Validate passphrases match
+            if passphrase != passphrase_confirmed {
+                let updated = model
+                    .with_error(Some("Passphrases do not match".to_string()))
+                    .with_status_message("Error: Passphrases do not match".to_string());
+                return (updated, Task::none());
+            }
+
+            // Validate passphrase is strong enough
+            if passphrase.is_empty() {
+                let updated = model
+                    .with_error(Some("Passphrase cannot be empty".to_string()))
+                    .with_status_message("Error: Passphrase required".to_string());
+                return (updated, Task::none());
+            }
+
+            // Check strength is acceptable
+            use crate::crypto::passphrase::validate_passphrase;
+            let validation = validate_passphrase(&passphrase);
+            if !validation.strength.is_acceptable() {
+                let updated = model
+                    .with_error(Some(format!("Passphrase too weak: {}", validation.strength.description())))
+                    .with_status_message("Error: Passphrase too weak".to_string());
+                return (updated, Task::none());
+            }
+
+            let updated = model
+                .with_status_message("Deriving master seed...".to_string())
+                .with_error(None);
+
+            let command = Task::perform(
+                async move {
+                    match derive_master_seed(&passphrase, &org_id) {
+                        Ok(_seed) => {
+                            // TODO: Store seed securely for later use
+                            Intent::MasterSeedDerived {
+                                organization_id: org_id,
+                                entropy_bits: validation.entropy_bits,
+                            }
+                        }
+                        Err(e) => Intent::MasterSeedDerivationFailed { error: e },
+                    }
+                },
+                |intent| intent,
+            );
+
+            (updated, command)
+        }
+
+        Intent::MasterSeedDerived {
+            organization_id,
+            entropy_bits,
+        } => {
+            let updated = model
+                .with_master_seed_derived(true)
+                .with_status_message(format!(
+                    "Master seed derived successfully ({:.1} bits entropy)",
+                    entropy_bits
+                ))
+                .with_error(None);
+
+            (updated, Task::none())
+        }
+
+        Intent::MasterSeedDerivationFailed { error } => {
+            let updated = model
+                .with_master_seed_derived(false)
+                .with_error(Some(error.clone()))
+                .with_status_message(format!("Failed to derive master seed: {}", error));
+
+            (updated, Task::none())
+        }
+
         Intent::UiGenerateRootCAClicked => {
             use crate::ports::x509::{CertificateSubject, PrivateKey};
 

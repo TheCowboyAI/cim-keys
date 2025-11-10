@@ -29,11 +29,16 @@ pub mod fireflies;
 pub mod firefly_shader;
 pub mod firefly_synchronization;
 pub mod kuramoto_firefly_shader;
+pub mod debug_firefly_shader;
+pub mod firefly_math;
+pub mod firefly_renderer;
 
 use graph::{OrganizationGraph, GraphMessage};
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
-use kuramoto_firefly_shader::KuramotoFireflyShader;
+// use kuramoto_firefly_shader::KuramotoFireflyShader;
+// use debug_firefly_shader::DebugFireflyShader;
+use firefly_renderer::FireflyRenderer;
 
 /// Main application state
 pub struct CimKeysApp {
@@ -87,7 +92,7 @@ pub struct CimKeysApp {
 
     // Animation
     animation_time: f32,
-    firefly_shader: KuramotoFireflyShader,
+    firefly_shader: FireflyRenderer,
 }
 
 /// Different tabs in the application
@@ -248,7 +253,7 @@ impl CimKeysApp {
                 status_message: String::from("🔐 Welcome to CIM Keys - Offline Key Management System"),
                 error_message: None,
                 animation_time: 0.0,
-                firefly_shader: KuramotoFireflyShader::new(),
+                firefly_shader: FireflyRenderer::new(),
             },
             Task::none(),
         )
@@ -685,13 +690,10 @@ impl CimKeysApp {
             }
 
             Message::AnimationTick => {
-                // Update animation time with faster increment for more noticeable movement
-                self.animation_time += 0.05;
-                // Update shader's time to match
-                self.firefly_shader.time = self.animation_time;
-                // Update Kuramoto phases for synchronization
-                self.firefly_shader.update_kuramoto_phases(0.05);
-                // Trigger a view refresh
+                // Update animation time
+                self.animation_time += 0.016; // ~60fps
+                // Update Kuramoto synchronization
+                self.firefly_shader.update(0.016);  // Update phases for synchronization
                 Task::none()
             }
         }

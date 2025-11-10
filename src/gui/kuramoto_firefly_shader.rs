@@ -198,9 +198,9 @@ impl shader::Primitive for Primitive {
         render_pass.set_pipeline(&pipeline.render_pipeline);
         render_pass.set_bind_group(0, &pipeline.bind_group, &[]);
 
-        // Draw all fireflies as a single batch of triangles
-        // 6 vertices per firefly * 40 fireflies = 240 vertices total
-        render_pass.draw(0..(6 * NUM_FIREFLIES), 0..1);
+        // Draw all fireflies using instancing
+        // 6 vertices per quad, NUM_FIREFLIES instances
+        render_pass.draw(0..6, 0..NUM_FIREFLIES);
     }
 }
 
@@ -384,18 +384,19 @@ fn vs_main(
 ) -> VertexOutput {
     var output: VertexOutput;
 
-    // Calculate which firefly this vertex belongs to
-    let firefly_idx = vertex_idx / 6u;  // Each firefly has 6 vertices
-    let firefly_id = f32(firefly_idx);
+    // Use instance index directly for firefly identification
+    let firefly_id = f32(instance_idx);
     output.firefly_id = firefly_id;
 
     // Get synchronized intensity from phase data
-    output.intensity = phase_intensities[firefly_idx];
+    output.intensity = 0.8;  // Fixed intensity for debugging
 
-    // DEBUG: Spread fireflies in a visible pattern
-    let x_pos = (f32(firefly_idx % 10u) * 0.1) + 0.05;  // 10 columns
-    let y_pos = (f32(firefly_idx / 10u) * 0.2) + 0.2;   // 4 rows
-    var base_pos = vec2<f32>(x_pos, y_pos);  // Grid pattern
+    // SUPER DEBUG: Create very distinct positions for each firefly using instance_idx
+    let col = instance_idx % 8u;
+    let row = instance_idx / 8u;
+    let x_pos = (f32(col) * 0.12) + 0.05;  // 8 columns with spacing
+    let y_pos = (f32(row) * 0.15) + 0.1;   // 5 rows with spacing
+    var base_pos = vec2<f32>(x_pos, y_pos);  // Clear grid pattern
 
     // Complex organic movement using multiple Lissajous frequencies - INCREASED AMPLITUDE
     let movement_phase = uniforms.time * 0.5 + firefly_id * 0.618033988749895;  // Increased speed
@@ -501,8 +502,8 @@ fn vs_main(
         default: { vertex_pos = vec2<f32>(0.0, 0.0); }
     }
 
-    // Scale firefly based on intensity (synchronized pulsing) - BIGGER DEBUG SIZE
-    let size = 0.05;  // Fixed large size for debugging
+    // Scale firefly based on intensity (synchronized pulsing) - HUGE DEBUG SIZE
+    let size = 0.08;  // Much larger size for debugging visibility
     let world_pos = base_pos + vertex_pos * size;
 
     output.clip_position = vec4<f32>(world_pos * 2.0 - 1.0, 0.0, 1.0);
@@ -524,30 +525,15 @@ fn smin(a: f32, b: f32, k: f32) -> f32 {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    // SDF-based ethereal glow effect
-    let dist = sdf_circle(input.uv, 0.05);  // Smaller core
-
-    // Multi-layer glow using SDF for ethereal appearance
-    let core = smoothstep(0.02, 0.0, dist) * 2.0;  // Bright, small core
-    let inner_glow = smoothstep(0.3, 0.0, dist);    // Soft inner halo
-    let mid_glow = smoothstep(0.6, 0.0, dist);      // Medium halo
-    let outer_glow = smoothstep(1.2, 0.0, dist);    // Far-reaching outer glow
-
-    // Combine glow layers with synchronized intensity for ethereal effect
-    let glow = core * 0.8 + inner_glow * 0.5 + mid_glow * 0.3 + outer_glow * 0.15;
-    let final_intensity = glow * (0.4 + input.intensity * 0.6);  // Always some base glow
-
-    // DEBUG: Unique color for each firefly to verify instancing
+    // SUPER SIMPLE DEBUG: Just draw solid colored squares
     let hue = input.firefly_id / 40.0;  // Different hue for each firefly
     let color = vec3<f32>(
         0.5 + 0.5 * cos(hue * 6.28318 + 0.0),
         0.5 + 0.5 * cos(hue * 6.28318 + 2.094),
         0.5 + 0.5 * cos(hue * 6.28318 + 4.189)
     );
-    let final_color = color;
 
-    // Final output with soft alpha falloff
-    let alpha = final_intensity * 0.7;  // More transparent for ethereal look
-    return vec4<f32>(final_color * final_intensity, alpha);
+    // Draw solid square for debugging
+    return vec4<f32>(color, 1.0);  // Fully opaque solid color
 }
 "#;

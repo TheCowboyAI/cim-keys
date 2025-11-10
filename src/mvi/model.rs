@@ -16,6 +16,12 @@ pub struct Model {
     pub organization_id: String,
     pub people: Vec<PersonInput>,
 
+    // ===== Passphrase & Crypto State =====
+    pub passphrase: String,
+    pub passphrase_confirmed: String,
+    pub passphrase_strength: Option<crate::crypto::passphrase::PassphraseStrength>,
+    pub master_seed_derived: bool,
+
     // ===== Display Projections =====
     pub domain_status: DomainStatus,
     pub key_generation_status: KeyGenerationStatus,
@@ -78,6 +84,10 @@ impl Default for Model {
             organization_name: String::new(),
             organization_id: String::new(),
             people: Vec::new(),
+            passphrase: String::new(),
+            passphrase_confirmed: String::new(),
+            passphrase_strength: None,
+            master_seed_derived: false,
             domain_status: DomainStatus::NotCreated,
             key_generation_status: KeyGenerationStatus {
                 root_ca_generated: false,
@@ -195,6 +205,33 @@ impl Model {
     /// Update export status (pure function)
     pub fn with_export_status(mut self, status: ExportStatus) -> Self {
         self.export_status = status;
+        self
+    }
+
+    /// Update passphrase (pure function)
+    pub fn with_passphrase(mut self, passphrase: String) -> Self {
+        self.passphrase = passphrase;
+        self
+    }
+
+    /// Update passphrase confirmation (pure function)
+    pub fn with_passphrase_confirmed(mut self, confirmed: String) -> Self {
+        self.passphrase_confirmed = confirmed;
+        self
+    }
+
+    /// Update passphrase strength (pure function)
+    pub fn with_passphrase_strength(
+        mut self,
+        strength: Option<crate::crypto::passphrase::PassphraseStrength>,
+    ) -> Self {
+        self.passphrase_strength = strength;
+        self
+    }
+
+    /// Mark master seed as derived (pure function)
+    pub fn with_master_seed_derived(mut self, derived: bool) -> Self {
+        self.master_seed_derived = derived;
         self
     }
 }
