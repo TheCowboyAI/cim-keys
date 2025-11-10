@@ -502,4 +502,195 @@ mod tests {
         assert!(intermediate_ca.certificate_pem.contains("BEGIN CERTIFICATE"));
         assert!(!intermediate_ca.fingerprint.is_empty());
     }
+
+    #[test]
+    fn test_root_ca_basic_constraints() {
+        use x509_parser::prelude::*;
+
+        let master_seed = derive_master_seed("test passphrase", "test-org").unwrap();
+        let root_ca_seed = master_seed.derive_child("root-ca");
+        let params = RootCAParams::default();
+        let root_ca = generate_root_ca(&root_ca_seed, params).unwrap();
+
+        // Parse certificate from PEM
+        let (_, pem) = parse_x509_pem(root_ca.certificate_pem.as_bytes()).unwrap();
+        let cert = pem.parse_x509().unwrap();
+
+        // Check basic constraints extension
+        let basic_constraints = cert
+            .basic_constraints()
+            .expect("Root CA must have basic constraints")
+            .expect("Basic constraints must be present")
+            .value;
+
+        // Root CA must be a CA
+        assert!(basic_constraints.ca, "Root CA must have CA=true");
+
+        // Root CA should allow intermediate CAs (pathlen >= 1 or unconstrained)
+        assert!(
+            basic_constraints.path_len_constraint.is_none()
+            || basic_constraints.path_len_constraint.unwrap() >= 1,
+            "Root CA must allow at least 1 intermediate CA level"
+        );
+    }
+
+    #[test]
+    fn test_intermediate_ca_pathlen_zero() {
+        use x509_parser::prelude::*;
+
+        let master_seed = derive_master_seed("test passphrase", "test-org").unwrap();
+        let root_ca_seed = master_seed.derive_child("root-ca");
+        let intermediate_seed = root_ca_seed.derive_child("intermediate-test");
+
+        // Generate certificates
+        let root_params = RootCAParams::default();
+        let root_ca = generate_root_ca(&root_ca_seed, root_params).unwrap();
+
+        let intermediate_params = IntermediateCAParams::default();
+        let intermediate_ca = generate_intermediate_ca(
+            &intermediate_seed,
+            intermediate_params,
+            &root_ca.certificate_pem,
+            &root_ca.private_key_pem,
+        ).unwrap();
+
+        // Parse intermediate certificate
+        let (_, pem) = parse_x509_pem(intermediate_ca.certificate_pem.as_bytes()).unwrap();
+        let cert = pem.parse_x509().unwrap();
+
+        // Check basic constraints
+        let basic_constraints = cert
+            .basic_constraints()
+            .expect("Intermediate CA must have basic constraints")
+            .expect("Basic constraints must be present")
+            .value;
+
+        // Intermediate CA must be a CA
+        assert!(basic_constraints.ca, "Intermediate CA must have CA=true");
+
+        // Intermediate CA must have pathlen:0 (signing-only, can't create sub-CAs)
+        assert_eq!(
+            basic_constraints.path_len_constraint,
+            Some(0),
+            "Intermediate CA must have pathlen:0 for signing-only operation"
+        );
+    }
+
+    #[test]
+    fn test_ca_key_usage() {
+        use x509_parser::prelude::*;
+
+        let master_seed = derive_master_seed("test passphrase", "test-org").unwrap();
+        let root_ca_seed = master_seed.derive_child("root-ca");
+        let params = RootCAParams::default();
+        let root_ca = generate_root_ca(&root_ca_seed, params).unwrap();
+
+        // Parse certificate
+        let (_, pem) = parse_x509_pem(root_ca.certificate_pem.as_bytes()).unwrap();
+        let cert = pem.parse_x509().unwrap();
+
+        // Check key usage extension
+        let key_usage = cert
+            .key_usage()
+            .expect("Root CA must have key usage extension")
+            .expect("Key usage must be present")
+            .value;
+
+        // Root CA should have keyCertSign and cRLSign
+        assert!(key_usage.key_cert_sign(), "Root CA must have keyCertSign");
+        assert!(key_usage.crl_sign(), "Root CA must have cRLSign");
+    }
+
+    #[test]
+    fn test_complete_certificate_chain() {
+        let master_seed = derive_master_seed("test passphrase", "test-org").unwrap();
+        let root_ca_seed = master_seed.derive_child("root-ca");
+        let intermediate_seed = root_ca_seed.derive_child("intermediate-engineering");
+        let server_seed = intermediate_seed.derive_child("server-api");
+
+        // Generate complete chain: Root → Intermediate → Server
+        let root_params = RootCAParams {
+            organization: "Test Organization".to_string(),
+            common_name: "Test Root CA".to_string(),
+            country: Some("US".to_string()),
+            validity_years: 20,
+            ..Default::default()
+        };
+        let root_ca = generate_root_ca(&root_ca_seed, root_params).unwrap();
+
+        let intermediate_params = IntermediateCAParams {
+            organization: "Test Organization".to_string(),
+            organizational_unit: "Engineering".to_string(),
+            common_name: "Engineering Intermediate CA".to_string(),
+            country: Some("US".to_string()),
+            validity_years: 10,
+        };
+        let intermediate_ca = generate_intermediate_ca(
+            &intermediate_seed,
+            intermediate_params,
+            &root_ca.certificate_pem,
+            &root_ca.private_key_pem,
+        ).unwrap();
+
+        let server_params = ServerCertParams {
+            common_name: "api.example.com".to_string(),
+            san_entries: vec!["api.example.com".to_string(), "www.example.com".to_string()],
+            organization: "Test Organization".to_string(),
+            organizational_unit: Some("Engineering".to_string()),
+            validity_days: 90,
+        };
+        let server_cert = generate_server_certificate(
+            &server_seed,
+            server_params,
+            &intermediate_ca.certificate_pem,
+            &intermediate_ca.private_key_pem,
+        ).unwrap();
+
+        // Verify all certificates were generated
+        assert!(root_ca.certificate_pem.contains("BEGIN CERTIFICATE"));
+        assert!(intermediate_ca.certificate_pem.contains("BEGIN CERTIFICATE"));
+        assert!(server_cert.certificate_pem.contains("BEGIN CERTIFICATE"));
+
+        // Verify fingerprints are all unique
+        assert_ne!(root_ca.fingerprint, intermediate_ca.fingerprint);
+        assert_ne!(intermediate_ca.fingerprint, server_cert.fingerprint);
+        assert_ne!(root_ca.fingerprint, server_cert.fingerprint);
+    }
+
+    #[test]
+    fn test_certificate_validity_period() {
+        use x509_parser::prelude::*;
+
+        let master_seed = derive_master_seed("test passphrase", "test-org").unwrap();
+        let root_ca_seed = master_seed.derive_child("root-ca");
+
+        let params = RootCAParams {
+            validity_years: 10,
+            ..Default::default()
+        };
+        let root_ca = generate_root_ca(&root_ca_seed, params).unwrap();
+
+        // Parse certificate
+        let (_, pem) = parse_x509_pem(root_ca.certificate_pem.as_bytes()).unwrap();
+        let cert = pem.parse_x509().unwrap();
+
+        // Check validity period
+        let validity = cert.validity();
+        let not_before = validity.not_before;
+        let not_after = validity.not_after;
+
+        // Calculate duration in seconds
+        // Expected: approximately 10 years * 365 days * 24 hours * 3600 seconds
+        // (rcgen uses 365 days/year, not accounting for leap years)
+        let expected_seconds = 10.0 * 365.0 * 24.0 * 3600.0;
+        let actual_seconds = (not_after.timestamp() - not_before.timestamp()) as f64;
+
+        // Allow 5 day tolerance for leap years and timezone differences
+        let tolerance = 5.0 * 24.0 * 3600.0;
+        assert!(
+            (actual_seconds - expected_seconds).abs() < tolerance,
+            "Certificate validity period should be approximately 10 years (got {} seconds, expected {})",
+            actual_seconds, expected_seconds
+        );
+    }
 }
