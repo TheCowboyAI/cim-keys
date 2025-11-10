@@ -78,6 +78,12 @@ pub struct CimKeysApp {
     total_keys_to_generate: usize,
     certificates_generated: usize,
 
+    // Certificate generation fields
+    intermediate_ca_name_input: String,
+    server_cert_cn_input: String,
+    server_cert_sans_input: String,
+    selected_intermediate_ca: Option<String>,
+
     // Export configuration
     export_path: PathBuf,
     include_public_keys: bool,
@@ -136,6 +142,12 @@ pub enum Message {
 
     // Key generation
     GenerateRootCA,
+    IntermediateCANameChanged(String),
+    GenerateIntermediateCA,
+    ServerCertCNChanged(String),
+    ServerCertSANsChanged(String),
+    SelectIntermediateCA(String),
+    GenerateServerCert,
     GenerateSSHKeys,
     GenerateAllKeys,
     KeyGenerationProgress(f32),
@@ -244,6 +256,10 @@ impl CimKeysApp {
                 keys_generated: 0,
                 total_keys_to_generate: 0,
                 certificates_generated: 0,
+                intermediate_ca_name_input: String::new(),
+                server_cert_cn_input: String::new(),
+                server_cert_sans_input: String::new(),
+                selected_intermediate_ca: None,
                 export_path: PathBuf::from(&output_dir),
                 include_public_keys: true,
                 include_certificates: true,
@@ -472,6 +488,47 @@ impl CimKeysApp {
                         Err(e) => Message::ShowError(format!("Root CA generation failed: {}", e)),
                     }
                 )
+            }
+
+            Message::IntermediateCANameChanged(name) => {
+                self.intermediate_ca_name_input = name;
+                Task::none()
+            }
+
+            Message::GenerateIntermediateCA => {
+                self.status_message = format!("Generating intermediate CA '{}'...", self.intermediate_ca_name_input);
+                self.key_generation_progress = 0.2;
+                // TODO: Connect to MVI Intent::UiGenerateIntermediateCAClicked
+                Task::none()
+            }
+
+            Message::ServerCertCNChanged(cn) => {
+                self.server_cert_cn_input = cn;
+                Task::none()
+            }
+
+            Message::ServerCertSANsChanged(sans) => {
+                self.server_cert_sans_input = sans;
+                Task::none()
+            }
+
+            Message::SelectIntermediateCA(ca_name) => {
+                self.selected_intermediate_ca = Some(ca_name);
+                Task::none()
+            }
+
+            Message::GenerateServerCert => {
+                if let Some(ref ca_name) = self.selected_intermediate_ca {
+                    self.status_message = format!(
+                        "Generating server certificate for '{}' signed by '{}'...",
+                        self.server_cert_cn_input, ca_name
+                    );
+                    self.key_generation_progress = 0.3;
+                    // TODO: Connect to MVI Intent::UiGenerateServerCertClicked
+                } else {
+                    self.error_message = Some("Please select an intermediate CA first".to_string());
+                }
+                Task::none()
             }
 
             Message::GenerateSSHKeys => {
@@ -1021,12 +1078,50 @@ impl CimKeysApp {
 
             container(
                 column![
-                    text("Key Generation Options")
+                    text("PKI Hierarchy Generation")
                         .size(16)
                         .color(CowboyTheme::text_primary()),
+
+                    // Root CA Section
+                    text("1. Root CA (Trust Anchor)").size(14),
                     button("Generate Root CA")
                         .on_press(Message::GenerateRootCA)
                         .style(CowboyCustomTheme::security_button()),
+
+                    // Intermediate CA Section
+                    text("2. Intermediate CA (Signing-Only, pathlen:0)").size(14),
+                    row![
+                        text_input("CA Name (e.g., 'Engineering')", &self.intermediate_ca_name_input)
+                            .on_input(Message::IntermediateCANameChanged)
+                            .size(14)
+                            .style(CowboyCustomTheme::glass_input()),
+                        button("Generate Intermediate CA")
+                            .on_press(Message::GenerateIntermediateCA)
+                            .style(CowboyCustomTheme::primary_button()),
+                    ]
+                    .spacing(10),
+
+                    // Server Certificate Section
+                    text("3. Server Certificates").size(14),
+                    text_input("Common Name (e.g., 'nats.example.com')", &self.server_cert_cn_input)
+                        .on_input(Message::ServerCertCNChanged)
+                        .size(14)
+                        .style(CowboyCustomTheme::glass_input()),
+                    text_input("SANs (comma-separated DNS names or IPs)", &self.server_cert_sans_input)
+                        .on_input(Message::ServerCertSANsChanged)
+                        .size(14)
+                        .style(CowboyCustomTheme::glass_input()),
+                    row![
+                        text("Signing CA:").size(14),
+                        text(self.selected_intermediate_ca.as_deref().unwrap_or("(select after generating intermediate CA)")).size(14),
+                    ]
+                    .spacing(10),
+                    button("Generate Server Certificate")
+                        .on_press(Message::GenerateServerCert)
+                        .style(CowboyCustomTheme::primary_button()),
+
+                    // Other Key Generation
+                    text("4. Other Keys").size(14),
                     button("Generate SSH Keys for All")
                         .on_press(Message::GenerateSSHKeys)
                         .style(CowboyCustomTheme::primary_button()),
