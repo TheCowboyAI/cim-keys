@@ -19,6 +19,17 @@ use crate::{
     aggregate::KeyManagementAggregate,
     domain::{Person, KeyOwnerRole},
     projections::OfflineKeyProjection,
+    // MVI architecture
+    mvi::{Intent, Model as MviModel},
+    // Hexagonal ports
+    ports::{StoragePort, X509Port, SshKeyPort, YubiKeyPort},
+    // Mock adapters
+    adapters::{
+        InMemoryStorageAdapter,
+        MockX509Adapter,
+        MockSshKeyAdapter,
+        MockYubiKeyAdapter,
+    },
 };
 
 pub mod graph;
@@ -99,6 +110,13 @@ pub struct CimKeysApp {
     // Animation
     animation_time: f32,
     firefly_shader: FireflyRenderer,
+
+    // MVI Integration (Option A: Quick Integration)
+    mvi_model: MviModel,
+    storage_port: Arc<dyn StoragePort>,
+    x509_port: Arc<dyn X509Port>,
+    ssh_port: Arc<dyn SshKeyPort>,
+    yubikey_port: Arc<dyn YubiKeyPort>,
 }
 
 /// Different tabs in the application
@@ -171,6 +189,9 @@ pub enum Message {
     // Graph interactions
     GraphMessage(GraphMessage),
 
+    // MVI Integration
+    MviIntent(Intent),
+
     // Animation
     AnimationTick,
 }
@@ -233,6 +254,15 @@ impl CimKeysApp {
         // Initialize with a default org name, will be updated when org is set up
         let default_org = "cim-domain";
 
+        // Initialize MVI ports with mock adapters
+        let storage_port: Arc<dyn StoragePort> = Arc::new(InMemoryStorageAdapter::new());
+        let x509_port: Arc<dyn X509Port> = Arc::new(MockX509Adapter::new());
+        let ssh_port: Arc<dyn SshKeyPort> = Arc::new(MockSshKeyAdapter::new());
+        let yubikey_port: Arc<dyn YubiKeyPort> = Arc::new(MockYubiKeyAdapter::default());
+
+        // Initialize MVI model
+        let mvi_model = MviModel::new(PathBuf::from(&output_dir));
+
         (
             Self {
                 active_tab: Tab::Welcome,
@@ -270,6 +300,12 @@ impl CimKeysApp {
                 error_message: None,
                 animation_time: 0.0,
                 firefly_shader: FireflyRenderer::new(),
+                // MVI integration
+                mvi_model,
+                storage_port,
+                x509_port,
+                ssh_port,
+                yubikey_port,
             },
             Task::none(),
         )
@@ -496,10 +532,27 @@ impl CimKeysApp {
             }
 
             Message::GenerateIntermediateCA => {
+                // Update status message
                 self.status_message = format!("Generating intermediate CA '{}'...", self.intermediate_ca_name_input);
                 self.key_generation_progress = 0.2;
-                // TODO: Connect to MVI Intent::UiGenerateIntermediateCAClicked
-                Task::none()
+
+                // Create MVI Intent
+                let intent = Intent::UiGenerateIntermediateCAClicked {
+                    name: self.intermediate_ca_name_input.clone(),
+                };
+
+                // Call MVI update and wire back to MviIntent message
+                let (updated_model, task) = crate::mvi::update(
+                    self.mvi_model.clone(),
+                    intent,
+                    self.storage_port.clone(),
+                    self.x509_port.clone(),
+                    self.ssh_port.clone(),
+                    self.yubikey_port.clone(),
+                );
+
+                self.mvi_model = updated_model;
+                task.map(|intent| Message::MviIntent(intent))
             }
 
             Message::ServerCertCNChanged(cn) => {
@@ -524,11 +577,37 @@ impl CimKeysApp {
                         self.server_cert_cn_input, ca_name
                     );
                     self.key_generation_progress = 0.3;
-                    // TODO: Connect to MVI Intent::UiGenerateServerCertClicked
+
+                    // Parse SANs from comma-separated input
+                    let san_entries: Vec<String> = self.server_cert_sans_input
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+
+                    // Create MVI Intent
+                    let intent = Intent::UiGenerateServerCertClicked {
+                        common_name: self.server_cert_cn_input.clone(),
+                        san_entries,
+                        intermediate_ca_name: ca_name.clone(),
+                    };
+
+                    // Call MVI update and wire back to MviIntent message
+                    let (updated_model, task) = crate::mvi::update(
+                        self.mvi_model.clone(),
+                        intent,
+                        self.storage_port.clone(),
+                        self.x509_port.clone(),
+                        self.ssh_port.clone(),
+                        self.yubikey_port.clone(),
+                    );
+
+                    self.mvi_model = updated_model;
+                    task.map(|intent| Message::MviIntent(intent))
                 } else {
                     self.error_message = Some("Please select an intermediate CA first".to_string());
+                    Task::none()
                 }
-                Task::none()
             }
 
             Message::GenerateSSHKeys => {
@@ -744,6 +823,25 @@ impl CimKeysApp {
             Message::KeyGenerationProgress(progress) => {
                 self.key_generation_progress = progress;
                 Task::none()
+            }
+
+            // MVI Integration Handler
+            Message::MviIntent(intent) => {
+                // Call the pure MVI update function
+                let (updated_model, task) = crate::mvi::update(
+                    self.mvi_model.clone(),
+                    intent,
+                    self.storage_port.clone(),
+                    self.x509_port.clone(),
+                    self.ssh_port.clone(),
+                    self.yubikey_port.clone(),
+                );
+
+                // Update our MVI model
+                self.mvi_model = updated_model;
+
+                // Map the Intent task back to Message task
+                task.map(|intent| Message::MviIntent(intent))
             }
 
             Message::AnimationTick => {
@@ -1119,6 +1217,57 @@ impl CimKeysApp {
                     button("Generate Server Certificate")
                         .on_press(Message::GenerateServerCert)
                         .style(CowboyCustomTheme::primary_button()),
+
+                    // Display generated certificates from MVI model
+                    if !self.mvi_model.key_generation_status.intermediate_cas.is_empty()
+                       || !self.mvi_model.key_generation_status.server_certificates.is_empty() {
+                        container(
+                            column![
+                                text("Generated Certificates").size(16).color(Color::from_rgb(0.3, 0.8, 0.3)),
+
+                                // Intermediate CAs
+                                if !self.mvi_model.key_generation_status.intermediate_cas.is_empty() {
+                                    iced::widget::Column::with_children(
+                                        self.mvi_model.key_generation_status.intermediate_cas.iter().map(|ca| {
+                                            text(format!("  ✓ CA: {} - {}", ca.name, &ca.fingerprint[..16]))
+                                                .size(12)
+                                                .color(Color::from_rgb(0.3, 0.8, 0.3))
+                                                .into()
+                                        }).collect::<Vec<_>>()
+                                    )
+                                    .spacing(3)
+                                } else {
+                                    column![]
+                                },
+
+                                // Server Certificates
+                                if !self.mvi_model.key_generation_status.server_certificates.is_empty() {
+                                    iced::widget::Column::with_children(
+                                        self.mvi_model.key_generation_status.server_certificates.iter().map(|cert| {
+                                            column![
+                                                text(format!("  ✓ Server: {} (signed by: {})", cert.common_name, cert.signed_by))
+                                                    .size(12)
+                                                    .color(Color::from_rgb(0.3, 0.8, 0.3)),
+                                                text(format!("    Fingerprint: {}", &cert.fingerprint[..16]))
+                                                    .size(11)
+                                                    .color(Color::from_rgb(0.5, 0.5, 0.5)),
+                                            ]
+                                            .spacing(2)
+                                            .into()
+                                        }).collect::<Vec<_>>()
+                                    )
+                                    .spacing(5)
+                                } else {
+                                    column![]
+                                },
+                            ]
+                            .spacing(10)
+                        )
+                        .padding(10)
+                        .style(CowboyCustomTheme::card_container())
+                    } else {
+                        container(text(""))
+                    },
 
                     // Other Key Generation
                     text("4. Other Keys").size(14),
