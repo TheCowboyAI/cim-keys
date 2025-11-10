@@ -298,6 +298,82 @@ fn view_organization(model: &Model) -> Element<'_, Intent> {
 
 /// Keys tab view
 fn view_keys(model: &Model) -> Element<'_, Intent> {
+    // STEP 1: Master Passphrase Entry
+    let passphrase_section = {
+        let strength_text = if let Some(strength) = model.passphrase_strength {
+            format!("Strength: {}", strength.description())
+        } else {
+            "Enter passphrase to see strength".to_string()
+        };
+
+        let strength_color = model.passphrase_strength.map_or(
+            Color::from_rgb(0.5, 0.5, 0.5),
+            |s| match s {
+                crate::crypto::passphrase::PassphraseStrength::TooWeak => Color::from_rgb(0.8, 0.2, 0.2),
+                crate::crypto::passphrase::PassphraseStrength::Weak => Color::from_rgb(0.9, 0.5, 0.2),
+                crate::crypto::passphrase::PassphraseStrength::Moderate => Color::from_rgb(0.9, 0.8, 0.2),
+                crate::crypto::passphrase::PassphraseStrength::Strong => Color::from_rgb(0.3, 0.8, 0.3),
+                crate::crypto::passphrase::PassphraseStrength::VeryStrong => Color::from_rgb(0.2, 0.9, 0.3),
+            }
+        );
+
+        let seed_status = if model.master_seed_derived {
+            column![
+                text("✓ Master Seed Derived").size(14).color(Color::from_rgb(0.3, 0.8, 0.3)),
+                text("All keys will be deterministically generated from this seed").size(11),
+            ]
+            .spacing(5)
+        } else {
+            column![
+                text("Master seed not yet derived").size(14).color(Color::from_rgb(0.7, 0.7, 0.7)),
+                text("Enter passphrase to derive cryptographic seed").size(11),
+            ]
+            .spacing(5)
+        };
+
+        let passphrase_match = if !model.passphrase.is_empty() && !model.passphrase_confirmed.is_empty() {
+            if model.passphrase == model.passphrase_confirmed {
+                text("✓ Passphrases match").size(11).color(Color::from_rgb(0.3, 0.8, 0.3))
+            } else {
+                text("✗ Passphrases do not match").size(11).color(Color::from_rgb(0.8, 0.2, 0.2))
+            }
+        } else {
+            text("").size(11)
+        };
+
+        let derive_button = if model.master_seed_derived {
+            button(text("Re-derive Master Seed").size(14))
+                .width(Length::Fixed(250.0))
+        } else {
+            button(text("Derive Master Seed").size(14))
+                .width(Length::Fixed(250.0))
+                .on_press(Intent::UiDeriveMasterSeedClicked)
+        };
+
+        column![
+            text("Step 1: Master Passphrase").size(18),
+            text("All keys are derived from a single master passphrase using Argon2id (1GB memory, 10 iterations)").size(11),
+            text(""),
+            text("Master Passphrase:").size(12),
+            text_input("Enter master passphrase (minimum 4 words or 20 characters)", &model.passphrase)
+                .on_input(Intent::UiPassphraseChanged)
+                .width(Length::Fixed(400.0)),
+            text(strength_text).size(12).color(strength_color),
+            text(""),
+            text("Confirm Passphrase:").size(12),
+            text_input("Re-enter passphrase", &model.passphrase_confirmed)
+                .on_input(Intent::UiPassphraseConfirmChanged)
+                .width(Length::Fixed(400.0)),
+            passphrase_match,
+            text(""),
+            derive_button,
+            text(""),
+            seed_status,
+        ]
+        .spacing(5)
+        .padding(20)
+    };
+
     let key_status = column![
         text("Key Generation Status").size(18),
         text(format!(
@@ -360,6 +436,8 @@ fn view_keys(model: &Model) -> Element<'_, Intent> {
 
     scrollable(
         column![
+            passphrase_section,
+            container(text("")).height(Length::Fixed(20.0)), // Spacer
             key_status,
             progress,
             actions,
