@@ -304,6 +304,10 @@ impl NatsKeyPort for NscAdapter {
 }
 
 // Helper to use native nkeys implementation
+// TODO: Add nkeys as optional dependency and enable this feature
+// To enable: Add to Cargo.toml dependencies: nkeys = { version = "0.4", optional = true }
+// And to features: nkeys-support = ["nkeys"]
+/*
 #[cfg(feature = "nkeys")]
 mod native_impl {
     use super::*;
@@ -318,5 +322,6 @@ mod native_impl {
         Ok((public_key, seed))
     }
 }
+*/
 
 use std::collections::HashMap;
