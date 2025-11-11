@@ -6,7 +6,7 @@
 use iced::{
     application,
     widget::{button, column, container, row, text, text_input, Container, horizontal_space, pick_list, progress_bar, checkbox, scrollable, Space},
-    Task, Element, Length, Color, Border, Font, Theme, Background,
+    Task, Element, Length, Color, Border, Font, Theme, Background, Shadow,
 };
 use iced_futures::Subscription;
 use serde::{Deserialize, Serialize};
@@ -852,40 +852,43 @@ impl CimKeysApp {
     fn view(&self) -> Element<'_, Message> {
         use iced::widget::{stack, shader};
 
-        // Create a text-based logo since iced doesn't support SVG directly
+        // Enhanced logo with pastel teal styling
         let logo_text = container(
             column![
-                text("CIM").size(self.scaled_text_size(32)).font(Font {
+                text("🤠").size(self.scaled_text_size(28)),  // Cowboy hat emoji
+                text("CIM").size(self.scaled_text_size(28)).font(Font {
                     family: iced::font::Family::Monospace,
                     weight: iced::font::Weight::Bold,
                     stretch: iced::font::Stretch::Normal,
                     style: iced::font::Style::Normal,
-                }),
-                text("KEYS").size(self.scaled_text_size(24)).font(Font {
+                }).color(Color::from_rgb(0.4, 0.7, 0.75)),  // Pastel teal
+                text("KEYS").size(self.scaled_text_size(18)).font(Font {
                     family: iced::font::Family::Monospace,
                     weight: iced::font::Weight::Bold,
                     stretch: iced::font::Stretch::Normal,
                     style: iced::font::Style::Normal,
-                }),
+                }).color(Color::from_rgba(0.4, 0.7, 0.75, 0.8)),  // Slightly transparent
             ]
             .align_x(iced::Alignment::Center)
-            .spacing(0)
+            .spacing(2)
         )
-        .width(Length::Fixed(80.0))
-        .height(Length::Fixed(80.0))
-        .center(Length::Fixed(80.0))
-        .style(|theme: &Theme| {
-            let palette = theme.extended_palette();
-            let base_style = container::Style::default();
+        .width(Length::Fixed(self.scaled_size(90.0)))
+        .height(Length::Fixed(self.scaled_size(90.0)))
+        .center(Length::Fixed(self.scaled_size(90.0)))
+        .style(|_theme: &Theme| {
             container::Style {
-                background: Some(Background::Color(Color::from_rgba(0.1, 0.1, 0.2, 1.0))),
+                background: Some(CowboyTheme::glass_dark_background()),
                 border: Border {
-                    color: palette.primary.strong.color,
+                    color: Color::from_rgba(0.4, 0.7, 0.75, 0.5),  // Teal border
                     width: 2.0,
-                    radius: 8.0.into(),
+                    radius: 12.0.into(),
                 },
-                text_color: Some(palette.primary.strong.color),
-                ..base_style  // Use base_style instead of direct default()
+                text_color: Some(CowboyTheme::text_primary()),
+                shadow: Shadow {
+                    color: Color::from_rgba(0.0, 0.0, 0.0, 0.4),
+                    offset: iced::Vector::new(0.0, 4.0),
+                    blur_radius: 16.0,
+                },
             }
         });
 
