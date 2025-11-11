@@ -254,7 +254,11 @@
             allowBuiltinFetchGit = true;
           };
 
-          inherit nativeBuildInputs;
+          nativeBuildInputs = nativeBuildInputs ++ (with pkgs; [
+            pkg-config
+            makeWrapper
+          ]);
+
           buildInputs = buildInputs ++ guiBuildInputs;
 
           # Build with GUI features
@@ -268,10 +272,16 @@
           '';
 
           # Only build the GUI binary
-          cargoBuildFlags = [ "--bin" "cim-keys" "--features" "gui" ];
+          cargoBuildFlags = [ "--bin" "cim-keys-gui" "--features" "gui" ];
 
           # Disable tests for GUI build
           doCheck = false;
+
+          # Wrap binary with runtime library paths
+          postFixup = ''
+            wrapProgram $out/bin/cim-keys-gui \
+              --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath (buildInputs ++ guiBuildInputs)}"
+          '';
 
           meta = with pkgs.lib; {
             description = "GUI for CIM Keys - Cryptographic key management";

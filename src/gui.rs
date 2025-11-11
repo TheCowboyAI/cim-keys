@@ -1182,11 +1182,32 @@ impl CimKeysApp {
                         .on_input(Message::ServerCertSANsChanged)
                         .size(14)
                         .style(CowboyCustomTheme::glass_input()),
-                    row![
-                        text("Signing CA:").size(14),
-                        text(self.selected_intermediate_ca.as_deref().unwrap_or("(select after generating intermediate CA)")).size(14),
-                    ]
-                    .spacing(10),
+
+                    // CA selection picker
+                    if !self.mvi_model.key_generation_status.intermediate_cas.is_empty() {
+                        let ca_names: Vec<String> = self.mvi_model.key_generation_status.intermediate_cas
+                            .iter()
+                            .map(|ca| ca.name.clone())
+                            .collect();
+
+                        row![
+                            text("Signing CA:").size(14),
+                            pick_list(
+                                ca_names,
+                                self.selected_intermediate_ca.clone(),
+                                Message::SelectIntermediateCA,
+                            )
+                            .placeholder("Select Intermediate CA")
+                        ]
+                        .spacing(10)
+                    } else {
+                        row![
+                            text("Signing CA:").size(14).color(Color::from_rgb(0.6, 0.6, 0.6)),
+                            text("(generate an intermediate CA first)").size(14).color(Color::from_rgb(0.6, 0.6, 0.6)),
+                        ]
+                        .spacing(10)
+                    },
+
                     button("Generate Server Certificate")
                         .on_press(Message::GenerateServerCert)
                         .style(CowboyCustomTheme::primary_button()),
@@ -1347,8 +1368,80 @@ async fn load_config_native() -> Result<BootstrapConfig, String> {
 
 #[cfg(target_arch = "wasm32")]
 async fn load_config_wasm() -> Result<BootstrapConfig, String> {
-    // TODO: Implement file loading in WASM
-    Err("WASM file loading not yet implemented".to_string())
+    use wasm_bindgen::JsCast;
+    use web_sys::{HtmlInputElement, Event};
+    use wasm_bindgen_futures::JsFuture;
+    use gloo_file::callbacks::FileReader;
+    use gloo_file::File as GlooFile;
+
+    // Create a file input element
+    let document = web_sys::window()
+        .ok_or_else(|| "No window object".to_string())?
+        .document()
+        .ok_or_else(|| "No document object".to_string())?;
+
+    let input: HtmlInputElement = document
+        .create_element("input")
+        .map_err(|e| format!("Failed to create input element: {:?}", e))?
+        .dyn_into()
+        .map_err(|e| format!("Failed to cast to HtmlInputElement: {:?}", e))?;
+
+    input.set_type("file");
+    input.set_accept(".json");
+
+    // Create a promise to wait for file selection
+    let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<u8>, String>>();
+
+    // Setup file change event listener
+    let tx = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
+    let closure = wasm_bindgen::closure::Closure::wrap(Box::new(move |event: Event| {
+        let input = event
+            .target()
+            .and_then(|t| t.dyn_into::<HtmlInputElement>().ok());
+
+        if let Some(input) = input {
+            if let Some(files) = input.files() {
+                if let Some(file) = files.get(0) {
+                    let file = GlooFile::from(file);
+                    let tx_clone = tx.clone();
+
+                    // Read file content
+                    let reader = FileReader::new();
+                    let mut reader_clone = reader.clone();
+
+                    reader.read_as_bytes(&file, move |result| {
+                        if let Some(tx) = tx_clone.lock().unwrap().take() {
+                            match result {
+                                Ok(data) => {
+                                    let _ = tx.send(Ok(data));
+                                }
+                                Err(e) => {
+                                    let _ = tx.send(Err(format!("Failed to read file: {:?}", e)));
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+        }
+    }) as Box<dyn FnMut(_)>);
+
+    input.add_event_listener_with_callback("change", closure.as_ref().unchecked_ref())
+        .map_err(|e| format!("Failed to add event listener: {:?}", e))?;
+
+    // Trigger the file picker
+    input.click();
+
+    // Keep the closure alive
+    closure.forget();
+
+    // Wait for file to be selected and read
+    let file_contents = rx.await
+        .map_err(|e| format!("File selection cancelled or failed: {:?}", e))??;
+
+    // Parse JSON
+    serde_json::from_slice(&file_contents)
+        .map_err(|e| format!("Failed to parse JSON: {}", e))
 }
 
 // Note: Full key generation workflow is now handled through MVI architecture

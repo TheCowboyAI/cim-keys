@@ -122,3 +122,8 @@ name = "test_root_ca"
 [[bin]]
 name = "cim-keys"
 path = "src/bin/cim-keys.rs"
+
+[[bin]]
+name = "cim-keys-gui"
+path = "src/bin/cim-keys-gui.rs"
+required-features = ["gui"]

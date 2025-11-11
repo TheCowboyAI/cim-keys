@@ -1,286 +1,436 @@
-//! Mathematical models for firefly synchronization using Category Theory
+//! Firefly swarm behavior using boid-like physics
 //!
-//! This module defines the pure mathematical functions for the Kuramoto model
-//! and provides Category Theory morphisms to map them to rendering points.
+//! This module implements the swarm behavior from www-egui with:
+//! - Separation: particles repel when too close
+//! - Cohesion: particles move toward nearby swarm center
+//! - Alignment: particles match velocity with neighbors
+//! - Flowing attraction: alternate between logo and dialog attraction
+//! - Pulsing: independent blinking for each firefly
 
 use std::f32::consts::PI;
 
-/// Pure mathematical representation of a firefly's state
+// Constants matching www-egui
+const DRAG: f32 = 0.98;
+const RANDOM_FORCE: f32 = 0.15;
+const GRAVITY_STRENGTH: f32 = 0.35;
+const GRAVITY_RADIUS: f32 = 500.0;
+const REPULSION_STRENGTH: f32 = 4.0;
+const REPULSION_RADIUS: f32 = 70.0;
+const COHESION_STRENGTH: f32 = 0.08;
+const ALIGNMENT_STRENGTH: f32 = 0.05;
+const NEIGHBOR_RADIUS: f32 = 120.0;
+
+// Attraction points
+const LOGO_X: f32 = 80.0;
+const LOGO_Y: f32 = 80.0;
+
+/// Pure mathematical representation of a firefly
 #[derive(Debug, Clone, Copy)]
-pub struct FireflyState {
-    /// Phase in radians [0, 2π]
-    pub phase: f32,
-    /// Natural frequency in Hz
-    pub frequency: f32,
-    /// Position in 2D space
+pub struct Firefly {
     pub position: (f32, f32),
+    pub velocity: (f32, f32),
+    pub pulse_offset: f32,
+    pub pulse_speed: f32,
 }
 
-/// Kuramoto model parameters
-#[derive(Debug, Clone, Copy)]
-pub struct KuramotoParams {
-    /// Coupling strength K
-    pub coupling_strength: f32,
-    /// Number of oscillators
-    pub num_oscillators: usize,
-    /// Time step dt
-    pub dt: f32,
-}
+impl Firefly {
+    pub fn new(position: (f32, f32), index: usize) -> Self {
+        // Each firefly has unique pulse pattern
+        let pulse_offset = (index as f32 * 2.7) % (2.0 * PI);
+        let pulse_speed = 0.8 + (index as f32 * 0.13) % 0.6;
 
-/// Pure mathematical functions for the Kuramoto model
-pub mod kuramoto {
-    use super::*;
-
-    /// Calculate phase velocity for oscillator i given all oscillator phases
-    /// dθᵢ/dt = ωᵢ + (K/N) Σⱼ sin(θⱼ - θᵢ)
-    pub fn phase_velocity(
-        i: usize,
-        phases: &[f32],
-        frequencies: &[f32],
-        params: &KuramotoParams,
-    ) -> f32 {
-        let mut coupling_term = 0.0;
-
-        for (j, &phase_j) in phases.iter().enumerate() {
-            if i != j {
-                coupling_term += (phase_j - phases[i]).sin();
-            }
+        Self {
+            position,
+            velocity: (0.0, 0.0),
+            pulse_offset,
+            pulse_speed,
         }
-
-        frequencies[i] + (params.coupling_strength / params.num_oscillators as f32) * coupling_term
     }
 
-    /// Update phase using Euler integration
-    /// θᵢ(t + dt) = θᵢ(t) + dθᵢ/dt * dt
-    pub fn integrate_phase(
-        current_phase: f32,
-        phase_velocity: f32,
+    /// Calculate brightness based on pulsing (0.0 = off, 1.0 = bright)
+    pub fn brightness(&self, time: f32) -> f32 {
+        let pulse_phase = (time * self.pulse_speed + self.pulse_offset).sin();
+        (pulse_phase + 1.0) * 0.5
+    }
+
+    /// Update firefly position based on swarm physics
+    pub fn update(
+        &mut self,
         dt: f32,
-    ) -> f32 {
-        (current_phase + phase_velocity * dt) % (2.0 * PI)
-    }
+        time: f32,
+        others: &[Firefly],
+        dialog_center: (f32, f32),
+        screen_size: (f32, f32),
+    ) {
+        // Flowing attraction between logo and dialog
+        let logo_pos = (LOGO_X, LOGO_Y);
+        let to_logo = (logo_pos.0 - self.position.0, logo_pos.1 - self.position.1);
+        let logo_dist = (to_logo.0 * to_logo.0 + to_logo.1 * to_logo.1).sqrt();
 
-    /// Calculate order parameter (synchronization measure)
-    /// r * e^(iψ) = (1/N) Σⱼ e^(iθⱼ)
-    pub fn order_parameter(phases: &[f32]) -> (f32, f32) {
-        let n = phases.len() as f32;
-        let mut real_sum = 0.0;
-        let mut imag_sum = 0.0;
+        let to_dialog = (dialog_center.0 - self.position.0, dialog_center.1 - self.position.1);
+        let dialog_dist = (to_dialog.0 * to_dialog.0 + to_dialog.1 * to_dialog.1).sqrt();
 
-        for &phase in phases {
-            real_sum += phase.cos();
-            imag_sum += phase.sin();
-        }
+        let attraction_threshold = 150.0;
 
-        let r = ((real_sum / n).powi(2) + (imag_sum / n).powi(2)).sqrt();
-        let psi = (imag_sum / n).atan2(real_sum / n);
-
-        (r, psi)
-    }
-}
-
-/// Category Theory morphisms for mapping mathematical objects to rendering
-pub mod morphisms {
-    use super::*;
-
-    /// Functor from FireflyState to visual properties
-    pub trait VisualFunctor {
-        type Visual;
-
-        fn map(&self, state: &FireflyState) -> Self::Visual;
-    }
-
-    /// Maps phase to brightness (0.0 to 1.0)
-    pub struct PhaseToBrightness;
-
-    impl VisualFunctor for PhaseToBrightness {
-        type Visual = f32;
-
-        fn map(&self, state: &FireflyState) -> f32 {
-            // Use a sharp transition for firefly-like flashing
-            let sin_phase = state.phase.sin();
-            if sin_phase > 0.7 {
-                (sin_phase - 0.7) * 3.333  // Map [0.7, 1.0] to [0, 1]
-            } else {
-                0.0
+        if logo_dist < dialog_dist {
+            // Closer to logo, be attracted to dialog
+            if dialog_dist > 1.0 {
+                let flow_strength = GRAVITY_STRENGTH * 1.5;
+                let gravity_force = (flow_strength / (dialog_dist / 100.0).max(0.5))
+                    * (1.0 - (dialog_dist / GRAVITY_RADIUS).min(1.0));
+                let norm_factor = dialog_dist.max(0.001);
+                self.velocity.0 += (to_dialog.0 / norm_factor) * gravity_force;
+                self.velocity.1 += (to_dialog.1 / norm_factor) * gravity_force;
+            }
+            // Weak repulsion from logo when very close
+            if logo_dist < attraction_threshold && logo_dist > 1.0 {
+                let repel = 0.1 * (attraction_threshold - logo_dist) / attraction_threshold;
+                let norm_factor = logo_dist.max(0.001);
+                self.velocity.0 -= (to_logo.0 / norm_factor) * repel;
+                self.velocity.1 -= (to_logo.1 / norm_factor) * repel;
+            }
+        } else {
+            // Closer to dialog, be attracted to logo
+            if logo_dist > 1.0 {
+                let flow_strength = GRAVITY_STRENGTH * 1.5;
+                let gravity_force = (flow_strength / (logo_dist / 100.0).max(0.5))
+                    * (1.0 - (logo_dist / GRAVITY_RADIUS).min(1.0));
+                let norm_factor = logo_dist.max(0.001);
+                self.velocity.0 += (to_logo.0 / norm_factor) * gravity_force;
+                self.velocity.1 += (to_logo.1 / norm_factor) * gravity_force;
+            }
+            // Weak repulsion from dialog when very close
+            if dialog_dist < attraction_threshold && dialog_dist > 1.0 {
+                let repel = 0.1 * (attraction_threshold - dialog_dist) / attraction_threshold;
+                let norm_factor = dialog_dist.max(0.001);
+                self.velocity.0 -= (to_dialog.0 / norm_factor) * repel;
+                self.velocity.1 -= (to_dialog.1 / norm_factor) * repel;
             }
         }
-    }
 
-    /// Maps position and phase to screen coordinates with movement
-    pub struct PositionToScreen {
-        pub screen_width: f32,
-        pub screen_height: f32,
-        pub time: f32,
-    }
+        // Screen boundary forces
+        let boundary_margin = 50.0;
+        let boundary_strength = 2.0;
 
-    impl VisualFunctor for PositionToScreen {
-        type Visual = (f32, f32);
-
-        fn map(&self, state: &FireflyState) -> (f32, f32) {
-            // Base position in normalized coordinates [-1, 1]
-            let base_x = state.position.0 * 2.0 - 1.0;
-            let base_y = state.position.1 * 2.0 - 1.0;
-
-            // Add organic movement based on phase and time
-            let drift_x = (self.time * 0.3 + state.phase).sin() * 0.08;
-            let drift_y = (self.time * 0.21 + state.phase * 1.5).sin() * 0.06;
-
-            (base_x + drift_x, base_y + drift_y)
+        if self.position.0 < boundary_margin {
+            self.velocity.0 += boundary_strength * (boundary_margin - self.position.0) / boundary_margin;
         }
-    }
-
-    /// Maps phase to color with rainbow effect
-    pub struct PhaseToColor;
-
-    impl VisualFunctor for PhaseToColor {
-        type Visual = [f32; 3];  // RGB
-
-        fn map(&self, state: &FireflyState) -> [f32; 3] {
-            let hue = state.phase / (2.0 * PI);
-
-            // HSV to RGB conversion
-            let c = 1.0;  // Chroma
-            let x = c * (1.0 - ((hue * 6.0) % 2.0 - 1.0).abs());
-            let m = 0.0;
-
-            let (r, g, b) = match (hue * 6.0) as usize {
-                0 => (c, x, 0.0),
-                1 => (x, c, 0.0),
-                2 => (0.0, c, x),
-                3 => (0.0, x, c),
-                4 => (x, 0.0, c),
-                _ => (c, 0.0, x),
-            };
-
-            [r + m, g + m, b + m]
+        if self.position.0 > screen_size.0 - boundary_margin {
+            self.velocity.0 -= boundary_strength * (self.position.0 - (screen_size.0 - boundary_margin)) / boundary_margin;
         }
+        if self.position.1 < boundary_margin {
+            self.velocity.1 += boundary_strength * (boundary_margin - self.position.1) / boundary_margin;
+        }
+        if self.position.1 > screen_size.1 - boundary_margin {
+            self.velocity.1 -= boundary_strength * (self.position.1 - (screen_size.1 - boundary_margin)) / boundary_margin;
+        }
+
+        // Swarm behaviors
+        let mut separation = (0.0, 0.0);
+        let mut cohesion_center = (0.0, 0.0);
+        let mut alignment = (0.0, 0.0);
+        let mut neighbor_count = 0;
+
+        for other in others {
+            let to_other = (other.position.0 - self.position.0, other.position.1 - self.position.1);
+            let distance = (to_other.0 * to_other.0 + to_other.1 * to_other.1).sqrt();
+
+            if distance > 0.0 {
+                // Separation
+                if distance < REPULSION_RADIUS {
+                    let repulsion = (REPULSION_STRENGTH / distance.max(10.0))
+                        * (1.0 - distance / REPULSION_RADIUS);
+                    let norm_factor = distance.max(0.001);
+                    separation.0 -= (to_other.0 / norm_factor) * repulsion;
+                    separation.1 -= (to_other.1 / norm_factor) * repulsion;
+                }
+
+                // Cohesion & Alignment
+                if distance < NEIGHBOR_RADIUS {
+                    cohesion_center.0 += other.position.0;
+                    cohesion_center.1 += other.position.1;
+                    alignment.0 += other.velocity.0;
+                    alignment.1 += other.velocity.1;
+                    neighbor_count += 1;
+                }
+            }
+        }
+
+        // Apply separation
+        self.velocity.0 += separation.0;
+        self.velocity.1 += separation.1;
+
+        // Apply cohesion
+        if neighbor_count > 0 {
+            cohesion_center.0 /= neighbor_count as f32;
+            cohesion_center.1 /= neighbor_count as f32;
+            let to_center = (cohesion_center.0 - self.position.0, cohesion_center.1 - self.position.1);
+            let center_dist = (to_center.0 * to_center.0 + to_center.1 * to_center.1).sqrt();
+            if center_dist > 0.0 {
+                let norm_factor = center_dist.max(0.001);
+                self.velocity.0 += (to_center.0 / norm_factor) * COHESION_STRENGTH;
+                self.velocity.1 += (to_center.1 / norm_factor) * COHESION_STRENGTH;
+            }
+
+            // Apply alignment
+            alignment.0 /= neighbor_count as f32;
+            alignment.1 /= neighbor_count as f32;
+            self.velocity.0 += (alignment.0 - self.velocity.0) * ALIGNMENT_STRENGTH;
+            self.velocity.1 += (alignment.1 - self.velocity.1) * ALIGNMENT_STRENGTH;
+        }
+
+        // Random drift
+        let noise_x = (time * 0.5 + self.position.0 * 0.01).sin() * RANDOM_FORCE;
+        let noise_y = (time * 0.7 + self.position.1 * 0.01).cos() * RANDOM_FORCE;
+        self.velocity.0 += noise_x;
+        self.velocity.1 += noise_y;
+
+        // Apply drag
+        self.velocity.0 *= DRAG;
+        self.velocity.1 *= DRAG;
+
+        // Update position
+        self.position.0 += self.velocity.0 * dt;
+        self.position.1 += self.velocity.1 * dt;
     }
 }
 
-/// FRP integration layer for iced
+/// FRP (Functional Reactive Programming) layer
 pub mod frp {
     use super::*;
 
-    /// Event representing a time step in the simulation
-    #[derive(Debug, Clone)]
+    const INITIAL_PARTICLE_COUNT: usize = 9;
+    const MAX_PARTICLE_COUNT: usize = 80;
+    const CONNECTION_DISTANCE: f32 = 150.0;
+    const CONNECTION_DURATION_MIN: f32 = 1.0;
+    const CONNECTION_DURATION_MAX: f32 = 3.0;
+    const MAX_CONNECTIONS_PER_PARTICLE: usize = 2;
+
+    #[derive(Clone, Copy)]
     pub struct TimeStep(pub f32);
 
-    /// Message for updating firefly states
-    #[derive(Debug, Clone)]
+    #[derive(Clone)]
     pub enum FireflyMessage {
         Tick(TimeStep),
-        UpdateCoupling(f32),
-        Reset,
+        Resize(f32, f32),
     }
 
-    /// State container with FRP update semantics
-    #[derive(Debug, Clone)]
+    #[derive(Clone, Debug)]
+    struct Connection {
+        particle_a: usize,
+        particle_b: usize,
+        birth_time: f32,
+        duration: f32,
+        random_seed: f32,
+    }
+
+    #[derive(Clone, Debug)]
     pub struct FireflySystem {
-        states: Vec<FireflyState>,
-        params: KuramotoParams,
-        time: f32,
+        fireflies: Vec<Firefly>,
+        connections: Vec<Connection>,
+        last_update: f32,
+        next_spawn_time: f32,
+        screen_size: (f32, f32),
     }
 
     impl FireflySystem {
-        pub fn new(num_fireflies: usize) -> Self {
-            let mut states = Vec::with_capacity(num_fireflies);
+        pub fn new(_num_fireflies: usize) -> Self {
+            let screen_size = (1024.0, 768.0); // Default size
+            let mut fireflies = Vec::with_capacity(MAX_PARTICLE_COUNT);
 
-            // Initialize with grid positions and random phases
-            let grid_width = 8;
-            for i in 0..num_fireflies {
-                let col = i % grid_width;
-                let row = i / grid_width;
+            // Start with initial particles
+            for i in 0..INITIAL_PARTICLE_COUNT {
+                let angle = (i as f32 / INITIAL_PARTICLE_COUNT as f32) * 2.0 * PI;
+                let spawn_distance = 150.0;
 
-                states.push(FireflyState {
-                    phase: (i as f32 * 0.618_034) % (2.0 * PI),
-                    frequency: 1.0 + (i as f32 * 0.02) % 0.2 - 0.1,
-                    position: (
-                        col as f32 / grid_width as f32,
-                        row as f32 / 5.0,
-                    ),
-                });
+                let x = screen_size.0 / 2.0 + angle.cos() * spawn_distance;
+                let y = screen_size.1 / 2.0 + angle.sin() * spawn_distance;
+
+                let mut firefly = Firefly::new((x, y), i);
+                // Initial velocity toward center
+                let to_center_x = screen_size.0 / 2.0 - x;
+                let to_center_y = screen_size.1 / 2.0 - y;
+                let norm = (to_center_x * to_center_x + to_center_y * to_center_y).sqrt().max(0.001);
+                firefly.velocity = (to_center_x / norm, to_center_y / norm);
+                fireflies.push(firefly);
             }
 
             Self {
-                states,
-                params: KuramotoParams {
-                    coupling_strength: 0.1,
-                    num_oscillators: num_fireflies,
-                    dt: 0.016,  // 60 FPS
-                },
-                time: 0.0,
+                fireflies,
+                connections: Vec::new(),
+                last_update: 0.0,
+                next_spawn_time: 1.0,
+                screen_size,
             }
         }
 
-        /// Pure functional update - returns new state without mutation
-        pub fn update(&self, msg: FireflyMessage) -> Self {
-            match msg {
+        pub fn update(mut self, message: FireflyMessage) -> Self {
+            match message {
                 FireflyMessage::Tick(TimeStep(dt)) => {
-                    let mut new_states = self.states.clone();
-                    let phases: Vec<f32> = self.states.iter().map(|s| s.phase).collect();
-                    let frequencies: Vec<f32> = self.states.iter().map(|s| s.frequency).collect();
+                    let current_time = self.last_update + dt;
+                    let actual_dt = dt.min(0.1);
 
-                    // Update each firefly's phase using Kuramoto model
-                    for (i, state) in new_states.iter_mut().enumerate() {
-                        let velocity = kuramoto::phase_velocity(
-                            i,
-                            &phases,
-                            &frequencies,
-                            &self.params,
-                        );
-                        state.phase = kuramoto::integrate_phase(state.phase, velocity, dt);
+                    let dialog_center = (self.screen_size.0 / 2.0, self.screen_size.1 / 2.0);
+
+                    // Spawn new particles
+                    if self.fireflies.len() < MAX_PARTICLE_COUNT && current_time >= self.next_spawn_time {
+                        let angle = (self.fireflies.len() as f32 * 7.3) % (2.0 * PI);
+                        let spawn_distance = (self.screen_size.0.max(self.screen_size.1) / 2.0) + 100.0;
+
+                        let x = dialog_center.0 + angle.cos() * spawn_distance;
+                        let y = dialog_center.1 + angle.sin() * spawn_distance;
+
+                        let mut new_firefly = Firefly::new((x, y), self.fireflies.len());
+                        let to_center_x = dialog_center.0 - x;
+                        let to_center_y = dialog_center.1 - y;
+                        let norm = (to_center_x * to_center_x + to_center_y * to_center_y).sqrt().max(0.001);
+                        new_firefly.velocity = (to_center_x / norm * 2.0, to_center_y / norm * 2.0);
+                        self.fireflies.push(new_firefly);
+
+                        // Random spawn delay
+                        let seed = ((current_time * 1000.0 + self.fireflies.len() as f32 * 7.3) % 1500.0).abs();
+                        self.next_spawn_time = current_time + 0.5 + (seed / 1000.0);
                     }
 
-                    Self {
-                        states: new_states,
-                        params: self.params,
-                        time: self.time + dt,
+                    // Update all fireflies
+                    let fireflies_clone = self.fireflies.clone();
+                    for firefly in &mut self.fireflies {
+                        firefly.update(actual_dt, current_time, &fireflies_clone, dialog_center, self.screen_size);
                     }
-                }
-                FireflyMessage::UpdateCoupling(k) => {
-                    let mut new_params = self.params;
-                    new_params.coupling_strength = k;
-                    Self {
-                        states: self.states.clone(),
-                        params: new_params,
-                        time: self.time,
+
+                    // Update connections - remove expired ones
+                    self.connections.retain(|conn| {
+                        current_time - conn.birth_time < conn.duration
+                    });
+
+                    // Try to form new connections between nearby particles
+                    if (current_time * 37.0).sin() > 0.96 {  // Random chance based on time
+                        for i in 0..self.fireflies.len() {
+                            // Count existing connections for this particle
+                            let conn_count = self.connections.iter()
+                                .filter(|c| c.particle_a == i || c.particle_b == i)
+                                .count();
+
+                            if conn_count >= MAX_CONNECTIONS_PER_PARTICLE {
+                                continue;
+                            }
+
+                            // Look for nearby particles to connect to
+                            for j in (i + 1)..self.fireflies.len() {
+                                let dx = self.fireflies[i].position.0 - self.fireflies[j].position.0;
+                                let dy = self.fireflies[i].position.1 - self.fireflies[j].position.1;
+                                let dist = (dx * dx + dy * dy).sqrt();
+
+                                if dist < CONNECTION_DISTANCE {
+                                    // Check if both particles are visible (brightness > threshold)
+                                    let brightness_i = self.fireflies[i].brightness(current_time);
+                                    let brightness_j = self.fireflies[j].brightness(current_time);
+
+                                    if brightness_i > 0.1 && brightness_j > 0.1 {
+                                        // Check if already connected
+                                        let already_connected = self.connections.iter()
+                                            .any(|c| (c.particle_a == i && c.particle_b == j) || (c.particle_a == j && c.particle_b == i));
+
+                                        if !already_connected {
+                                            // Check if particle j also has space
+                                            let j_conn_count = self.connections.iter()
+                                                .filter(|c| c.particle_a == j || c.particle_b == j)
+                                                .count();
+
+                                            if j_conn_count < MAX_CONNECTIONS_PER_PARTICLE {
+                                                // Random duration and seed for variation
+                                                let random_val = ((current_time * 1000.0 + i as f32 * 13.7 + j as f32 * 7.3) % 1000.0) / 1000.0;
+                                                let duration = CONNECTION_DURATION_MIN + random_val * (CONNECTION_DURATION_MAX - CONNECTION_DURATION_MIN);
+                                                let random_seed = ((current_time * 537.0 + i as f32 * 41.0 + j as f32 * 23.0) % 1000.0) / 1000.0;
+
+                                                // Form connection
+                                                self.connections.push(Connection {
+                                                    particle_a: i,
+                                                    particle_b: j,
+                                                    birth_time: current_time,
+                                                    duration,
+                                                    random_seed,
+                                                });
+                                                break;  // Only form one connection per particle per update
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
+
+                    self.last_update = current_time;
+                    self
                 }
-                FireflyMessage::Reset => Self::new(self.params.num_oscillators),
+                FireflyMessage::Resize(width, height) => {
+                    self.screen_size = (width, height);
+                    self
+                }
             }
         }
 
-        /// Get visual representation using morphisms
-        pub fn to_visual(&self) -> Vec<VisualFirefly> {
-            use morphisms::*;
+        pub fn to_visual(&self) -> Vec<FireflyVisual> {
+            self.fireflies.iter().map(|f| FireflyVisual {
+                position: f.position,
+                brightness: f.brightness(self.last_update),
+                color: [220.0 / 255.0, 255.0 / 255.0, 80.0 / 255.0], // Yellow-green
+                size: 15.0,
+            }).collect()
+        }
 
-            let brightness_functor = PhaseToBrightness;
-            let position_functor = PositionToScreen {
-                screen_width: 800.0,
-                screen_height: 600.0,
-                time: self.time,
-            };
-            let color_functor = PhaseToColor;
+        pub fn get_connections(&self) -> Vec<ConnectionVisual> {
+            self.connections.iter().filter_map(|conn| {
+                // Check if both particles are still visible
+                let brightness_a = self.fireflies[conn.particle_a].brightness(self.last_update);
+                let brightness_b = self.fireflies[conn.particle_b].brightness(self.last_update);
 
-            self.states
-                .iter()
-                .map(|state| VisualFirefly {
-                    position: position_functor.map(state),
-                    brightness: brightness_functor.map(state),
-                    color: color_functor.map(state),
-                    size: 0.02 + 0.04 * brightness_functor.map(state),
+                if brightness_a < 0.1 || brightness_b < 0.1 {
+                    return None; // One or both particles are invisible
+                }
+
+                // Calculate fade based on connection lifetime
+                let age = self.last_update - conn.birth_time;
+                let life_progress = age / conn.duration;
+
+                if life_progress >= 1.0 {
+                    return None; // Expired
+                }
+
+                // Fade in/out matching www-egui
+                let base_fade = if life_progress < 0.3 {
+                    life_progress / 0.3  // Fade in
+                } else if life_progress > 0.7 {
+                    (1.0 - life_progress) / 0.3  // Fade out
+                } else {
+                    1.0  // Full brightness
+                };
+
+                // Also scale by particle brightness (so line fades with particles)
+                let brightness_factor = brightness_a.min(brightness_b);
+                let fade = base_fade * (0.5 + conn.random_seed * 0.5) * brightness_factor;
+
+                Some(ConnectionVisual {
+                    from: self.fireflies[conn.particle_a].position,
+                    to: self.fireflies[conn.particle_b].position,
+                    fade,
                 })
-                .collect()
+            }).collect()
         }
     }
 
-    /// Visual representation of a firefly
-    #[derive(Debug, Clone)]
-    pub struct VisualFirefly {
+    #[derive(Debug, Clone, Copy)]
+    pub struct FireflyVisual {
         pub position: (f32, f32),
         pub brightness: f32,
         pub color: [f32; 3],
         pub size: f32,
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    pub struct ConnectionVisual {
+        pub from: (f32, f32),
+        pub to: (f32, f32),
+        pub fade: f32,
     }
 }

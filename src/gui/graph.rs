@@ -125,21 +125,170 @@ impl OrganizationGraph {
     }
 
     pub fn auto_layout(&mut self) {
-        // Simple circular layout for nodes
         let node_count = self.nodes.len();
         if node_count == 0 {
             return;
         }
 
-        let center = Point { x: 400.0, y: 300.0 };
-        let radius = 200.0;
+        // Use hierarchical layout based on roles if we have few nodes
+        // Otherwise use force-directed layout
+        if node_count <= 10 {
+            self.hierarchical_layout();
+        } else {
+            self.force_directed_layout();
+        }
+    }
 
-        for (i, node) in self.nodes.values_mut().enumerate() {
-            let angle = (i as f32) * (2.0 * std::f32::consts::PI) / (node_count as f32);
-            node.position = Point {
-                x: center.x + radius * angle.cos(),
-                y: center.y + radius * angle.sin(),
-            };
+    /// Hierarchical layout: organize nodes by role
+    fn hierarchical_layout(&mut self) {
+        let center = Point { x: 400.0, y: 300.0 };
+
+        // Group nodes by role
+        let mut role_groups: HashMap<String, Vec<Uuid>> = HashMap::new();
+        for (id, node) in &self.nodes {
+            let role_key = format!("{:?}", node.role);
+            role_groups.entry(role_key).or_insert_with(Vec::new).push(*id);
+        }
+
+        // Define role hierarchy (top to bottom)
+        let role_order = vec![
+            "RootAuthority",
+            "SecurityAdmin",
+            "BackupHolder",
+            "Auditor",
+            "Developer",
+            "ServiceAccount",
+        ];
+
+        let mut y_offset = 100.0;
+        let y_spacing = 120.0;
+
+        for role_name in role_order {
+            if let Some(node_ids) = role_groups.get(role_name) {
+                let x_spacing = 150.0;
+                let total_width = (node_ids.len() as f32 - 1.0) * x_spacing;
+                let start_x = center.x - total_width / 2.0;
+
+                for (i, &node_id) in node_ids.iter().enumerate() {
+                    if let Some(node) = self.nodes.get_mut(&node_id) {
+                        node.position = Point {
+                            x: start_x + (i as f32) * x_spacing,
+                            y: y_offset,
+                        };
+                    }
+                }
+
+                y_offset += y_spacing;
+            }
+        }
+    }
+
+    /// Force-directed layout: physics-based layout for larger graphs
+    fn force_directed_layout(&mut self) {
+        // Fruchterman-Reingold algorithm
+        let width = 800.0;
+        let height = 600.0;
+        let area = width * height;
+        let k = (area / self.nodes.len() as f32).sqrt(); // Optimal distance
+
+        // Initialize random positions if needed
+        for node in self.nodes.values_mut() {
+            if node.position.x == 0.0 && node.position.y == 0.0 {
+                node.position = Point {
+                    x: (rand::random::<f32>() * width),
+                    y: (rand::random::<f32>() * height),
+                };
+            }
+        }
+
+        // Run simulation for N iterations
+        let iterations = 50;
+        let mut temperature = width / 10.0;
+
+        for _ in 0..iterations {
+            // Calculate repulsive forces between all pairs of nodes
+            let node_ids: Vec<Uuid> = self.nodes.keys().copied().collect();
+            let mut displacements: HashMap<Uuid, Vector> = HashMap::new();
+
+            for &v in &node_ids {
+                displacements.insert(v, Vector::new(0.0, 0.0));
+            }
+
+            // Repulsive forces (all pairs)
+            for i in 0..node_ids.len() {
+                for j in (i + 1)..node_ids.len() {
+                    let id_v = node_ids[i];
+                    let id_u = node_ids[j];
+
+                    if let (Some(node_v), Some(node_u)) = (
+                        self.nodes.get(&id_v),
+                        self.nodes.get(&id_u),
+                    ) {
+                        let delta = Vector::new(
+                            node_v.position.x - node_u.position.x,
+                            node_v.position.y - node_u.position.y,
+                        );
+
+                        let distance = (delta.x * delta.x + delta.y * delta.y).sqrt().max(0.01);
+                        let repulsion = k * k / distance;
+
+                        let force = Vector::new(
+                            (delta.x / distance) * repulsion,
+                            (delta.y / distance) * repulsion,
+                        );
+
+                        *displacements.get_mut(&id_v).unwrap() =
+                            *displacements.get(&id_v).unwrap() + force;
+                        *displacements.get_mut(&id_u).unwrap() =
+                            *displacements.get(&id_u).unwrap() - force;
+                    }
+                }
+            }
+
+            // Attractive forces (edges only)
+            for edge in &self.edges {
+                if let (Some(node_from), Some(node_to)) = (
+                    self.nodes.get(&edge.from),
+                    self.nodes.get(&edge.to),
+                ) {
+                    let delta = Vector::new(
+                        node_to.position.x - node_from.position.x,
+                        node_to.position.y - node_from.position.y,
+                    );
+
+                    let distance = (delta.x * delta.x + delta.y * delta.y).sqrt().max(0.01);
+                    let attraction = distance * distance / k;
+
+                    let force = Vector::new(
+                        (delta.x / distance) * attraction,
+                        (delta.y / distance) * attraction,
+                    );
+
+                    *displacements.get_mut(&edge.from).unwrap() =
+                        *displacements.get(&edge.from).unwrap() + force;
+                    *displacements.get_mut(&edge.to).unwrap() =
+                        *displacements.get(&edge.to).unwrap() - force;
+                }
+            }
+
+            // Apply displacements with cooling
+            for (&id, displacement) in &displacements {
+                if let Some(node) = self.nodes.get_mut(&id) {
+                    let length = (displacement.x * displacement.x + displacement.y * displacement.y).sqrt();
+                    if length > 0.0 {
+                        let capped = length.min(temperature);
+                        node.position.x += (displacement.x / length) * capped;
+                        node.position.y += (displacement.y / length) * capped;
+
+                        // Keep within bounds
+                        node.position.x = node.position.x.max(50.0).min(width - 50.0);
+                        node.position.y = node.position.y.max(50.0).min(height - 50.0);
+                    }
+                }
+            }
+
+            // Cool down
+            temperature *= 0.95;
         }
     }
 
