@@ -5,7 +5,7 @@
 
 use iced::{
     application,
-    widget::{button, column, container, row, text, text_input, Container, horizontal_space, pick_list, progress_bar, checkbox, scrollable},
+    widget::{button, column, container, row, text, text_input, Container, horizontal_space, pick_list, progress_bar, checkbox, scrollable, Space},
     Task, Element, Length, Color, Border, Font, Theme, Background,
 };
 use iced_futures::Subscription;
@@ -960,11 +960,21 @@ impl CimKeysApp {
             .height(Length::Fill)
             .padding(20);
 
-        // Stack the firefly shader animation with random movement and main content
+        // Stack the background gradient, firefly shader, and main content
         stack![
+            // Background gradient matching www-egui
+            container(Space::new(Length::Fill, Length::Fill))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(|_theme| container::Style {
+                    background: Some(CowboyTheme::dark_background()),
+                    ..Default::default()
+                }),
+            // Firefly shader on top of background
             shader(self.firefly_shader.clone())
                 .width(Length::Fill)
                 .height(Length::Fill),
+            // Main content on top
             main_content
         ]
         .width(Length::Fill)

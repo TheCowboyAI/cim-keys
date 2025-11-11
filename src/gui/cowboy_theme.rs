@@ -58,13 +58,12 @@ impl CowboyTheme {
         ))
     }
 
-    /// Dark background (main background)
+    /// Dark background (main background) - matches www-egui
     pub fn dark_background() -> Background {
         Background::Gradient(Gradient::Linear(
             Linear::new(180.0)
-                .add_stop(0.0, Color::from_rgb(0.078, 0.157, 0.314))  // Dark blue
-                .add_stop(0.5, Color::from_rgb(0.039, 0.078, 0.157))  // Darker blue
-                .add_stop(1.0, Color::BLACK)
+                .add_stop(0.0, Color::from_rgb(0.0078, 0.278, 0.447))  // Teal blue #024772
+                .add_stop(1.0, Color::from_rgb(0.0, 0.0, 0.314))       // Navy #000050
         ))
     }
 
