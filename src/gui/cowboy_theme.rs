@@ -82,6 +82,26 @@ impl CowboyTheme {
         Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.25))
     }
 
+    /// Pastel teal card background (soft, colorful)
+    pub fn pastel_teal_background() -> Background {
+        Background::Color(Color::from_rgba(0.4, 0.7, 0.75, 0.3))  // Soft teal with transparency
+    }
+
+    /// Pastel coral card background (accent color)
+    pub fn pastel_coral_background() -> Background {
+        Background::Color(Color::from_rgba(0.95, 0.7, 0.6, 0.3))  // Soft coral/peach
+    }
+
+    /// Pastel cream card background (neutral accent)
+    pub fn pastel_cream_background() -> Background {
+        Background::Color(Color::from_rgba(0.95, 0.92, 0.85, 0.3))  // Warm cream
+    }
+
+    /// Pastel mint card background (fresh accent)
+    pub fn pastel_mint_background() -> Background {
+        Background::Color(Color::from_rgba(0.7, 0.9, 0.8, 0.3))  // Soft mint green
+    }
+
     /// Text colors
     pub fn text_primary() -> Color {
         Color::WHITE
@@ -314,6 +334,78 @@ impl CowboyAppTheme {
                 color: Color::from_rgba(0.0, 0.0, 0.0, 0.6),
                 offset: iced::Vector::new(0.0, 12.0),
                 blur_radius: 32.0,
+            },
+        }
+    }
+
+    /// Pastel teal card (colorful accent card)
+    pub fn pastel_teal_card() -> impl Fn(&iced::Theme) -> container::Style {
+        |_theme| container::Style {
+            background: Some(CowboyTheme::pastel_teal_background()),
+            text_color: Some(CowboyTheme::text_primary()),
+            border: Border {
+                color: Color::from_rgba(0.4, 0.7, 0.75, 0.6),
+                width: 1.0,
+                radius: 15.0.into(),
+            },
+            shadow: Shadow {
+                color: Color::from_rgba(0.0, 0.0, 0.0, 0.4),
+                offset: iced::Vector::new(0.0, 6.0),
+                blur_radius: 20.0,
+            },
+        }
+    }
+
+    /// Pastel coral card (warm accent)
+    pub fn pastel_coral_card() -> impl Fn(&iced::Theme) -> container::Style {
+        |_theme| container::Style {
+            background: Some(CowboyTheme::pastel_coral_background()),
+            text_color: Some(CowboyTheme::text_primary()),
+            border: Border {
+                color: Color::from_rgba(0.95, 0.7, 0.6, 0.6),
+                width: 1.0,
+                radius: 15.0.into(),
+            },
+            shadow: Shadow {
+                color: Color::from_rgba(0.0, 0.0, 0.0, 0.4),
+                offset: iced::Vector::new(0.0, 6.0),
+                blur_radius: 20.0,
+            },
+        }
+    }
+
+    /// Pastel cream card (neutral highlight)
+    pub fn pastel_cream_card() -> impl Fn(&iced::Theme) -> container::Style {
+        |_theme| container::Style {
+            background: Some(CowboyTheme::pastel_cream_background()),
+            text_color: Some(Color::from_rgb(0.2, 0.2, 0.3)),  // Darker text for cream bg
+            border: Border {
+                color: Color::from_rgba(0.95, 0.92, 0.85, 0.6),
+                width: 1.0,
+                radius: 15.0.into(),
+            },
+            shadow: Shadow {
+                color: Color::from_rgba(0.0, 0.0, 0.0, 0.4),
+                offset: iced::Vector::new(0.0, 6.0),
+                blur_radius: 20.0,
+            },
+        }
+    }
+
+    /// Pastel mint card (fresh accent)
+    pub fn pastel_mint_card() -> impl Fn(&iced::Theme) -> container::Style {
+        |_theme| container::Style {
+            background: Some(CowboyTheme::pastel_mint_background()),
+            text_color: Some(CowboyTheme::text_primary()),
+            border: Border {
+                color: Color::from_rgba(0.7, 0.9, 0.8, 0.6),
+                width: 1.0,
+                radius: 15.0.into(),
+            },
+            shadow: Shadow {
+                color: Color::from_rgba(0.0, 0.0, 0.0, 0.4),
+                offset: iced::Vector::new(0.0, 6.0),
+                blur_radius: 20.0,
             },
         }
     }
