@@ -68,10 +68,10 @@ impl<Message> shader::Program<Message> for FireflyRenderer {
             positions.push(ndc_x);
             positions.push(ndc_y);
 
-            colors.push(firefly.color[0] * firefly.brightness);
-            colors.push(firefly.color[1] * firefly.brightness);
-            colors.push(firefly.color[2] * firefly.brightness);
-            colors.push(1.0);  // Alpha
+            colors.push(firefly.color[0]);
+            colors.push(firefly.color[1]);
+            colors.push(firefly.color[2]);
+            colors.push(firefly.brightness);  // Alpha varies with brightness
 
             // Convert size from pixels to NDC
             let ndc_size = (firefly.size / width.min(height)) * 2.0;
