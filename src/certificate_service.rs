@@ -5,7 +5,7 @@
 //! the aggregate emits events and this service performs the side effects.
 
 use rcgen::{
-    Certificate, CertificateParams, DistinguishedName, DnType,
+    CertificateParams, DnType,
     SanType, BasicConstraints, IsCa, KeyUsagePurpose,
     ExtendedKeyUsagePurpose, KeyPair, Issuer,
 };
@@ -104,7 +104,7 @@ pub fn generate_root_ca_from_event(
     use sha2::{Sha256, Digest};
     let cert_der = cert.der();
     let mut hasher = Sha256::new();
-    hasher.update(&cert_der);
+    hasher.update(cert_der);
     let fingerprint = hex::encode(hasher.finalize());
 
     Ok(GeneratedCertificate {
@@ -154,7 +154,7 @@ pub fn generate_intermediate_ca_from_event(
         .map_err(|e| format!("Failed to generate key pair: {}", e))?;
 
     // Create issuer from the root CA
-    let issuer = Issuer::new(issuer_params, issuer_key_pair.clone());
+    let issuer = Issuer::new(issuer_params, issuer_key_pair);
 
     // Sign the certificate with the issuer
     let cert = params.signed_by(&key_pair, &issuer)
@@ -168,7 +168,7 @@ pub fn generate_intermediate_ca_from_event(
     use sha2::{Sha256, Digest};
     let cert_der = cert.der();
     let mut hasher = Sha256::new();
-    hasher.update(&cert_der);
+    hasher.update(cert_der);
     let fingerprint = hex::encode(hasher.finalize());
 
     Ok(GeneratedCertificate {
@@ -228,7 +228,7 @@ pub fn generate_leaf_certificate_from_event(
         .map_err(|e| format!("Failed to generate key pair: {}", e))?;
 
     // Create issuer from the CA
-    let issuer = Issuer::new(issuer_params, issuer_key_pair.clone());
+    let issuer = Issuer::new(issuer_params, issuer_key_pair);
 
     // Sign the certificate with the issuer
     let cert = params.signed_by(&key_pair, &issuer)
@@ -242,7 +242,7 @@ pub fn generate_leaf_certificate_from_event(
     use sha2::{Sha256, Digest};
     let cert_der = cert.der();
     let mut hasher = Sha256::new();
-    hasher.update(&cert_der);
+    hasher.update(cert_der);
     let fingerprint = hex::encode(hasher.finalize());
 
     Ok(GeneratedCertificate {

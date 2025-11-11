@@ -3,7 +3,7 @@
 //! All key operations are modeled as immutable events following CIM's FRP principles.
 //! No mutable state - only event streams that represent facts about key operations.
 
-use cim_domain::{DomainEvent, CorrelationId};
+use cim_domain::DomainEvent;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use chrono::{DateTime, Utc};

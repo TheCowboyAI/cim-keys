@@ -21,7 +21,7 @@
 use super::seed_derivation::MasterSeed;
 use super::key_generation::KeyPair;
 use rcgen::{
-    Certificate, CertificateParams, DistinguishedName, DnType,
+    CertificateParams, DistinguishedName, DnType,
     KeyUsagePurpose, ExtendedKeyUsagePurpose, IsCa, BasicConstraints,
     KeyPair as RcgenKeyPair, Issuer,
 };
@@ -197,7 +197,7 @@ pub fn generate_root_ca(
 
     // Calculate fingerprint (SHA-256 of DER)
     let cert_der = cert.der();
-    let fingerprint = calculate_fingerprint(&cert_der);
+    let fingerprint = calculate_fingerprint(cert_der);
 
     Ok(X509Certificate {
         certificate_pem,
@@ -287,7 +287,7 @@ pub fn generate_intermediate_ca(
 
     // Create a minimal CertificateParams for the issuer
     // In rcgen 0.14, we just need enough to identify the issuer
-    let mut root_params = CertificateParams::new(vec![])
+    let root_params = CertificateParams::new(vec![])
         .map_err(|e| format!("Failed to create params for issuer: {}", e))?;
 
     // The signing will use the actual certificate data from the PEM
@@ -304,7 +304,7 @@ pub fn generate_intermediate_ca(
 
     // Calculate fingerprint
     let cert_der = cert.der();
-    let fingerprint = calculate_fingerprint(&cert_der);
+    let fingerprint = calculate_fingerprint(cert_der);
 
     Ok(X509Certificate {
         certificate_pem,
@@ -403,7 +403,7 @@ pub fn generate_server_certificate(
         .map_err(|e| format!("Failed to parse intermediate CA PEM: {}", e))?;
 
     // Create a minimal CertificateParams for the issuer
-    let mut intermediate_params = CertificateParams::new(vec![])
+    let intermediate_params = CertificateParams::new(vec![])
         .map_err(|e| format!("Failed to create params for issuer: {}", e))?;
 
     // Create issuer with these params
@@ -419,7 +419,7 @@ pub fn generate_server_certificate(
 
     // Calculate fingerprint
     let cert_der = cert.der();
-    let fingerprint = calculate_fingerprint(&cert_der);
+    let fingerprint = calculate_fingerprint(cert_der);
 
     Ok(X509Certificate {
         certificate_pem,

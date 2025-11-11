@@ -170,7 +170,7 @@ impl YubiKeyPort for MockYubiKeyAdapter {
             .write()
             .unwrap()
             .entry(serial.to_string())
-            .or_insert_with(HashMap::new)
+            .or_default()
             .insert(slot, public_key.clone());
 
         Ok(public_key)
@@ -207,7 +207,7 @@ impl YubiKeyPort for MockYubiKeyAdapter {
             .write()
             .unwrap()
             .entry(serial.to_string())
-            .or_insert_with(HashMap::new)
+            .or_default()
             .insert(slot, certificate.to_vec());
 
         Ok(())

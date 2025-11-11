@@ -29,6 +29,12 @@ pub struct KeyManagementAggregate {
     pub version: u64,
 }
 
+impl Default for KeyManagementAggregate {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KeyManagementAggregate {
     /// Create a new key management aggregate
     pub fn new() -> Self {

@@ -2,10 +2,8 @@
 
 use iced::{
     mouse,
-    widget::shader::{self, wgpu, Viewport},
-    Color, Rectangle, Size, Transformation,
+    widget::shader::{self, wgpu, Viewport}, Rectangle, Size,
 };
-use std::sync::Arc;
 
 const NUM_FIREFLIES: u32 = 40;
 const COUPLING_STRENGTH: f32 = 0.05; // Weak coupling for gradual sync
@@ -17,6 +15,12 @@ pub struct DebugFireflyShader {
     frequencies: Vec<f32>, // Natural flash frequency
 }
 
+impl Default for DebugFireflyShader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DebugFireflyShader {
     pub fn new() -> Self {
         let mut phases = Vec::with_capacity(NUM_FIREFLIES as usize);
@@ -25,7 +29,7 @@ impl DebugFireflyShader {
         // Initialize with random phases and slightly different frequencies
         for i in 0..NUM_FIREFLIES {
             // Random initial phases
-            phases.push((i as f32 * 0.618033988749895) % (2.0 * std::f32::consts::PI));
+            phases.push((i as f32 * 0.618_034) % (2.0 * std::f32::consts::PI));
             // Natural frequencies around 0.5 Hz with variations
             frequencies.push(0.5 + (i as f32 * 0.03) % 0.15 - 0.075);
         }

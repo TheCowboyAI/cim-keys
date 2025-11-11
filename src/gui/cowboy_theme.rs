@@ -4,7 +4,7 @@
 //! with beautiful gradients, glass morphism, and dark aesthetics
 
 use iced::{
-    Background, Border, Color, Shadow, Theme,
+    Background, Border, Color, Shadow,
     gradient::{Gradient, Linear},
     widget::{button, container, text_input},
 };

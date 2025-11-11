@@ -7,8 +7,6 @@ use clap::{Parser, Subcommand};
 use cim_keys::prelude::*;
 use cim_domain::CommandId;
 use std::path::PathBuf;
-use uuid::Uuid;
-use chrono::Utc;
 
 #[derive(Parser)]
 #[command(name = "cim-keys")]

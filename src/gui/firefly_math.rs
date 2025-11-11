@@ -193,7 +193,7 @@ pub mod frp {
                 let row = i / grid_width;
 
                 states.push(FireflyState {
-                    phase: (i as f32 * 0.618033988749895) % (2.0 * PI),
+                    phase: (i as f32 * 0.618_034) % (2.0 * PI),
                     frequency: 1.0 + (i as f32 * 0.02) % 0.2 - 0.1,
                     position: (
                         col as f32 / grid_width as f32,

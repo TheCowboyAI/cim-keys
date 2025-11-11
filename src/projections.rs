@@ -12,7 +12,6 @@ use serde_json;
 
 use crate::events::{
     KeyEvent, KeyAlgorithm, KeyPurpose, KeyMetadata,
-    TrustLevel, RevocationReason,
 };
 
 /// Offline key storage projection
@@ -436,7 +435,7 @@ impl OfflineKeyProjection {
         let mut event_files: Vec<_> = fs::read_dir(&events_dir)
             .map_err(|e| ProjectionError::IoError(format!("Failed to read events directory: {}", e)))?
             .filter_map(|entry| entry.ok())
-            .filter(|entry| entry.path().extension().map_or(false, |ext| ext == "json"))
+            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "json"))
             .collect();
 
         // Sort by filename (timestamp)

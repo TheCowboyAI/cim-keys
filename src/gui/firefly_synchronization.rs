@@ -18,6 +18,12 @@ pub struct FireflySynchronization {
     num_fireflies: u32,
 }
 
+impl Default for FireflySynchronization {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FireflySynchronization {
     pub fn new() -> Self {
         Self {
@@ -119,7 +125,7 @@ impl shader::Primitive for Primitive {
             compute_pass.set_pipeline(&pipeline.compute_pipeline);
             compute_pass.set_bind_group(0, &pipeline.compute_bind_group, &[]);
 
-            let workgroups = (self.num_fireflies + 63) / 64; // 64 threads per workgroup
+            let workgroups = self.num_fireflies.div_ceil(64); // 64 threads per workgroup
             compute_pass.dispatch_workgroups(workgroups, 1, 1);
         }
 

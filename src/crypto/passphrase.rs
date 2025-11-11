@@ -1,6 +1,5 @@
 //! Passphrase strength validation and entropy estimation
 
-use std::collections::HashSet;
 
 /// Passphrase strength assessment
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,11 +92,10 @@ pub fn validate_passphrase(passphrase: &str) -> PassphraseValidation {
         suggestions.push("Use at least 4 random words or 20+ characters".to_string());
     }
 
-    if passphrase.chars().all(|c| c.is_alphanumeric()) {
-        if word_count == 0 {
+    if passphrase.chars().all(|c| c.is_alphanumeric())
+        && word_count == 0 {
             suggestions.push("Consider adding symbols for extra security".to_string());
         }
-    }
 
     // Check for common patterns
     if passphrase.to_lowercase().contains("password")

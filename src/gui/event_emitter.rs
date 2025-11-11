@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::{
     commands::KeyCommand,
-    domain::{Organization, Person, Location, KeyOwnerRole},
+    domain::{Person, KeyOwnerRole},
     events::KeyEvent,
 };
 
@@ -214,7 +214,7 @@ impl GuiEventSubscriber {
                 KeyGenerated(e) => GuiUpdateMessage::KeyAdded {
                     owner_id: e.ownership.as_ref().map(|o| match o {
                         crate::domain::KeyOwnership { person_id, .. } => *person_id
-                    }).unwrap_or_else(|| Uuid::nil()),
+                    }).unwrap_or_else(Uuid::nil),
                     key_type: format!("{:?}", e.algorithm),
                 },
 

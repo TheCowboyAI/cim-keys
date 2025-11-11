@@ -3,13 +3,12 @@
 //! Creates a mesmerizing firefly effect with organic movement and natural blinking
 
 use iced::{
-    widget::canvas::{self, event, Cache, Canvas, Frame, Geometry, Path, Program, Stroke},
-    mouse::Cursor,
-    Background, Color, Element, Length, Point, Rectangle, Size, Theme, Vector,
+    widget::canvas::{Cache, Canvas, Geometry, Path, Program, Stroke},
+    mouse::Cursor, Color, Element, Length, Point, Rectangle, Size, Theme, Vector,
 };
 use std::cell::{Cell, RefCell};
 use std::f32::consts::PI;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 /// Firefly swarm animation
 pub struct FireflySwarm {
@@ -202,6 +201,12 @@ impl Firefly {
                 .max(50.0)
                 .min(bounds.height - 50.0),
         );
+    }
+}
+
+impl Default for FireflySwarm {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

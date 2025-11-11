@@ -4,14 +4,18 @@
 
 use iced::{
     mouse,
-    widget::shader::{self, wgpu, Viewport},
-    Color, Rectangle, Size, Transformation,
+    widget::shader::{self, wgpu, Viewport}, Rectangle, Size,
 };
-use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FireflyShader {
     time: f32,
+}
+
+impl Default for FireflyShader {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl FireflyShader {

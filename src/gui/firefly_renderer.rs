@@ -18,6 +18,12 @@ pub struct FireflyRenderer {
     system: FireflySystem,
 }
 
+impl Default for FireflyRenderer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FireflyRenderer {
     pub fn new() -> Self {
         Self {

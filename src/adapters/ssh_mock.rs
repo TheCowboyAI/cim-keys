@@ -131,11 +131,11 @@ impl MockSshKeyAdapter {
         match hash_type {
             FingerprintHashType::Md5 => {
                 // Mock MD5 fingerprint format
-                format!("16:27:ac:a5:76:28:2d:36:63:1b:56:4d:eb:df:a6:48")
+                "16:27:ac:a5:76:28:2d:36:63:1b:56:4d:eb:df:a6:48".to_string()
             }
             FingerprintHashType::Sha256 => {
                 // Mock SHA256 fingerprint format
-                format!("SHA256:nThbg6kXUpJWGl7E1IGOCspRomTxdCARLviKw6E5SY8")
+                "SHA256:nThbg6kXUpJWGl7E1IGOCspRomTxdCARLviKw6E5SY8".to_string()
             }
         }
     }

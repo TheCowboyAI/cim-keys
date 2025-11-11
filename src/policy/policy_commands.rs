@@ -1,7 +1,7 @@
 //! Policy-related commands for cim-keys
 
 use cim_domain::{Command, MessageIdentity, EntityId};
-use cim_domain_policy::value_objects::{PolicyId, ExemptionId};
+use cim_domain_policy::value_objects::PolicyId;
 use crate::aggregate::KeyManagementAggregate;
 use crate::domain::{Person, KeyContext};
 use chrono::{DateTime, Duration, Utc};
@@ -31,11 +31,11 @@ impl Command for KeyPolicyCommand {
 
     fn aggregate_id(&self) -> Option<EntityId<Self::Aggregate>> {
         match self {
-            KeyPolicyCommand::EvaluateKeyGeneration(cmd) => cmd.key_id.map(|id| EntityId::from_uuid(id)),
+            KeyPolicyCommand::EvaluateKeyGeneration(cmd) => cmd.key_id.map(EntityId::from_uuid),
             KeyPolicyCommand::EvaluateCertificateIssuance(cmd) => Some(EntityId::from_uuid(cmd.certificate_id)),
-            KeyPolicyCommand::RequestKeyPolicyExemption(cmd) => cmd.key_id.map(|id| EntityId::from_uuid(id)),
+            KeyPolicyCommand::RequestKeyPolicyExemption(cmd) => cmd.key_id.map(EntityId::from_uuid),
             KeyPolicyCommand::ApproveKeyPolicyExemption(cmd) => None, // Exemption aggregate
-            KeyPolicyCommand::EnforceKeyPolicy(cmd) => cmd.key_id.map(|id| EntityId::from_uuid(id)),
+            KeyPolicyCommand::EnforceKeyPolicy(cmd) => cmd.key_id.map(EntityId::from_uuid),
             KeyPolicyCommand::CreateOrganizationPolicy(_) => None, // Policy aggregate
         }
     }
@@ -56,7 +56,7 @@ impl Command for EvaluateKeyGeneration {
     type Aggregate = KeyManagementAggregate;
 
     fn aggregate_id(&self) -> Option<EntityId<Self::Aggregate>> {
-        self.key_id.map(|id| EntityId::from_uuid(id))
+        self.key_id.map(EntityId::from_uuid)
     }
 }
 
@@ -105,7 +105,7 @@ impl Command for RequestKeyPolicyExemption {
     type Aggregate = KeyManagementAggregate;
 
     fn aggregate_id(&self) -> Option<EntityId<Self::Aggregate>> {
-        self.key_id.map(|id| EntityId::from_uuid(id))
+        self.key_id.map(EntityId::from_uuid)
     }
 }
 
@@ -160,7 +160,7 @@ impl Command for EnforceKeyPolicy {
     type Aggregate = KeyManagementAggregate;
 
     fn aggregate_id(&self) -> Option<EntityId<Self::Aggregate>> {
-        self.key_id.map(|id| EntityId::from_uuid(id))
+        self.key_id.map(EntityId::from_uuid)
     }
 }
 

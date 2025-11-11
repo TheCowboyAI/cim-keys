@@ -5,17 +5,15 @@
 
 use cim_domain_policy::{
     PolicyEvaluator, PolicyConflictResolver,
-    Policy, PolicySet, PolicyExemption,
-    EvaluationContext, ComplianceResult, ConflictResolution,
+    Policy, PolicyExemption,
+    EvaluationContext, ConflictResolution,
     PolicyError as DomainPolicyError,
 };
 use cim_domain_policy::services::{PolicyTemplateEngine, EvaluationError};
-use cim_domain_policy::value_objects::PolicyId;
-use crate::domain::{Organization, Person, KeyContext};
+use crate::domain::{Organization, Person};
 use crate::policy::PkiPolicySet;
 use std::collections::HashMap;
 use thiserror::Error;
-use uuid::Uuid;
 
 #[derive(Debug, Error)]
 pub enum PolicyError {

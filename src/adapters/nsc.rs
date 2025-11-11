@@ -7,7 +7,6 @@ use crate::ports::nats::*;
 use async_trait::async_trait;
 use std::process::Command;
 use std::path::{Path, PathBuf};
-use std::fs;
 use uuid::Uuid;
 use serde_json;
 

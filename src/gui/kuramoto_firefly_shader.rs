@@ -3,10 +3,8 @@
 
 use iced::{
     mouse,
-    widget::shader::{self, wgpu, Viewport},
-    Color, Rectangle, Size, Transformation,
+    widget::shader::{self, wgpu, Viewport}, Rectangle, Size,
 };
-use std::sync::Arc;
 
 // Swarm configuration constants
 const NUM_FIREFLIES: u32 = 40;  // Increased for better synchronization effect
@@ -22,6 +20,12 @@ pub struct KuramotoFireflyShader {
     frequencies: Vec<f32>,
 }
 
+impl Default for KuramotoFireflyShader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KuramotoFireflyShader {
     pub fn new() -> Self {
         // Initialize with random phases and frequencies
@@ -30,7 +34,7 @@ impl KuramotoFireflyShader {
 
         for i in 0..NUM_FIREFLIES {
             // Random initial phases
-            phases.push((i as f32 * 0.618033988749895) % (2.0 * std::f32::consts::PI));
+            phases.push((i as f32 * 0.618_034) % (2.0 * std::f32::consts::PI));
             // Slightly different intrinsic frequencies (around 1 Hz)
             frequencies.push(0.8 + (i as f32 * 0.1) % 0.4);
         }

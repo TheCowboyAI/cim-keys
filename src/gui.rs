@@ -457,7 +457,7 @@ impl CimKeysApp {
 
             Message::RemovePerson(person_id) => {
                 // TODO: Remove person from graph and domain
-                self.status_message = format!("Removed person from organization");
+                self.status_message = "Removed person from organization".to_string();
                 Task::none()
             }
 
@@ -490,28 +490,8 @@ impl CimKeysApp {
                 self.status_message = "Generating Root CA certificate...".to_string();
                 self.key_generation_progress = 0.1;
 
-                let root_ca_command = crate::commands::KeyCommand::GenerateCertificate(
-                    crate::commands::GenerateCertificateCommand {
-                        command_id: cim_domain::EntityId::new(),
-                        key_id: uuid::Uuid::now_v7(),
-                        subject: crate::commands::CertificateSubject {
-                            common_name: format!("{} Root CA", self.organization_name),
-                            organization: Some(self.organization_domain.clone()),
-                            country: Some("US".to_string()),
-                            organizational_unit: Some("Security".to_string()),
-                            locality: None,
-                            state_or_province: None,
-                        },
-                        validity_days: 3650, // 10 years
-                        is_ca: true,
-                        san: vec![],
-                        key_usage: vec!["keyCertSign".to_string(), "cRLSign".to_string()],
-                        extended_key_usage: vec![],
-                        requestor: "GUI User".to_string(),
-                        context: None,
-                    }
-                );
-
+                // TODO: Convert to MVI pattern like intermediate CA and server cert generation
+                // For now, using legacy aggregate/projection pattern
                 let aggregate = self.aggregate.clone();
                 let projection = self.projection.clone();
 
@@ -552,7 +532,7 @@ impl CimKeysApp {
                 );
 
                 self.mvi_model = updated_model;
-                task.map(|intent| Message::MviIntent(intent))
+                task.map(Message::MviIntent)
             }
 
             Message::ServerCertCNChanged(cn) => {
@@ -603,7 +583,7 @@ impl CimKeysApp {
                     );
 
                     self.mvi_model = updated_model;
-                    task.map(|intent| Message::MviIntent(intent))
+                    task.map(Message::MviIntent)
                 } else {
                     self.error_message = Some("Please select an intermediate CA first".to_string());
                     Task::none()
@@ -672,7 +652,7 @@ impl CimKeysApp {
 
                             match aggregate.handle_command(
                                 domain_command.command,
-                                &*projection,
+                                &projection,
                                 None,  // No NATS port in offline mode
                                 #[cfg(feature = "policy")]
                                 None   // No policy engine in GUI yet
@@ -778,7 +758,7 @@ impl CimKeysApp {
                 match &graph_msg {
                     GraphMessage::NodeClicked(id) => {
                         self.selected_person = Some(*id);
-                        self.status_message = format!("Selected person in graph");
+                        self.status_message = "Selected person in graph".to_string();
                     }
                     GraphMessage::AutoLayout => {
                         self.org_graph.auto_layout();
@@ -841,7 +821,7 @@ impl CimKeysApp {
                 self.mvi_model = updated_model;
 
                 // Map the Intent task back to Message task
-                task.map(|intent| Message::MviIntent(intent))
+                task.map(Message::MviIntent)
             }
 
             Message::AnimationTick => {
@@ -919,9 +899,7 @@ impl CimKeysApp {
         };
 
         // Error display
-        let error_display = if let Some(ref error) = self.error_message {
-            Some(
-                container(
+        let error_display = self.error_message.as_ref().map(|error| container(
                     row![
                         text(format!("❌ {}", error))
                             .size(14)
@@ -942,11 +920,7 @@ impl CimKeysApp {
                         radius: 10.0.into(),
                     },
                     shadow: CowboyTheme::glow_shadow(),
-                })
-            )
-        } else {
-            None
-        };
+                }));
 
         // Header with logo and title
         let header = row![
@@ -1402,7 +1376,7 @@ async fn generate_all_keys(
 
     let events = aggregate.handle_command(
         KeyCommand::GenerateSshKey(ssh_cmd),
-        &*projection_read,
+        &projection_read,
         None,  // No NATS port in offline mode
         #[cfg(feature = "policy")]
         None   // No policy engine in GUI yet
@@ -1418,7 +1392,7 @@ async fn generate_all_keys(
 
     // Apply events to the projection
     if !events_to_apply.is_empty() {
-        let mut projection_write = projection.write().await;
+        let projection_write = projection.write().await;
         for event in events_to_apply {
             match event {
                 KeyEvent::SshKeyGenerated(e) => {
@@ -1490,7 +1464,7 @@ async fn generate_root_ca(
 
     let events = aggregate.handle_command(
         KeyCommand::GenerateCertificate(root_ca_cmd),
-        &*projection_read,
+        &projection_read,
         None,
         #[cfg(feature = "policy")]
         None
@@ -1503,53 +1477,50 @@ async fn generate_root_ca(
     // Process the certificate generation event
     let mut cert_id = Uuid::nil();
     if !events.is_empty() {
-        let mut projection_write = projection.write().await;
+        let projection_write = projection.write().await;
 
         for event in events {
-            match event {
-                KeyEvent::CertificateGenerated(e) => {
-                    cert_id = e.cert_id;
+            if let KeyEvent::CertificateGenerated(e) = event {
+                cert_id = e.cert_id;
 
-                    // Generate actual certificate using the service
-                    let generated = certificate_service::generate_root_ca_from_event(&e)
-                        .map_err(|e| format!("Certificate generation failed: {}", e))?;
+                // Generate actual certificate using the service
+                let generated = certificate_service::generate_root_ca_from_event(&e)
+                    .map_err(|e| format!("Certificate generation failed: {}", e))?;
 
-                    // Save certificate to projection
-                    let cert_dir = projection_write.root_path.join("certificates").join("root-ca");
-                    std::fs::create_dir_all(&cert_dir)
-                        .map_err(|e| format!("Failed to create certificate directory: {}", e))?;
+                // Save certificate to projection
+                let cert_dir = projection_write.root_path.join("certificates").join("root-ca");
+                std::fs::create_dir_all(&cert_dir)
+                    .map_err(|e| format!("Failed to create certificate directory: {}", e))?;
 
-                    // Save certificate PEM
-                    let cert_file = cert_dir.join(format!("{}.crt", e.cert_id));
-                    std::fs::write(&cert_file, generated.certificate_pem.as_bytes())
-                        .map_err(|e| format!("Failed to save certificate: {}", e))?;
+                // Save certificate PEM
+                let cert_file = cert_dir.join(format!("{}.crt", e.cert_id));
+                std::fs::write(&cert_file, generated.certificate_pem.as_bytes())
+                    .map_err(|e| format!("Failed to save certificate: {}", e))?;
 
-                    // Save private key PEM (should be encrypted in production)
-                    let key_file = cert_dir.join(format!("{}.key", e.cert_id));
-                    std::fs::write(&key_file, generated.private_key_pem.as_bytes())
-                        .map_err(|e| format!("Failed to save private key: {}", e))?;
+                // Save private key PEM (should be encrypted in production)
+                let key_file = cert_dir.join(format!("{}.key", e.cert_id));
+                std::fs::write(&key_file, generated.private_key_pem.as_bytes())
+                    .map_err(|e| format!("Failed to save private key: {}", e))?;
 
-                    // Save metadata
-                    let metadata = serde_json::json!({
-                        "cert_id": e.cert_id,
-                        "subject": e.subject,
-                        "issuer": e.issuer,
-                        "not_before": e.not_before,
-                        "not_after": e.not_after,
-                        "is_ca": e.is_ca,
-                        "key_usage": e.key_usage,
-                        "fingerprint": generated.fingerprint,
-                    });
+                // Save metadata
+                let metadata = serde_json::json!({
+                    "cert_id": e.cert_id,
+                    "subject": e.subject,
+                    "issuer": e.issuer,
+                    "not_before": e.not_before,
+                    "not_after": e.not_after,
+                    "is_ca": e.is_ca,
+                    "key_usage": e.key_usage,
+                    "fingerprint": generated.fingerprint,
+                });
 
-                    let metadata_file = cert_dir.join(format!("{}.json", e.cert_id));
-                    std::fs::write(&metadata_file, serde_json::to_string_pretty(&metadata).unwrap())
-                        .map_err(|e| format!("Failed to save certificate metadata: {}", e))?;
+                let metadata_file = cert_dir.join(format!("{}.json", e.cert_id));
+                std::fs::write(&metadata_file, serde_json::to_string_pretty(&metadata).unwrap())
+                    .map_err(|e| format!("Failed to save certificate metadata: {}", e))?;
 
-                    // Update manifest
-                    projection_write.save_manifest()
-                        .map_err(|e| format!("Failed to update manifest: {}", e))?;
-                },
-                _ => {}
+                // Update manifest
+                projection_write.save_manifest()
+                    .map_err(|e| format!("Failed to update manifest: {}", e))?;
             }
         }
     }

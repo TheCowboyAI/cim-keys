@@ -6,10 +6,9 @@
 use cim_domain::{Command, CommandId};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 use crate::events::{KeyAlgorithm, KeyPurpose, KeyFormat, ImportSource, ExportDestination};
-use crate::domain::{KeyOwnership, KeyStorageLocation, KeyContext};
+use crate::domain::KeyContext;
 
 /// Base command for all key operations
 #[derive(Debug, Clone, Serialize, Deserialize)]

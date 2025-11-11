@@ -3,11 +3,10 @@
 //! Creates a starfield/particle effect with glowing orbs moving across the screen
 
 use iced::{
-    widget::canvas::{self, Cache, Canvas, Frame, Geometry, Path, Program, Stroke},
-    mouse::Cursor,
-    Background, Color, Element, Length, Point, Rectangle, Size, Theme, Vector,
+    widget::canvas::{Cache, Canvas, Geometry, Path, Program, Stroke},
+    mouse::Cursor, Color, Element, Length, Point, Rectangle, Theme, Vector,
 };
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 /// Animated background with moving particles
 pub struct AnimatedBackground {
@@ -23,6 +22,12 @@ struct Particle {
     size: f32,
     opacity: f32,
     color: Color,
+}
+
+impl Default for AnimatedBackground {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AnimatedBackground {

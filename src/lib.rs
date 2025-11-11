@@ -36,7 +36,8 @@
 //! }
 //! ```
 
-#![warn(missing_docs)]
+// TODO: Re-enable missing_docs warnings after adding comprehensive documentation
+#![allow(missing_docs)]
 #![warn(rustdoc::missing_crate_level_docs)]
 
 // Core modules following FRP/Event-sourcing

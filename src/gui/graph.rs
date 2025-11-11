@@ -6,7 +6,7 @@
 //! - Different colors indicate different roles and trust levels
 
 use iced::{
-    widget::{canvas, container, column, row, text, button, scrollable, Canvas},
+    widget::{canvas, container, column, row, text, button, Canvas},
     Color, Element, Length, Point, Rectangle, Size, Theme, Vector,
     mouse, Renderer,
 };
@@ -70,6 +70,12 @@ pub enum GraphMessage {
     AddEdge { from: Uuid, to: Uuid, edge_type: EdgeType },
 }
 
+impl Default for OrganizationGraph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OrganizationGraph {
     pub fn new() -> Self {
         Self {
@@ -85,7 +91,7 @@ impl OrganizationGraph {
     pub fn add_node(&mut self, person: Person, role: KeyOwnerRole) {
         let node = GraphNode {
             person: person.clone(),
-            role: role.clone(),
+            role: role,
             position: self.calculate_node_position(person.id),
             color: self.role_to_color(&role),
             keys_owned: 0,
