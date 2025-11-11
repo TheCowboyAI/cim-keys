@@ -67,14 +67,19 @@ impl CowboyTheme {
         ))
     }
 
-    /// Glass morphism background (for cards)
+    /// Glass morphism background (for cards) - lighter frosted glass
     pub fn glass_background() -> Background {
-        Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.08))
+        Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.12))
     }
 
-    /// Glass morphism background (darker variant)
+    /// Glass morphism background (darker variant) - enhanced translucency
     pub fn glass_dark_background() -> Background {
-        Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.3))
+        Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.4))
+    }
+
+    /// Glass morphism background (medium variant) - for nested cards
+    pub fn glass_medium_background() -> Background {
+        Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.25))
     }
 
     /// Text colors
@@ -275,7 +280,7 @@ impl CowboyAppTheme {
         }
     }
 
-    /// Card container style
+    /// Card container style with enhanced shadow
     pub fn card_container() -> impl Fn(&iced::Theme) -> container::Style {
         |_theme| container::Style {
             background: Some(CowboyTheme::glass_dark_background()),
@@ -285,10 +290,30 @@ impl CowboyAppTheme {
                 width: 1.0,
                 radius: 15.0.into(),
             },
+            // Enhanced shadow with gradient-like effect (50% opacity at center, fading to 0%)
             shadow: Shadow {
-                color: Color::from_rgba(0.0, 0.0, 0.0, 0.3),
-                offset: iced::Vector::new(0.0, 10.0),
-                blur_radius: 30.0,
+                color: Color::from_rgba(0.0, 0.0, 0.0, 0.5),  // Start at 50% opacity
+                offset: iced::Vector::new(0.0, 8.0),
+                blur_radius: 24.0,  // Large blur creates gradient fade to 0%
+            },
+        }
+    }
+
+    /// Card container with deeper shadow (for elevated cards)
+    pub fn elevated_card_container() -> impl Fn(&iced::Theme) -> container::Style {
+        |_theme| container::Style {
+            background: Some(CowboyTheme::glass_dark_background()),
+            text_color: Some(CowboyTheme::text_primary()),
+            border: Border {
+                color: CowboyTheme::border_hover_color(),
+                width: 1.5,
+                radius: 15.0.into(),
+            },
+            // Deeper shadow for elevated appearance
+            shadow: Shadow {
+                color: Color::from_rgba(0.0, 0.0, 0.0, 0.6),
+                offset: iced::Vector::new(0.0, 12.0),
+                blur_radius: 32.0,
             },
         }
     }
