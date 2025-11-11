@@ -297,7 +297,7 @@ impl CowboyAppTheme {
     /// Input field style
     pub fn glass_input() -> impl Fn(&iced::Theme, text_input::Status) -> text_input::Style {
         |theme, status| {
-            let base_style = text_input::default(theme, status);
+            let _base_style = text_input::default(theme, status);  // Reserved for style extension
 
             let (background, border_color) = match status {
                 text_input::Status::Active => (

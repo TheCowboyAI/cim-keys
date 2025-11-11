@@ -47,13 +47,13 @@ impl<Message> shader::Program<Message> for FireflyShader {
 
 #[derive(Debug)]
 pub struct Primitive {
-    size: Size,
+    _size: Size,  // Reserved for viewport-dependent calculations
     time: f32,
 }
 
 impl Primitive {
     pub fn new(size: Size, time: f32) -> Self {
-        Self { size, time }
+        Self { _size: size, time }
     }
 }
 

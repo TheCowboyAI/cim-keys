@@ -388,8 +388,18 @@ impl OfflineKeyProjection {
     fn project_key_stored_offline(&mut self, event: &crate::events::KeyStoredOfflineEvent) -> Result<(), ProjectionError> {
         // Update the key entry to note it's stored offline
         if let Some(key) = self.manifest.keys.iter_mut().find(|k| k.key_id == event.key_id) {
-            // Add offline storage marker
-            // In real implementation, we'd store the actual key material here
+            // Update file_path to indicate offline storage location
+            key.file_path = format!("keys/{}/offline", event.key_id);
+
+            // Log the offline storage event
+            let key_dir = self.root_path.join("keys").join(event.key_id.to_string());
+            let offline_marker = key_dir.join("OFFLINE_STORAGE.json");
+
+            let offline_info = serde_json::to_string_pretty(&event)
+                .map_err(|e| ProjectionError::SerializationError(format!("Failed to serialize offline storage info: {}", e)))?;
+
+            fs::write(&offline_marker, offline_info)
+                .map_err(|e| ProjectionError::IoError(format!("Failed to write offline storage marker: {}", e)))?;
         }
         Ok(())
     }

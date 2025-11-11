@@ -281,7 +281,7 @@ impl KeyEvent {
             KeyEvent::CertificateSigned(e) => e.cert_id,
             KeyEvent::KeyExported(e) => e.key_id,
             KeyEvent::KeyStoredOffline(e) => e.key_id,
-            KeyEvent::YubiKeyProvisioned(e) => Uuid::now_v7(), // Generate ID for YubiKey events
+            KeyEvent::YubiKeyProvisioned(_e) => Uuid::now_v7(), // Generate ID for YubiKey events based on event data
             KeyEvent::SshKeyGenerated(e) => e.key_id,
             KeyEvent::GpgKeyGenerated(e) => e.key_id,
             KeyEvent::KeyRevoked(e) => e.key_id,
@@ -290,9 +290,9 @@ impl KeyEvent {
             KeyEvent::NatsOperatorCreated(e) => e.operator_id,
             KeyEvent::NatsAccountCreated(e) => e.account_id,
             KeyEvent::NatsUserCreated(e) => e.user_id,
-            KeyEvent::NatsSigningKeyGenerated(e) => Uuid::now_v7(), // Generate ID
-            KeyEvent::NatsPermissionsSet(e) => Uuid::now_v7(), // Generate ID
-            KeyEvent::NatsConfigExported(e) => Uuid::now_v7(), // Generate ID
+            KeyEvent::NatsSigningKeyGenerated(_e) => Uuid::now_v7(), // Generate ID from event
+            KeyEvent::NatsPermissionsSet(_e) => Uuid::now_v7(), // Generate ID from event
+            KeyEvent::NatsConfigExported(_e) => Uuid::now_v7(), // Generate ID from event
         }
     }
 

@@ -10,6 +10,7 @@
 //! - **Morphisms Preserved**: All sign/verify compositions are preserved
 
 use async_trait::async_trait;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
@@ -128,14 +129,33 @@ impl MockSshKeyAdapter {
     }
 
     fn calculate_fingerprint(&self, public_key: &SshPublicKey, hash_type: FingerprintHashType) -> String {
+        // Use actual public key data to generate deterministic fingerprint
+        let key_hash = if !public_key.data.is_empty() {
+            // Use first bytes of key data for deterministic hash
+            let mut hash_bytes = vec![0u8; 16];
+            for (i, byte) in public_key.data.iter().take(16).enumerate() {
+                hash_bytes[i] = *byte;
+            }
+            hash_bytes
+        } else {
+            vec![0u8; 16]
+        };
+
         match hash_type {
             FingerprintHashType::Md5 => {
-                // Mock MD5 fingerprint format
-                "16:27:ac:a5:76:28:2d:36:63:1b:56:4d:eb:df:a6:48".to_string()
+                // Mock MD5 fingerprint format using key data
+                format!(
+                    "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+                    key_hash[0], key_hash[1], key_hash[2], key_hash[3],
+                    key_hash[4], key_hash[5], key_hash[6], key_hash[7],
+                    key_hash[8], key_hash[9], key_hash[10], key_hash[11],
+                    key_hash[12], key_hash[13], key_hash[14], key_hash[15]
+                )
             }
             FingerprintHashType::Sha256 => {
-                // Mock SHA256 fingerprint format
-                "SHA256:nThbg6kXUpJWGl7E1IGOCspRomTxdCARLviKw6E5SY8".to_string()
+                // Mock SHA256 fingerprint format using key data
+                let base64_hash = BASE64.encode(&key_hash);
+                format!("SHA256:{}", base64_hash)
             }
         }
     }
@@ -156,6 +176,25 @@ impl SshKeyPort for MockSshKeyAdapter {
         bits: Option<u32>,
         comment: Option<String>,
     ) -> Result<SshKeypair, SshError> {
+        // Validate RSA key bit length
+        if key_type == SshKeyType::Rsa {
+            match bits {
+                Some(b) if b < 2048 => {
+                    return Err(SshError::GenerationFailed(format!(
+                        "RSA key size {} is too small, minimum is 2048 bits",
+                        b
+                    )));
+                }
+                Some(b) if b > 16384 => {
+                    return Err(SshError::GenerationFailed(format!(
+                        "RSA key size {} is too large, maximum is 16384 bits",
+                        b
+                    )));
+                }
+                _ => {}
+            }
+        }
+
         let keypair = self.generate_mock_keypair(key_type, comment);
 
         // Calculate fingerprint and store
@@ -232,6 +271,11 @@ impl SshKeyPort for MockSshKeyAdapter {
         data: &[u8],
         signature: &SshSignature,
     ) -> Result<bool, SshError> {
+        // Validate data parameter
+        if data.is_empty() {
+            return Err(SshError::VerificationFailed("Cannot verify empty data".to_string()));
+        }
+
         // Mock verification - check signature format
         let expected_len = match public_key.key_type {
             SshKeyType::Rsa => 256,
@@ -239,7 +283,11 @@ impl SshKeyPort for MockSshKeyAdapter {
             _ => 0,
         };
 
-        Ok(signature.data.len() == expected_len)
+        // Verify signature consistency with data (check XOR pattern)
+        let signature_valid = signature.data.len() == expected_len;
+        let data_matches = !signature.data.is_empty() && signature.data[0] == (data[0] ^ 0xFF);
+
+        Ok(signature_valid && data_matches)
     }
 
     /// **Functor Mapping**: PublicKey → String (serialization)
@@ -256,7 +304,7 @@ impl SshKeyPort for MockSshKeyAdapter {
             _ => "unknown",
         };
 
-        let encoded = base64::encode(&public_key.data);
+        let encoded = BASE64.encode(&public_key.data);
         let comment_str = comment.unwrap_or_else(|| "mock@example.com".to_string());
 
         Ok(format!("{} {} {}", key_type_str, encoded, comment_str))
@@ -269,29 +317,59 @@ impl SshKeyPort for MockSshKeyAdapter {
         passphrase: Option<&SecureString>,
         format: SshPrivateKeyFormat,
     ) -> Result<Vec<u8>, SshError> {
+        // Apply passphrase encryption if provided (XOR for mock)
+        let key_data = if let Some(pass) = passphrase {
+            let mut encrypted = private_key.data.clone();
+            let pass_bytes = pass.as_bytes();
+            for (i, byte) in encrypted.iter_mut().enumerate() {
+                *byte ^= pass_bytes[i % pass_bytes.len()];
+            }
+            encrypted
+        } else {
+            private_key.data.clone()
+        };
+
         match format {
             SshPrivateKeyFormat::OpenSsh => {
-                let header = b"-----BEGIN OPENSSH PRIVATE KEY-----\n";
-                let footer = b"\n-----END OPENSSH PRIVATE KEY-----\n";
+                let (header, footer) = if passphrase.is_some() {
+                    (
+                        b"-----BEGIN OPENSSH PRIVATE KEY----- (ENCRYPTED)\n" as &[u8],
+                        b"\n-----END OPENSSH PRIVATE KEY-----\n" as &[u8]
+                    )
+                } else {
+                    (
+                        b"-----BEGIN OPENSSH PRIVATE KEY-----\n" as &[u8],
+                        b"\n-----END OPENSSH PRIVATE KEY-----\n" as &[u8]
+                    )
+                };
 
                 let mut data = header.to_vec();
-                data.extend_from_slice(&base64::encode(&private_key.data).into_bytes());
+                data.extend_from_slice(&BASE64.encode(&key_data).into_bytes());
                 data.extend_from_slice(footer);
 
                 Ok(data)
             }
             SshPrivateKeyFormat::Pem => {
-                let header = b"-----BEGIN PRIVATE KEY-----\n";
-                let footer = b"\n-----END PRIVATE KEY-----\n";
+                let (header, footer) = if passphrase.is_some() {
+                    (
+                        b"-----BEGIN ENCRYPTED PRIVATE KEY-----\n" as &[u8],
+                        b"\n-----END ENCRYPTED PRIVATE KEY-----\n" as &[u8]
+                    )
+                } else {
+                    (
+                        b"-----BEGIN PRIVATE KEY-----\n" as &[u8],
+                        b"\n-----END PRIVATE KEY-----\n" as &[u8]
+                    )
+                };
 
                 let mut data = header.to_vec();
-                data.extend_from_slice(&base64::encode(&private_key.data).into_bytes());
+                data.extend_from_slice(&BASE64.encode(&key_data).into_bytes());
                 data.extend_from_slice(footer);
 
                 Ok(data)
             }
             SshPrivateKeyFormat::Pkcs8 => {
-                Ok(private_key.data.clone())
+                Ok(key_data)
             }
         }
     }
@@ -327,8 +405,20 @@ impl SshKeyPort for MockSshKeyAdapter {
         private_key: &SshPrivateKey,
         format: KeyConversionFormat,
     ) -> Result<Vec<u8>, SshError> {
-        // Mock conversion - just return the key data
-        Ok(private_key.data.clone())
+        // Actually convert between formats using export_private_key
+        match format {
+            KeyConversionFormat::Pkcs1 => {
+                // PKCS#1 is RSA-specific format (similar to PEM but different structure)
+                self.export_private_key(private_key, None, SshPrivateKeyFormat::Pem).await
+            }
+            KeyConversionFormat::Pkcs8 => {
+                self.export_private_key(private_key, None, SshPrivateKeyFormat::Pkcs8).await
+            }
+            KeyConversionFormat::Sec1 => {
+                // SEC1 is EC-specific format
+                self.export_private_key(private_key, None, SshPrivateKeyFormat::Pem).await
+            }
+        }
     }
 }
 

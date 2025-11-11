@@ -58,7 +58,7 @@ pub struct CimKeysApp {
 
     // Domain configuration
     domain_loaded: bool,
-    domain_path: PathBuf,
+    _domain_path: PathBuf,  // Reserved for domain persistence path
     organization_name: String,
     organization_domain: String,
 
@@ -68,7 +68,7 @@ pub struct CimKeysApp {
 
     // Event-driven communication
     event_emitter: CimEventEmitter,
-    event_subscriber: GuiEventSubscriber,
+    _event_subscriber: GuiEventSubscriber,  // Reserved for future NATS integration
 
     // Graph visualization
     org_graph: OrganizationGraph,
@@ -87,7 +87,7 @@ pub struct CimKeysApp {
     key_generation_progress: f32,
     keys_generated: usize,
     total_keys_to_generate: usize,
-    certificates_generated: usize,
+    _certificates_generated: usize,  // Reserved for certificate generation tracking
 
     // Certificate generation fields
     intermediate_ca_name_input: String,
@@ -121,7 +121,7 @@ pub struct CimKeysApp {
 
 /// Different tabs in the application
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Tab {
+pub enum Tab {
     Welcome,
     Organization,
     Keys,
@@ -267,14 +267,14 @@ impl CimKeysApp {
             Self {
                 active_tab: Tab::Welcome,
                 domain_loaded: false,
-                domain_path: PathBuf::from(&output_dir),
+                _domain_path: PathBuf::from(&output_dir),
                 organization_name: String::new(),
                 organization_domain: String::new(),
                 bootstrap_config: None,
                 aggregate,
                 projection,
                 event_emitter: CimEventEmitter::new(default_org),
-                event_subscriber: GuiEventSubscriber::new(default_org),
+                _event_subscriber: GuiEventSubscriber::new(default_org),
                 org_graph: OrganizationGraph::new(),
                 selected_person: None,
                 new_person_name: String::new(),
@@ -285,7 +285,7 @@ impl CimKeysApp {
                 key_generation_progress: 0.0,
                 keys_generated: 0,
                 total_keys_to_generate: 0,
-                certificates_generated: 0,
+                _certificates_generated: 0,
                 intermediate_ca_name_input: String::new(),
                 server_cert_cn_input: String::new(),
                 server_cert_sans_input: String::new(),
@@ -311,9 +311,7 @@ impl CimKeysApp {
         )
     }
 
-    fn title(&self) -> String {
-        String::from("CIM Keys - Offline Domain Bootstrap")
-    }
+    // Note: Title method removed - window title now set via iced::Settings
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
@@ -457,7 +455,7 @@ impl CimKeysApp {
 
             Message::RemovePerson(person_id) => {
                 // TODO: Remove person from graph and domain
-                self.status_message = "Removed person from organization".to_string();
+                self.status_message = format!("Removed person {} from organization", person_id);
                 Task::none()
             }
 
@@ -834,7 +832,7 @@ impl CimKeysApp {
         }
     }
 
-    fn view(&self) -> Element<Message> {
+    fn view(&self) -> Element<'_, Message> {
         use iced::widget::{stack, shader};
 
         // Create a text-based logo since iced doesn't support SVG directly
@@ -861,6 +859,7 @@ impl CimKeysApp {
         .center(Length::Fixed(80.0))
         .style(|theme: &Theme| {
             let palette = theme.extended_palette();
+            let base_style = container::Style::default();
             container::Style {
                 background: Some(Background::Color(Color::from_rgba(0.1, 0.1, 0.2, 1.0))),
                 border: Border {
@@ -869,7 +868,7 @@ impl CimKeysApp {
                     radius: 8.0.into(),
                 },
                 text_color: Some(palette.primary.strong.color),
-                ..container::Style::default()
+                ..base_style  // Use base_style instead of direct default()
             }
         });
 
@@ -1014,7 +1013,7 @@ impl CimKeysApp {
         }
     }
 
-    fn view_welcome(&self) -> Element<Message> {
+    fn view_welcome(&self) -> Element<'_, Message> {
         let content = column![
             text("Welcome to CIM Keys!").size(28),
             text("Generate and manage cryptographic keys for your CIM infrastructure").size(16),
@@ -1069,7 +1068,7 @@ impl CimKeysApp {
         scrollable(content).into()
     }
 
-    fn view_organization(&self) -> Element<Message> {
+    fn view_organization(&self) -> Element<'_, Message> {
         use graph::view_graph;
 
         let role_options = vec![
@@ -1141,7 +1140,7 @@ impl CimKeysApp {
         scrollable(content).into()
     }
 
-    fn view_keys(&self) -> Element<Message> {
+    fn view_keys(&self) -> Element<'_, Message> {
         let progress_percentage = self.key_generation_progress * 100.0;
 
         let content = column![
@@ -1282,7 +1281,7 @@ impl CimKeysApp {
         scrollable(content).into()
     }
 
-    fn view_export(&self) -> Element<Message> {
+    fn view_export(&self) -> Element<'_, Message> {
         let content = column![
             text("Export Domain Configuration").size(20),
             text("Export your domain configuration to encrypted storage").size(14),
@@ -1352,6 +1351,9 @@ async fn load_config_wasm() -> Result<BootstrapConfig, String> {
     Err("WASM file loading not yet implemented".to_string())
 }
 
+// Note: Full key generation workflow is now handled through MVI architecture
+// See mvi/update.rs for the event-driven approach to key generation
+#[allow(dead_code)]
 async fn generate_all_keys(
     aggregate: Arc<RwLock<KeyManagementAggregate>>,
     projection: Arc<RwLock<OfflineKeyProjection>>,
@@ -1437,7 +1439,7 @@ async fn generate_root_ca(
     use crate::certificate_service;
 
     // Create Root CA command
-    let cert_id = Uuid::now_v7();
+    let _cert_id = Uuid::now_v7();  // Reserved for certificate tracking
     let root_ca_cmd = GenerateCertificateCommand {
         command_id: cim_domain::EntityId::new(),
         key_id: Uuid::now_v7(),

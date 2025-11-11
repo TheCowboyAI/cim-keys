@@ -337,7 +337,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Keys and certificates:");
             println!();
 
-            // In real implementation, read from manifest
+            // In real implementation, read from manifest and apply filter
+            if let Some(filter_value) = filter {
+                println!("Filtering by type: {}", filter_value);
+            }
             println!("Use 'cim-keys manifest' to see full details");
         }
 
@@ -359,6 +362,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         Commands::Export { output, include_private } => {
             println!("Exporting keys to {:?}", output);
+            if include_private {
+                println!("⚠️  Including private keys (use secure transport!)");
+            } else {
+                println!("Exporting public keys only");
+            }
 
             // Create export directory
             std::fs::create_dir_all(&output)?;

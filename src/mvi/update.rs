@@ -25,7 +25,7 @@ pub fn update(
     intent: Intent,
     // Ports passed in for command construction (not called directly!)
     storage: Arc<dyn StoragePort>,
-    x509: Arc<dyn X509Port>,
+    _x509: Arc<dyn X509Port>,
     ssh: Arc<dyn SshKeyPort>,
     yubikey: Arc<dyn YubiKeyPort>,
 ) -> (Model, Task<Intent>) {
@@ -68,8 +68,8 @@ pub fn update(
             let command = Task::perform(
                 async move {
                     match storage_clone.read("domain.json").await {
-                        Ok(data) => {
-                            // TODO: Parse domain data
+                        Ok(_data) => {
+                            // TODO: Parse domain data from _data
                             Intent::DomainCreated {
                                 organization_id: "loaded".to_string(),
                                 organization_name: "Loaded Org".to_string(),
@@ -201,8 +201,8 @@ pub fn update(
                 .with_master_seed(seed)
                 .with_master_seed_derived(true)
                 .with_status_message(format!(
-                    "Master seed derived successfully ({:.1} bits entropy)",
-                    entropy_bits
+                    "Master seed derived successfully for org {} ({:.1} bits entropy)",
+                    organization_id, entropy_bits
                 ))
                 .with_error(None);
 
@@ -571,14 +571,20 @@ pub fn update(
         }
 
         Intent::PersonAdded { person_id, name, email } => {
-            let updated = model.with_status_message(format!("Added person: {}", name));
+            let updated = model.with_status_message(format!(
+                "Added person: {} ({}) with ID: {}",
+                name, email, person_id
+            ));
             (updated, Task::none())
         }
 
         Intent::RootCAGenerated { certificate_id, subject } => {
             let updated = model
                 .with_root_ca_generated()
-                .with_status_message(format!("Root CA generated: {}", subject))
+                .with_status_message(format!(
+                    "Root CA generated: {} (Certificate ID: {})",
+                    subject, certificate_id
+                ))
                 .with_key_progress(0.5);
 
             (updated, Task::none())
@@ -587,7 +593,10 @@ pub fn update(
         Intent::SSHKeyGenerated { person_id, key_type, fingerprint } => {
             let updated = model
                 .with_ssh_key_generated(person_id.clone())
-                .with_status_message(format!("SSH key generated for {}: {}", person_id, fingerprint));
+                .with_status_message(format!(
+                    "SSH key ({}) generated for {}: {}",
+                    key_type, person_id, fingerprint
+                ));
 
             (updated, Task::none())
         }
@@ -595,7 +604,10 @@ pub fn update(
         Intent::YubiKeyProvisioned { person_id, yubikey_serial, slot } => {
             let updated = model
                 .with_yubikey_provisioned(person_id.clone())
-                .with_status_message(format!("YubiKey {} provisioned for {}", yubikey_serial, person_id));
+                .with_status_message(format!(
+                    "YubiKey {} slot {} provisioned for {}",
+                    yubikey_serial, slot, person_id
+                ));
 
             (updated, Task::none())
         }
@@ -615,7 +627,7 @@ pub fn update(
         Intent::PortStorageWriteFailed { path, error } => {
             let updated = model
                 .with_export_status(ExportStatus::Failed { error: error.clone() })
-                .with_error(Some(format!("Export failed: {}", error)));
+                .with_error(Some(format!("Export failed to {}: {}", path, error)));
 
             (updated, Task::none())
         }
@@ -692,7 +704,11 @@ pub fn update(
         Intent::PortSSHKeypairGenerated { person_id, public_key, fingerprint } => {
             let updated = model
                 .with_ssh_key_generated(person_id.clone())
-                .with_status_message(format!("SSH key generated: {}", fingerprint))
+                .with_status_message(format!(
+                    "SSH key generated: {} (Public key: {}...)",
+                    fingerprint,
+                    &public_key[..public_key.len().min(16)]
+                ))
                 .with_key_progress(0.7);
 
             (updated, Task::none())
@@ -714,7 +730,10 @@ pub fn update(
 
         Intent::PortYubiKeyKeyGenerated { yubikey_serial, slot, public_key } => {
             let updated = model
-                .with_status_message(format!("YubiKey {} slot {} provisioned", yubikey_serial, slot))
+                .with_status_message(format!(
+                    "YubiKey {} slot {} provisioned ({} bytes public key)",
+                    yubikey_serial, slot, public_key.len()
+                ))
                 .with_key_progress(1.0);
 
             (updated, Task::none())
@@ -745,8 +764,12 @@ pub fn update(
         }
 
         Intent::SystemClipboardUpdated(text) => {
-            // Could update a "clipboard" field in model if needed
-            (model, Task::none())
+            // Log clipboard update for debugging
+            let updated = model.with_status_message(format!(
+                "Clipboard updated ({} chars)",
+                text.len()
+            ));
+            (updated, Task::none())
         }
 
         // ===== Error Intents =====
@@ -758,7 +781,10 @@ pub fn update(
         }
 
         Intent::ErrorDismissed { error_id } => {
-            let updated = model.with_error(None);
+            // Log which error was dismissed
+            let updated = model
+                .with_error(None)
+                .with_status_message(format!("Error dismissed: {}", error_id));
             (updated, Task::none())
         }
 

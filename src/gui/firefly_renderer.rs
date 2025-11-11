@@ -71,7 +71,7 @@ impl<Message> shader::Program<Message> for FireflyRenderer {
 
 #[derive(Debug)]
 pub struct Primitive {
-    size: Size,
+    _size: Size,  // Reserved for viewport-dependent calculations
     positions: Vec<f32>,
     colors: Vec<f32>,
     sizes: Vec<f32>,
@@ -79,7 +79,7 @@ pub struct Primitive {
 
 impl Primitive {
     pub fn new(size: Size, positions: Vec<f32>, colors: Vec<f32>, sizes: Vec<f32>) -> Self {
-        Self { size, positions, colors, sizes }
+        Self { _size: size, positions, colors, sizes }
     }
 }
 

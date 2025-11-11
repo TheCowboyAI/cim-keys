@@ -275,8 +275,9 @@ impl Program<()> for FireflySwarm {
         bounds: Rectangle,
         _cursor: Cursor,
     ) -> Vec<Geometry> {
-        // Get the current time
-        let current_time = self.time.get();
+        // Get the current time for animation
+        let _current_time = self.time.get();
+        // Note: current_time reserved for future time-based effects
 
         // Force redraw for animation by clearing cache
         self.cache.borrow_mut().clear();

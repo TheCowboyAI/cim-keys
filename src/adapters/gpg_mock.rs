@@ -10,6 +10,7 @@
 //! - **Morphisms Preserved**: All sign/encrypt compositions are preserved
 
 use async_trait::async_trait;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use chrono::{Duration, Utc};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -162,6 +163,14 @@ impl GpgPort for MockGpgAdapter {
         key_length: u32,
         expires_in_days: Option<u32>,
     ) -> Result<GpgKeypair, GpgError> {
+        // Validate RSA key length
+        if key_type == GpgKeyType::Rsa && key_length < 2048 {
+            return Err(GpgError::InvalidKey(format!(
+                "RSA key length {} is too short, minimum is 2048",
+                key_length
+            )));
+        }
+
         let keypair = self.generate_mock_keypair(user_id, key_type);
 
         let now = Utc::now();
@@ -230,7 +239,7 @@ impl GpgPort for MockGpgAdapter {
             // Return armored format
             let armored = format!(
                 "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\n{}\n-----END PGP PUBLIC KEY BLOCK-----",
-                base64::encode(&keypair.public_key)
+                BASE64.encode(&keypair.public_key)
             );
             Ok(armored.into_bytes())
         } else {
@@ -301,14 +310,23 @@ impl GpgPort for MockGpgAdapter {
         data: &[u8],
         signature: &[u8],
     ) -> Result<GpgVerification, GpgError> {
-        // Mock verification - just check signature format
+        // Validate data parameter
+        if data.is_empty() {
+            return Err(GpgError::VerificationFailed("Cannot verify empty data".to_string()));
+        }
+
+        // Mock verification - check signature format and consistency with data
         let valid = !signature.is_empty() && signature[0] == 0x88;
 
+        // Verify signature consistency with data (mock: check XOR pattern at index 3)
+        // Signature format: [0x88, 0x00, 0x40/0x80, data[0] ^ 0xFF]
+        let data_consistent = valid && signature.len() > 3 && signature[3] == (data[0] ^ 0xFF);
+
         Ok(GpgVerification {
-            valid,
-            key_id: if valid { Some(GpgKeyId("0000000000000001".to_string())) } else { None },
-            signer_user_id: if valid { Some("Mock Signer".to_string()) } else { None },
-            signature_time: if valid { Some(Utc::now().timestamp()) } else { None },
+            valid: valid && data_consistent,
+            key_id: if valid && data_consistent { Some(GpgKeyId("0000000000000001".to_string())) } else { None },
+            signer_user_id: if valid && data_consistent { Some("Mock Signer".to_string()) } else { None },
+            signature_time: if valid && data_consistent { Some(Utc::now().timestamp()) } else { None },
         })
     }
 
@@ -391,6 +409,20 @@ impl GpgPort for MockGpgAdapter {
         subkey_type: GpgKeyType,
         usage: Vec<KeyUsage>,
     ) -> Result<GpgKeyId, GpgError> {
+        // Validate usage flags
+        if usage.is_empty() {
+            return Err(GpgError::InvalidKey("Subkey must have at least one usage flag".to_string()));
+        }
+
+        // Validate key type and usage compatibility
+        if subkey_type == GpgKeyType::Elgamal && usage.contains(&KeyUsage::Signing) {
+            return Err(GpgError::InvalidKey("ElGamal keys cannot be used for signing".to_string()));
+        }
+
+        if subkey_type == GpgKeyType::Dsa && usage.contains(&KeyUsage::Encryption) {
+            return Err(GpgError::InvalidKey("DSA keys cannot be used for encryption".to_string()));
+        }
+
         // Verify master key exists
         let keys = self.keys.read().unwrap();
         if !keys.contains_key(master_key_id) {

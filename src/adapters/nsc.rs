@@ -5,6 +5,7 @@
 
 use crate::ports::nats::*;
 use async_trait::async_trait;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use std::process::Command;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
@@ -46,7 +47,7 @@ impl NscAdapter {
 
     /// Generate keys using native Rust implementation
     fn generate_native_keys(&self, key_type: &str) -> Result<(String, String), NatsKeyError> {
-        // In a real implementation, we would use the nkeys crate here
+        // In a real implementation, we would use the nkeys crate (when nkeys feature is enabled)
         // For now, we'll return placeholder values
         let public_key = format!("{}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
             match key_type {
@@ -68,7 +69,8 @@ impl NatsKeyPort for NscAdapter {
 
         if self.use_cli {
             // Use NSC CLI
-            let output = self.execute_nsc(&["add", "operator", name])?;
+            let _output = self.execute_nsc(&["add", "operator", name])?;
+            // Note: In real implementation, we would parse _output to extract actual keys
 
             // Parse the output to extract keys
             // In real implementation, we'd parse NSC output properly
@@ -103,7 +105,8 @@ impl NatsKeyPort for NscAdapter {
 
         if self.use_cli {
             // Use NSC CLI
-            let output = self.execute_nsc(&["add", "account", name])?;
+            let _output = self.execute_nsc(&["add", "account", name])?;
+            // Note: In real implementation, we would parse _output to extract actual keys
 
             let public_key = format!("A{}", id.simple());
             let seed = format!("SA{}", id.simple());
@@ -140,7 +143,8 @@ impl NatsKeyPort for NscAdapter {
 
         if self.use_cli {
             // Use NSC CLI
-            let output = self.execute_nsc(&["add", "user", name])?;
+            let _output = self.execute_nsc(&["add", "user", name])?;
+            // Note: In real implementation, we would parse _output to extract actual keys
 
             let public_key = format!("U{}", id.simple());
             let seed = format!("SU{}", id.simple());
@@ -175,7 +179,8 @@ impl NatsKeyPort for NscAdapter {
 
         let (public_key, seed) = if self.use_cli {
             // Use NSC to generate signing key
-            let output = self.execute_nsc(&["generate", "nkey", "--operator"])?;
+            let _output = self.execute_nsc(&["generate", "nkey", "--operator"])?;
+            // Note: In real implementation, we would parse _output to extract actual keys
 
             // Parse output
             (format!("O{}", id.simple()), format!("SO{}", id.simple()))
@@ -193,7 +198,14 @@ impl NatsKeyPort for NscAdapter {
 
     async fn create_jwt(&self, claims: &JwtClaims, signing_key: &str) -> Result<String, NatsKeyError> {
         // In real implementation, we'd create and sign JWT
-        // This would use the nkeys crate to sign the JWT with the provided key
+        // This would use the nkeys crate to sign the JWT with signing_key
+
+        // Validate signing key is provided
+        if signing_key.is_empty() {
+            return Err(NatsKeyError::InvalidConfiguration(
+                "Signing key cannot be empty".to_string()
+            ));
+        }
 
         let jwt = serde_json::json!({
             "sub": claims.subject,
@@ -202,8 +214,11 @@ impl NatsKeyPort for NscAdapter {
             "nats": claims.nats,
         });
 
+        // Note: signing_key would be used here in real JWT signature creation
+        tracing::debug!("Creating JWT with signing key prefix: {}", &signing_key[..signing_key.len().min(8)]);
+
         Ok(format!("eyJ0eXAiOiJKV1QiLCJhbGciOiJFZDI1NTE5In0.{}.signature",
-            base64::encode(jwt.to_string())))
+            BASE64.encode(jwt.to_string())))
     }
 
     async fn export_keys(&self, keys: &NatsKeys) -> Result<NatsKeyExport, NatsKeyError> {

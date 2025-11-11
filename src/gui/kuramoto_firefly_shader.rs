@@ -9,7 +9,8 @@ use iced::{
 // Swarm configuration constants
 const NUM_FIREFLIES: u32 = 40;  // Increased for better synchronization effect
 const COUPLING_STRENGTH: f32 = 2.5;  // K parameter for Kuramoto model
-const COUPLING_RADIUS: f32 = 0.3;  // Spatial coupling radius
+// Note: COUPLING_RADIUS would be used for spatial coupling in full implementation
+// const COUPLING_RADIUS: f32 = 0.3;  // Spatial coupling radius
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct KuramotoFireflyShader {
@@ -125,14 +126,14 @@ impl<Message> shader::Program<Message> for KuramotoFireflyShader {
 
 #[derive(Debug)]
 pub struct Primitive {
-    size: Size,
+    _size: Size,  // Reserved for viewport-dependent calculations
     time: f32,
     phases: Vec<f32>,
 }
 
 impl Primitive {
     pub fn new(size: Size, time: f32, phases: Vec<f32>) -> Self {
-        Self { size, time, phases }
+        Self { _size: size, time, phases }
     }
 }
 
@@ -143,8 +144,8 @@ impl shader::Primitive for Primitive {
         queue: &wgpu::Queue,
         format: wgpu::TextureFormat,
         storage: &mut shader::Storage,
-        bounds: &Rectangle,
-        viewport: &Viewport,
+        _bounds: &Rectangle,
+        _viewport: &Viewport,
     ) {
         if !storage.has::<Pipeline>() {
             storage.store(Pipeline::new(device, format));
@@ -156,7 +157,7 @@ impl shader::Primitive for Primitive {
         let uniforms = Uniforms {
             time: self.time,
             _padding: 0.0,
-            resolution: [bounds.width, bounds.height],
+            resolution: [1024.0, 768.0],  // Note: bounds.width, bounds.height would be used for dynamic sizing
             num_fireflies: NUM_FIREFLIES as f32,
             coupling_strength: COUPLING_STRENGTH,
         };

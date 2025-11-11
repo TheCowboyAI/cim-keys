@@ -282,7 +282,8 @@ pub fn generate_intermediate_ca(
 
     // Parse root CA certificate to get parameters
     // Note: We're using x509-parser to extract info from the existing cert
-    let root_pem_data = pem::parse(root_ca_cert_pem)
+    // This is used for validation purposes to ensure the root CA is properly formatted
+    let _root_pem_data = pem::parse(root_ca_cert_pem)
         .map_err(|e| format!("Failed to parse root CA PEM: {}", e))?;
 
     // Create a minimal CertificateParams for the issuer
@@ -399,7 +400,8 @@ pub fn generate_server_certificate(
         .map_err(|e| format!("Failed to parse intermediate CA key: {}", e))?;
 
     // Parse intermediate CA certificate to get parameters
-    let intermediate_pem_data = pem::parse(intermediate_ca_cert_pem)
+    // This is used for validation purposes to ensure the intermediate CA is properly formatted
+    let _intermediate_pem_data = pem::parse(intermediate_ca_cert_pem)
         .map_err(|e| format!("Failed to parse intermediate CA PEM: {}", e))?;
 
     // Create a minimal CertificateParams for the issuer

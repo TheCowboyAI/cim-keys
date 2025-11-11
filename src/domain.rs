@@ -226,16 +226,16 @@ pub enum KeyStorageType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SecurityLevel {
     /// FIPS 140-2 Level 4 (highest)
-    FIPS140_Level4,
+    Fips140Level4,
 
     /// FIPS 140-2 Level 3
-    FIPS140_Level3,
+    Fips140Level3,
 
     /// FIPS 140-2 Level 2
-    FIPS140_Level2,
+    Fips140Level2,
 
     /// FIPS 140-2 Level 1
-    FIPS140_Level1,
+    Fips140Level1,
 
     /// Commercial grade encryption
     Commercial,

@@ -21,7 +21,7 @@ pub struct OrganizationGraph {
     nodes: HashMap<Uuid, GraphNode>,
     edges: Vec<GraphEdge>,
     selected_node: Option<Uuid>,
-    viewport: Rectangle,
+    _viewport: Rectangle,  // Reserved for graph panning/zooming
     zoom: f32,
     pan_offset: Vector,
 }
@@ -82,7 +82,7 @@ impl OrganizationGraph {
             nodes: HashMap::new(),
             edges: Vec::new(),
             selected_node: None,
-            viewport: Rectangle::new(Point::ORIGIN, Size::new(800.0, 600.0)),
+            _viewport: Rectangle::new(Point::ORIGIN, Size::new(800.0, 600.0)),
             zoom: 1.0,
             pan_offset: Vector::new(0.0, 0.0),
         }
@@ -300,7 +300,7 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
         &self,
         _state: &mut Self::State,
         event: canvas::Event,
-        bounds: Rectangle,
+        _bounds: Rectangle,  // Reserved for hit testing within bounds
         cursor: mouse::Cursor,
     ) -> (canvas::event::Status, Option<GraphMessage>) {
         if let mouse::Cursor::Available(cursor_position) = cursor {

@@ -58,14 +58,14 @@ impl<Message> shader::Program<Message> for FireflySynchronization {
 
 #[derive(Debug)]
 pub struct Primitive {
-    size: Size,
+    _size: Size,  // Reserved for viewport-dependent calculations
     time: f32,
     num_fireflies: u32,
 }
 
 impl Primitive {
     pub fn new(size: Size, time: f32, num_fireflies: u32) -> Self {
-        Self { size, time, num_fireflies }
+        Self { _size: size, time, num_fireflies }
     }
 }
 
@@ -187,7 +187,7 @@ struct Pipeline {
     compute_bind_group: wgpu::BindGroup,
     render_bind_group: wgpu::BindGroup,
     params_buffer: wgpu::Buffer,
-    firefly_buffer: wgpu::Buffer,
+    _firefly_buffer: wgpu::Buffer,  // Reserved for future GPU compute shaders
 }
 
 impl Pipeline {
@@ -390,7 +390,7 @@ impl Pipeline {
             compute_bind_group,
             render_bind_group,
             params_buffer,
-            firefly_buffer,
+            _firefly_buffer: firefly_buffer,
         }
     }
 }

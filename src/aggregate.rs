@@ -3,7 +3,7 @@
 //! The KeyManagement aggregate is the consistency boundary for all key operations.
 //! It processes commands and emits events without holding mutable state.
 
-use cim_domain::{AggregateRoot, DomainEvent};
+use cim_domain::AggregateRoot;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use std::collections::HashMap;

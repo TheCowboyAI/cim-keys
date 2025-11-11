@@ -41,7 +41,7 @@ pub struct KeyPolicyEngine {
     /// Organization-specific PKI policies
     pki_policies: PkiPolicySet,
     /// Policy evaluator
-    evaluator: PolicyEvaluator,
+    _evaluator: PolicyEvaluator,  // Reserved for complex policy expressions
     /// Active exemptions
     exemptions: Vec<PolicyExemption>,
     /// Conflict resolver
@@ -55,7 +55,7 @@ impl KeyPolicyEngine {
     pub fn new(organization: &Organization) -> Self {
         Self {
             pki_policies: PkiPolicySet::default_for_organization(&organization.name),
-            evaluator: PolicyEvaluator::new(),
+            _evaluator: PolicyEvaluator::new(),
             exemptions: Vec::new(),
             conflict_resolver: PolicyConflictResolver::new(ConflictResolution::MostRestrictive),
             template_engine: PolicyTemplateEngine::new(),

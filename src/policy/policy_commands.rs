@@ -34,7 +34,7 @@ impl Command for KeyPolicyCommand {
             KeyPolicyCommand::EvaluateKeyGeneration(cmd) => cmd.key_id.map(EntityId::from_uuid),
             KeyPolicyCommand::EvaluateCertificateIssuance(cmd) => Some(EntityId::from_uuid(cmd.certificate_id)),
             KeyPolicyCommand::RequestKeyPolicyExemption(cmd) => cmd.key_id.map(EntityId::from_uuid),
-            KeyPolicyCommand::ApproveKeyPolicyExemption(cmd) => None, // Exemption aggregate
+            KeyPolicyCommand::ApproveKeyPolicyExemption(_cmd) => None, // Exemption aggregate (cmd fields used in handler)
             KeyPolicyCommand::EnforceKeyPolicy(cmd) => cmd.key_id.map(EntityId::from_uuid),
             KeyPolicyCommand::CreateOrganizationPolicy(_) => None, // Policy aggregate
         }
@@ -133,7 +133,11 @@ impl Command for ApproveKeyPolicyExemption {
     type Aggregate = KeyManagementAggregate;
 
     fn aggregate_id(&self) -> Option<EntityId<Self::Aggregate>> {
-        None // This operates on exemption aggregate
+        // Note: This operates on exemption aggregate, not key aggregate
+        // The exemption_request_id and policy_id are used in the handler
+        tracing::debug!("Processing exemption for policy {:?} and request {:?}",
+            self.policy_id, self.exemption_request_id);
+        None
     }
 }
 

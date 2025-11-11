@@ -97,14 +97,14 @@ impl<Message> shader::Program<Message> for DebugFireflyShader {
 
 #[derive(Debug)]
 pub struct Primitive {
-    size: Size,
+    _size: Size,  // Reserved for viewport-dependent calculations
     time: f32,
     phases: Vec<f32>,
 }
 
 impl Primitive {
     pub fn new(size: Size, time: f32, phases: Vec<f32>) -> Self {
-        Self { size, time, phases }
+        Self { _size: size, time, phases }
     }
 }
 
@@ -115,8 +115,8 @@ impl shader::Primitive for Primitive {
         queue: &wgpu::Queue,
         format: wgpu::TextureFormat,
         storage: &mut shader::Storage,
-        bounds: &Rectangle,
-        viewport: &Viewport,
+        _bounds: &Rectangle,
+        _viewport: &Viewport,
     ) {
         if !storage.has::<Pipeline>() {
             storage.store(Pipeline::new(device, format));

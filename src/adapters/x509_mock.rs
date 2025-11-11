@@ -10,6 +10,7 @@
 //! - **Morphisms Preserved**: All certificate chain compositions are preserved
 
 use async_trait::async_trait;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use chrono::{Duration, Utc};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -71,6 +72,7 @@ impl MockX509Adapter {
         serial
     }
 
+    #[allow(dead_code)]
     fn generate_mock_private_key(&self, algorithm: &str) -> PrivateKey {
         let der = match algorithm {
             "RSA-2048" => vec![0x30, 0x82, 0x04, 0xA4], // Mock RSA 2048 DER
@@ -81,7 +83,7 @@ impl MockX509Adapter {
 
         let pem = format!(
             "-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----",
-            base64::encode(&der)
+            BASE64.encode(&der)
         );
 
         PrivateKey {
@@ -105,7 +107,7 @@ impl MockX509Adapter {
 
         let pem = format!(
             "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----",
-            base64::encode(&der)
+            BASE64.encode(&der)
         );
 
         Certificate {
@@ -137,6 +139,13 @@ impl X509Port for MockX509Adapter {
         key: &PrivateKey,
         validity_days: u32,
     ) -> Result<Certificate, X509Error> {
+        // Validate key algorithm is not empty
+        if key.algorithm.is_empty() {
+            return Err(X509Error::InvalidPrivateKey(
+                "Root CA private key algorithm is not specified".to_string()
+            ));
+        }
+
         let serial = self.next_serial();
         let now = Utc::now();
         let not_before = now.timestamp();
@@ -165,12 +174,23 @@ impl X509Port for MockX509Adapter {
         key: &PrivateKey,
         san: Vec<String>,
     ) -> Result<CertificateSigningRequest, X509Error> {
-        // Mock CSR DER structure
-        let der = vec![0x30, 0x82, 0x01, 0x00];
+        // Validate key parameter
+        if key.der.is_empty() {
+            return Err(X509Error::InvalidPrivateKey("Private key DER data is empty".to_string()));
+        }
+
+        if key.algorithm.is_empty() {
+            return Err(X509Error::InvalidPrivateKey("Private key algorithm is not specified".to_string()));
+        }
+
+        // Mock CSR DER structure with key fingerprint embedded
+        let mut der = vec![0x30, 0x82, 0x01, 0x00];
+        // Add key fingerprint to CSR for validation
+        der.extend_from_slice(&key.der[..key.der.len().min(8)]);
 
         let pem = format!(
             "-----BEGIN CERTIFICATE REQUEST-----\n{}\n-----END CERTIFICATE REQUEST-----",
-            base64::encode(&der)
+            BASE64.encode(&der)
         );
 
         Ok(CertificateSigningRequest {
@@ -190,6 +210,13 @@ impl X509Port for MockX509Adapter {
         validity_days: u32,
         is_ca: bool,
     ) -> Result<Certificate, X509Error> {
+        // Validate CA key algorithm
+        if ca_key.algorithm.is_empty() {
+            return Err(X509Error::InvalidPrivateKey(
+                "CA private key algorithm is not specified".to_string()
+            ));
+        }
+
         let serial = self.next_serial();
         let now = Utc::now();
         let not_before = now.timestamp();
@@ -220,6 +247,20 @@ impl X509Port for MockX509Adapter {
         validity_days: u32,
         path_len_constraint: Option<u32>,
     ) -> Result<Certificate, X509Error> {
+        // Validate parent CA key matches parent CA cert
+        if parent_ca_key.algorithm.is_empty() {
+            return Err(X509Error::InvalidPrivateKey(
+                "Parent CA private key algorithm is not specified".to_string()
+            ));
+        }
+
+        // Validate parent CA is actually a CA
+        if !parent_ca_cert.is_ca {
+            return Err(X509Error::InvalidCertificate(
+                "Parent certificate is not a CA certificate".to_string()
+            ));
+        }
+
         let serial = self.next_serial();
         let now = Utc::now();
         let not_before = now.timestamp();
@@ -233,6 +274,13 @@ impl X509Port for MockX509Adapter {
             not_after,
             true, // is_ca
         );
+
+        // Note: In real implementation, path_len_constraint would be used in BasicConstraints extension
+        // For mock, we log it for testing purposes
+        if let Some(path_len) = path_len_constraint {
+            // Would set basicConstraints CA:TRUE, pathlen:path_len
+            tracing::debug!("Setting path length constraint: {}", path_len);
+        }
 
         // Store certificate and key
         self.certificates.write().unwrap().insert(serial.clone(), cert.clone());
@@ -253,6 +301,20 @@ impl X509Port for MockX509Adapter {
         key_usage: Vec<KeyUsage>,
         extended_key_usage: Vec<ExtendedKeyUsage>,
     ) -> Result<Certificate, X509Error> {
+        // Validate subject's private key
+        if key.der.is_empty() {
+            return Err(X509Error::InvalidPrivateKey("Subject private key DER data is empty".to_string()));
+        }
+
+        if key.algorithm.is_empty() {
+            return Err(X509Error::InvalidPrivateKey("Subject private key algorithm is not specified".to_string()));
+        }
+
+        // Validate CA key
+        if ca_key.algorithm.is_empty() {
+            return Err(X509Error::InvalidPrivateKey("CA private key algorithm is not specified".to_string()));
+        }
+
         let serial = self.next_serial();
         let now = Utc::now();
         let not_before = now.timestamp();
@@ -267,6 +329,18 @@ impl X509Port for MockX509Adapter {
             false, // Not a CA
         );
 
+        // Note: In real implementation, these would be added as X.509 extensions
+        // For mock, we log them for testing purposes
+        if !san.is_empty() {
+            tracing::debug!("Adding SAN entries: {:?}", san);
+        }
+        if !key_usage.is_empty() {
+            tracing::debug!("Adding key usage: {:?}", key_usage);
+        }
+        if !extended_key_usage.is_empty() {
+            tracing::debug!("Adding extended key usage: {:?}", extended_key_usage);
+        }
+
         // Store certificate and key
         self.certificates.write().unwrap().insert(serial, cert.clone());
 
@@ -275,6 +349,11 @@ impl X509Port for MockX509Adapter {
 
     /// **Functor Mapping**: bytes → Certificate (object construction)
     async fn parse_certificate(&self, cert_data: &[u8]) -> Result<Certificate, X509Error> {
+        // Validate certificate data
+        if cert_data.is_empty() {
+            return Err(X509Error::ParsingError("Certificate data is empty".to_string()));
+        }
+
         // Simple mock parsing - just check if it looks like a certificate
         if cert_data.len() < 4 || cert_data[0] != 0x30 {
             return Err(X509Error::ParsingError("Invalid certificate data".to_string()));
@@ -285,7 +364,7 @@ impl X509Port for MockX509Adapter {
             der: cert_data.to_vec(),
             pem: format!(
                 "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----",
-                base64::encode(cert_data)
+                BASE64.encode(cert_data)
             ),
             subject: CertificateSubject {
                 common_name: "Mock Subject".to_string(),
@@ -374,12 +453,26 @@ impl X509Port for MockX509Adapter {
         ca_key: &PrivateKey,
         revoked_certs: Vec<RevokedCertificate>,
     ) -> Result<CertificateRevocationList, X509Error> {
+        // Validate CA certificate
+        if !ca_cert.is_ca {
+            return Err(X509Error::InvalidCertificate(
+                "Certificate is not a CA certificate".to_string()
+            ));
+        }
+
+        // Validate CA key
+        if ca_key.algorithm.is_empty() {
+            return Err(X509Error::InvalidPrivateKey(
+                "CA private key algorithm is not specified".to_string()
+            ));
+        }
+
         let now = Utc::now();
         let der = vec![0x30, 0x82, 0x00, 0x50]; // Mock CRL DER
 
         let pem = format!(
             "-----BEGIN X509 CRL-----\n{}\n-----END X509 CRL-----",
-            base64::encode(&der)
+            BASE64.encode(&der)
         );
 
         Ok(CertificateRevocationList {
@@ -399,6 +492,27 @@ impl X509Port for MockX509Adapter {
         issuer_key: &PrivateKey,
         status: OcspStatus,
     ) -> Result<OcspResponse, X509Error> {
+        // Validate certificate
+        if cert.der.is_empty() {
+            return Err(X509Error::InvalidCertificate(
+                "Certificate DER data is empty".to_string()
+            ));
+        }
+
+        // Validate issuer is a CA
+        if !issuer_cert.is_ca {
+            return Err(X509Error::InvalidCertificate(
+                "Issuer certificate is not a CA certificate".to_string()
+            ));
+        }
+
+        // Validate issuer key
+        if issuer_key.algorithm.is_empty() {
+            return Err(X509Error::InvalidPrivateKey(
+                "Issuer private key algorithm is not specified".to_string()
+            ));
+        }
+
         let now = Utc::now();
         let der = vec![0x30, 0x82, 0x00, 0x30]; // Mock OCSP response DER
 
