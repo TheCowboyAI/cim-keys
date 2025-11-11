@@ -111,6 +111,9 @@ pub struct CimKeysApp {
     animation_time: f32,
     firefly_shader: FireflyRenderer,
 
+    // Responsive scaling
+    ui_scale: f32,  // Scale factor for UI elements (1.0 = base size at 1920x1080)
+
     // MVI Integration (Option A: Quick Integration)
     mvi_model: MviModel,
     storage_port: Arc<dyn StoragePort>,
@@ -300,6 +303,7 @@ impl CimKeysApp {
                 error_message: None,
                 animation_time: 0.0,
                 firefly_shader: FireflyRenderer::new(),
+                ui_scale: 1.0,  // Default scale for 1920x1080
                 // MVI integration
                 mvi_model,
                 storage_port,
@@ -309,6 +313,19 @@ impl CimKeysApp {
             },
             Task::none(),
         )
+    }
+
+    // Helper methods for responsive scaling
+    fn scaled_text_size(&self, base_size: u16) -> u16 {
+        (base_size as f32 * self.ui_scale).round() as u16
+    }
+
+    fn scaled_padding(&self, base_padding: u16) -> u16 {
+        (base_padding as f32 * self.ui_scale).round() as u16
+    }
+
+    fn scaled_size(&self, base_size: f32) -> f32 {
+        base_size * self.ui_scale
     }
 
     // Note: Title method removed - window title now set via iced::Settings
@@ -838,13 +855,13 @@ impl CimKeysApp {
         // Create a text-based logo since iced doesn't support SVG directly
         let logo_text = container(
             column![
-                text("CIM").size(32).font(Font {
+                text("CIM").size(self.scaled_text_size(32)).font(Font {
                     family: iced::font::Family::Monospace,
                     weight: iced::font::Weight::Bold,
                     stretch: iced::font::Stretch::Normal,
                     style: iced::font::Style::Normal,
                 }),
-                text("KEYS").size(24).font(Font {
+                text("KEYS").size(self.scaled_text_size(24)).font(Font {
                     family: iced::font::Family::Monospace,
                     weight: iced::font::Weight::Bold,
                     stretch: iced::font::Stretch::Normal,
