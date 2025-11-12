@@ -23,12 +23,12 @@ use crate::{
     mvi::{Intent, Model as MviModel},
     // Hexagonal ports
     ports::{StoragePort, X509Port, SshKeyPort, YubiKeyPort},
-    // Mock adapters
+    // Adapters
     adapters::{
         InMemoryStorageAdapter,
         MockX509Adapter,
         MockSshKeyAdapter,
-        MockYubiKeyAdapter,
+        YubiKeyCliAdapter,
     },
 };
 
@@ -92,6 +92,8 @@ pub struct CimKeysApp {
     // YubiKey fields
     yubikey_serial: String,
     yubikey_assigned_to: Option<Uuid>,
+    detected_yubikeys: Vec<crate::ports::yubikey::YubiKeyDevice>,
+    yubikey_detection_status: String,
 
     // Key generation state
     key_generation_progress: f32,
@@ -176,6 +178,8 @@ pub enum Message {
     RemoveLocation(Uuid),
 
     // YubiKey operations
+    DetectYubiKeys,
+    YubiKeysDetected(Result<Vec<crate::ports::yubikey::YubiKeyDevice>, String>),
     YubiKeySerialChanged(String),
     AssignYubiKeyToPerson(Uuid),
     ProvisionYubiKey,
@@ -286,7 +290,7 @@ impl CimKeysApp {
         let storage_port: Arc<dyn StoragePort> = Arc::new(InMemoryStorageAdapter::new());
         let x509_port: Arc<dyn X509Port> = Arc::new(MockX509Adapter::new());
         let ssh_port: Arc<dyn SshKeyPort> = Arc::new(MockSshKeyAdapter::new());
-        let yubikey_port: Arc<dyn YubiKeyPort> = Arc::new(MockYubiKeyAdapter::default());
+        let yubikey_port: Arc<dyn YubiKeyPort> = Arc::new(YubiKeyCliAdapter::new());
 
         // Initialize MVI model
         let mvi_model = MviModel::new(PathBuf::from(&output_dir));
@@ -316,6 +320,8 @@ impl CimKeysApp {
                 new_location_security_level: None,
                 yubikey_serial: String::new(),
                 yubikey_assigned_to: None,
+                detected_yubikeys: Vec::new(),
+                yubikey_detection_status: "Click 'Detect YubiKeys' to scan for hardware".to_string(),
                 key_generation_progress: 0.0,
                 keys_generated: 0,
                 total_keys_to_generate: 0,
@@ -693,6 +699,40 @@ impl CimKeysApp {
             }
 
             // YubiKey operations
+            Message::DetectYubiKeys => {
+                self.yubikey_detection_status = "Detecting YubiKeys...".to_string();
+                let yubikey_port = self.yubikey_port.clone();
+
+                Task::perform(
+                    async move {
+                        yubikey_port.list_devices().await
+                    },
+                    |result| Message::YubiKeysDetected(result.map_err(|e| format!("{:?}", e)))
+                )
+            }
+
+            Message::YubiKeysDetected(result) => {
+                match result {
+                    Ok(devices) => {
+                        self.detected_yubikeys = devices.clone();
+                        self.yubikey_detection_status = format!("Found {} YubiKey(s)", devices.len());
+                        if devices.len() > 0 {
+                            self.status_message = format!("Detected: {}",
+                                devices.iter()
+                                    .map(|d| format!("{} (Serial: {})", d.model, d.serial))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        self.yubikey_detection_status = "Detection failed".to_string();
+                        self.error_message = Some(format!("YubiKey detection error: {}", e));
+                    }
+                }
+                Task::none()
+            }
+
             Message::YubiKeySerialChanged(value) => {
                 self.yubikey_serial = value;
                 Task::none()
@@ -1786,8 +1826,57 @@ impl CimKeysApp {
                         container(text(""))
                     },
 
+                    // YubiKey Detection and Management
+                    text("4. YubiKey Hardware Detection").size(self.scaled_text_size(14)),
+                    row![
+                        button("Detect YubiKeys")
+                            .on_press(Message::DetectYubiKeys)
+                            .style(CowboyCustomTheme::security_button()),
+                        text(&self.yubikey_detection_status)
+                            .size(self.scaled_text_size(12))
+                            .color(CowboyTheme::text_secondary()),
+                    ]
+                    .spacing(self.scaled_padding(10))
+                    .align_y(Alignment::Center),
+
+                    // Display detected YubiKeys
+                    if !self.detected_yubikeys.is_empty() {
+                        let mut yubikey_list = column![].spacing(self.scaled_padding(5));
+
+                        for device in &self.detected_yubikeys {
+                            yubikey_list = yubikey_list.push(
+                                row![
+                                    text(format!("  ✓ {} v{} - Serial: {}",
+                                        device.model,
+                                        device.version,
+                                        device.serial))
+                                        .size(self.scaled_text_size(12))
+                                        .color(if device.piv_enabled {
+                                            Color::from_rgb(0.3, 0.8, 0.3)
+                                        } else {
+                                            Color::from_rgb(0.8, 0.5, 0.2)
+                                        }),
+                                    if !device.piv_enabled {
+                                        text(" (PIV not enabled)")
+                                            .size(self.scaled_text_size(11))
+                                            .color(Color::from_rgb(0.8, 0.5, 0.2))
+                                    } else {
+                                        text("")
+                                    }
+                                ]
+                                .spacing(self.scaled_padding(5))
+                            );
+                        }
+
+                        container(yubikey_list)
+                            .padding(self.scaled_padding(10))
+                            .style(CowboyCustomTheme::card_container())
+                    } else {
+                        container(text(""))
+                    },
+
                     // Other Key Generation
-                    text("4. Other Keys").size(self.scaled_text_size(14)),
+                    text("5. Other Keys").size(self.scaled_text_size(14)),
                     button("Generate SSH Keys for All")
                         .on_press(Message::GenerateSSHKeys)
                         .style(CowboyCustomTheme::primary_button()),
