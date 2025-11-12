@@ -65,6 +65,9 @@ pub struct KeyManifest {
     /// Organization info
     pub organization: OrganizationInfo,
 
+    /// All people in the organization
+    pub people: Vec<PersonEntry>,
+
     /// All keys indexed by ID
     pub keys: Vec<KeyEntry>,
 
@@ -141,6 +144,17 @@ pub struct OrganizationInfo {
     pub admin_email: String,
 }
 
+/// Entry for a person in the manifest
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersonEntry {
+    pub person_id: Uuid,
+    pub name: String,
+    pub email: String,
+    pub role: String,
+    pub organization_id: Uuid,
+    pub created_at: DateTime<Utc>,
+}
+
 impl OfflineKeyProjection {
     /// Create a new projection targeting an encrypted partition
     pub fn new<P: AsRef<Path>>(root_path: P) -> Result<Self, ProjectionError> {
@@ -193,6 +207,7 @@ impl OfflineKeyProjection {
                 created_at: Utc::now(),
                 updated_at: Utc::now(),
                 organization: OrganizationInfo::default(),
+                people: Vec::new(),
                 keys: Vec::new(),
                 certificates: Vec::new(),
                 pki_hierarchies: Vec::new(),
@@ -443,6 +458,28 @@ impl OfflineKeyProjection {
         &self.manifest.organization
     }
 
+    /// Add a person to the organization
+    pub fn add_person(&mut self, person_id: Uuid, name: String, email: String, role: String, organization_id: Uuid) -> Result<(), ProjectionError> {
+        let person_entry = PersonEntry {
+            person_id,
+            name,
+            email,
+            role,
+            organization_id,
+            created_at: Utc::now(),
+        };
+
+        self.manifest.people.push(person_entry);
+        self.manifest.updated_at = Utc::now();
+        self.save_manifest()?;
+        Ok(())
+    }
+
+    /// Get all people in the organization
+    pub fn get_people(&self) -> &[PersonEntry] {
+        &self.manifest.people
+    }
+
     pub fn save_manifest(&self) -> Result<(), ProjectionError> {
         let manifest_path = self.root_path.join("manifest.json");
 
@@ -475,6 +512,7 @@ impl OfflineKeyProjection {
             created_at: self.manifest.created_at,
             updated_at: Utc::now(),
             organization: self.manifest.organization.clone(),
+            people: Vec::new(),
             keys: Vec::new(),
             certificates: Vec::new(),
             pki_hierarchies: Vec::new(),

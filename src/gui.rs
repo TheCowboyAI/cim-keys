@@ -61,6 +61,7 @@ pub struct CimKeysApp {
     _domain_path: PathBuf,  // Reserved for domain persistence path
     organization_name: String,
     organization_domain: String,
+    organization_id: Option<Uuid>,  // Set when domain is created
 
     // Master passphrase for encryption
     master_passphrase: String,
@@ -284,6 +285,7 @@ impl CimKeysApp {
                 _domain_path: PathBuf::from(&output_dir),
                 organization_name: String::new(),
                 organization_domain: String::new(),
+                organization_id: None,
                 master_passphrase: String::new(),
                 master_passphrase_confirm: String::new(),
                 bootstrap_config: None,
@@ -394,6 +396,10 @@ impl CimKeysApp {
                 let projection = self.projection.clone();
                 let org_name = self.organization_name.clone();
                 let org_domain = self.organization_domain.clone();
+                let org_id = Uuid::now_v7();  // Generate organization ID
+
+                // Store the org_id for use in person creation
+                self.organization_id = Some(org_id);
 
                 Task::perform(
                     async move {
@@ -508,35 +514,67 @@ impl CimKeysApp {
             }
 
             Message::AddPerson => {
+                // Validate inputs
                 if self.new_person_name.is_empty() || self.new_person_email.is_empty() {
                     self.error_message = Some("Please enter name and email".to_string());
                     return Task::none();
                 }
+
+                // Validate role is selected
+                if self.new_person_role.is_none() {
+                    self.error_message = Some("Please select a role".to_string());
+                    return Task::none();
+                }
+
+                // Validate domain is created
+                let org_id = match self.organization_id {
+                    Some(id) => id,
+                    None => {
+                        self.error_message = Some("Please create a domain first".to_string());
+                        return Task::none();
+                    }
+                };
 
                 let person_id = Uuid::now_v7();
                 let person = Person {
                     id: person_id,
                     name: self.new_person_name.clone(),
                     email: self.new_person_email.clone(),
-                    organization_id: Uuid::now_v7(), // TODO: Use actual org ID
+                    organization_id: org_id,
                     unit_ids: vec![],
                     roles: vec![],
                     active: true,
                     created_at: chrono::Utc::now(),
                 };
 
-                let role = self.new_person_role.unwrap_or(KeyOwnerRole::Developer);
+                let role = self.new_person_role.unwrap();
 
                 // Add to graph for visualization
                 self.org_graph.add_node(person.clone(), role);
 
-                // Clear form fields
+                // Persist to projection
+                let projection = self.projection.clone();
+                let person_name = person.name.clone();
+                let person_email = person.email.clone();
+                let role_string = format!("{:?}", role);
+
+                // Clear form fields immediately
                 self.new_person_name.clear();
                 self.new_person_email.clear();
                 self.new_person_role = None;
-                self.status_message = format!("Added {} to organization", person.name);
 
-                Task::none()
+                Task::perform(
+                    async move {
+                        let mut proj = projection.write().await;
+                        proj.add_person(person_id, person_name.clone(), person_email, role_string, org_id)
+                            .map(|_| format!("Added {} to organization", person_name))
+                            .map_err(|e| format!("Failed to add person: {}", e))
+                    },
+                    |result| match result {
+                        Ok(msg) => Message::UpdateStatus(msg),
+                        Err(e) => Message::ShowError(e),
+                    }
+                )
             }
 
             Message::RemovePerson(person_id) => {
