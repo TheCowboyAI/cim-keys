@@ -157,6 +157,180 @@ Each YubiKey is configured with:
 - OpenPGP for signing and encryption
 - OATH for TOTP
 
+## GUI Application
+
+CIM Keys includes a beautiful GUI application for offline key generation and management.
+
+### Building the GUI
+
+```bash
+# Enter Nix development shell (provides all dependencies)
+nix develop
+
+# Build native GUI application
+cargo build --release --features gui
+
+# Run the GUI
+cargo run --bin cim-keys-gui --release -- /path/to/output/dir
+```
+
+### Using the GUI
+
+#### 1. Import from Secrets (Recommended)
+
+The GUI can import your complete organizational configuration from JSON files:
+
+**Required files:**
+- `secrets/secrets.json` - Organization and people configuration with master passphrase
+- `secrets/cowboyai.json` - YubiKey configurations and roles
+
+**What gets imported:**
+- ✅ Organization name and domain
+- ✅ Master passphrase for encryption
+- ✅ All people with roles and email addresses
+- ✅ YubiKey configurations (serials, PINs, PUKs, management keys)
+- ✅ Role assignments (Root CA, Backup, User, Service)
+
+Click **"Import from Secrets"** on the Welcome screen to load everything automatically.
+
+#### 2. Manual Configuration
+
+Alternatively, create your domain manually:
+
+1. **Welcome Tab** - Create new domain or load existing
+2. **Organization Tab**
+   - Set organization name and domain
+   - Create master passphrase
+   - Add people to organization graph
+   - Define relationships (reports to, delegates to, trusts)
+   - Drag nodes to arrange graph layout
+3. **Locations Tab**
+   - Add physical/logical locations for key storage
+   - Set security levels (FIPS 140 Level 1-4, Commercial, Basic)
+   - Location types: Data Center, Office, Cloud Region, Safe Deposit, etc.
+4. **Keys Tab**
+   - Detect YubiKeys (shows all connected devices)
+   - Generate Root CA
+   - Generate Intermediate CAs
+   - Generate Server Certificates
+   - Provision YubiKeys with keys
+   - View all imported YubiKey configurations
+   - View generated certificates and keys from manifest
+5. **Export Tab**
+   - Export to encrypted SD card
+   - Generate manifest with all configuration
+
+#### 3. Data Persistence
+
+All data is automatically saved to `manifest.json` in your output directory:
+
+**On startup, the GUI loads:**
+- ✅ Organization information
+- ✅ All saved locations
+- ✅ All people entries
+- ✅ All generated certificates (with validity dates, issuers)
+- ✅ All generated keys (with hardware backing status)
+
+**The manifest persists:**
+- Organization metadata
+- Location database
+- People registry
+- Certificate inventory with PKI details
+- Key inventory with YubiKey associations
+- Complete event log for audit trail
+
+#### 4. YubiKey Operations
+
+**Detection:**
+```bash
+# Click "Detect YubiKeys" in Keys tab
+# Shows: Model, Version, Serial, PIV status
+```
+
+**Provisioning:**
+```bash
+# After importing secrets with YubiKey configs
+# Click "Provision YubiKeys"
+# Automatically:
+#   - Matches detected hardware with configs by serial
+#   - Generates keys in appropriate PIV slots based on role
+#   - Root CA → Signature slot (9C)
+#   - Backup → Key Management slot (9D)
+#   - User → Authentication slot (9A)
+#   - Service → Card Authentication slot (9E)
+```
+
+### Example Workflow
+
+```bash
+# 1. Prepare your secrets files
+cat secrets/secrets.json    # Contains certify_pass (master passphrase)
+cat secrets/cowboyai.json   # Contains YubiKey configurations
+
+# 2. Run the GUI
+cargo run --bin cim-keys-gui --release -- ./my-keys-output
+
+# 3. Import configuration
+#    - Click "Import from Secrets"
+#    - All data loads automatically
+#    - Master passphrase appears in Organization tab
+#    - People appear in organization graph
+#    - YubiKey configs appear in Keys tab
+
+# 4. Insert YubiKeys and detect
+#    - Keys Tab → "Detect YubiKeys"
+#    - Should match your imported configurations by serial
+
+# 5. Generate PKI hierarchy
+#    - Generate Root CA (stored on Root CA YubiKey)
+#    - Generate Intermediate CAs for departments
+#    - Generate Server Certificates
+
+# 6. Provision YubiKeys
+#    - Click "Provision YubiKeys"
+#    - Keys generated in correct slots with imported PINs
+
+# 7. Export to SD card
+#    - Export Tab → Select options
+#    - Creates encrypted partition structure
+#    - Manifest contains complete audit trail
+
+# 8. Restart the GUI
+#    - All data reloads from manifest.json
+#    - Organization, locations, people, certificates, keys all restored
+```
+
+### Manifest Structure
+
+```
+output-directory/
+├── manifest.json           # Master index
+├── events/                 # Event log (audit trail)
+├── keys/                   # Key material
+├── certificates/           # X.509 certificates
+├── yubikeys/              # YubiKey configurations
+└── pki/                   # PKI hierarchies
+```
+
+### Graph Interaction
+
+The organizational graph is fully interactive:
+
+- **Drag nodes** - Click and drag to reposition people
+- **Zoom** - Mouse wheel to zoom in/out
+- **Pan** - Click empty space and drag to pan
+- **Auto-layout** - Click "Auto Layout" for automatic positioning
+
+Each node shows:
+- Role (above): Root CA, Security Admin, Developer, etc.
+- Name (center): Person's full name
+- Email (below): Contact email
+
+Edges show relationships with labels:
+- "reports to" - Organizational hierarchy
+- "delegates to" - Permission delegation
+- "trusts" - Trust relationships
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
