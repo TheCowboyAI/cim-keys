@@ -517,6 +517,20 @@ impl OfflineKeyProjection {
         &self.manifest.locations
     }
 
+    /// Remove a location from the organization
+    pub fn remove_location(&mut self, location_id: Uuid) -> Result<(), ProjectionError> {
+        let initial_len = self.manifest.locations.len();
+        self.manifest.locations.retain(|loc| loc.location_id != location_id);
+
+        if self.manifest.locations.len() == initial_len {
+            return Err(ProjectionError::NotFound(format!("Location {} not found", location_id)));
+        }
+
+        self.manifest.updated_at = Utc::now();
+        self.save_manifest()?;
+        Ok(())
+    }
+
     pub fn save_manifest(&self) -> Result<(), ProjectionError> {
         let manifest_path = self.root_path.join("manifest.json");
 

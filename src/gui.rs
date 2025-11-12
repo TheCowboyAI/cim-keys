@@ -6,7 +6,7 @@
 use iced::{
     application,
     widget::{button, column, container, row, text, text_input, Container, horizontal_space, pick_list, progress_bar, checkbox, scrollable, Space, image},
-    Task, Element, Length, Color, Border, Theme, Background, Shadow,
+    Task, Element, Length, Color, Border, Theme, Background, Shadow, Alignment,
 };
 use iced_futures::Subscription;
 use serde::{Deserialize, Serialize};
@@ -675,9 +675,21 @@ impl CimKeysApp {
                 )
             }
 
-            Message::RemoveLocation(_location_id) => {
-                // TODO: Implement location removal
-                Task::none()
+            Message::RemoveLocation(location_id) => {
+                let projection = self.projection.clone();
+
+                Task::perform(
+                    async move {
+                        let mut proj = projection.write().await;
+                        proj.remove_location(location_id)
+                            .map(|_| "Location removed successfully".to_string())
+                            .map_err(|e| format!("Failed to remove location: {}", e))
+                    },
+                    |result| match result {
+                        Ok(msg) => Message::UpdateStatus(msg),
+                        Err(e) => Message::ShowError(e),
+                    }
+                )
             }
 
             // YubiKey operations
@@ -1578,16 +1590,73 @@ impl CimKeysApp {
             .padding(self.scaled_padding(15))
             .style(CowboyCustomTheme::pastel_mint_card()),
 
-            // TODO: Display list of locations
-            container(
-                column![
-                    text("Locations will appear here")
-                        .size(self.scaled_text_size(14))
-                        .color(CowboyTheme::text_secondary()),
-                ]
-            )
-            .padding(self.scaled_padding(15))
-            .style(CowboyCustomTheme::pastel_cream_card()),
+            {
+                // Display list of locations - build container once, outside the if-let
+                let location_container = if let Ok(projection) = self.projection.try_read() {
+                    let locations = projection.get_locations().to_vec();
+                    drop(projection); // Release the lock
+
+                    if locations.is_empty() {
+                        container(
+                            column![
+                                text("No locations added yet")
+                                    .size(self.scaled_text_size(14))
+                                    .color(CowboyTheme::text_secondary()),
+                            ]
+                        )
+                        .padding(self.scaled_padding(15))
+                        .style(CowboyCustomTheme::pastel_cream_card())
+                    } else {
+                        let mut location_list = column![].spacing(self.scaled_padding(10));
+
+                        for location in locations {
+                            location_list = location_list.push(
+                                container(
+                                    row![
+                                        column![
+                                            text(location.name)
+                                                .size(self.scaled_text_size(16))
+                                                .color(CowboyTheme::text_primary()),
+                                            text(format!("Type: {} | Security: {}",
+                                                location.location_type,
+                                                location.security_level))
+                                                .size(self.scaled_text_size(12))
+                                                .color(CowboyTheme::text_secondary()),
+                                            text(format!("Created: {}",
+                                                location.created_at.format("%Y-%m-%d %H:%M UTC")))
+                                                .size(self.scaled_text_size(11))
+                                                .color(CowboyTheme::text_secondary()),
+                                        ]
+                                        .spacing(self.scaled_padding(5)),
+                                        horizontal_space(),
+                                        button("Remove")
+                                            .on_press(Message::RemoveLocation(location.location_id))
+                                            .style(CowboyCustomTheme::security_button())
+                                    ]
+                                    .align_y(Alignment::Center)
+                                    .spacing(self.scaled_padding(10))
+                                )
+                                .padding(self.scaled_padding(12))
+                                .style(CowboyCustomTheme::pastel_teal_card())
+                            );
+                        }
+
+                        container(location_list)
+                            .padding(self.scaled_padding(15))
+                            .style(CowboyCustomTheme::pastel_cream_card())
+                    }
+                } else {
+                    container(
+                        text("Loading locations...")
+                            .size(self.scaled_text_size(14))
+                            .color(CowboyTheme::text_secondary())
+                    )
+                    .padding(self.scaled_padding(15))
+                    .style(CowboyCustomTheme::pastel_cream_card())
+                };
+
+                location_container
+            },
         ]
         .spacing(self.scaled_padding(20));
 
