@@ -120,6 +120,11 @@ pub struct CimKeysApp {
     include_private_keys: bool,
     export_password: String,
 
+    // NATS hierarchy state
+    nats_hierarchy_generated: bool,
+    nats_operator_id: Option<Uuid>,
+    nats_export_path: PathBuf,
+
     // Status
     status_message: String,
     error_message: Option<String>,
@@ -215,6 +220,12 @@ pub enum Message {
     ExportPasswordChanged(String),
     ExportToSDCard,
     DomainExported(Result<String, String>),
+
+    // NATS Hierarchy operations
+    GenerateNatsHierarchy,
+    NatsHierarchyGenerated(Result<String, String>),
+    ExportToNsc,
+    NscExported(Result<String, String>),
 
     // Status messages
     UpdateStatus(String),
@@ -368,6 +379,9 @@ impl CimKeysApp {
                 include_nats_config: true,
                 include_private_keys: false,
                 export_password: String::new(),
+                nats_hierarchy_generated: false,
+                nats_operator_id: None,
+                nats_export_path: PathBuf::from(&output_dir).join("nsc"),
                 status_message: String::from("🔐 Welcome to CIM Keys - Offline Key Management System"),
                 error_message: None,
                 animation_time: 0.0,
@@ -1228,6 +1242,63 @@ impl CimKeysApp {
                     }
                     Err(e) => {
                         self.status_message = format!("Export failed: {}", e);
+                    }
+                }
+                Task::none()
+            }
+
+            // NATS Hierarchy operations
+            Message::GenerateNatsHierarchy => {
+                if self.organization_name.is_empty() {
+                    self.error_message = Some("Create organization first".to_string());
+                    return Task::none();
+                }
+
+                let org_name = self.organization_name.clone();
+                let projection = self.projection.clone();
+
+                Task::perform(
+                    generate_nats_hierarchy(org_name, projection),
+                    Message::NatsHierarchyGenerated
+                )
+            }
+
+            Message::NatsHierarchyGenerated(result) => {
+                match result {
+                    Ok(operator_id) => {
+                        self.nats_hierarchy_generated = true;
+                        self.nats_operator_id = Some(Uuid::parse_str(&operator_id).unwrap_or_else(|_| Uuid::now_v7()));
+                        self.status_message = format!("✓ NATS hierarchy generated for {}", self.organization_name);
+                    }
+                    Err(e) => {
+                        self.error_message = Some(format!("NATS generation failed: {}", e));
+                    }
+                }
+                Task::none()
+            }
+
+            Message::ExportToNsc => {
+                if !self.nats_hierarchy_generated {
+                    self.error_message = Some("Generate NATS hierarchy first".to_string());
+                    return Task::none();
+                }
+
+                let export_path = self.nats_export_path.clone();
+                let projection = self.projection.clone();
+
+                Task::perform(
+                    export_nats_to_nsc(export_path, projection),
+                    Message::NscExported
+                )
+            }
+
+            Message::NscExported(result) => {
+                match result {
+                    Ok(path) => {
+                        self.status_message = format!("✓ NATS hierarchy exported to NSC store: {}", path);
+                    }
+                    Err(e) => {
+                        self.error_message = Some(format!("NSC export failed: {}", e));
                     }
                 }
                 Task::none()
@@ -2322,8 +2393,27 @@ impl CimKeysApp {
                         container(text(""))
                     },
 
+                    // NATS Hierarchy Generation
+                    text("5. NATS Hierarchy (Operator/Account/User)").size(self.scaled_text_size(14)),
+                    row![
+                        button("Generate NATS Hierarchy")
+                            .on_press(Message::GenerateNatsHierarchy)
+                            .style(CowboyCustomTheme::security_button()),
+                        if self.nats_hierarchy_generated {
+                            text("✓ NATS hierarchy generated")
+                                .size(self.scaled_text_size(12))
+                                .color(Color::from_rgb(0.3, 0.8, 0.3))
+                        } else {
+                            text("Generate NATS operator, accounts, and users")
+                                .size(self.scaled_text_size(12))
+                                .color(CowboyTheme::text_secondary())
+                        }
+                    ]
+                    .spacing(self.scaled_padding(10))
+                    .align_y(Alignment::Center),
+
                     // Other Key Generation
-                    text("5. Other Keys").size(self.scaled_text_size(14)),
+                    text("6. Other Keys").size(self.scaled_text_size(14)),
                     button("Generate SSH Keys for All")
                         .on_press(Message::GenerateSSHKeys)
                         .style(CowboyCustomTheme::primary_button()),
@@ -2400,7 +2490,35 @@ impl CimKeysApp {
 
             button("Export to Encrypted SD Card")
                 .on_press(Message::ExportToSDCard)
-                .style(CowboyCustomTheme::security_button())
+                .style(CowboyCustomTheme::security_button()),
+
+            // NATS NSC Export
+            if self.nats_hierarchy_generated {
+                container(
+                    column![
+                        text("Export NATS Hierarchy to NSC")
+                            .size(self.scaled_text_size(16))
+                            .color(CowboyTheme::text_primary()),
+                        text(format!("Export directory: {}", self.nats_export_path.display()))
+                            .size(self.scaled_text_size(12))
+                            .color(CowboyTheme::text_secondary()),
+                        button("Export to NSC Store")
+                            .on_press(Message::ExportToNsc)
+                            .style(CowboyCustomTheme::primary_button()),
+                    ]
+                    .spacing(self.scaled_padding(10))
+                )
+                .padding(self.scaled_padding(15))
+                .style(CowboyCustomTheme::pastel_teal_card())
+            } else {
+                container(
+                    text("Generate NATS hierarchy first to enable NSC export")
+                        .size(self.scaled_text_size(14))
+                        .color(Color::from_rgb(0.6, 0.6, 0.6))
+                )
+                .padding(self.scaled_padding(15))
+                .style(CowboyCustomTheme::card_container())
+            },
         ]
         .spacing(self.scaled_padding(20))
         .padding(self.scaled_padding(10));
@@ -2680,6 +2798,112 @@ async fn generate_root_ca(
     }
 
     Ok(cert_id)
+}
+
+// NATS Hierarchy generation
+async fn generate_nats_hierarchy(
+    org_name: String,
+    projection: Arc<RwLock<OfflineKeyProjection>>,
+) -> Result<String, String> {
+    use crate::adapters::NscAdapter;
+    use crate::ports::nats::NatsKeyPort;
+
+    // Create NSC adapter
+    let nsc_adapter = NscAdapter::new("./nsc_store", false); // use_cli = false for native implementation
+
+    // Generate operator for organization
+    let operator = nsc_adapter.generate_operator(&org_name)
+        .await
+        .map_err(|e| format!("Failed to generate operator: {}", e))?;
+
+    // Get organizational units and people from projection
+    let proj = projection.read().await;
+    let people = proj.get_people().to_vec();
+
+    // For now, create a default "Engineering" account if we have people
+    // TODO: Map actual organizational units to accounts
+    let mut accounts = Vec::new();
+    let mut users = Vec::new();
+
+    if !people.is_empty() {
+        // Create a default account
+        let account = nsc_adapter.generate_account(&operator.id.to_string(), "Engineering")
+            .await
+            .map_err(|e| format!("Failed to generate account: {}", e))?;
+        accounts.push(account.clone());
+
+        // Generate user for each person
+        for person in people.iter() {
+            let user = nsc_adapter.generate_user(&account.id.to_string(), &person.name)
+                .await
+                .map_err(|e| format!("Failed to generate user for {}: {}", person.name, e))?;
+            users.push(user);
+        }
+    }
+
+    // Store the generated hierarchy in projection
+    // TODO: Add methods to projection to store NATS hierarchy
+    tracing::info!(
+        "Generated NATS hierarchy: 1 operator, {} accounts, {} users",
+        accounts.len(),
+        users.len()
+    );
+
+    Ok(operator.id.to_string())
+}
+
+// Export NATS hierarchy to NSC store
+async fn export_nats_to_nsc(
+    export_path: std::path::PathBuf,
+    projection: Arc<RwLock<OfflineKeyProjection>>,
+) -> Result<String, String> {
+    use crate::adapters::NscAdapter;
+    use crate::ports::nats::{NatsKeyPort, NatsKeys};
+
+    // Re-generate the hierarchy (in real implementation, we'd load from projection)
+    let proj = projection.read().await;
+    let org = proj.get_organization();
+    let people = proj.get_people().to_vec();
+
+    // Create NSC adapter
+    let nsc_adapter = NscAdapter::new(export_path.clone(), false);
+
+    // Generate hierarchy again for export
+    let operator = nsc_adapter.generate_operator(&org.name)
+        .await
+        .map_err(|e| format!("Failed to generate operator: {}", e))?;
+
+    let mut accounts = Vec::new();
+    let mut users = Vec::new();
+
+    if !people.is_empty() {
+        let account = nsc_adapter.generate_account(&operator.id.to_string(), "Engineering")
+            .await
+            .map_err(|e| format!("Failed to generate account: {}", e))?;
+        accounts.push(account.clone());
+
+        for person in people.iter() {
+            let user = nsc_adapter.generate_user(&account.id.to_string(), &person.name)
+                .await
+                .map_err(|e| format!("Failed to generate user: {}", e))?;
+            users.push(user);
+        }
+    }
+
+    // Build NatsKeys structure
+    let nats_keys = NatsKeys {
+        operator,
+        accounts,
+        users,
+        signing_keys: Vec::new(),
+    };
+
+    // Export to NSC directory structure
+    nsc_adapter.export_to_nsc_store(&nats_keys, &export_path)
+        .await
+        .map_err(|e| format!("Failed to export to NSC: {}", e))?;
+
+    Ok(export_path.display().to_string())
 }
 
 async fn export_domain(
