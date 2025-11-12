@@ -21,6 +21,8 @@ pub struct OrganizationGraph {
     nodes: HashMap<Uuid, GraphNode>,
     edges: Vec<GraphEdge>,
     selected_node: Option<Uuid>,
+    dragging_node: Option<Uuid>,  // Node currently being dragged
+    drag_offset: Vector,  // Offset from node center to cursor when dragging started
     _viewport: Rectangle,  // Reserved for graph panning/zooming
     zoom: f32,
     pan_offset: Vector,
@@ -61,6 +63,9 @@ pub enum EdgeType {
 #[derive(Debug, Clone)]
 pub enum GraphMessage {
     NodeClicked(Uuid),
+    NodeDragStarted { node_id: Uuid, offset: Vector },
+    NodeDragged(Point),  // New cursor position
+    NodeDragEnded,
     EdgeClicked { from: Uuid, to: Uuid },
     ZoomIn,
     ZoomOut,
@@ -82,6 +87,8 @@ impl OrganizationGraph {
             nodes: HashMap::new(),
             edges: Vec::new(),
             selected_node: None,
+            dragging_node: None,
+            drag_offset: Vector::new(0.0, 0.0),
             _viewport: Rectangle::new(Point::ORIGIN, Size::new(800.0, 600.0)),
             zoom: 1.0,
             pan_offset: Vector::new(0.0, 0.0),
@@ -295,6 +302,28 @@ impl OrganizationGraph {
     pub fn handle_message(&mut self, message: GraphMessage) {
         match message {
             GraphMessage::NodeClicked(id) => self.selected_node = Some(id),
+            GraphMessage::NodeDragStarted { node_id, offset } => {
+                self.dragging_node = Some(node_id);
+                self.drag_offset = offset;
+            }
+            GraphMessage::NodeDragged(cursor_pos) => {
+                if let Some(node_id) = self.dragging_node {
+                    if let Some(node) = self.nodes.get_mut(&node_id) {
+                        // Adjust for zoom and pan transformations
+                        let adjusted_x = (cursor_pos.x - self.pan_offset.x) / self.zoom;
+                        let adjusted_y = (cursor_pos.y - self.pan_offset.y) / self.zoom;
+
+                        node.position = Point::new(
+                            adjusted_x - self.drag_offset.x,
+                            adjusted_y - self.drag_offset.y,
+                        );
+                    }
+                }
+            }
+            GraphMessage::NodeDragEnded => {
+                self.dragging_node = None;
+                self.drag_offset = Vector::new(0.0, 0.0);
+            }
             GraphMessage::EdgeClicked { from: _, to: _ } => {}
             GraphMessage::ZoomIn => self.zoom = (self.zoom * 1.2).min(3.0),
             GraphMessage::ZoomOut => self.zoom = (self.zoom / 1.2).max(0.3),
@@ -546,18 +575,44 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
 
             match event {
                 canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
-                    // Check if click is on a node
+                    // Check if click is on a node - start dragging
                     for (node_id, node) in &self.nodes {
                         let distance = ((adjusted_position.x - node.position.x).powi(2)
                             + (adjusted_position.y - node.position.y).powi(2))
                         .sqrt();
 
                         if distance <= 20.0 {
+                            // Calculate offset from node center to cursor
+                            let offset = Vector::new(
+                                adjusted_position.x - node.position.x,
+                                adjusted_position.y - node.position.y,
+                            );
                             return (
                                 canvas::event::Status::Captured,
-                                Some(GraphMessage::NodeClicked(*node_id)),
+                                Some(GraphMessage::NodeDragStarted {
+                                    node_id: *node_id,
+                                    offset
+                                }),
                             );
                         }
+                    }
+                }
+                canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+                    // End dragging if we were dragging
+                    if self.dragging_node.is_some() {
+                        return (
+                            canvas::event::Status::Captured,
+                            Some(GraphMessage::NodeDragEnded),
+                        );
+                    }
+                }
+                canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+                    // Continue dragging if we're dragging a node
+                    if self.dragging_node.is_some() {
+                        return (
+                            canvas::event::Status::Captured,
+                            Some(GraphMessage::NodeDragged(cursor_position)),
+                        );
                     }
                 }
                 canvas::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
