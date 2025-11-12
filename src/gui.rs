@@ -1689,6 +1689,108 @@ impl CimKeysApp {
                 .style(CowboyCustomTheme::pastel_cream_card())
             },
 
+            // Data Review Section (show imported data)
+            if !self.yubikey_configs.is_empty() {
+                container(
+                    column![
+                        text("📋 Imported Configuration Review")
+                            .size(self.scaled_text_size(18))
+                            .color(CowboyTheme::text_primary()),
+                        text("Verify all imported data below before provisioning")
+                            .size(self.scaled_text_size(12))
+                            .color(CowboyTheme::text_secondary()),
+
+                        // Master Passphrase Info (if we had one from secrets)
+                        if let Ok(projection) = self.projection.try_read() {
+                            if let Some(_org_id) = self.organization_id {
+                                let org = projection.get_organization();
+                                container(
+                                    column![
+                                        text(format!("Organization: {}", org.name))
+                                            .size(self.scaled_text_size(14))
+                                            .color(CowboyTheme::text_primary()),
+                                        text(format!("Domain: {}", org.domain))
+                                            .size(self.scaled_text_size(12))
+                                            .color(CowboyTheme::text_secondary()),
+                                        text(format!("Country: {}", org.country))
+                                            .size(self.scaled_text_size(12))
+                                            .color(CowboyTheme::text_secondary()),
+                                    ]
+                                    .spacing(self.scaled_padding(3))
+                                )
+                                .padding(self.scaled_padding(10))
+                                .style(CowboyCustomTheme::pastel_teal_card())
+                            } else {
+                                container(text(""))
+                            }
+                        } else {
+                            container(text(""))
+                        },
+
+                        // People Summary
+                        text(format!("👥 {} People Imported", self.org_graph.node_count()))
+                            .size(self.scaled_text_size(14))
+                            .color(CowboyTheme::text_primary()),
+
+                        // YubiKey Configurations
+                        text(format!("🔑 {} YubiKey Configurations", self.yubikey_configs.len()))
+                            .size(self.scaled_text_size(14))
+                            .color(CowboyTheme::text_primary()),
+
+                        {
+                            let mut yubikey_details = column![].spacing(self.scaled_padding(8));
+
+                            for config in &self.yubikey_configs {
+                                let role_str = match config.role {
+                                    crate::domain::YubiKeyRole::RootCA => "🔐 Root CA",
+                                    crate::domain::YubiKeyRole::Backup => "💾 Backup",
+                                    crate::domain::YubiKeyRole::User => "👤 User",
+                                    crate::domain::YubiKeyRole::Service => "⚙️ Service",
+                                };
+
+                                yubikey_details = yubikey_details.push(
+                                    container(
+                                        column![
+                                            text(format!("{} - {}", role_str, config.name))
+                                                .size(self.scaled_text_size(13))
+                                                .color(CowboyTheme::text_primary()),
+                                            text(format!("  Serial: {}", config.serial))
+                                                .size(self.scaled_text_size(11))
+                                                .color(CowboyTheme::text_secondary()),
+                                            text(format!("  Owner: {}", config.owner_email))
+                                                .size(self.scaled_text_size(11))
+                                                .color(CowboyTheme::text_secondary()),
+                                            text(format!("  PIN: {}", config.piv.pin))
+                                                .size(self.scaled_text_size(11))
+                                                .color(Color::from_rgb(0.8, 0.6, 0.2)),
+                                            text(format!("  PUK: {}", config.piv.puk))
+                                                .size(self.scaled_text_size(11))
+                                                .color(Color::from_rgb(0.8, 0.6, 0.2)),
+                                            text(format!("  Mgmt Key: {}...", &config.piv.mgmt_key[..16]))
+                                                .size(self.scaled_text_size(11))
+                                                .color(Color::from_rgb(0.8, 0.6, 0.2)),
+                                            text(format!("  Algorithm: {:?}", config.piv.piv_alg))
+                                                .size(self.scaled_text_size(11))
+                                                .color(CowboyTheme::text_secondary()),
+                                        ]
+                                        .spacing(self.scaled_padding(2))
+                                    )
+                                    .padding(self.scaled_padding(8))
+                                    .style(CowboyCustomTheme::pastel_coral_card())
+                                );
+                            }
+
+                            yubikey_details
+                        },
+                    ]
+                    .spacing(self.scaled_padding(10))
+                )
+                .padding(self.scaled_padding(15))
+                .style(CowboyCustomTheme::pastel_mint_card())
+            } else {
+                container(text(""))
+            },
+
             // Add person form
             container(
                 column![
