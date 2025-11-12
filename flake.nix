@@ -267,6 +267,12 @@
           preBuild = ''
             ${envVars}
 
+            # Copy assets that need to be embedded
+            mkdir -p assets/fonts
+            cp ${pkgs.noto-fonts-emoji}/share/fonts/noto/NotoColorEmoji.ttf assets/fonts/
+
+            # Note: logo.png should already be in the source tree
+
             # Additional GUI environment variables
             export LD_LIBRARY_PATH="${pkgs.wayland}/lib:${pkgs.libGL}/lib:${pkgs.vulkan-loader}/lib:$LD_LIBRARY_PATH"
           '';

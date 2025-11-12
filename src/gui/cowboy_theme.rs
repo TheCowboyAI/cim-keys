@@ -82,6 +82,15 @@ impl CowboyTheme {
         Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.25))
     }
 
+    /// White radial gradient for logo background - 30% alpha at center to 0% at edges
+    pub fn logo_radial_gradient() -> Background {
+        Background::Gradient(Gradient::Linear(
+            Linear::new(0.0)
+                .add_stop(0.0, Color::from_rgba(1.0, 1.0, 1.0, 0.3))   // 30% white at center
+                .add_stop(1.0, Color::from_rgba(1.0, 1.0, 1.0, 0.0))   // 0% at edges
+        ))
+    }
+
     /// Pastel teal card background (soft, colorful)
     pub fn pastel_teal_background() -> Background {
         Background::Color(Color::from_rgba(0.4, 0.7, 0.75, 0.3))  // Soft teal with transparency

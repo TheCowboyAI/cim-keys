@@ -209,8 +209,10 @@ impl KeyManagementAggregate {
         #[cfg(feature = "policy")]
         policy_engine: Option<&mut KeyPolicyEngine>,
     ) -> Result<Vec<KeyEvent>, KeyManagementError> {
-        // Check if key exists in projection
-        if !projection.key_exists(&cmd.key_id) {
+        // Check if key exists in projection (skip for self-signed Root CA)
+        // For Root CA, we generate the key as part of certificate generation
+        let is_root_ca = cmd.is_ca && cmd.subject.common_name.contains("Root");
+        if !is_root_ca && !projection.key_exists(&cmd.key_id) {
             return Err(KeyManagementError::KeyNotFound(cmd.key_id));
         }
 

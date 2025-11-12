@@ -5,8 +5,8 @@
 
 use iced::{
     application,
-    widget::{button, column, container, row, text, text_input, Container, horizontal_space, pick_list, progress_bar, checkbox, scrollable, Space},
-    Task, Element, Length, Color, Border, Font, Theme, Background, Shadow,
+    widget::{button, column, container, row, text, text_input, Container, horizontal_space, pick_list, progress_bar, checkbox, scrollable, Space, image},
+    Task, Element, Length, Color, Border, Theme, Background, Shadow,
 };
 use iced_futures::Subscription;
 use serde::{Deserialize, Serialize};
@@ -197,6 +197,11 @@ pub enum Message {
 
     // Animation
     AnimationTick,
+
+    // UI Scaling
+    IncreaseScale,
+    DecreaseScale,
+    ResetScale,
 }
 
 /// Bootstrap configuration
@@ -846,38 +851,43 @@ impl CimKeysApp {
                 self.firefly_shader.update(0.016);  // Update phases for synchronization
                 Task::none()
             }
+
+            Message::IncreaseScale => {
+                self.ui_scale = (self.ui_scale + 0.1).min(2.0);  // Max 2x scale
+                self.status_message = format!("UI Scale: {:.0}%", self.ui_scale * 100.0);
+                Task::none()
+            }
+
+            Message::DecreaseScale => {
+                self.ui_scale = (self.ui_scale - 0.1).max(0.5);  // Min 0.5x scale
+                self.status_message = format!("UI Scale: {:.0}%", self.ui_scale * 100.0);
+                Task::none()
+            }
+
+            Message::ResetScale => {
+                self.ui_scale = 1.0;
+                self.status_message = "UI Scale: 100%".to_string();
+                Task::none()
+            }
         }
     }
 
     fn view(&self) -> Element<'_, Message> {
         use iced::widget::{stack, shader};
 
-        // Enhanced logo with pastel teal styling
-        let logo_text = container(
-            column![
-                text("🤠").size(self.scaled_text_size(28)),  // Cowboy hat emoji
-                text("CIM").size(self.scaled_text_size(28)).font(Font {
-                    family: iced::font::Family::Monospace,
-                    weight: iced::font::Weight::Bold,
-                    stretch: iced::font::Stretch::Normal,
-                    style: iced::font::Style::Normal,
-                }).color(Color::from_rgb(0.4, 0.7, 0.75)),  // Pastel teal
-                text("KEYS").size(self.scaled_text_size(18)).font(Font {
-                    family: iced::font::Family::Monospace,
-                    weight: iced::font::Weight::Bold,
-                    stretch: iced::font::Stretch::Normal,
-                    style: iced::font::Style::Normal,
-                }).color(Color::from_rgba(0.4, 0.7, 0.75, 0.8)),  // Slightly transparent
-            ]
-            .align_x(iced::Alignment::Center)
-            .spacing(2)
+        // Cowboy AI logo with glass morphism styling
+        let logo_container = container(
+            image("assets/logo.png")
+                .width(Length::Fixed(self.scaled_size(80.0)))
+                .height(Length::Fixed(self.scaled_size(80.0)))
         )
-        .width(Length::Fixed(self.scaled_size(90.0)))
-        .height(Length::Fixed(self.scaled_size(90.0)))
-        .center(Length::Fixed(self.scaled_size(90.0)))
+        .width(Length::Fixed(self.scaled_size(100.0)))
+        .height(Length::Fixed(self.scaled_size(100.0)))
+        .padding(self.scaled_padding(10))
+        .center(Length::Fixed(self.scaled_size(100.0)))
         .style(|_theme: &Theme| {
             container::Style {
-                background: Some(CowboyTheme::glass_dark_background()),
+                background: Some(CowboyTheme::logo_radial_gradient()),
                 border: Border {
                     color: Color::from_rgba(0.4, 0.7, 0.75, 0.5),  // Teal border
                     width: 2.0,
@@ -894,20 +904,20 @@ impl CimKeysApp {
 
         // Tab bar
         let tab_bar = row![
-            button(text("Welcome").size(14))
+            button(text("Welcome").size(self.scaled_text_size(14)))
                 .on_press(Message::TabSelected(Tab::Welcome))
                 .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Welcome)),
-            button(text("Organization").size(14))
+            button(text("Organization").size(self.scaled_text_size(14)))
                 .on_press(Message::TabSelected(Tab::Organization))
                 .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Organization)),
-            button(text("Keys").size(14))
+            button(text("Keys").size(self.scaled_text_size(14)))
                 .on_press(Message::TabSelected(Tab::Keys))
                 .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Keys)),
-            button(text("Export").size(14))
+            button(text("Export").size(self.scaled_text_size(14)))
                 .on_press(Message::TabSelected(Tab::Export))
                 .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Export)),
         ]
-        .spacing(5);
+        .spacing((5.0 * self.ui_scale) as u16);
 
         // Tab content
         let content = match self.active_tab {
@@ -921,14 +931,14 @@ impl CimKeysApp {
         let error_display = self.error_message.as_ref().map(|error| container(
                     row![
                         text(format!("❌ {}", error))
-                            .size(14)
+                            .size(self.scaled_text_size(14))
                             .color(CowboyTheme::text_primary()),
                         horizontal_space(),
                         button("✕")
                             .on_press(Message::ClearError)
                             .style(CowboyCustomTheme::glass_button())
                     ]
-                    .padding(10)
+                    .padding(self.scaled_padding(10))
                 )
                 .style(|_theme: &Theme| container::Style {
                     background: Some(CowboyTheme::warning_gradient()),
@@ -943,30 +953,30 @@ impl CimKeysApp {
 
         // Header with logo and title
         let header = row![
-            logo_text,
+            logo_container,
             column![
                 text("CIM Keys - Offline Key Management System")
-                    .size(24)
+                    .size(self.scaled_text_size(24))
                     .color(CowboyTheme::text_primary()),
                 text("The Cowboy AI Infrastructure")
-                    .size(14)
+                    .size(self.scaled_text_size(14))
                     .color(CowboyTheme::text_secondary()),
             ]
-            .spacing(5),
+            .spacing((5.0 * self.ui_scale) as u16),
         ]
-        .spacing(20)
+        .spacing(self.scaled_padding(20))
         .align_y(iced::Alignment::Center);
 
         let mut main_column = column![
             header,
             text(&self.status_message)
-                .size(12)
+                .size(self.scaled_text_size(12))
                 .color(CowboyTheme::text_secondary()),
             container(tab_bar)
-                .padding(10)
+                .padding(self.scaled_padding(10))
                 .style(CowboyCustomTheme::glass_container()),
         ]
-        .spacing(10);
+        .spacing(self.scaled_padding(10));
 
         if let Some(error) = error_display {
             main_column = main_column.push(error);
@@ -1003,11 +1013,43 @@ impl CimKeysApp {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        use iced::time;
+        use iced::{time, keyboard, event};
+        use iced::keyboard::Key;
         use std::time::Duration;
 
-        // Update animation at 30 FPS instead of 60 to reduce resource usage
-        time::every(Duration::from_millis(33)).map(|_| Message::AnimationTick)
+        Subscription::batch([
+            // Update animation at 30 FPS instead of 60 to reduce resource usage
+            time::every(Duration::from_millis(33)).map(|_| Message::AnimationTick),
+
+            // Keyboard shortcuts for UI scaling
+            event::listen_with(|event, _status, _window| {
+                match event {
+                    iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                        key,
+                        modifiers,
+                        ..
+                    }) => {
+                        if modifiers.control() || modifiers.command() {
+                            match key {
+                                Key::Character(c) if c == "=" || c == "+" => {
+                                    Some(Message::IncreaseScale)
+                                }
+                                Key::Character(c) if c == "-" || c == "_" => {
+                                    Some(Message::DecreaseScale)
+                                }
+                                Key::Character(c) if c == "0" => {
+                                    Some(Message::ResetScale)
+                                }
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                }
+            }),
+        ])
     }
 }
 
@@ -1045,55 +1087,34 @@ impl CimKeysApp {
 
     fn view_welcome(&self) -> Element<'_, Message> {
         let content = column![
-            text("Welcome to CIM Keys!").size(28),
-            text("Generate and manage cryptographic keys for your CIM infrastructure").size(16),
+            text("Welcome to CIM Keys!").size(self.scaled_text_size(28)),
+            text("Generate and manage cryptographic keys for your CIM infrastructure").size(self.scaled_text_size(16)),
             container(
                 column![
-                    text("⚠️ Security Notice").size(18),
-                    text("This application should be run on an air-gapped computer for maximum security."),
-                    text("All keys are generated offline and stored on encrypted SD cards."),
+                    text("⚠️ Security Notice").size(self.scaled_text_size(18)),
+                    text("This application should be run on an air-gapped computer for maximum security.").size(self.scaled_text_size(14)),
+                    text("All keys are generated offline and stored on encrypted SD cards.").size(self.scaled_text_size(14)),
                 ]
-                .spacing(5)
+                .spacing((5.0 * self.ui_scale) as u16)
             )
-            .style(CowboyCustomTheme::card_container())
-            .padding(20),
+            .style(CowboyCustomTheme::pastel_coral_card())
+            .padding(self.scaled_padding(20)),
 
-            if !self.domain_loaded {
+            container(
                 column![
-                    text("Get Started").size(20),
-                    row![
-                        text_input("Organization", &self.organization_name)
-                            .on_input(Message::OrganizationNameChanged)
-                            .size(16)
-                            .style(CowboyCustomTheme::glass_input()),
-                        text_input("Domain", &self.organization_domain)
-                            .on_input(Message::OrganizationDomainChanged)
-                            .size(16)
-                            .style(CowboyCustomTheme::glass_input()),
-                    ]
-                    .spacing(10),
-                    row![
-                        button("Load Existing Domain")
-                            .on_press(Message::LoadExistingDomain)
-                            .style(CowboyCustomTheme::glass_button()),
-                        button("Create New Domain")
-                            .on_press(Message::CreateNewDomain)
-                            .style(CowboyCustomTheme::primary_button()),
-                    ]
-                    .spacing(10),
+                    text("Getting Started").size(self.scaled_text_size(20)),
+                    text("Go to the Organization tab to create or load your domain").size(self.scaled_text_size(14)),
+                    button("Go to Organization")
+                        .on_press(Message::TabSelected(Tab::Organization))
+                        .style(CowboyCustomTheme::primary_button())
                 ]
-                .spacing(15)
-            } else {
-                column![
-                    text(format!("✅ Domain Loaded: {}", self.organization_name)).size(18),
-                    text(format!("Domain: {}", self.organization_domain)).size(16),
-                    button("Go to Organization").on_press(Message::TabSelected(Tab::Organization))
-                ]
-                .spacing(10)
-            }
+                .spacing(self.scaled_padding(10))
+            )
+            .padding(self.scaled_padding(20))
+            .style(CowboyCustomTheme::glass_container()),
         ]
-        .spacing(20)
-        .padding(10);
+        .spacing(self.scaled_padding(20))
+        .padding(self.scaled_padding(10));
 
         scrollable(content).into()
     }
@@ -1111,23 +1132,67 @@ impl CimKeysApp {
         ];
 
         let content = column![
-            text("Organization Structure").size(20),
-            text("Visualize and manage your organization's key ownership hierarchy").size(14),
+            text("Organization Structure").size(self.scaled_text_size(20)),
+            text("Visualize and manage your organization's key ownership hierarchy").size(self.scaled_text_size(14)),
+
+            // Domain creation/loading form (shows only if domain not loaded)
+            if !self.domain_loaded {
+                container(
+                    column![
+                        text("Create or Load Domain")
+                            .size(self.scaled_text_size(16))
+                            .color(CowboyTheme::text_primary()),
+                        row![
+                            text_input("Organization Name", &self.organization_name)
+                                .on_input(Message::OrganizationNameChanged)
+                                .size(self.scaled_text_size(16))
+                                .style(CowboyCustomTheme::glass_input()),
+                            text_input("Domain", &self.organization_domain)
+                                .on_input(Message::OrganizationDomainChanged)
+                                .size(self.scaled_text_size(16))
+                                .style(CowboyCustomTheme::glass_input()),
+                        ]
+                        .spacing(self.scaled_padding(10)),
+                        row![
+                            button("Load Existing Domain")
+                                .on_press(Message::LoadExistingDomain)
+                                .style(CowboyCustomTheme::glass_button()),
+                            button("Create New Domain")
+                                .on_press(Message::CreateNewDomain)
+                                .style(CowboyCustomTheme::primary_button()),
+                        ]
+                        .spacing(self.scaled_padding(10)),
+                    ]
+                    .spacing(self.scaled_padding(10))
+                )
+                .padding(self.scaled_padding(15))
+                .style(CowboyCustomTheme::pastel_cream_card())
+            } else {
+                container(
+                    column![
+                        text(format!("✅ Domain: {} ({})", self.organization_name, self.organization_domain))
+                            .size(self.scaled_text_size(16))
+                            .color(CowboyTheme::text_primary()),
+                    ]
+                )
+                .padding(self.scaled_padding(15))
+                .style(CowboyCustomTheme::pastel_cream_card())
+            },
 
             // Add person form
             container(
                 column![
                     text("Add Person to Organization")
-                        .size(16)
+                        .size(self.scaled_text_size(16))
                         .color(CowboyTheme::text_primary()),
                     row![
                         text_input("Name", &self.new_person_name)
                             .on_input(Message::NewPersonNameChanged)
-                            .size(14)
+                            .size(self.scaled_text_size(14))
                             .style(CowboyCustomTheme::glass_input()),
                         text_input("Email", &self.new_person_email)
                             .on_input(Message::NewPersonEmailChanged)
-                            .size(14)
+                            .size(self.scaled_text_size(14))
                             .style(CowboyCustomTheme::glass_input()),
                         pick_list(
                             role_options,
@@ -1139,12 +1204,12 @@ impl CimKeysApp {
                             .on_press(Message::AddPerson)
                             .style(CowboyCustomTheme::primary_button())
                     ]
-                    .spacing(10),
+                    .spacing(self.scaled_padding(10)),
                 ]
-                .spacing(10)
+                .spacing(self.scaled_padding(10))
             )
-            .padding(15)
-            .style(CowboyCustomTheme::card_container()),
+            .padding(self.scaled_padding(15))
+            .style(CowboyCustomTheme::pastel_teal_card()),
 
             // Graph visualization canvas
             Container::new(
@@ -1152,7 +1217,7 @@ impl CimKeysApp {
                     .map(Message::GraphMessage)
             )
             .width(Length::Fill)
-            .height(Length::Fixed(500.0))
+            .height(Length::Fixed(self.scaled_size(500.0)))
             .style(|_theme| {
                 container::Style {
                     background: Some(Background::Color(Color::from_rgb(0.95, 0.95, 0.95))),
@@ -1165,7 +1230,7 @@ impl CimKeysApp {
                 }
             }),
         ]
-        .spacing(20);
+        .spacing(self.scaled_padding(20));
 
         scrollable(content).into()
     }
@@ -1174,43 +1239,43 @@ impl CimKeysApp {
         let progress_percentage = self.key_generation_progress * 100.0;
 
         let content = column![
-            text("Generate Keys for Organization").size(20),
-            text("Generate cryptographic keys for all organization members").size(14),
+            text("Generate Keys for Organization").size(self.scaled_text_size(20)),
+            text("Generate cryptographic keys for all organization members").size(self.scaled_text_size(14)),
 
             container(
                 column![
                     text("PKI Hierarchy Generation")
-                        .size(16)
+                        .size(self.scaled_text_size(16))
                         .color(CowboyTheme::text_primary()),
 
                     // Root CA Section
-                    text("1. Root CA (Trust Anchor)").size(14),
+                    text("1. Root CA (Trust Anchor)").size(self.scaled_text_size(14)),
                     button("Generate Root CA")
                         .on_press(Message::GenerateRootCA)
                         .style(CowboyCustomTheme::security_button()),
 
                     // Intermediate CA Section
-                    text("2. Intermediate CA (Signing-Only, pathlen:0)").size(14),
+                    text("2. Intermediate CA (Signing-Only, pathlen:0)").size(self.scaled_text_size(14)),
                     row![
                         text_input("CA Name (e.g., 'Engineering')", &self.intermediate_ca_name_input)
                             .on_input(Message::IntermediateCANameChanged)
-                            .size(14)
+                            .size(self.scaled_text_size(14))
                             .style(CowboyCustomTheme::glass_input()),
                         button("Generate Intermediate CA")
                             .on_press(Message::GenerateIntermediateCA)
                             .style(CowboyCustomTheme::primary_button()),
                     ]
-                    .spacing(10),
+                    .spacing(self.scaled_padding(10)),
 
                     // Server Certificate Section
-                    text("3. Server Certificates").size(14),
+                    text("3. Server Certificates").size(self.scaled_text_size(14)),
                     text_input("Common Name (e.g., 'nats.example.com')", &self.server_cert_cn_input)
                         .on_input(Message::ServerCertCNChanged)
-                        .size(14)
+                        .size(self.scaled_text_size(14))
                         .style(CowboyCustomTheme::glass_input()),
                     text_input("SANs (comma-separated DNS names or IPs)", &self.server_cert_sans_input)
                         .on_input(Message::ServerCertSANsChanged)
-                        .size(14)
+                        .size(self.scaled_text_size(14))
                         .style(CowboyCustomTheme::glass_input()),
 
                     // CA selection picker
@@ -1221,7 +1286,7 @@ impl CimKeysApp {
                             .collect();
 
                         row![
-                            text("Signing CA:").size(14),
+                            text("Signing CA:").size(self.scaled_text_size(14)),
                             pick_list(
                                 ca_names,
                                 self.selected_intermediate_ca.clone(),
@@ -1229,13 +1294,13 @@ impl CimKeysApp {
                             )
                             .placeholder("Select Intermediate CA")
                         ]
-                        .spacing(10)
+                        .spacing(self.scaled_padding(10))
                     } else {
                         row![
-                            text("Signing CA:").size(14).color(Color::from_rgb(0.6, 0.6, 0.6)),
-                            text("(generate an intermediate CA first)").size(14).color(Color::from_rgb(0.6, 0.6, 0.6)),
+                            text("Signing CA:").size(self.scaled_text_size(14)).color(Color::from_rgb(0.6, 0.6, 0.6)),
+                            text("(generate an intermediate CA first)").size(self.scaled_text_size(14)).color(Color::from_rgb(0.6, 0.6, 0.6)),
                         ]
-                        .spacing(10)
+                        .spacing(self.scaled_padding(10))
                     },
 
                     button("Generate Server Certificate")
@@ -1247,19 +1312,19 @@ impl CimKeysApp {
                        || !self.mvi_model.key_generation_status.server_certificates.is_empty() {
                         container(
                             column![
-                                text("Generated Certificates").size(16).color(Color::from_rgb(0.3, 0.8, 0.3)),
+                                text("Generated Certificates").size(self.scaled_text_size(16)).color(Color::from_rgb(0.3, 0.8, 0.3)),
 
                                 // Intermediate CAs
                                 if !self.mvi_model.key_generation_status.intermediate_cas.is_empty() {
                                     iced::widget::Column::with_children(
                                         self.mvi_model.key_generation_status.intermediate_cas.iter().map(|ca| {
                                             text(format!("  ✓ CA: {} - {}", ca.name, &ca.fingerprint[..16]))
-                                                .size(12)
+                                                .size(self.scaled_text_size(12))
                                                 .color(Color::from_rgb(0.3, 0.8, 0.3))
                                                 .into()
                                         }).collect::<Vec<_>>()
                                     )
-                                    .spacing(3)
+                                    .spacing((3.0 * self.ui_scale) as u16)
                                 } else {
                                     column![]
                                 },
@@ -1270,31 +1335,31 @@ impl CimKeysApp {
                                         self.mvi_model.key_generation_status.server_certificates.iter().map(|cert| {
                                             column![
                                                 text(format!("  ✓ Server: {} (signed by: {})", cert.common_name, cert.signed_by))
-                                                    .size(12)
+                                                    .size(self.scaled_text_size(12))
                                                     .color(Color::from_rgb(0.3, 0.8, 0.3)),
                                                 text(format!("    Fingerprint: {}", &cert.fingerprint[..16]))
-                                                    .size(11)
+                                                    .size(self.scaled_text_size(11))
                                                     .color(Color::from_rgb(0.5, 0.5, 0.5)),
                                             ]
-                                            .spacing(2)
+                                            .spacing((2.0 * self.ui_scale) as u16)
                                             .into()
                                         }).collect::<Vec<_>>()
                                     )
-                                    .spacing(5)
+                                    .spacing((5.0 * self.ui_scale) as u16)
                                 } else {
                                     column![]
                                 },
                             ]
-                            .spacing(10)
+                            .spacing(self.scaled_padding(10))
                         )
-                        .padding(10)
+                        .padding(self.scaled_padding(10))
                         .style(CowboyCustomTheme::card_container())
                     } else {
                         container(text(""))
                     },
 
                     // Other Key Generation
-                    text("4. Other Keys").size(14),
+                    text("4. Other Keys").size(self.scaled_text_size(14)),
                     button("Generate SSH Keys for All")
                         .on_press(Message::GenerateSSHKeys)
                         .style(CowboyCustomTheme::primary_button()),
@@ -1305,42 +1370,42 @@ impl CimKeysApp {
                         .on_press(Message::GenerateAllKeys)
                         .style(CowboyCustomTheme::security_button()),
                 ]
-                .spacing(10)
+                .spacing(self.scaled_padding(10))
             )
-            .padding(15)
-            .style(CowboyCustomTheme::card_container()),
+            .padding(self.scaled_padding(15))
+            .style(CowboyCustomTheme::pastel_mint_card()),
 
             if self.key_generation_progress > 0.0 {
                 container(
                     column![
-                        text(format!("Progress: {:.0}%", progress_percentage)).size(14),
+                        text(format!("Progress: {:.0}%", progress_percentage)).size(self.scaled_text_size(14)),
                         progress_bar(0.0..=1.0, self.key_generation_progress),
                         text(format!("{} of {} keys generated",
                             self.keys_generated,
-                            self.total_keys_to_generate)).size(12),
+                            self.total_keys_to_generate)).size(self.scaled_text_size(12)),
                     ]
-                    .spacing(5)
+                    .spacing((5.0 * self.ui_scale) as u16)
                 )
-                .padding(10)
+                .padding(self.scaled_padding(10))
             } else {
-                container(text("No key generation in progress").size(14))
+                container(text("No key generation in progress").size(self.scaled_text_size(14)))
             }
         ]
-        .spacing(20)
-        .padding(10);
+        .spacing(self.scaled_padding(20))
+        .padding(self.scaled_padding(10));
 
         scrollable(content).into()
     }
 
     fn view_export(&self) -> Element<'_, Message> {
         let content = column![
-            text("Export Domain Configuration").size(20),
-            text("Export your domain configuration to encrypted storage").size(14),
+            text("Export Domain Configuration").size(self.scaled_text_size(20)),
+            text("Export your domain configuration to encrypted storage").size(self.scaled_text_size(14)),
 
             container(
                 column![
                     text("Export Options")
-                        .size(16)
+                        .size(self.scaled_text_size(16))
                         .color(CowboyTheme::text_primary()),
                     text_input("Output Directory", &self.export_path.display().to_string())
                         .on_input(Message::ExportPathChanged)
@@ -1364,17 +1429,17 @@ impl CimKeysApp {
                             .style(CowboyCustomTheme::glass_input())
                     },
                 ]
-                .spacing(10)
+                .spacing(self.scaled_padding(10))
             )
-            .padding(15)
-            .style(CowboyCustomTheme::card_container()),
+            .padding(self.scaled_padding(15))
+            .style(CowboyCustomTheme::pastel_cream_card()),
 
             button("Export to Encrypted SD Card")
                 .on_press(Message::ExportToSDCard)
                 .style(CowboyCustomTheme::security_button())
         ]
-        .spacing(20)
-        .padding(10);
+        .spacing(self.scaled_padding(20))
+        .padding(self.scaled_padding(10));
 
         scrollable(content).into()
     }
@@ -1667,5 +1732,6 @@ pub async fn run(output_dir: String) -> iced::Result {
     application("CIM Keys", CimKeysApp::update, CimKeysApp::view)
         .subscription(|app| app.subscription())
         .theme(|app| app.theme())
+        .font(include_bytes!("../assets/fonts/NotoColorEmoji.ttf"))
         .run_with(|| CimKeysApp::new(output_dir))
 }
