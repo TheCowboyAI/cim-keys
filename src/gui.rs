@@ -96,6 +96,9 @@ pub struct CimKeysApp {
     yubikey_detection_status: String,
     yubikey_configs: Vec<crate::domain::YubiKeyConfig>,  // Imported from secrets
     loaded_locations: Vec<crate::projections::LocationEntry>,  // Loaded from manifest
+    loaded_people: Vec<crate::projections::PersonEntry>,  // Loaded from manifest
+    loaded_certificates: Vec<crate::projections::CertificateEntry>,  // Loaded from manifest
+    loaded_keys: Vec<crate::projections::KeyEntry>,  // Loaded from manifest
 
     // Key generation state
     key_generation_progress: f32,
@@ -159,7 +162,7 @@ pub enum Message {
     DomainCreated(Result<String, String>),
     DomainLoaded(Result<BootstrapConfig, String>),
     SecretsImported(Result<(crate::domain::Organization, Vec<crate::domain::Person>, Vec<crate::domain::YubiKeyConfig>, Option<String>), String>),
-    ManifestDataLoaded(Result<(crate::projections::OrganizationInfo, Vec<crate::projections::LocationEntry>), String>),
+    ManifestDataLoaded(Result<(crate::projections::OrganizationInfo, Vec<crate::projections::LocationEntry>, Vec<crate::projections::PersonEntry>, Vec<crate::projections::CertificateEntry>, Vec<crate::projections::KeyEntry>), String>),
 
     // Organization form inputs
     OrganizationNameChanged(String),
@@ -308,9 +311,12 @@ impl CimKeysApp {
                     let proj_read = proj.read().await;
                     let org = proj_read.get_organization();
                     let locations = proj_read.get_locations().to_vec();
-                    Ok((org.clone(), locations))
+                    let people = proj_read.get_people().to_vec();
+                    let certificates = proj_read.get_certificates().to_vec();
+                    let keys = proj_read.get_keys().to_vec();
+                    Ok((org.clone(), locations, people, certificates, keys))
                 },
-                |result: Result<(crate::projections::OrganizationInfo, Vec<crate::projections::LocationEntry>), String>| {
+                |result: Result<(crate::projections::OrganizationInfo, Vec<crate::projections::LocationEntry>, Vec<crate::projections::PersonEntry>, Vec<crate::projections::CertificateEntry>, Vec<crate::projections::KeyEntry>), String>| {
                     Message::ManifestDataLoaded(result)
                 }
             )
@@ -345,6 +351,9 @@ impl CimKeysApp {
                 yubikey_detection_status: "Click 'Detect YubiKeys' to scan for hardware".to_string(),
                 yubikey_configs: Vec::new(),
                 loaded_locations: Vec::new(),
+                loaded_people: Vec::new(),
+                loaded_certificates: Vec::new(),
+                loaded_keys: Vec::new(),
                 key_generation_progress: 0.0,
                 keys_generated: 0,
                 total_keys_to_generate: 0,
@@ -550,19 +559,37 @@ impl CimKeysApp {
 
             Message::ManifestDataLoaded(result) => {
                 match result {
-                    Ok((org_info, locations)) => {
+                    Ok((org_info, locations, people, certificates, keys)) => {
                         // Populate organization info if available
                         if !org_info.name.is_empty() {
                             self.organization_name = org_info.name.clone();
                             self.organization_domain = org_info.domain.clone();
-                            // Note: We don't have org_id in OrganizationInfo, but we can leave it
                             self.status_message = format!("Loaded organization: {}", org_info.name);
                         }
 
-                        // Store loaded locations
+                        // Store loaded data
                         self.loaded_locations = locations.clone();
+                        self.loaded_people = people.clone();
+                        self.loaded_certificates = certificates.clone();
+                        self.loaded_keys = keys.clone();
+
+                        // Build status message
+                        let mut loaded_items = Vec::new();
                         if !locations.is_empty() {
-                            self.status_message = format!("Loaded {} locations from manifest", locations.len());
+                            loaded_items.push(format!("{} locations", locations.len()));
+                        }
+                        if !people.is_empty() {
+                            loaded_items.push(format!("{} people", people.len()));
+                        }
+                        if !certificates.is_empty() {
+                            loaded_items.push(format!("{} certificates", certificates.len()));
+                        }
+                        if !keys.is_empty() {
+                            loaded_items.push(format!("{} keys", keys.len()));
+                        }
+
+                        if !loaded_items.is_empty() {
+                            self.status_message = format!("Loaded from manifest: {}", loaded_items.join(", "));
                         }
                     }
                     Err(_e) => {
@@ -2160,6 +2187,135 @@ impl CimKeysApp {
                         }
 
                         container(config_list)
+                            .padding(self.scaled_padding(10))
+                            .style(CowboyCustomTheme::card_container())
+                    } else {
+                        container(text(""))
+                    },
+
+                    // Loaded Certificates from Manifest
+                    if !self.loaded_certificates.is_empty() {
+                        text(format!("📜 Certificates from Manifest ({} loaded)", self.loaded_certificates.len()))
+                            .size(self.scaled_text_size(14))
+                            .color(CowboyTheme::text_primary())
+                    } else {
+                        text("")
+                    },
+
+                    if !self.loaded_certificates.is_empty() {
+                        let mut cert_list = column![].spacing(self.scaled_padding(6));
+
+                        for cert in &self.loaded_certificates {
+                            cert_list = cert_list.push(
+                                container(
+                                    column![
+                                        text(format!("🔐 {}{}", cert.subject, if cert.is_ca { " (CA)" } else { "" }))
+                                            .size(self.scaled_text_size(12))
+                                            .color(if cert.is_ca { Color::from_rgb(0.8, 0.3, 0.3) } else { Color::from_rgb(0.3, 0.6, 0.8) }),
+                                        row![
+                                            column![
+                                                text(format!("Serial: {}...", &cert.serial_number.chars().take(16).collect::<String>()))
+                                                    .size(self.scaled_text_size(10))
+                                                    .color(CowboyTheme::text_secondary()),
+                                                if let Some(ref issuer) = cert.issuer {
+                                                    text(format!("Issuer: {}", issuer))
+                                                        .size(self.scaled_text_size(10))
+                                                        .color(CowboyTheme::text_secondary())
+                                                } else {
+                                                    text("")
+                                                },
+                                            ]
+                                            .spacing(self.scaled_padding(2)),
+                                            horizontal_space(),
+                                            column![
+                                                text(format!("Valid: {} to {}",
+                                                    cert.not_before.format("%Y-%m-%d"),
+                                                    cert.not_after.format("%Y-%m-%d")))
+                                                    .size(self.scaled_text_size(10))
+                                                    .color(CowboyTheme::text_secondary()),
+                                            ]
+                                            .align_x(iced::alignment::Horizontal::Right),
+                                        ]
+                                    ]
+                                    .spacing(self.scaled_padding(3))
+                                )
+                                .padding(self.scaled_padding(8))
+                                .style(CowboyCustomTheme::pastel_teal_card())
+                            );
+                        }
+
+                        container(cert_list)
+                            .padding(self.scaled_padding(10))
+                            .style(CowboyCustomTheme::card_container())
+                    } else {
+                        container(text(""))
+                    },
+
+                    // Loaded Keys from Manifest
+                    if !self.loaded_keys.is_empty() {
+                        text(format!("🔑 Keys from Manifest ({} loaded)", self.loaded_keys.len()))
+                            .size(self.scaled_text_size(14))
+                            .color(CowboyTheme::text_primary())
+                    } else {
+                        text("")
+                    },
+
+                    if !self.loaded_keys.is_empty() {
+                        let mut key_list = column![].spacing(self.scaled_padding(6));
+
+                        for key in &self.loaded_keys {
+                            key_list = key_list.push(
+                                container(
+                                    column![
+                                        text(format!("🔐 {} - {}", key.label, format!("{:?}", key.algorithm)))
+                                            .size(self.scaled_text_size(12))
+                                            .color(if key.revoked { Color::from_rgb(0.8, 0.3, 0.3) } else { Color::from_rgb(0.3, 0.8, 0.3) }),
+                                        row![
+                                            column![
+                                                text(format!("Purpose: {:?}", key.purpose))
+                                                    .size(self.scaled_text_size(10))
+                                                    .color(CowboyTheme::text_secondary()),
+                                                if key.hardware_backed {
+                                                    if let Some(ref serial) = key.yubikey_serial {
+                                                        text(format!("YubiKey: {}", serial))
+                                                            .size(self.scaled_text_size(10))
+                                                            .color(Color::from_rgb(0.3, 0.6, 0.8))
+                                                    } else {
+                                                        text("Hardware-backed")
+                                                            .size(self.scaled_text_size(10))
+                                                            .color(Color::from_rgb(0.3, 0.6, 0.8))
+                                                    }
+                                                } else {
+                                                    text("Software key")
+                                                        .size(self.scaled_text_size(10))
+                                                        .color(CowboyTheme::text_secondary())
+                                                },
+                                            ]
+                                            .spacing(self.scaled_padding(2)),
+                                            horizontal_space(),
+                                            column![
+                                                text(format!("Created: {}", key.created_at.format("%Y-%m-%d")))
+                                                    .size(self.scaled_text_size(10))
+                                                    .color(CowboyTheme::text_secondary()),
+                                                if key.revoked {
+                                                    text("⚠️ REVOKED")
+                                                        .size(self.scaled_text_size(10))
+                                                        .color(Color::from_rgb(0.8, 0.3, 0.3))
+                                                } else {
+                                                    text("")
+                                                },
+                                            ]
+                                            .align_x(iced::alignment::Horizontal::Right),
+                                        ]
+                                    ]
+                                    .spacing(self.scaled_padding(3))
+                                )
+                                .padding(self.scaled_padding(8))
+                                .style(CowboyCustomTheme::pastel_mint_card())
+                            );
+                        }
+
+                        container(key_list)
                             .padding(self.scaled_padding(10))
                             .style(CowboyCustomTheme::card_container())
                     } else {

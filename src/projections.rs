@@ -517,6 +517,16 @@ impl OfflineKeyProjection {
         &self.manifest.locations
     }
 
+    /// Get all certificates
+    pub fn get_certificates(&self) -> &[CertificateEntry] {
+        &self.manifest.certificates
+    }
+
+    /// Get all keys
+    pub fn get_keys(&self) -> &[KeyEntry] {
+        &self.manifest.keys
+    }
+
     /// Remove a location from the organization
     pub fn remove_location(&mut self, location_id: Uuid) -> Result<(), ProjectionError> {
         let initial_len = self.manifest.locations.len();
