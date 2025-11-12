@@ -84,6 +84,11 @@ pub struct CimKeysApp {
     new_person_email: String,
     new_person_role: Option<KeyOwnerRole>,
 
+    // Form fields for adding locations
+    new_location_name: String,
+    new_location_type: Option<crate::domain::LocationType>,
+    new_location_security_level: Option<crate::domain::SecurityLevel>,
+
     // YubiKey fields
     yubikey_serial: String,
     yubikey_assigned_to: Option<Uuid>,
@@ -132,6 +137,7 @@ pub struct CimKeysApp {
 pub enum Tab {
     Welcome,
     Organization,
+    Locations,
     Keys,
     Export,
 }
@@ -161,6 +167,13 @@ pub enum Message {
     AddPerson,
     RemovePerson(Uuid),
     SelectPerson(Uuid),
+
+    // Location operations
+    NewLocationNameChanged(String),
+    NewLocationTypeSelected(crate::domain::LocationType),
+    NewLocationSecurityLevelSelected(crate::domain::SecurityLevel),
+    AddLocation,
+    RemoveLocation(Uuid),
 
     // YubiKey operations
     YubiKeySerialChanged(String),
@@ -298,6 +311,9 @@ impl CimKeysApp {
                 new_person_name: String::new(),
                 new_person_email: String::new(),
                 new_person_role: None,
+                new_location_name: String::new(),
+                new_location_type: None,
+                new_location_security_level: None,
                 yubikey_serial: String::new(),
                 yubikey_assigned_to: None,
                 key_generation_progress: 0.0,
@@ -353,6 +369,7 @@ impl CimKeysApp {
                 self.status_message = match tab {
                     Tab::Welcome => "Welcome to CIM Keys".to_string(),
                     Tab::Organization => "Organization Structure and Key Ownership".to_string(),
+                    Tab::Locations => "Manage Corporate Locations".to_string(),
                     Tab::Keys => "Generate Cryptographic Keys".to_string(),
                     Tab::Export => "Export Domain Configuration".to_string(),
                 };
@@ -586,6 +603,36 @@ impl CimKeysApp {
             Message::SelectPerson(person_id) => {
                 self.selected_person = Some(person_id);
                 self.org_graph.select_node(person_id);
+                Task::none()
+            }
+
+            // Location operations
+            Message::NewLocationNameChanged(value) => {
+                self.new_location_name = value;
+                Task::none()
+            }
+
+            Message::NewLocationTypeSelected(location_type) => {
+                self.new_location_type = Some(location_type);
+                Task::none()
+            }
+
+            Message::NewLocationSecurityLevelSelected(security_level) => {
+                self.new_location_security_level = Some(security_level);
+                Task::none()
+            }
+
+            Message::AddLocation => {
+                // TODO: Implement location addition with persistence
+                self.status_message = format!("Added location: {}", self.new_location_name);
+                self.new_location_name.clear();
+                self.new_location_type = None;
+                self.new_location_security_level = None;
+                Task::none()
+            }
+
+            Message::RemoveLocation(_location_id) => {
+                // TODO: Implement location removal
                 Task::none()
             }
 
@@ -1012,6 +1059,9 @@ impl CimKeysApp {
             button(text("Organization").size(self.scaled_text_size(14)))
                 .on_press(Message::TabSelected(Tab::Organization))
                 .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Organization)),
+            button(text("Locations").size(self.scaled_text_size(14)))
+                .on_press(Message::TabSelected(Tab::Locations))
+                .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Locations)),
             button(text("Keys").size(self.scaled_text_size(14)))
                 .on_press(Message::TabSelected(Tab::Keys))
                 .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Keys)),
@@ -1025,6 +1075,7 @@ impl CimKeysApp {
         let content = match self.active_tab {
             Tab::Welcome => self.view_welcome(),
             Tab::Organization => self.view_organization(),
+            Tab::Locations => self.view_locations(),
             Tab::Keys => self.view_keys(),
             Tab::Export => self.view_export(),
         };
@@ -1418,6 +1469,81 @@ impl CimKeysApp {
                     ..Default::default()
                 }
             }),
+        ]
+        .spacing(self.scaled_padding(20));
+
+        scrollable(content).into()
+    }
+
+    fn view_locations(&self) -> Element<'_, Message> {
+        use crate::domain::{LocationType, SecurityLevel};
+
+        let location_type_options = vec![
+            LocationType::DataCenter,
+            LocationType::Office,
+            LocationType::CloudRegion,
+            LocationType::SafeDeposit,
+            LocationType::SecureStorage,
+            LocationType::HardwareToken,
+        ];
+
+        let security_level_options = vec![
+            SecurityLevel::Fips140Level4,
+            SecurityLevel::Fips140Level3,
+            SecurityLevel::Fips140Level2,
+            SecurityLevel::Fips140Level1,
+            SecurityLevel::Commercial,
+            SecurityLevel::Basic,
+        ];
+
+        let content = column![
+            text("Locations Management").size(self.scaled_text_size(20)),
+            text("Manage corporate locations where keys and certificates are stored").size(self.scaled_text_size(14)),
+
+            // Add location form
+            container(
+                column![
+                    text("Add New Location")
+                        .size(self.scaled_text_size(16))
+                        .color(CowboyTheme::text_primary()),
+                    row![
+                        text_input("Location Name", &self.new_location_name)
+                            .on_input(Message::NewLocationNameChanged)
+                            .size(self.scaled_text_size(14))
+                            .style(CowboyCustomTheme::glass_input()),
+                        pick_list(
+                            location_type_options,
+                            self.new_location_type,
+                            Message::NewLocationTypeSelected,
+                        )
+                        .placeholder("Location Type"),
+                        pick_list(
+                            security_level_options,
+                            self.new_location_security_level,
+                            Message::NewLocationSecurityLevelSelected,
+                        )
+                        .placeholder("Security Level"),
+                        button("Add Location")
+                            .on_press(Message::AddLocation)
+                            .style(CowboyCustomTheme::primary_button())
+                    ]
+                    .spacing(self.scaled_padding(10)),
+                ]
+                .spacing(self.scaled_padding(10))
+            )
+            .padding(self.scaled_padding(15))
+            .style(CowboyCustomTheme::pastel_mint_card()),
+
+            // TODO: Display list of locations
+            container(
+                column![
+                    text("Locations will appear here")
+                        .size(self.scaled_text_size(14))
+                        .color(CowboyTheme::text_secondary()),
+                ]
+            )
+            .padding(self.scaled_padding(15))
+            .style(CowboyCustomTheme::pastel_cream_card()),
         ]
         .spacing(self.scaled_padding(20));
 

@@ -116,7 +116,7 @@ pub struct Location {
 }
 
 /// Type of location
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LocationType {
     DataCenter,
     Office,
@@ -223,7 +223,7 @@ pub enum KeyStorageType {
 }
 
 /// Security level of storage
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SecurityLevel {
     /// FIPS 140-2 Level 4 (highest)
     Fips140Level4,
@@ -440,6 +440,32 @@ impl std::fmt::Display for KeyOwnerRole {
             KeyOwnerRole::ServiceAccount => write!(f, "Service Account"),
             KeyOwnerRole::BackupHolder => write!(f, "Backup Holder"),
             KeyOwnerRole::Auditor => write!(f, "Auditor"),
+        }
+    }
+}
+
+impl std::fmt::Display for LocationType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            LocationType::DataCenter => write!(f, "Data Center"),
+            LocationType::Office => write!(f, "Office"),
+            LocationType::CloudRegion => write!(f, "Cloud Region"),
+            LocationType::SafeDeposit => write!(f, "Safe Deposit"),
+            LocationType::SecureStorage => write!(f, "Secure Storage"),
+            LocationType::HardwareToken => write!(f, "Hardware Token"),
+        }
+    }
+}
+
+impl std::fmt::Display for SecurityLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            SecurityLevel::Fips140Level4 => write!(f, "FIPS 140-2 Level 4"),
+            SecurityLevel::Fips140Level3 => write!(f, "FIPS 140-2 Level 3"),
+            SecurityLevel::Fips140Level2 => write!(f, "FIPS 140-2 Level 2"),
+            SecurityLevel::Fips140Level1 => write!(f, "FIPS 140-2 Level 1"),
+            SecurityLevel::Commercial => write!(f, "Commercial"),
+            SecurityLevel::Basic => write!(f, "Basic"),
         }
     }
 }
