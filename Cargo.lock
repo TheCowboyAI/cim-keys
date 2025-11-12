@@ -1057,6 +1057,7 @@ dependencies = [
  "iced_futures",
  "iced_widget",
  "mockall",
+ "nkeys",
  "p256",
  "pcsc",
  "pem",

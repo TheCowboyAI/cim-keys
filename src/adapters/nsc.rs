@@ -8,8 +8,10 @@ use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use std::process::Command;
 use std::path::{Path, PathBuf};
+use std::fs;
 use uuid::Uuid;
 use serde_json;
+use nkeys::KeyPair;
 
 /// NSC adapter for NATS key operations
 pub struct NscAdapter {
@@ -45,18 +47,21 @@ impl NscAdapter {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
-    /// Generate keys using native Rust implementation
+    /// Generate keys using native Rust implementation with nkeys crate
     fn generate_native_keys(&self, key_type: &str) -> Result<(String, String), NatsKeyError> {
-        // In a real implementation, we would use the nkeys crate (when nkeys feature is enabled)
-        // For now, we'll return placeholder values
-        let public_key = format!("{}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-            match key_type {
-                "operator" => "O",
-                "account" => "A",
-                "user" => "U",
-                _ => "S",
-            });
-        let seed = format!("S{}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", key_type.to_uppercase());
+        let kp = match key_type {
+            "operator" => KeyPair::new_operator(),
+            "account" => KeyPair::new_account(),
+            "user" => KeyPair::new_user(),
+            "signing" => KeyPair::new_operator(), // Signing keys use operator type
+            _ => return Err(NatsKeyError::InvalidConfiguration(
+                format!("Unknown key type: {}", key_type)
+            )),
+        };
+
+        let public_key = kp.public_key();
+        let seed = kp.seed()
+            .map_err(|e| NatsKeyError::GenerationFailed(format!("Failed to get seed: {}", e)))?;
 
         Ok((public_key, seed))
     }
@@ -85,15 +90,34 @@ impl NatsKeyPort for NscAdapter {
                 jwt: None,
             })
         } else {
-            // Use native implementation
-            let (public_key, seed) = self.generate_native_keys("operator")?;
+            // Use native implementation with nkeys
+            let kp = KeyPair::new_operator();
+            let public_key = kp.public_key();
+            let seed = kp.seed()
+                .map_err(|e| NatsKeyError::GenerationFailed(format!("Failed to get operator seed: {}", e)))?;
+
+            // Generate self-signed operator JWT
+            let claims = JwtClaims {
+                subject: public_key.clone(),
+                issuer: public_key.clone(), // Self-signed
+                audience: None,
+                name: name.to_string(),
+                nats: NatsJwtClaims {
+                    version: 2,
+                    r#type: "operator".to_string(),
+                    permissions: None,
+                    limits: None,
+                },
+            };
+
+            let jwt = self.create_jwt(&claims, &seed).await?;
 
             Ok(NatsOperatorKeys {
                 id,
                 name: name.to_string(),
                 public_key,
                 seed,
-                jwt: None,
+                jwt: Some(jwt),
             })
         }
     }
@@ -121,8 +145,33 @@ impl NatsKeyPort for NscAdapter {
                 is_system: name == "SYS",
             })
         } else {
-            // Use native implementation
-            let (public_key, seed) = self.generate_native_keys("account")?;
+            // Use native implementation with nkeys
+            let kp = KeyPair::new_account();
+            let public_key = kp.public_key();
+            let seed = kp.seed()
+                .map_err(|e| NatsKeyError::GenerationFailed(format!("Failed to get account seed: {}", e)))?;
+
+            // Note: Account JWT should be signed by operator, not self-signed
+            // For now, we'll create it but it needs operator's signing key in real usage
+            let claims = JwtClaims {
+                subject: public_key.clone(),
+                issuer: operator_id.to_string(), // Signed by operator
+                audience: None,
+                name: name.to_string(),
+                nats: NatsJwtClaims {
+                    version: 2,
+                    r#type: "account".to_string(),
+                    permissions: None,
+                    limits: Some(NatsLimits {
+                        subs: Some(-1), // Unlimited subscriptions
+                        payload: Some(-1), // Unlimited payload
+                        data: Some(-1), // Unlimited data
+                    }),
+                },
+            };
+
+            // TODO: This should use operator's signing key, not account's seed
+            let jwt = self.create_jwt(&claims, &seed).await?;
 
             Ok(NatsAccountKeys {
                 id,
@@ -130,7 +179,7 @@ impl NatsKeyPort for NscAdapter {
                 name: name.to_string(),
                 public_key,
                 seed,
-                jwt: None,
+                jwt: Some(jwt),
                 is_system: name == "SYS",
             })
         }
@@ -158,8 +207,40 @@ impl NatsKeyPort for NscAdapter {
                 jwt: None,
             })
         } else {
-            // Use native implementation
-            let (public_key, seed) = self.generate_native_keys("user")?;
+            // Use native implementation with nkeys
+            let kp = KeyPair::new_user();
+            let public_key = kp.public_key();
+            let seed = kp.seed()
+                .map_err(|e| NatsKeyError::GenerationFailed(format!("Failed to get user seed: {}", e)))?;
+
+            // Note: User JWT should be signed by account, not self-signed
+            // For now, we'll create it but it needs account's signing key in real usage
+            let claims = JwtClaims {
+                subject: public_key.clone(),
+                issuer: account_id.to_string(), // Signed by account
+                audience: None,
+                name: name.to_string(),
+                nats: NatsJwtClaims {
+                    version: 2,
+                    r#type: "user".to_string(),
+                    permissions: Some(NatsPermissions {
+                        publish: NatsSubjectPermissions {
+                            allow: vec!["*".to_string()],
+                            deny: vec![],
+                        },
+                        subscribe: NatsSubjectPermissions {
+                            allow: vec!["*".to_string()],
+                            deny: vec![],
+                        },
+                        allow_responses: true,
+                        max_payload: None,
+                    }),
+                    limits: None,
+                },
+            };
+
+            // TODO: This should use account's signing key, not user's seed
+            let jwt = self.create_jwt(&claims, &seed).await?;
 
             Ok(NatsUserKeys {
                 id,
@@ -167,7 +248,7 @@ impl NatsKeyPort for NscAdapter {
                 name: name.to_string(),
                 public_key,
                 seed,
-                jwt: None,
+                jwt: Some(jwt),
             })
         }
     }
@@ -197,9 +278,6 @@ impl NatsKeyPort for NscAdapter {
     }
 
     async fn create_jwt(&self, claims: &JwtClaims, signing_key: &str) -> Result<String, NatsKeyError> {
-        // In real implementation, we'd create and sign JWT
-        // This would use the nkeys crate to sign the JWT with signing_key
-
         // Validate signing key is provided
         if signing_key.is_empty() {
             return Err(NatsKeyError::InvalidConfiguration(
@@ -207,18 +285,42 @@ impl NatsKeyPort for NscAdapter {
             ));
         }
 
-        let jwt = serde_json::json!({
-            "sub": claims.subject,
+        // Parse the seed to get keypair for signing
+        let kp = KeyPair::from_seed(signing_key)
+            .map_err(|e| NatsKeyError::InvalidConfiguration(format!("Invalid signing key: {}", e)))?;
+
+        // Build JWT header
+        let header = serde_json::json!({
+            "typ": "JWT",
+            "alg": "ed25519-nkey"
+        });
+
+        // Build JWT payload with NATS claims
+        let payload = serde_json::json!({
+            "jti": uuid::Uuid::now_v7().to_string(),
+            "iat": chrono::Utc::now().timestamp(),
             "iss": claims.issuer,
+            "sub": claims.subject,
             "name": claims.name,
             "nats": claims.nats,
         });
 
-        // Note: signing_key would be used here in real JWT signature creation
-        tracing::debug!("Creating JWT with signing key prefix: {}", &signing_key[..signing_key.len().min(8)]);
+        // Encode header and payload
+        let header_encoded = BASE64.encode(serde_json::to_string(&header)
+            .map_err(|e| NatsKeyError::GenerationFailed(format!("Failed to encode header: {}", e)))?);
+        let payload_encoded = BASE64.encode(serde_json::to_string(&payload)
+            .map_err(|e| NatsKeyError::GenerationFailed(format!("Failed to encode payload: {}", e)))?);
 
-        Ok(format!("eyJ0eXAiOiJKV1QiLCJhbGciOiJFZDI1NTE5In0.{}.signature",
-            BASE64.encode(jwt.to_string())))
+        // Create signing input
+        let signing_input = format!("{}.{}", header_encoded, payload_encoded);
+
+        // Sign with nkey
+        let signature = kp.sign(signing_input.as_bytes())
+            .map_err(|e| NatsKeyError::GenerationFailed(format!("Failed to sign JWT: {}", e)))?;
+        let signature_encoded = BASE64.encode(&signature);
+
+        // Combine into final JWT
+        Ok(format!("{}.{}", signing_input, signature_encoded))
     }
 
     async fn export_keys(&self, keys: &NatsKeys) -> Result<NatsKeyExport, NatsKeyError> {
@@ -303,25 +405,123 @@ impl NatsKeyPort for NscAdapter {
     }
 }
 
-// Helper to use native nkeys implementation
-// TODO: Add nkeys as optional dependency and enable this feature
-// To enable: Add to Cargo.toml dependencies: nkeys = { version = "0.4", optional = true }
-// And to features: nkeys-support = ["nkeys"]
-/*
-#[cfg(feature = "nkeys")]
-mod native_impl {
-    use super::*;
-    use nkeys::{KeyPair, KeyPairType};
+use std::collections::HashMap;
 
-    pub fn generate_keypair(key_type: KeyPairType) -> Result<(String, String), NatsKeyError> {
-        let kp = KeyPair::new(key_type);
-        let public_key = kp.public_key();
-        let seed = kp.seed()
-            .map_err(|e| NatsKeyError::GenerationFailed(format!("Failed to get seed: {}", e)))?;
+impl NscAdapter {
+    /// Export NATS hierarchy to NSC directory structure
+    ///
+    /// Creates the NSC-compatible directory structure:
+    /// ```
+    /// $NSC_STORE/stores/<org-name>/
+    /// ├── operator.jwt
+    /// ├── .nkeys/creds/<org-name>/<org-name>.nk
+    /// └── accounts/<account-name>/
+    ///     ├── account.jwt
+    ///     └── users/<user-name>.jwt
+    /// ```
+    pub async fn export_to_nsc_store(
+        &self,
+        keys: &NatsKeys,
+        output_dir: &Path,
+    ) -> Result<(), NatsKeyError> {
+        let org_name = &keys.operator.name;
 
-        Ok((public_key, seed))
+        // Create base directory structure
+        let stores_dir = output_dir.join("stores").join(org_name);
+        let nkeys_dir = stores_dir.join(".nkeys").join("creds").join(org_name);
+        let accounts_dir = stores_dir.join("accounts");
+
+        fs::create_dir_all(&stores_dir)
+            .map_err(|e| NatsKeyError::IoError(format!("Failed to create stores directory: {}", e)))?;
+        fs::create_dir_all(&nkeys_dir)
+            .map_err(|e| NatsKeyError::IoError(format!("Failed to create nkeys directory: {}", e)))?;
+        fs::create_dir_all(&accounts_dir)
+            .map_err(|e| NatsKeyError::IoError(format!("Failed to create accounts directory: {}", e)))?;
+
+        // Write operator JWT
+        if let Some(jwt) = &keys.operator.jwt {
+            let operator_jwt_path = stores_dir.join("operator.jwt");
+            fs::write(&operator_jwt_path, jwt)
+                .map_err(|e| NatsKeyError::IoError(format!("Failed to write operator JWT: {}", e)))?;
+        }
+
+        // Write operator seed (nkey)
+        let operator_nk_path = nkeys_dir.join(format!("{}.nk", org_name));
+        fs::write(&operator_nk_path, &keys.operator.seed)
+            .map_err(|e| NatsKeyError::IoError(format!("Failed to write operator seed: {}", e)))?;
+
+        // Process each account
+        for account in &keys.accounts {
+            let account_dir = accounts_dir.join(&account.name);
+            let account_users_dir = account_dir.join("users");
+            let account_nkeys_dir = nkeys_dir.join("accounts").join(&account.name);
+
+            fs::create_dir_all(&account_dir)
+                .map_err(|e| NatsKeyError::IoError(format!("Failed to create account directory: {}", e)))?;
+            fs::create_dir_all(&account_users_dir)
+                .map_err(|e| NatsKeyError::IoError(format!("Failed to create account users directory: {}", e)))?;
+            fs::create_dir_all(&account_nkeys_dir)
+                .map_err(|e| NatsKeyError::IoError(format!("Failed to create account nkeys directory: {}", e)))?;
+
+            // Write account JWT
+            if let Some(jwt) = &account.jwt {
+                let account_jwt_path = account_dir.join("account.jwt");
+                fs::write(&account_jwt_path, jwt)
+                    .map_err(|e| NatsKeyError::IoError(format!("Failed to write account JWT: {}", e)))?;
+            }
+
+            // Write account seed
+            let account_nk_path = account_nkeys_dir.join(format!("{}.nk", account.name));
+            fs::write(&account_nk_path, &account.seed)
+                .map_err(|e| NatsKeyError::IoError(format!("Failed to write account seed: {}", e)))?;
+        }
+
+        // Process each user
+        for user in &keys.users {
+            // Find the account this user belongs to
+            let account = keys.accounts.iter()
+                .find(|a| a.id == user.account_id)
+                .ok_or_else(|| NatsKeyError::InvalidConfiguration(
+                    format!("Account not found for user {}", user.name)
+                ))?;
+
+            let users_dir = accounts_dir.join(&account.name).join("users");
+            let user_nkeys_dir = nkeys_dir.join("accounts").join(&account.name).join("users");
+
+            fs::create_dir_all(&users_dir)
+                .map_err(|e| NatsKeyError::IoError(format!("Failed to create users directory: {}", e)))?;
+            fs::create_dir_all(&user_nkeys_dir)
+                .map_err(|e| NatsKeyError::IoError(format!("Failed to create user nkeys directory: {}", e)))?;
+
+            // Write user JWT
+            if let Some(jwt) = &user.jwt {
+                let user_jwt_path = users_dir.join(format!("{}.jwt", user.name));
+                fs::write(&user_jwt_path, jwt)
+                    .map_err(|e| NatsKeyError::IoError(format!("Failed to write user JWT: {}", e)))?;
+            }
+
+            // Generate and write .creds file (combines JWT + seed)
+            if let Some(jwt) = &user.jwt {
+                let creds_content = format!(
+                    "-----BEGIN NATS USER JWT-----\n{}\n------END NATS USER JWT------\n\n\
+                    ************************* IMPORTANT *************************\n\
+                    NKEY Seed printed below can be used to sign and prove identity.\n\
+                    NKEYs are sensitive and should be treated as secrets.\n\n\
+                    -----BEGIN USER NKEY SEED-----\n{}\n------END USER NKEY SEED------\n",
+                    jwt, user.seed
+                );
+
+                let creds_path = user_nkeys_dir.join(format!("{}.creds", user.name));
+                fs::write(&creds_path, creds_content)
+                    .map_err(|e| NatsKeyError::IoError(format!("Failed to write user creds: {}", e)))?;
+            }
+        }
+
+        tracing::info!(
+            "Successfully exported NATS hierarchy to NSC store at {}",
+            output_dir.display()
+        );
+
+        Ok(())
     }
 }
-*/
-
-use std::collections::HashMap;
