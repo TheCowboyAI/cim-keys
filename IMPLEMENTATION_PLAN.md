@@ -12,28 +12,31 @@ This document outlines the step-by-step plan to complete the CIM Keys implementa
 
 ---
 
-## Step 1: Add Master Passphrase Input ✅ PENDING
+## Step 1: Add Master Passphrase Input ✅ COMPLETE
 
 ### Goal
 Add passphrase input for encrypting the offline key storage on SD cards.
 
 ### Requirements
-- [ ] Add `master_passphrase: String` field to `CimKeysApp` state
-- [ ] Add `master_passphrase_confirm: String` for validation
-- [ ] Add `MasterPassphraseChanged(String)` message
-- [ ] Add `MasterPassphraseConfirmChanged(String)` message
-- [ ] Add passphrase input fields in domain creation form (Organization tab)
-- [ ] Add visual indicator if passphrases don't match
-- [ ] Validate passphrase strength (min 12 chars, complexity)
+- [x] Add `master_passphrase: String` field to `CimKeysApp` state
+- [x] Add `master_passphrase_confirm: String` for validation
+- [x] Add `MasterPassphraseChanged(String)` message
+- [x] Add `MasterPassphraseConfirmChanged(String)` message
+- [x] Add passphrase input fields in domain creation form (Organization tab)
+- [x] Add visual indicator if passphrases don't match
+- [x] Validate passphrase strength (min 12 chars, complexity)
 
 ### Files to Modify
 - `src/gui.rs` - Add state fields and message handlers
 - `src/gui.rs` - Update `view_organization()` to show passphrase inputs
 
 ### Testing
-- [ ] Passphrase fields appear in domain creation form
-- [ ] Validation works (matching, strength)
-- [ ] Build succeeds with no errors
+- [x] Passphrase fields appear in domain creation form
+- [x] Validation works (matching, strength)
+- [x] Build succeeds with no errors
+
+### Completed
+✅ **Commit**: ac6da97 - feat: add master passphrase input for encrypted storage
 
 ### Commit Message Template
 ```
@@ -295,10 +298,10 @@ Part of comprehensive implementation plan.
 ## Progress Tracking
 
 ### Completed Steps
-- None yet
+- ✅ Step 1: Add Master Passphrase Input (Commit ac6da97)
 
 ### Current Step
-Step 1: Add Master Passphrase Input
+Step 2: Implement Domain Creation
 
 ### Blockers
 - None currently

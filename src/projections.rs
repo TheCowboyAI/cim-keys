@@ -425,6 +425,24 @@ impl OfflineKeyProjection {
     }
 
     /// Save the manifest to disk
+    /// Update organization information
+    pub fn set_organization(&mut self, name: String, domain: String, country: String, admin_email: String) -> Result<(), ProjectionError> {
+        self.manifest.organization = OrganizationInfo {
+            name,
+            domain,
+            country,
+            admin_email,
+        };
+        self.manifest.updated_at = Utc::now();
+        self.save_manifest()?;
+        Ok(())
+    }
+
+    /// Get organization information
+    pub fn get_organization(&self) -> &OrganizationInfo {
+        &self.manifest.organization
+    }
+
     pub fn save_manifest(&self) -> Result<(), ProjectionError> {
         let manifest_path = self.root_path.join("manifest.json");
 

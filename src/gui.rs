@@ -359,10 +359,56 @@ impl CimKeysApp {
 
             // Domain operations
             Message::CreateNewDomain => {
-                self.domain_loaded = false;
-                self.active_tab = Tab::Organization;
-                self.status_message = "Creating new domain - configure organization".to_string();
-                Task::none()
+                // Validate inputs
+                if self.organization_name.is_empty() {
+                    self.error_message = Some("Organization name is required".to_string());
+                    return Task::none();
+                }
+                if self.organization_domain.is_empty() {
+                    self.error_message = Some("Domain is required".to_string());
+                    return Task::none();
+                }
+
+                // Validate passphrase
+                let passphrase_matches = self.master_passphrase == self.master_passphrase_confirm;
+                let long_enough = self.master_passphrase.len() >= 12;
+                let has_upper = self.master_passphrase.chars().any(|c| c.is_uppercase());
+                let has_lower = self.master_passphrase.chars().any(|c| c.is_lowercase());
+                let has_digit = self.master_passphrase.chars().any(|c| c.is_numeric());
+                let has_special = self.master_passphrase.chars().any(|c| !c.is_alphanumeric());
+
+                if !passphrase_matches {
+                    self.error_message = Some("Passphrases do not match".to_string());
+                    return Task::none();
+                }
+                if !long_enough {
+                    self.error_message = Some("Passphrase must be at least 12 characters".to_string());
+                    return Task::none();
+                }
+                if !(has_upper && has_lower && has_digit && has_special) {
+                    self.error_message = Some("Passphrase must contain uppercase, lowercase, number, and special character".to_string());
+                    return Task::none();
+                }
+
+                // Create organization in projection
+                let projection = self.projection.clone();
+                let org_name = self.organization_name.clone();
+                let org_domain = self.organization_domain.clone();
+
+                Task::perform(
+                    async move {
+                        let mut proj = projection.write().await;
+                        proj.set_organization(
+                            org_name.clone(),
+                            org_domain.clone(),
+                            "US".to_string(),  // TODO: Make configurable
+                            "admin@example.com".to_string(),  // TODO: Make configurable
+                        )
+                        .map(|_| format!("Created domain: {}", org_name))
+                        .map_err(|e| format!("Failed to create domain: {}", e))
+                    },
+                    Message::DomainCreated
+                )
             }
 
             Message::LoadExistingDomain => {
