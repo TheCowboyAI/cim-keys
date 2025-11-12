@@ -60,6 +60,9 @@ pub mod mvi;
 // Master domain model - cim-keys owns the initial domain creation
 pub mod domain;
 
+// Secrets loader for importing configuration from JSON
+pub mod secrets_loader;
+
 // Certificate generation service
 pub mod certificate_service;
 

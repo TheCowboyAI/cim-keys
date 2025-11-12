@@ -200,6 +200,83 @@ pub struct KeyStorageLocation {
     pub access_controls: Vec<AccessControl>,
 }
 
+/// YubiKey configuration for a person
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct YubiKeyConfig {
+    pub serial: String,
+    pub name: String,
+    pub owner_email: String,
+    pub role: YubiKeyRole,
+    pub piv: PivConfig,
+    pub pgp: Option<PgpConfig>,
+    pub fido: Option<FidoConfig>,
+    pub ssl: Option<SslConfig>,
+}
+
+/// Role of the YubiKey in the organization
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum YubiKeyRole {
+    RootCA,      // Holds root CA private key
+    Backup,      // Backup root CA key
+    User,        // Regular user authentication/signing
+    Service,     // Service account key
+}
+
+/// PIV (Personal Identity Verification) configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PivConfig {
+    pub default_pin: String,
+    pub default_puk: String,
+    pub pin: String,
+    pub puk: String,
+    pub mgmt_key: String,
+    pub mgmt_key_old: Option<String>,
+    pub piv_alg: PivAlgorithm,
+}
+
+/// PIV algorithm type
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PivAlgorithm {
+    #[serde(rename = "aes128")]
+    Aes128,
+    #[serde(rename = "aes192")]
+    Aes192,
+    #[serde(rename = "aes256")]
+    Aes256,
+    #[serde(rename = "tdes")]
+    TripleDes,
+}
+
+/// PGP/GPG configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PgpConfig {
+    pub user_pin: String,
+    pub user_pin_old: Option<String>,
+    pub admin_pin: String,
+    pub admin_pin_old: Option<String>,
+    pub reset_code: Option<String>,
+    pub key_type_auth: String,  // e.g., "ed25519"
+    pub key_type_sign: String,  // e.g., "ed25519"
+    pub key_type_encr: String,  // e.g., "cv25519"
+    pub expiration: String,     // e.g., "5y"
+}
+
+/// FIDO/U2F configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FidoConfig {
+    pub pin: String,
+    pub retries: u8,
+}
+
+/// SSL/TLS certificate configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SslConfig {
+    pub common_name: Option<String>,
+    pub email: Option<String>,
+    pub key_type: String,     // e.g., "prime256v1", "rsa2048"
+    pub expiration: String,   // in days, e.g., "1825"
+}
+
 /// Type of key storage
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum KeyStorageType {
