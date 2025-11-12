@@ -143,7 +143,7 @@ Part of comprehensive implementation plan.
 
 ---
 
-## Step 4: Add Locations Management ✅ PENDING
+## Step 4: Add Locations Management ✅ COMPLETE
 
 ### Goal
 Add a "Locations" tab for managing corporate locations where keys/certs are stored.
@@ -191,14 +191,15 @@ Part of comprehensive implementation plan.
 
 ---
 
-## Step 5: Test YubiKey Integration ✅ PENDING
+## Step 5: Test YubiKey Integration ✅ IN PROGRESS
 
 ### Goal
 Test YubiKey detection, selection, and provisioning with real hardware.
 
 ### Requirements
-- [ ] Connect physical YubiKey to test machine
-- [ ] Test YubiKey detection (list available keys)
+- [x] Connect physical YubiKey to test machine (YubiKey 5C NFC Serial: 15905511)
+- [x] Create YubiKeyCliAdapter using ykman
+- [x] Test YubiKey detection (list available keys)
 - [ ] Test YubiKey selection for person assignment
 - [ ] Test "Provision YubiKey" button
 - [ ] Verify PIV slot allocation
@@ -307,9 +308,10 @@ Part of comprehensive implementation plan.
 - ✅ Step 1: Add Master Passphrase Input (Commit ac6da97)
 - ✅ Step 2: Implement Domain Creation (Commit d0a498f)
 - ✅ Step 3: Wire Person Addition (Commit b40ff28)
+- ✅ Step 4: Add Locations Management (Commit 83ad9f0)
 
 ### Current Step
-Step 4: Add Locations Management
+Step 5: YubiKey Integration (IN PROGRESS)
 
 ### Blockers
 - None currently

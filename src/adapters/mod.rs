@@ -10,6 +10,7 @@
 pub mod nsc;
 pub mod in_memory;
 pub mod yubikey_mock;
+pub mod yubikey_cli;
 pub mod x509_mock;
 pub mod gpg_mock;
 pub mod ssh_mock;
@@ -17,6 +18,7 @@ pub mod ssh_mock;
 pub use nsc::NscAdapter;
 pub use in_memory::InMemoryStorageAdapter;
 pub use yubikey_mock::MockYubiKeyAdapter;
+pub use yubikey_cli::YubiKeyCliAdapter;
 pub use x509_mock::MockX509Adapter;
 pub use gpg_mock::MockGpgAdapter;
 pub use ssh_mock::MockSshKeyAdapter;
