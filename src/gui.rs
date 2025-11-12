@@ -153,8 +153,10 @@ pub enum Message {
     // Domain operations
     CreateNewDomain,
     LoadExistingDomain,
+    ImportFromSecrets,
     DomainCreated(Result<String, String>),
     DomainLoaded(Result<BootstrapConfig, String>),
+    SecretsImported(Result<String, String>),
 
     // Organization form inputs
     OrganizationNameChanged(String),
@@ -449,6 +451,54 @@ impl CimKeysApp {
                 {
                     Task::perform(load_config_wasm(), Message::DomainLoaded)
                 }
+            }
+
+            Message::ImportFromSecrets => {
+                // Import from secrets/cowboyai.json and secrets/secrets.json
+                Task::perform(
+                    async move {
+                        use crate::secrets_loader::SecretsLoader;
+                        use std::path::PathBuf;
+
+                        let secrets_path = PathBuf::from("secrets/secrets.json");
+                        let cowboyai_path = PathBuf::from("secrets/cowboyai.json");
+
+                        if !secrets_path.exists() || !cowboyai_path.exists() {
+                            return Err("Secrets files not found. Please ensure secrets/secrets.json and secrets/cowboyai.json exist.".to_string());
+                        }
+
+                        match SecretsLoader::load_from_files(&secrets_path, &cowboyai_path) {
+                            Ok((org, people, yubikey_configs)) => {
+                                Ok(format!(
+                                    "Imported {} ({}) with {} people and {} YubiKeys",
+                                    org.display_name,
+                                    org.name,
+                                    people.len(),
+                                    yubikey_configs.len()
+                                ))
+                            }
+                            Err(e) => Err(format!("Failed to load secrets: {}", e)),
+                        }
+                    },
+                    Message::SecretsImported
+                )
+            }
+
+            Message::SecretsImported(result) => {
+                match result {
+                    Ok(msg) => {
+                        self.status_message = msg.clone();
+                        self.domain_loaded = true;
+                        self.active_tab = Tab::Organization;
+
+                        // TODO: Populate organization and people from loaded data
+                        // For now, just show success message
+                    }
+                    Err(e) => {
+                        self.error_message = Some(e);
+                    }
+                }
+                Task::none()
             }
 
             Message::DomainLoaded(result) => {
@@ -1352,12 +1402,31 @@ impl CimKeysApp {
             container(
                 column![
                     text("Getting Started").size(self.scaled_text_size(20)),
-                    text("Go to the Organization tab to create or load your domain").size(self.scaled_text_size(14)),
-                    button("Go to Organization")
-                        .on_press(Message::TabSelected(Tab::Organization))
-                        .style(CowboyCustomTheme::primary_button())
+                    text("Choose how you want to proceed:").size(self.scaled_text_size(14)),
+
+                    row![
+                        button("Import from Secrets")
+                            .on_press(Message::ImportFromSecrets)
+                            .style(CowboyCustomTheme::security_button()),
+                        text("Load cowboyai.json and secrets.json files")
+                            .size(self.scaled_text_size(12))
+                            .color(CowboyTheme::text_secondary()),
+                    ]
+                    .spacing(self.scaled_padding(10))
+                    .align_y(Alignment::Center),
+
+                    row![
+                        button("Go to Organization")
+                            .on_press(Message::TabSelected(Tab::Organization))
+                            .style(CowboyCustomTheme::primary_button()),
+                        text("Manually create your organization")
+                            .size(self.scaled_text_size(12))
+                            .color(CowboyTheme::text_secondary()),
+                    ]
+                    .spacing(self.scaled_padding(10))
+                    .align_y(Alignment::Center),
                 ]
-                .spacing(self.scaled_padding(10))
+                .spacing(self.scaled_padding(15))
             )
             .padding(self.scaled_padding(20))
             .style(CowboyCustomTheme::glass_container()),
