@@ -623,12 +623,56 @@ impl CimKeysApp {
             }
 
             Message::AddLocation => {
-                // TODO: Implement location addition with persistence
-                self.status_message = format!("Added location: {}", self.new_location_name);
+                // Validate inputs
+                if self.new_location_name.is_empty() {
+                    self.error_message = Some("Location name is required".to_string());
+                    return Task::none();
+                }
+
+                if self.new_location_type.is_none() {
+                    self.error_message = Some("Please select a location type".to_string());
+                    return Task::none();
+                }
+
+                if self.new_location_security_level.is_none() {
+                    self.error_message = Some("Please select a security level".to_string());
+                    return Task::none();
+                }
+
+                // Validate domain is created
+                let org_id = match self.organization_id {
+                    Some(id) => id,
+                    None => {
+                        self.error_message = Some("Please create a domain first".to_string());
+                        return Task::none();
+                    }
+                };
+
+                let location_id = Uuid::now_v7();
+                let location_name = self.new_location_name.clone();
+                let location_type = format!("{}", self.new_location_type.unwrap());
+                let security_level = format!("{}", self.new_location_security_level.unwrap());
+
+                // Clear form fields immediately
                 self.new_location_name.clear();
                 self.new_location_type = None;
                 self.new_location_security_level = None;
-                Task::none()
+
+                // Persist to projection
+                let projection = self.projection.clone();
+
+                Task::perform(
+                    async move {
+                        let mut proj = projection.write().await;
+                        proj.add_location(location_id, location_name.clone(), location_type, security_level, org_id)
+                            .map(|_| format!("Added location: {}", location_name))
+                            .map_err(|e| format!("Failed to add location: {}", e))
+                    },
+                    |result| match result {
+                        Ok(msg) => Message::UpdateStatus(msg),
+                        Err(e) => Message::ShowError(e),
+                    }
+                )
             }
 
             Message::RemoveLocation(_location_id) => {

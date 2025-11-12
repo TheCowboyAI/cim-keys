@@ -68,6 +68,9 @@ pub struct KeyManifest {
     /// All people in the organization
     pub people: Vec<PersonEntry>,
 
+    /// All locations in the organization
+    pub locations: Vec<LocationEntry>,
+
     /// All keys indexed by ID
     pub keys: Vec<KeyEntry>,
 
@@ -155,6 +158,17 @@ pub struct PersonEntry {
     pub created_at: DateTime<Utc>,
 }
 
+/// Entry for a location in the manifest
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocationEntry {
+    pub location_id: Uuid,
+    pub name: String,
+    pub location_type: String,
+    pub security_level: String,
+    pub organization_id: Uuid,
+    pub created_at: DateTime<Utc>,
+}
+
 impl OfflineKeyProjection {
     /// Create a new projection targeting an encrypted partition
     pub fn new<P: AsRef<Path>>(root_path: P) -> Result<Self, ProjectionError> {
@@ -208,6 +222,7 @@ impl OfflineKeyProjection {
                 updated_at: Utc::now(),
                 organization: OrganizationInfo::default(),
                 people: Vec::new(),
+                locations: Vec::new(),
                 keys: Vec::new(),
                 certificates: Vec::new(),
                 pki_hierarchies: Vec::new(),
@@ -480,6 +495,28 @@ impl OfflineKeyProjection {
         &self.manifest.people
     }
 
+    /// Add a location to the organization
+    pub fn add_location(&mut self, location_id: Uuid, name: String, location_type: String, security_level: String, organization_id: Uuid) -> Result<(), ProjectionError> {
+        let location_entry = LocationEntry {
+            location_id,
+            name,
+            location_type,
+            security_level,
+            organization_id,
+            created_at: Utc::now(),
+        };
+
+        self.manifest.locations.push(location_entry);
+        self.manifest.updated_at = Utc::now();
+        self.save_manifest()?;
+        Ok(())
+    }
+
+    /// Get all locations in the organization
+    pub fn get_locations(&self) -> &[LocationEntry] {
+        &self.manifest.locations
+    }
+
     pub fn save_manifest(&self) -> Result<(), ProjectionError> {
         let manifest_path = self.root_path.join("manifest.json");
 
@@ -513,6 +550,7 @@ impl OfflineKeyProjection {
             updated_at: Utc::now(),
             organization: self.manifest.organization.clone(),
             people: Vec::new(),
+            locations: Vec::new(),
             keys: Vec::new(),
             certificates: Vec::new(),
             pki_hierarchies: Vec::new(),
