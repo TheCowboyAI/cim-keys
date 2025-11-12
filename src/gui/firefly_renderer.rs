@@ -201,7 +201,7 @@ impl shader::Primitive for Primitive {
                     from_x + perp_x * glow_width,
                     from_y + perp_y * glow_width,
                     220.0 / 255.0,
-                    255.0 / 255.0,
+                    1.0,
                     80.0 / 255.0,
                     glow_alpha,
                 ];
@@ -209,7 +209,7 @@ impl shader::Primitive for Primitive {
                     from_x - perp_x * glow_width,
                     from_y - perp_y * glow_width,
                     220.0 / 255.0,
-                    255.0 / 255.0,
+                    1.0,
                     80.0 / 255.0,
                     glow_alpha,
                 ];
@@ -217,7 +217,7 @@ impl shader::Primitive for Primitive {
                     to_x + perp_x * glow_width,
                     to_y + perp_y * glow_width,
                     220.0 / 255.0,
-                    255.0 / 255.0,
+                    1.0,
                     80.0 / 255.0,
                     glow_alpha,
                 ];
@@ -225,7 +225,7 @@ impl shader::Primitive for Primitive {
                     to_x - perp_x * glow_width,
                     to_y - perp_y * glow_width,
                     220.0 / 255.0,
-                    255.0 / 255.0,
+                    1.0,
                     80.0 / 255.0,
                     glow_alpha,
                 ];
@@ -244,7 +244,7 @@ impl shader::Primitive for Primitive {
                     from_x + perp_x * core_width,
                     from_y + perp_y * core_width,
                     240.0 / 255.0,
-                    255.0 / 255.0,
+                    1.0,
                     120.0 / 255.0,
                     core_alpha,
                 ];
@@ -252,7 +252,7 @@ impl shader::Primitive for Primitive {
                     from_x - perp_x * core_width,
                     from_y - perp_y * core_width,
                     240.0 / 255.0,
-                    255.0 / 255.0,
+                    1.0,
                     120.0 / 255.0,
                     core_alpha,
                 ];
@@ -260,7 +260,7 @@ impl shader::Primitive for Primitive {
                     to_x + perp_x * core_width,
                     to_y + perp_y * core_width,
                     240.0 / 255.0,
-                    255.0 / 255.0,
+                    1.0,
                     120.0 / 255.0,
                     core_alpha,
                 ];
@@ -268,7 +268,7 @@ impl shader::Primitive for Primitive {
                     to_x - perp_x * core_width,
                     to_y - perp_y * core_width,
                     240.0 / 255.0,
-                    255.0 / 255.0,
+                    1.0,
                     120.0 / 255.0,
                     core_alpha,
                 ];

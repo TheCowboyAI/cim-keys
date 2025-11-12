@@ -374,7 +374,7 @@ pub mod frp {
             self.fireflies.iter().map(|f| FireflyVisual {
                 position: f.position,
                 brightness: f.brightness(self.last_update),
-                color: [220.0 / 255.0, 255.0 / 255.0, 80.0 / 255.0], // Yellow-green
+                color: [220.0 / 255.0, 1.0, 80.0 / 255.0], // Yellow-green
                 size: 15.0,
             }).collect()
         }

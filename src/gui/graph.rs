@@ -98,7 +98,7 @@ impl OrganizationGraph {
     pub fn add_node(&mut self, person: Person, role: KeyOwnerRole) {
         let node = GraphNode {
             person: person.clone(),
-            role: role,
+            role,
             position: self.calculate_node_position(person.id),
             color: self.role_to_color(&role),
             keys_owned: 0,

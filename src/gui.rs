@@ -788,7 +788,7 @@ impl CimKeysApp {
                     Ok(devices) => {
                         self.detected_yubikeys = devices.clone();
                         self.yubikey_detection_status = format!("Found {} YubiKey(s)", devices.len());
-                        if devices.len() > 0 {
+                        if !devices.is_empty() {
                             self.status_message = format!("Detected: {}",
                                 devices.iter()
                                     .map(|d| format!("{} (Serial: {})", d.model, d.serial))

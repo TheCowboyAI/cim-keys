@@ -109,11 +109,11 @@ impl YubiKeyPort for YubiKeyCliAdapter {
         let pin_str = String::from_utf8_lossy(pin.as_bytes());
 
         let output = Command::new("ykman")
-            .args(&["--device", serial])
-            .args(&["piv", "keys", "generate"])
-            .args(&["--algorithm", alg])
-            .args(&["--pin-policy", "DEFAULT"])
-            .args(&["--touch-policy", "DEFAULT"])
+            .args(["--device", serial])
+            .args(["piv", "keys", "generate"])
+            .args(["--algorithm", alg])
+            .args(["--pin-policy", "DEFAULT"])
+            .args(["--touch-policy", "DEFAULT"])
             .arg(slot_id)
             .arg("-")  // Output to stdout
             .env("YKMAN_PIN", pin_str.as_ref())
@@ -159,8 +159,8 @@ impl YubiKeyPort for YubiKeyCliAdapter {
         let pin_str = String::from_utf8_lossy(pin.as_bytes());
 
         let output = Command::new("ykman")
-            .args(&["--device", serial])
-            .args(&["piv", "info"])
+            .args(["--device", serial])
+            .args(["piv", "info"])
             .env("YKMAN_PIN", pin_str.as_ref())
             .output()
             .map_err(|e| YubiKeyError::OperationError(format!("Failed to verify PIN: {}", e)))?;
