@@ -62,6 +62,10 @@ pub struct CimKeysApp {
     organization_name: String,
     organization_domain: String,
 
+    // Master passphrase for encryption
+    master_passphrase: String,
+    master_passphrase_confirm: String,
+
     bootstrap_config: Option<BootstrapConfig>,
     aggregate: Arc<RwLock<KeyManagementAggregate>>,
     projection: Arc<RwLock<OfflineKeyProjection>>,
@@ -146,6 +150,8 @@ pub enum Message {
     // Organization form inputs
     OrganizationNameChanged(String),
     OrganizationDomainChanged(String),
+    MasterPassphraseChanged(String),
+    MasterPassphraseConfirmChanged(String),
 
     // People operations
     NewPersonNameChanged(String),
@@ -278,6 +284,8 @@ impl CimKeysApp {
                 _domain_path: PathBuf::from(&output_dir),
                 organization_name: String::new(),
                 organization_domain: String::new(),
+                master_passphrase: String::new(),
+                master_passphrase_confirm: String::new(),
                 bootstrap_config: None,
                 aggregate,
                 projection,
@@ -424,6 +432,16 @@ impl CimKeysApp {
 
             Message::OrganizationDomainChanged(value) => {
                 self.organization_domain = value;
+                Task::none()
+            }
+
+            Message::MasterPassphraseChanged(value) => {
+                self.master_passphrase = value;
+                Task::none()
+            }
+
+            Message::MasterPassphraseConfirmChanged(value) => {
+                self.master_passphrase_confirm = value;
                 Task::none()
             }
 
@@ -1153,15 +1171,102 @@ impl CimKeysApp {
                                 .style(CowboyCustomTheme::glass_input()),
                         ]
                         .spacing(self.scaled_padding(10)),
+
+                        text("Master Passphrase (encrypts SD card storage)")
+                            .size(self.scaled_text_size(14))
+                            .color(CowboyTheme::text_primary()),
                         row![
-                            button("Load Existing Domain")
-                                .on_press(Message::LoadExistingDomain)
-                                .style(CowboyCustomTheme::glass_button()),
-                            button("Create New Domain")
-                                .on_press(Message::CreateNewDomain)
-                                .style(CowboyCustomTheme::primary_button()),
+                            text_input("Master Passphrase", &self.master_passphrase)
+                                .on_input(Message::MasterPassphraseChanged)
+                                .size(self.scaled_text_size(16))
+                                .secure(true)
+                                .style(CowboyCustomTheme::glass_input()),
+                            text_input("Confirm Passphrase", &self.master_passphrase_confirm)
+                                .on_input(Message::MasterPassphraseConfirmChanged)
+                                .size(self.scaled_text_size(16))
+                                .secure(true)
+                                .style(CowboyCustomTheme::glass_input()),
                         ]
                         .spacing(self.scaled_padding(10)),
+
+                        // Passphrase validation feedback
+                        if !self.master_passphrase.is_empty() || !self.master_passphrase_confirm.is_empty() {
+                            let passphrase_matches = self.master_passphrase == self.master_passphrase_confirm;
+                            let passphrase_strong = self.master_passphrase.len() >= 12;
+                            let has_uppercase = self.master_passphrase.chars().any(|c| c.is_uppercase());
+                            let has_lowercase = self.master_passphrase.chars().any(|c| c.is_lowercase());
+                            let has_digit = self.master_passphrase.chars().any(|c| c.is_numeric());
+                            let has_special = self.master_passphrase.chars().any(|c| !c.is_alphanumeric());
+
+                            column![
+                                if passphrase_strong {
+                                    text("✅ Length: 12+ characters").size(self.scaled_text_size(12)).color(Color::from_rgb(0.0, 0.6, 0.0))
+                                } else {
+                                    text(format!("❌ Length: {}/12 characters", self.master_passphrase.len())).size(self.scaled_text_size(12)).color(Color::from_rgb(0.8, 0.0, 0.0))
+                                },
+                                if has_uppercase {
+                                    text("✅ Contains uppercase letter").size(self.scaled_text_size(12)).color(Color::from_rgb(0.0, 0.6, 0.0))
+                                } else {
+                                    text("❌ Needs uppercase letter").size(self.scaled_text_size(12)).color(Color::from_rgb(0.8, 0.0, 0.0))
+                                },
+                                if has_lowercase {
+                                    text("✅ Contains lowercase letter").size(self.scaled_text_size(12)).color(Color::from_rgb(0.0, 0.6, 0.0))
+                                } else {
+                                    text("❌ Needs lowercase letter").size(self.scaled_text_size(12)).color(Color::from_rgb(0.8, 0.0, 0.0))
+                                },
+                                if has_digit {
+                                    text("✅ Contains number").size(self.scaled_text_size(12)).color(Color::from_rgb(0.0, 0.6, 0.0))
+                                } else {
+                                    text("❌ Needs number").size(self.scaled_text_size(12)).color(Color::from_rgb(0.8, 0.0, 0.0))
+                                },
+                                if has_special {
+                                    text("✅ Contains special character").size(self.scaled_text_size(12)).color(Color::from_rgb(0.0, 0.6, 0.0))
+                                } else {
+                                    text("❌ Needs special character").size(self.scaled_text_size(12)).color(Color::from_rgb(0.8, 0.0, 0.0))
+                                },
+                                if passphrase_matches && !self.master_passphrase.is_empty() {
+                                    text("✅ Passphrases match").size(self.scaled_text_size(12)).color(Color::from_rgb(0.0, 0.6, 0.0))
+                                } else if !self.master_passphrase_confirm.is_empty() {
+                                    text("❌ Passphrases do not match").size(self.scaled_text_size(12)).color(Color::from_rgb(0.8, 0.0, 0.0))
+                                } else {
+                                    text("").size(self.scaled_text_size(12))
+                                },
+                            ]
+                            .spacing(self.scaled_padding(5))
+                        } else {
+                            column![].spacing(0)
+                        },
+
+                        {
+                            // Validate passphrase before allowing domain creation
+                            let passphrase_valid = {
+                                let matches = self.master_passphrase == self.master_passphrase_confirm;
+                                let long_enough = self.master_passphrase.len() >= 12;
+                                let has_upper = self.master_passphrase.chars().any(|c| c.is_uppercase());
+                                let has_lower = self.master_passphrase.chars().any(|c| c.is_lowercase());
+                                let has_digit = self.master_passphrase.chars().any(|c| c.is_numeric());
+                                let has_special = self.master_passphrase.chars().any(|c| !c.is_alphanumeric());
+
+                                matches && long_enough && has_upper && has_lower && has_digit && has_special
+                            };
+
+                            let create_button = if passphrase_valid {
+                                button("Create New Domain")
+                                    .on_press(Message::CreateNewDomain)
+                                    .style(CowboyCustomTheme::primary_button())
+                            } else {
+                                button("Create New Domain")
+                                    .style(CowboyCustomTheme::glass_button())
+                            };
+
+                            row![
+                                button("Load Existing Domain")
+                                    .on_press(Message::LoadExistingDomain)
+                                    .style(CowboyCustomTheme::glass_button()),
+                                create_button,
+                            ]
+                            .spacing(self.scaled_padding(10))
+                        },
                     ]
                     .spacing(self.scaled_padding(10))
                 )
