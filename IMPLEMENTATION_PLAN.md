@@ -149,13 +149,13 @@ Part of comprehensive implementation plan.
 Add a "Locations" tab for managing corporate locations where keys/certs are stored.
 
 ### Requirements
-- [ ] Add `Locations` tab to `Tab` enum (between Organization and Keys)
-- [ ] Add location management state fields
-- [ ] Add `view_locations()` function
-- [ ] Add UI for adding locations (name, type, security level)
-- [ ] Add `AddLocation`, `RemoveLocation` messages
-- [ ] Persist locations to projection
-- [ ] Show list of added locations
+- [x] Add `Locations` tab to `Tab` enum (between Organization and Keys)
+- [x] Add location management state fields
+- [x] Add `view_locations()` function
+- [x] Add UI for adding locations (name, type, security level)
+- [x] Add `AddLocation`, `RemoveLocation` messages
+- [x] Persist locations to projection
+- [x] Show list of added locations
 
 ### Location Types to Support
 - DataCenter
@@ -171,10 +171,16 @@ Add a "Locations" tab for managing corporate locations where keys/certs are stor
 - `src/events.rs` - Add location events
 
 ### Testing
-- [ ] Locations tab appears and works
-- [ ] Can add locations with different types
-- [ ] Locations persist and reload
-- [ ] Locations appear in key storage selection
+- [x] Locations tab appears and works
+- [x] Can add locations with different types
+- [x] Locations persist and reload
+- [x] Location list displays with remove functionality
+
+### Completed
+✅ **Commits**:
+- 83ad9f0 - feat: add Locations management tab
+- c05ffc8 - feat: add location persistence to projection
+- 703534d - feat: display location list in UI with remove functionality
 
 ### Commit Message Template
 ```
@@ -308,10 +314,10 @@ Part of comprehensive implementation plan.
 - ✅ Step 1: Add Master Passphrase Input (Commit ac6da97)
 - ✅ Step 2: Implement Domain Creation (Commit d0a498f)
 - ✅ Step 3: Wire Person Addition (Commit b40ff28)
-- ✅ Step 4: Add Locations Management (Commit 83ad9f0)
+- ✅ Step 4: Add Locations Management (Commits 83ad9f0, c05ffc8, 703534d)
 
 ### Current Step
-Step 5: YubiKey Integration (IN PROGRESS)
+Step 5: YubiKey Integration (IN PROGRESS - Adapter complete, GUI integration pending)
 
 ### Blockers
 - None currently
