@@ -179,10 +179,11 @@ pub struct SecretsLoader;
 
 impl SecretsLoader {
     /// Load and merge secrets from both JSON files
+    /// Returns: (organization, people, yubikey_configs, master_passphrase)
     pub fn load_from_files(
         secrets_path: impl AsRef<Path>,
         cowboyai_path: impl AsRef<Path>,
-    ) -> Result<(Organization, Vec<Person>, Vec<YubiKeyConfig>), SecretsError> {
+    ) -> Result<(Organization, Vec<Person>, Vec<YubiKeyConfig>, Option<String>), SecretsError> {
         // Load secrets.json
         let secrets_content = fs::read_to_string(secrets_path)?;
         let secrets: SecretsFile = serde_json::from_str(&secrets_content)?;
@@ -191,12 +192,15 @@ impl SecretsLoader {
         let cowboyai_content = fs::read_to_string(cowboyai_path)?;
         let cowboyai: CowboyAiFile = serde_json::from_str(&cowboyai_content)?;
 
+        // Extract master passphrase from organization certify_pass
+        let master_passphrase = secrets.org.certify_pass.clone();
+
         // Convert to domain models
         let organization = Self::build_organization(&secrets.org, &cowboyai)?;
         let people = Self::build_people(&secrets.people, &organization)?;
         let yubikey_configs = Self::build_yubikey_configs(&cowboyai.yubikeys, &secrets)?;
 
-        Ok((organization, people, yubikey_configs))
+        Ok((organization, people, yubikey_configs, master_passphrase))
     }
 
     /// Build organization from secrets

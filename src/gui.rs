@@ -95,6 +95,7 @@ pub struct CimKeysApp {
     detected_yubikeys: Vec<crate::ports::yubikey::YubiKeyDevice>,
     yubikey_detection_status: String,
     yubikey_configs: Vec<crate::domain::YubiKeyConfig>,  // Imported from secrets
+    loaded_locations: Vec<crate::projections::LocationEntry>,  // Loaded from manifest
 
     // Key generation state
     key_generation_progress: f32,
@@ -157,7 +158,8 @@ pub enum Message {
     ImportFromSecrets,
     DomainCreated(Result<String, String>),
     DomainLoaded(Result<BootstrapConfig, String>),
-    SecretsImported(Result<(crate::domain::Organization, Vec<crate::domain::Person>, Vec<crate::domain::YubiKeyConfig>), String>),
+    SecretsImported(Result<(crate::domain::Organization, Vec<crate::domain::Person>, Vec<crate::domain::YubiKeyConfig>, Option<String>), String>),
+    ManifestDataLoaded(Result<(crate::projections::OrganizationInfo, Vec<crate::projections::LocationEntry>), String>),
 
     // Organization form inputs
     OrganizationNameChanged(String),
@@ -298,6 +300,22 @@ impl CimKeysApp {
         // Initialize MVI model
         let mvi_model = MviModel::new(PathBuf::from(&output_dir));
 
+        // Load existing data from manifest if it exists
+        let load_task = {
+            let proj = projection.clone();
+            Task::perform(
+                async move {
+                    let proj_read = proj.read().await;
+                    let org = proj_read.get_organization();
+                    let locations = proj_read.get_locations().to_vec();
+                    Ok((org.clone(), locations))
+                },
+                |result: Result<(crate::projections::OrganizationInfo, Vec<crate::projections::LocationEntry>), String>| {
+                    Message::ManifestDataLoaded(result)
+                }
+            )
+        };
+
         (
             Self {
                 active_tab: Tab::Welcome,
@@ -326,6 +344,7 @@ impl CimKeysApp {
                 detected_yubikeys: Vec::new(),
                 yubikey_detection_status: "Click 'Detect YubiKeys' to scan for hardware".to_string(),
                 yubikey_configs: Vec::new(),
+                loaded_locations: Vec::new(),
                 key_generation_progress: 0.0,
                 keys_generated: 0,
                 total_keys_to_generate: 0,
@@ -352,7 +371,7 @@ impl CimKeysApp {
                 ssh_port,
                 yubikey_port,
             },
-            Task::none(),
+            load_task,
         )
     }
 
@@ -480,11 +499,17 @@ impl CimKeysApp {
 
             Message::SecretsImported(result) => {
                 match result {
-                    Ok((org, people, yubikey_configs)) => {
+                    Ok((org, people, yubikey_configs, master_passphrase)) => {
                         // Set organization info
                         self.organization_name = org.name.clone();
                         self.organization_domain = org.display_name.clone();
                         self.organization_id = Some(org.id);
+
+                        // Set master passphrase if provided
+                        if let Some(passphrase) = master_passphrase {
+                            self.master_passphrase = passphrase.clone();
+                            self.master_passphrase_confirm = passphrase;
+                        }
 
                         // Populate graph with people
                         for person in &people {
@@ -518,6 +543,30 @@ impl CimKeysApp {
                     }
                     Err(e) => {
                         self.error_message = Some(e);
+                    }
+                }
+                Task::none()
+            }
+
+            Message::ManifestDataLoaded(result) => {
+                match result {
+                    Ok((org_info, locations)) => {
+                        // Populate organization info if available
+                        if !org_info.name.is_empty() {
+                            self.organization_name = org_info.name.clone();
+                            self.organization_domain = org_info.domain.clone();
+                            // Note: We don't have org_id in OrganizationInfo, but we can leave it
+                            self.status_message = format!("Loaded organization: {}", org_info.name);
+                        }
+
+                        // Store loaded locations
+                        self.loaded_locations = locations.clone();
+                        if !locations.is_empty() {
+                            self.status_message = format!("Loaded {} locations from manifest", locations.len());
+                        }
+                    }
+                    Err(_e) => {
+                        // Silently ignore - manifest might not exist yet
                     }
                 }
                 Task::none()
