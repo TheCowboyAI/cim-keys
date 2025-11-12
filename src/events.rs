@@ -68,6 +68,18 @@ pub enum KeyEvent {
 
     /// NATS configuration exported
     NatsConfigExported(NatsConfigExportedEvent),
+
+    /// JWKS (JSON Web Key Set) exported for OIDC/OAuth2
+    JwksExported(JwksExportedEvent),
+
+    /// Key rotation initiated
+    KeyRotationInitiated(KeyRotationInitiatedEvent),
+
+    /// Key rotation completed
+    KeyRotationCompleted(KeyRotationCompletedEvent),
+
+    /// TOTP secret generated
+    TotpSecretGenerated(TotpSecretGeneratedEvent),
 }
 
 /// Key was generated
@@ -308,6 +320,12 @@ pub enum KeyPurpose {
     Authentication,
     KeyAgreement,
     CertificateAuthority,
+    /// JWT/JWS signing for OIDC/OAuth2
+    JwtSigning,
+    /// Token encryption (for encrypted JWTs)
+    JwtEncryption,
+    /// TOTP/OATH shared secrets
+    TotpSecret,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -316,6 +334,23 @@ pub struct KeyMetadata {
     pub description: Option<String>,
     pub tags: Vec<String>,
     pub attributes: std::collections::HashMap<String, String>,
+    /// JWT Key ID (kid) for JWKS
+    pub jwt_kid: Option<String>,
+    /// JWT algorithm (RS256, ES256, EdDSA, etc.)
+    pub jwt_alg: Option<String>,
+    /// JWT key use (sig, enc)
+    pub jwt_use: Option<JwtKeyUse>,
+}
+
+/// JWT key use per RFC 7517
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum JwtKeyUse {
+    /// Signature verification
+    #[serde(rename = "sig")]
+    Signature,
+    /// Encryption
+    #[serde(rename = "enc")]
+    Encryption,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -385,6 +420,52 @@ pub enum TrustLevel {
 }
 
 // Implement DomainEvent for KeyEvent
+/// JWKS exported for OIDC/OAuth2
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JwksExportedEvent {
+    pub export_id: Uuid,
+    pub key_ids: Vec<Uuid>,
+    pub issuer: String,
+    pub export_path: String,
+    pub exported_at: DateTime<Utc>,
+}
+
+/// Key rotation initiated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyRotationInitiatedEvent {
+    pub rotation_id: Uuid,
+    pub old_key_id: Uuid,
+    pub new_key_id: Uuid,
+    pub rotation_reason: String,
+    pub initiated_at: DateTime<Utc>,
+    pub initiated_by: String,
+}
+
+/// Key rotation completed
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyRotationCompletedEvent {
+    pub rotation_id: Uuid,
+    pub old_key_id: Uuid,
+    pub new_key_id: Uuid,
+    pub completed_at: DateTime<Utc>,
+    pub transition_period_ends: DateTime<Utc>,
+}
+
+/// TOTP secret generated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TotpSecretGeneratedEvent {
+    pub secret_id: Uuid,
+    pub person_id: Uuid,
+    pub algorithm: String,  // SHA1, SHA256, SHA512
+    pub digits: u8,         // Usually 6 or 8
+    pub period: u32,        // Usually 30 seconds
+    pub generated_at: DateTime<Utc>,
+    /// YubiKey serial if provisioned to hardware
+    pub yubikey_serial: Option<String>,
+    /// OATH slot if on YubiKey
+    pub oath_slot: Option<u8>,
+}
+
 impl DomainEvent for KeyEvent {
     fn aggregate_id(&self) -> Uuid {
         match self {
@@ -406,6 +487,10 @@ impl DomainEvent for KeyEvent {
             KeyEvent::NatsSigningKeyGenerated(e) => e.key_id,
             KeyEvent::NatsPermissionsSet(e) => e.entity_id,
             KeyEvent::NatsConfigExported(e) => e.export_id,
+            KeyEvent::JwksExported(e) => e.export_id,
+            KeyEvent::KeyRotationInitiated(e) => e.rotation_id,
+            KeyEvent::KeyRotationCompleted(e) => e.rotation_id,
+            KeyEvent::TotpSecretGenerated(e) => e.secret_id,
         }
     }
 
@@ -429,6 +514,10 @@ impl DomainEvent for KeyEvent {
             KeyEvent::NatsSigningKeyGenerated(_) => "NatsSigningKeyGenerated",
             KeyEvent::NatsPermissionsSet(_) => "NatsPermissionsSet",
             KeyEvent::NatsConfigExported(_) => "NatsConfigExported",
+            KeyEvent::JwksExported(_) => "JwksExported",
+            KeyEvent::KeyRotationInitiated(_) => "KeyRotationInitiated",
+            KeyEvent::KeyRotationCompleted(_) => "KeyRotationCompleted",
+            KeyEvent::TotpSecretGenerated(_) => "TotpSecretGenerated",
         }
     }
 }

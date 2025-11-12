@@ -293,6 +293,10 @@ impl KeyEvent {
             KeyEvent::NatsSigningKeyGenerated(_e) => Uuid::now_v7(), // Generate ID from event
             KeyEvent::NatsPermissionsSet(_e) => Uuid::now_v7(), // Generate ID from event
             KeyEvent::NatsConfigExported(_e) => Uuid::now_v7(), // Generate ID from event
+            KeyEvent::JwksExported(e) => e.export_id,
+            KeyEvent::KeyRotationInitiated(e) => e.rotation_id,
+            KeyEvent::KeyRotationCompleted(e) => e.rotation_id,
+            KeyEvent::TotpSecretGenerated(e) => e.secret_id,
         }
     }
 
@@ -316,6 +320,10 @@ impl KeyEvent {
             KeyEvent::NatsSigningKeyGenerated(_) => "NatsSigningKeyGenerated",
             KeyEvent::NatsPermissionsSet(_) => "NatsPermissionsSet",
             KeyEvent::NatsConfigExported(_) => "NatsConfigExported",
+            KeyEvent::JwksExported(_) => "JwksExported",
+            KeyEvent::KeyRotationInitiated(_) => "KeyRotationInitiated",
+            KeyEvent::KeyRotationCompleted(_) => "KeyRotationCompleted",
+            KeyEvent::TotpSecretGenerated(_) => "TotpSecretGenerated",
         }
     }
 }
