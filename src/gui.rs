@@ -94,6 +94,7 @@ pub struct CimKeysApp {
     yubikey_assigned_to: Option<Uuid>,
     detected_yubikeys: Vec<crate::ports::yubikey::YubiKeyDevice>,
     yubikey_detection_status: String,
+    yubikey_configs: Vec<crate::domain::YubiKeyConfig>,  // Imported from secrets
 
     // Key generation state
     key_generation_progress: f32,
@@ -156,7 +157,7 @@ pub enum Message {
     ImportFromSecrets,
     DomainCreated(Result<String, String>),
     DomainLoaded(Result<BootstrapConfig, String>),
-    SecretsImported(Result<String, String>),
+    SecretsImported(Result<(crate::domain::Organization, Vec<crate::domain::Person>, Vec<crate::domain::YubiKeyConfig>), String>),
 
     // Organization form inputs
     OrganizationNameChanged(String),
@@ -324,6 +325,7 @@ impl CimKeysApp {
                 yubikey_assigned_to: None,
                 detected_yubikeys: Vec::new(),
                 yubikey_detection_status: "Click 'Detect YubiKeys' to scan for hardware".to_string(),
+                yubikey_configs: Vec::new(),
                 key_generation_progress: 0.0,
                 keys_generated: 0,
                 total_keys_to_generate: 0,
@@ -468,15 +470,7 @@ impl CimKeysApp {
                         }
 
                         match SecretsLoader::load_from_files(&secrets_path, &cowboyai_path) {
-                            Ok((org, people, yubikey_configs)) => {
-                                Ok(format!(
-                                    "Imported {} ({}) with {} people and {} YubiKeys",
-                                    org.display_name,
-                                    org.name,
-                                    people.len(),
-                                    yubikey_configs.len()
-                                ))
-                            }
+                            Ok(data) => Ok(data),
                             Err(e) => Err(format!("Failed to load secrets: {}", e)),
                         }
                     },
@@ -486,13 +480,41 @@ impl CimKeysApp {
 
             Message::SecretsImported(result) => {
                 match result {
-                    Ok(msg) => {
-                        self.status_message = msg.clone();
+                    Ok((org, people, yubikey_configs)) => {
+                        // Set organization info
+                        self.organization_name = org.name.clone();
+                        self.organization_domain = org.display_name.clone();
+                        self.organization_id = Some(org.id);
+
+                        // Populate graph with people
+                        for person in &people {
+                            // Determine role based on YubiKey configs
+                            let role = yubikey_configs
+                                .iter()
+                                .find(|yk| yk.owner_email == person.email)
+                                .map(|yk| match yk.role {
+                                    crate::domain::YubiKeyRole::RootCA => KeyOwnerRole::RootAuthority,
+                                    crate::domain::YubiKeyRole::Backup => KeyOwnerRole::BackupHolder,
+                                    crate::domain::YubiKeyRole::Service => KeyOwnerRole::ServiceAccount,
+                                    crate::domain::YubiKeyRole::User => KeyOwnerRole::Developer,
+                                })
+                                .unwrap_or(KeyOwnerRole::Developer);
+
+                            self.org_graph.add_node(person.clone(), role);
+                        }
+
+                        // Store YubiKey configs
+                        self.yubikey_configs = yubikey_configs.clone();
+
                         self.domain_loaded = true;
                         self.active_tab = Tab::Organization;
-
-                        // TODO: Populate organization and people from loaded data
-                        // For now, just show success message
+                        self.status_message = format!(
+                            "Imported {} ({}) with {} people and {} YubiKeys",
+                            org.display_name,
+                            org.name,
+                            people.len(),
+                            yubikey_configs.len()
+                        );
                     }
                     Err(e) => {
                         self.error_message = Some(e);
@@ -795,9 +817,92 @@ impl CimKeysApp {
             }
 
             Message::ProvisionYubiKey => {
-                // TODO: Implement YubiKey provisioning
-                self.status_message = "YubiKey provisioning started".to_string();
-                Task::none()
+                // Provision all detected YubiKeys with their configurations
+                if self.detected_yubikeys.is_empty() {
+                    self.error_message = Some("No YubiKeys detected. Please run detection first.".to_string());
+                    return Task::none();
+                }
+
+                if self.yubikey_configs.is_empty() {
+                    self.error_message = Some("No YubiKey configurations loaded. Please import secrets first.".to_string());
+                    return Task::none();
+                }
+
+                self.status_message = "Provisioning YubiKeys...".to_string();
+
+                let detected = self.detected_yubikeys.clone();
+                let configs = self.yubikey_configs.clone();
+                let yubikey_port = self.yubikey_port.clone();
+
+                Task::perform(
+                    async move {
+                        use crate::ports::yubikey::{PivSlot, KeyAlgorithm};
+                        use crate::ports::yubikey::SecureString;
+
+                        let mut results = Vec::new();
+
+                        for device in &detected {
+                            // Find matching config by serial number
+                            if let Some(config) = configs.iter().find(|c| c.serial == device.serial) {
+                                let serial = device.serial.clone();
+
+                                // Determine PIV slot based on role
+                                let slot = match config.role {
+                                    crate::domain::YubiKeyRole::RootCA => PivSlot::Signature,  // 9C - for signing
+                                    crate::domain::YubiKeyRole::Backup => PivSlot::KeyManagement,  // 9D - for backup
+                                    crate::domain::YubiKeyRole::User => PivSlot::Authentication,  // 9A - for auth
+                                    crate::domain::YubiKeyRole::Service => PivSlot::CardAuth,  // 9E - for service
+                                };
+
+                                // Use PIN from config
+                                let pin = SecureString::new(config.piv.pin.as_bytes());
+
+                                // Generate key in the slot
+                                match yubikey_port.generate_key_in_slot(
+                                    &serial,
+                                    slot,
+                                    KeyAlgorithm::EccP256,  // Default to P-256
+                                    &pin
+                                ).await {
+                                    Ok(_public_key) => {
+                                        results.push(format!(
+                                            "✓ {} ({}) - {} provisioned in slot {:?}",
+                                            config.name,
+                                            serial,
+                                            match config.role {
+                                                crate::domain::YubiKeyRole::RootCA => "Root CA",
+                                                crate::domain::YubiKeyRole::Backup => "Backup",
+                                                crate::domain::YubiKeyRole::User => "User",
+                                                crate::domain::YubiKeyRole::Service => "Service",
+                                            },
+                                            slot
+                                        ));
+                                    }
+                                    Err(e) => {
+                                        results.push(format!(
+                                            "✗ {} ({}) - Failed: {:?}",
+                                            config.name,
+                                            serial,
+                                            e
+                                        ));
+                                    }
+                                }
+                            } else {
+                                results.push(format!(
+                                    "⚠ Serial {} detected but no configuration found",
+                                    device.serial
+                                ));
+                            }
+                        }
+
+                        if results.iter().all(|r| r.starts_with('✓')) {
+                            Ok(results.join("\n"))
+                        } else {
+                            Err(results.join("\n"))
+                        }
+                    },
+                    Message::YubiKeyProvisioned
+                )
             }
 
             // Key generation
