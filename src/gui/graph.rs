@@ -396,6 +396,48 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                 });
 
                 frame.stroke(&arrow, stroke);
+
+                // Draw edge label
+                let edge_label = match &edge.edge_type {
+                    EdgeType::Hierarchy => "reports to",
+                    EdgeType::Delegation(_) => "delegates to",
+                    EdgeType::Trust => "trusts",
+                };
+
+                // Calculate midpoint for label
+                let mid_x = (from_node.position.x + to_node.position.x) / 2.0;
+                let mid_y = (from_node.position.y + to_node.position.y) / 2.0;
+
+                // Offset label perpendicular to edge
+                let perp_angle = angle + std::f32::consts::PI / 2.0;
+                let offset = 15.0;
+                let label_position = Point::new(
+                    mid_x + offset * perp_angle.cos(),
+                    mid_y + offset * perp_angle.sin(),
+                );
+
+                // Draw label background
+                let label_bg = canvas::Path::rectangle(
+                    Point::new(label_position.x - 40.0, label_position.y - 8.0),
+                    iced::Size::new(80.0, 16.0),
+                );
+                frame.fill(&label_bg, Color::from_rgba(1.0, 1.0, 1.0, 0.9));
+                frame.stroke(&label_bg, canvas::Stroke::default()
+                    .with_color(edge.color)
+                    .with_width(1.0));
+
+                // Draw label text
+                frame.fill_text(canvas::Text {
+                    content: edge_label.to_string(),
+                    position: label_position,
+                    color: Color::from_rgb(0.2, 0.2, 0.2),
+                    size: iced::Pixels(10.0),
+                    font: iced::Font::DEFAULT,
+                    horizontal_alignment: iced::alignment::Horizontal::Center,
+                    vertical_alignment: iced::alignment::Vertical::Center,
+                    line_height: LineHeight::default(),
+                    shaping: Shaping::Advanced,
+                });
             }
         }
 
@@ -423,20 +465,63 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                 .with_width(if is_selected { 2.0 } else { 1.0 });
             frame.stroke(&circle, border_stroke);
 
-            // Draw text label
-            let label_position = Point::new(
-                node.position.x,
-                node.position.y + radius + 15.0,
-            );
+            // Draw node properties as multi-line text
+            let role_str = match node.role {
+                KeyOwnerRole::RootAuthority => "Root CA",
+                KeyOwnerRole::SecurityAdmin => "Security Admin",
+                KeyOwnerRole::Developer => "Developer",
+                KeyOwnerRole::ServiceAccount => "Service",
+                KeyOwnerRole::BackupHolder => "Backup",
+                KeyOwnerRole::Auditor => "Auditor",
+            };
 
+            // Name (below node)
+            let name_position = Point::new(
+                node.position.x,
+                node.position.y + radius + 12.0,
+            );
             frame.fill_text(canvas::Text {
                 content: node.person.name.clone(),
-                position: label_position,
+                position: name_position,
                 color: Color::BLACK,
-                size: iced::Pixels(12.0),
-                font: iced::Font::default(),
+                size: iced::Pixels(13.0),
+                font: iced::Font::DEFAULT,
                 horizontal_alignment: iced::alignment::Horizontal::Center,
                 vertical_alignment: iced::alignment::Vertical::Top,
+                line_height: LineHeight::default(),
+                shaping: Shaping::Advanced,
+            });
+
+            // Email (below name)
+            let email_position = Point::new(
+                node.position.x,
+                node.position.y + radius + 27.0,
+            );
+            frame.fill_text(canvas::Text {
+                content: node.person.email.clone(),
+                position: email_position,
+                color: Color::from_rgb(0.4, 0.4, 0.4),
+                size: iced::Pixels(10.0),
+                font: iced::Font::DEFAULT,
+                horizontal_alignment: iced::alignment::Horizontal::Center,
+                vertical_alignment: iced::alignment::Vertical::Top,
+                line_height: LineHeight::default(),
+                shaping: Shaping::Advanced,
+            });
+
+            // Role (above node)
+            let role_position = Point::new(
+                node.position.x,
+                node.position.y - radius - 8.0,
+            );
+            frame.fill_text(canvas::Text {
+                content: role_str.to_string(),
+                position: role_position,
+                color: node.color,
+                size: iced::Pixels(11.0),
+                font: iced::Font::DEFAULT,
+                horizontal_alignment: iced::alignment::Horizontal::Center,
+                vertical_alignment: iced::alignment::Vertical::Bottom,
                 line_height: LineHeight::default(),
                 shaping: Shaping::Advanced,
             });
