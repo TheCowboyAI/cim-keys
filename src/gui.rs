@@ -125,6 +125,19 @@ pub struct CimKeysApp {
     nats_operator_id: Option<Uuid>,
     nats_export_path: PathBuf,
 
+    // Collapsible sections state
+    root_ca_collapsed: bool,
+    intermediate_ca_collapsed: bool,
+    server_cert_collapsed: bool,
+    yubikey_section_collapsed: bool,
+    nats_section_collapsed: bool,
+    certificates_collapsed: bool,
+    keys_collapsed: bool,
+
+    // Root passphrase for PKI
+    root_passphrase: String,
+    root_passphrase_confirm: String,
+
     // Status
     status_message: String,
     error_message: Option<String>,
@@ -226,6 +239,19 @@ pub enum Message {
     NatsHierarchyGenerated(Result<String, String>),
     ExportToNsc,
     NscExported(Result<String, String>),
+
+    // Root passphrase operations
+    RootPassphraseChanged(String),
+    RootPassphraseConfirmChanged(String),
+
+    // Collapsible section toggles
+    ToggleRootCA,
+    ToggleIntermediateCA,
+    ToggleServerCert,
+    ToggleYubiKeySection,
+    ToggleNatsSection,
+    ToggleCertificatesSection,
+    ToggleKeysSection,
 
     // Status messages
     UpdateStatus(String),
@@ -382,6 +408,15 @@ impl CimKeysApp {
                 nats_hierarchy_generated: false,
                 nats_operator_id: None,
                 nats_export_path: PathBuf::from(&output_dir).join("nsc"),
+                root_ca_collapsed: false,
+                intermediate_ca_collapsed: false,
+                server_cert_collapsed: false,
+                yubikey_section_collapsed: false,
+                nats_section_collapsed: false,
+                certificates_collapsed: true,
+                keys_collapsed: true,
+                root_passphrase: String::new(),
+                root_passphrase_confirm: String::new(),
                 status_message: String::from("🔐 Welcome to CIM Keys - Offline Key Management System"),
                 error_message: None,
                 animation_time: 0.0,
@@ -1304,6 +1339,53 @@ impl CimKeysApp {
                 Task::none()
             }
 
+            // Root passphrase operations
+            Message::RootPassphraseChanged(passphrase) => {
+                self.root_passphrase = passphrase;
+                Task::none()
+            }
+
+            Message::RootPassphraseConfirmChanged(passphrase) => {
+                self.root_passphrase_confirm = passphrase;
+                Task::none()
+            }
+
+            // Collapsible section toggles
+            Message::ToggleRootCA => {
+                self.root_ca_collapsed = !self.root_ca_collapsed;
+                Task::none()
+            }
+
+            Message::ToggleIntermediateCA => {
+                self.intermediate_ca_collapsed = !self.intermediate_ca_collapsed;
+                Task::none()
+            }
+
+            Message::ToggleServerCert => {
+                self.server_cert_collapsed = !self.server_cert_collapsed;
+                Task::none()
+            }
+
+            Message::ToggleYubiKeySection => {
+                self.yubikey_section_collapsed = !self.yubikey_section_collapsed;
+                Task::none()
+            }
+
+            Message::ToggleNatsSection => {
+                self.nats_section_collapsed = !self.nats_section_collapsed;
+                Task::none()
+            }
+
+            Message::ToggleCertificatesSection => {
+                self.certificates_collapsed = !self.certificates_collapsed;
+                Task::none()
+            }
+
+            Message::ToggleKeysSection => {
+                self.keys_collapsed = !self.keys_collapsed;
+                Task::none()
+            }
+
             // Status messages
             Message::UpdateStatus(status) => {
                 self.status_message = status;
@@ -2029,43 +2111,80 @@ impl CimKeysApp {
         let progress_percentage = self.key_generation_progress * 100.0;
 
         let content = column![
-            text("Generate Keys for Organization").size(self.scaled_text_size(20)),
-            text("Generate cryptographic keys for all organization members").size(self.scaled_text_size(14)),
+            text("Generate Keys for Organization").size(self.scaled_text_size(24)),
+            text("Generate cryptographic keys for all organization members").size(self.scaled_text_size(15)),
+
+            // Root Passphrase Section
+            container(
+                column![
+                    text("Root Passphrase (Required for PKI Operations)")
+                        .size(self.scaled_text_size(18))
+                        .color(CowboyTheme::text_primary()),
+                    text_input("Root Passphrase", &self.root_passphrase)
+                        .on_input(Message::RootPassphraseChanged)
+                        .secure(true)
+                        .size(self.scaled_text_size(16))
+                        .padding(self.scaled_padding(12))
+                        .style(CowboyCustomTheme::glass_input()),
+                    text_input("Confirm Root Passphrase", &self.root_passphrase_confirm)
+                        .on_input(Message::RootPassphraseConfirmChanged)
+                        .secure(true)
+                        .size(self.scaled_text_size(16))
+                        .padding(self.scaled_padding(12))
+                        .style(CowboyCustomTheme::glass_input()),
+                    if !self.root_passphrase.is_empty() && self.root_passphrase == self.root_passphrase_confirm {
+                        text("✓ Passphrases match")
+                            .size(self.scaled_text_size(14))
+                            .color(Color::from_rgb(0.2, 0.9, 0.2))
+                    } else if !self.root_passphrase.is_empty() && !self.root_passphrase_confirm.is_empty() {
+                        text("✗ Passphrases do not match")
+                            .size(self.scaled_text_size(14))
+                            .color(Color::from_rgb(0.9, 0.2, 0.2))
+                    } else {
+                        text("")
+                    }
+                ]
+                .spacing(self.scaled_padding(12))
+            )
+            .padding(self.scaled_padding(20))
+            .style(CowboyCustomTheme::pastel_coral_card()),
 
             container(
                 column![
                     text("PKI Hierarchy Generation")
-                        .size(self.scaled_text_size(16))
+                        .size(self.scaled_text_size(18))
                         .color(CowboyTheme::text_primary()),
 
                     // Root CA Section
-                    text("1. Root CA (Trust Anchor)").size(self.scaled_text_size(14)),
+                    text("1. Root CA (Trust Anchor)").size(self.scaled_text_size(16)),
                     button("Generate Root CA")
                         .on_press(Message::GenerateRootCA)
+                        .padding(self.scaled_padding(14))
                         .style(CowboyCustomTheme::security_button()),
 
                     // Intermediate CA Section
-                    text("2. Intermediate CA (Signing-Only, pathlen:0)").size(self.scaled_text_size(14)),
-                    row![
-                        text_input("CA Name (e.g., 'Engineering')", &self.intermediate_ca_name_input)
-                            .on_input(Message::IntermediateCANameChanged)
-                            .size(self.scaled_text_size(14))
-                            .style(CowboyCustomTheme::glass_input()),
-                        button("Generate Intermediate CA")
-                            .on_press(Message::GenerateIntermediateCA)
-                            .style(CowboyCustomTheme::primary_button()),
-                    ]
-                    .spacing(self.scaled_padding(10)),
+                    text("2. Intermediate CA (Signing-Only, pathlen:0)").size(self.scaled_text_size(16)),
+                    text_input("CA Name (e.g., 'Engineering')", &self.intermediate_ca_name_input)
+                        .on_input(Message::IntermediateCANameChanged)
+                        .size(self.scaled_text_size(16))
+                        .padding(self.scaled_padding(12))
+                        .style(CowboyCustomTheme::glass_input()),
+                    button("Generate Intermediate CA")
+                        .on_press(Message::GenerateIntermediateCA)
+                        .padding(self.scaled_padding(14))
+                        .style(CowboyCustomTheme::primary_button()),
 
                     // Server Certificate Section
-                    text("3. Server Certificates").size(self.scaled_text_size(14)),
+                    text("3. Server Certificates").size(self.scaled_text_size(16)),
                     text_input("Common Name (e.g., 'nats.example.com')", &self.server_cert_cn_input)
                         .on_input(Message::ServerCertCNChanged)
-                        .size(self.scaled_text_size(14))
+                        .size(self.scaled_text_size(16))
+                        .padding(self.scaled_padding(12))
                         .style(CowboyCustomTheme::glass_input()),
                     text_input("SANs (comma-separated DNS names or IPs)", &self.server_cert_sans_input)
                         .on_input(Message::ServerCertSANsChanged)
-                        .size(self.scaled_text_size(14))
+                        .size(self.scaled_text_size(16))
+                        .padding(self.scaled_padding(12))
                         .style(CowboyCustomTheme::glass_input()),
 
                     // CA selection picker
@@ -2148,18 +2267,34 @@ impl CimKeysApp {
                         container(text(""))
                     },
 
-                    // YubiKey Detection and Management
-                    text("4. YubiKey Hardware Detection").size(self.scaled_text_size(14)),
-                    row![
-                        button("Detect YubiKeys")
-                            .on_press(Message::DetectYubiKeys)
-                            .style(CowboyCustomTheme::security_button()),
-                        text(&self.yubikey_detection_status)
-                            .size(self.scaled_text_size(12))
-                            .color(CowboyTheme::text_secondary()),
-                    ]
-                    .spacing(self.scaled_padding(10))
-                    .align_y(Alignment::Center),
+                    // Step 4: YubiKey Detection and Management (Card with Collapse)
+                    container(
+                        column![
+                            row![
+                                button(if self.yubikey_section_collapsed { "▶" } else { "▼" })
+                                    .on_press(Message::ToggleYubiKeySection)
+                                    .padding(self.scaled_padding(8))
+                                    .style(CowboyCustomTheme::glass_button()),
+                                text("4. YubiKey Hardware Detection")
+                                    .size(self.scaled_text_size(18))
+                                    .color(CowboyTheme::text_primary()),
+                            ]
+                            .spacing(self.scaled_padding(10))
+                            .align_y(Alignment::Center),
+
+                            if !self.yubikey_section_collapsed {
+                                column![
+                                    row![
+                                        button("Detect YubiKeys")
+                                            .on_press(Message::DetectYubiKeys)
+                                            .padding(self.scaled_padding(14))
+                                            .style(CowboyCustomTheme::security_button()),
+                                        text(&self.yubikey_detection_status)
+                                            .size(self.scaled_text_size(14))
+                                            .color(CowboyTheme::text_secondary()),
+                                    ]
+                                    .spacing(self.scaled_padding(10))
+                                    .align_y(Alignment::Center),
 
                     // Display detected YubiKeys
                     if !self.detected_yubikeys.is_empty() {
@@ -2263,78 +2398,113 @@ impl CimKeysApp {
                     } else {
                         container(text(""))
                     },
+                                ]
+                                .spacing(self.scaled_padding(12))
+                            } else {
+                                column![]
+                            }
+                        ]
+                        .spacing(self.scaled_padding(12))
+                    )
+                    .padding(self.scaled_padding(20))
+                    .style(CowboyCustomTheme::pastel_mint_card()),
 
-                    // Loaded Certificates from Manifest
+                    // Loaded Certificates from Manifest (Collapsible)
                     if !self.loaded_certificates.is_empty() {
-                        text(format!("📜 Certificates from Manifest ({} loaded)", self.loaded_certificates.len()))
-                            .size(self.scaled_text_size(14))
-                            .color(CowboyTheme::text_primary())
-                    } else {
-                        text("")
-                    },
+                        container(
+                            column![
+                                row![
+                                    button(if self.certificates_collapsed { "▶" } else { "▼" })
+                                        .on_press(Message::ToggleCertificatesSection)
+                                        .padding(self.scaled_padding(8))
+                                        .style(CowboyCustomTheme::glass_button()),
+                                    text(format!("📜 Certificates from Manifest ({} loaded)", self.loaded_certificates.len()))
+                                        .size(self.scaled_text_size(16))
+                                        .color(CowboyTheme::text_primary()),
+                                ]
+                                .spacing(self.scaled_padding(10))
+                                .align_y(Alignment::Center),
 
-                    if !self.loaded_certificates.is_empty() {
-                        let mut cert_list = column![].spacing(self.scaled_padding(6));
+                                if !self.certificates_collapsed {
+                                    {
+                                        let mut cert_list = column![].spacing(self.scaled_padding(6));
 
-                        for cert in &self.loaded_certificates {
-                            cert_list = cert_list.push(
-                                container(
-                                    column![
-                                        text(format!("🔐 {}{}", cert.subject, if cert.is_ca { " (CA)" } else { "" }))
-                                            .size(self.scaled_text_size(12))
-                                            .color(if cert.is_ca { Color::from_rgb(0.8, 0.3, 0.3) } else { Color::from_rgb(0.3, 0.6, 0.8) }),
-                                        row![
-                                            column![
-                                                text(format!("Serial: {}...", &cert.serial_number.chars().take(16).collect::<String>()))
-                                                    .size(self.scaled_text_size(10))
-                                                    .color(CowboyTheme::text_secondary()),
-                                                if let Some(ref issuer) = cert.issuer {
-                                                    text(format!("Issuer: {}", issuer))
-                                                        .size(self.scaled_text_size(10))
-                                                        .color(CowboyTheme::text_secondary())
-                                                } else {
-                                                    text("")
-                                                },
-                                            ]
-                                            .spacing(self.scaled_padding(2)),
-                                            horizontal_space(),
-                                            column![
-                                                text(format!("Valid: {} to {}",
-                                                    cert.not_before.format("%Y-%m-%d"),
-                                                    cert.not_after.format("%Y-%m-%d")))
-                                                    .size(self.scaled_text_size(10))
-                                                    .color(CowboyTheme::text_secondary()),
-                                            ]
-                                            .align_x(iced::alignment::Horizontal::Right),
-                                        ]
-                                    ]
-                                    .spacing(self.scaled_padding(3))
-                                )
-                                .padding(self.scaled_padding(8))
-                                .style(CowboyCustomTheme::pastel_teal_card())
-                            );
-                        }
+                                        for cert in &self.loaded_certificates {
+                                            cert_list = cert_list.push(
+                                                container(
+                                                    column![
+                                                        text(format!("🔐 {}{}", cert.subject, if cert.is_ca { " (CA)" } else { "" }))
+                                                            .size(self.scaled_text_size(12))
+                                                            .color(if cert.is_ca { Color::from_rgb(0.8, 0.3, 0.3) } else { Color::from_rgb(0.3, 0.6, 0.8) }),
+                                                        row![
+                                                            column![
+                                                                text(format!("Serial: {}...", &cert.serial_number.chars().take(16).collect::<String>()))
+                                                                    .size(self.scaled_text_size(10))
+                                                                    .color(CowboyTheme::text_secondary()),
+                                                                if let Some(ref issuer) = cert.issuer {
+                                                                    text(format!("Issuer: {}", issuer))
+                                                                        .size(self.scaled_text_size(10))
+                                                                        .color(CowboyTheme::text_secondary())
+                                                                } else {
+                                                                    text("")
+                                                                },
+                                                            ]
+                                                            .spacing(self.scaled_padding(2)),
+                                                            horizontal_space(),
+                                                            column![
+                                                                text(format!("Valid: {} to {}",
+                                                                    cert.not_before.format("%Y-%m-%d"),
+                                                                    cert.not_after.format("%Y-%m-%d")))
+                                                                    .size(self.scaled_text_size(10))
+                                                                    .color(CowboyTheme::text_secondary()),
+                                                            ]
+                                                            .align_x(iced::alignment::Horizontal::Right),
+                                                        ]
+                                                    ]
+                                                    .spacing(self.scaled_padding(3))
+                                                )
+                                                .padding(self.scaled_padding(8))
+                                                .style(CowboyCustomTheme::pastel_teal_card())
+                                            );
+                                        }
 
-                        container(cert_list)
-                            .padding(self.scaled_padding(10))
-                            .style(CowboyCustomTheme::card_container())
+                                        container(cert_list)
+                                            .padding(self.scaled_padding(10))
+                                            .style(CowboyCustomTheme::card_container())
+                                    }
+                                } else {
+                                    container(text(""))
+                                }
+                            ]
+                            .spacing(self.scaled_padding(12))
+                        )
+                        .padding(self.scaled_padding(20))
+                        .style(CowboyCustomTheme::pastel_teal_card())
                     } else {
                         container(text(""))
                     },
 
-                    // Loaded Keys from Manifest
+                    // Loaded Keys from Manifest (Collapsible)
                     if !self.loaded_keys.is_empty() {
-                        text(format!("🔑 Keys from Manifest ({} loaded)", self.loaded_keys.len()))
-                            .size(self.scaled_text_size(14))
-                            .color(CowboyTheme::text_primary())
-                    } else {
-                        text("")
-                    },
+                        container(
+                            column![
+                                row![
+                                    button(if self.keys_collapsed { "▶" } else { "▼" })
+                                        .on_press(Message::ToggleKeysSection)
+                                        .padding(self.scaled_padding(8))
+                                        .style(CowboyCustomTheme::glass_button()),
+                                    text(format!("🔑 Keys from Manifest ({} loaded)", self.loaded_keys.len()))
+                                        .size(self.scaled_text_size(16))
+                                        .color(CowboyTheme::text_primary()),
+                                ]
+                                .spacing(self.scaled_padding(10))
+                                .align_y(Alignment::Center),
 
-                    if !self.loaded_keys.is_empty() {
-                        let mut key_list = column![].spacing(self.scaled_padding(6));
+                                if !self.keys_collapsed {
+                                    {
+                                        let mut key_list = column![].spacing(self.scaled_padding(6));
 
-                        for key in &self.loaded_keys {
+                                        for key in &self.loaded_keys {
                             key_list = key_list.push(
                                 container(
                                     column![
@@ -2386,43 +2556,106 @@ impl CimKeysApp {
                             );
                         }
 
-                        container(key_list)
-                            .padding(self.scaled_padding(10))
-                            .style(CowboyCustomTheme::card_container())
+                                        container(key_list)
+                                            .padding(self.scaled_padding(10))
+                                            .style(CowboyCustomTheme::card_container())
+                                    }
+                                } else {
+                                    container(text(""))
+                                }
+                            ]
+                            .spacing(self.scaled_padding(12))
+                        )
+                        .padding(self.scaled_padding(20))
+                        .style(CowboyCustomTheme::pastel_cream_card())
                     } else {
                         container(text(""))
                     },
 
-                    // NATS Hierarchy Generation
-                    text("5. NATS Hierarchy (Operator/Account/User)").size(self.scaled_text_size(14)),
-                    row![
-                        button("Generate NATS Hierarchy")
-                            .on_press(Message::GenerateNatsHierarchy)
-                            .style(CowboyCustomTheme::security_button()),
-                        if self.nats_hierarchy_generated {
-                            text("✓ NATS hierarchy generated")
-                                .size(self.scaled_text_size(12))
-                                .color(Color::from_rgb(0.3, 0.8, 0.3))
-                        } else {
-                            text("Generate NATS operator, accounts, and users")
-                                .size(self.scaled_text_size(12))
-                                .color(CowboyTheme::text_secondary())
-                        }
-                    ]
-                    .spacing(self.scaled_padding(10))
-                    .align_y(Alignment::Center),
+                    // Step 5: NATS Hierarchy Generation (Card with Collapse)
+                    container(
+                        column![
+                            row![
+                                button(if self.nats_section_collapsed { "▶" } else { "▼" })
+                                    .on_press(Message::ToggleNatsSection)
+                                    .padding(self.scaled_padding(8))
+                                    .style(CowboyCustomTheme::glass_button()),
+                                text("5. NATS Hierarchy (Operator/Account/User)")
+                                    .size(self.scaled_text_size(18))
+                                    .color(CowboyTheme::text_primary()),
+                            ]
+                            .spacing(self.scaled_padding(10))
+                            .align_y(Alignment::Center),
 
-                    // Other Key Generation
-                    text("6. Other Keys").size(self.scaled_text_size(14)),
-                    button("Generate SSH Keys for All")
-                        .on_press(Message::GenerateSSHKeys)
-                        .style(CowboyCustomTheme::primary_button()),
-                    button("Provision YubiKeys")
-                        .on_press(Message::ProvisionYubiKey)
-                        .style(CowboyCustomTheme::glass_button()),
-                    button("Generate All Keys")
-                        .on_press(Message::GenerateAllKeys)
-                        .style(CowboyCustomTheme::security_button()),
+                            if !self.nats_section_collapsed {
+                                column![
+                                    row![
+                                        button("Generate NATS Hierarchy")
+                                            .on_press(Message::GenerateNatsHierarchy)
+                                            .padding(self.scaled_padding(14))
+                                            .style(CowboyCustomTheme::security_button()),
+                                        if self.nats_hierarchy_generated {
+                                            text("✓ NATS hierarchy generated")
+                                                .size(self.scaled_text_size(14))
+                                                .color(Color::from_rgb(0.3, 0.8, 0.3))
+                                        } else {
+                                            text("Generate NATS operator, accounts, and users")
+                                                .size(self.scaled_text_size(14))
+                                                .color(CowboyTheme::text_secondary())
+                                        }
+                                    ]
+                                    .spacing(self.scaled_padding(10))
+                                    .align_y(Alignment::Center),
+                                ]
+                                .spacing(self.scaled_padding(12))
+                            } else {
+                                column![]
+                            }
+                        ]
+                        .spacing(self.scaled_padding(12))
+                    )
+                    .padding(self.scaled_padding(20))
+                    .style(CowboyCustomTheme::pastel_coral_card()),
+
+                    // Step 6: Other Key Generation (Card with Collapse)
+                    container(
+                        column![
+                            row![
+                                button(if self.keys_collapsed { "▶" } else { "▼" })
+                                    .on_press(Message::ToggleKeysSection)
+                                    .padding(self.scaled_padding(8))
+                                    .style(CowboyCustomTheme::glass_button()),
+                                text("6. Other Keys")
+                                    .size(self.scaled_text_size(18))
+                                    .color(CowboyTheme::text_primary()),
+                            ]
+                            .spacing(self.scaled_padding(10))
+                            .align_y(Alignment::Center),
+
+                            if !self.keys_collapsed {
+                                column![
+                                    button("Generate SSH Keys for All")
+                                        .on_press(Message::GenerateSSHKeys)
+                                        .padding(self.scaled_padding(14))
+                                        .style(CowboyCustomTheme::primary_button()),
+                                    button("Provision YubiKeys")
+                                        .on_press(Message::ProvisionYubiKey)
+                                        .padding(self.scaled_padding(14))
+                                        .style(CowboyCustomTheme::glass_button()),
+                                    button("Generate All Keys")
+                                        .on_press(Message::GenerateAllKeys)
+                                        .padding(self.scaled_padding(14))
+                                        .style(CowboyCustomTheme::security_button()),
+                                ]
+                                .spacing(self.scaled_padding(12))
+                            } else {
+                                column![]
+                            }
+                        ]
+                        .spacing(self.scaled_padding(12))
+                    )
+                    .padding(self.scaled_padding(20))
+                    .style(CowboyCustomTheme::pastel_mint_card()),
                 ]
                 .spacing(self.scaled_padding(10))
             )
