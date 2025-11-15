@@ -5,7 +5,7 @@
 
 use iced::{
     application,
-    widget::{button, column, container, row, text, text_input, Container, horizontal_space, pick_list, progress_bar, checkbox, scrollable, Space, image},
+    widget::{button, column, container, row, text, text_input, Container, horizontal_space, pick_list, progress_bar, checkbox, scrollable, Space, image, stack},
     Task, Element, Length, Color, Border, Theme, Background, Shadow, Alignment,
 };
 use iced_futures::Subscription;
@@ -2364,38 +2364,53 @@ impl CimKeysApp {
             .padding(self.scaled_padding(15))
             .style(CowboyCustomTheme::pastel_teal_card()),
 
-            // Graph visualization canvas
-            Container::new(
-                view_graph(&self.org_graph)
-                    .map(Message::GraphMessage)
-            )
-            .width(Length::Fill)
-            .height(Length::Fixed(self.scaled_size(500.0)))
-            .style(|_theme| {
-                container::Style {
-                    background: Some(Background::Color(Color::from_rgb(0.95, 0.95, 0.95))),
-                    border: Border {
-                        color: Color::from_rgb(0.7, 0.7, 0.7),
-                        width: 1.0,
-                        radius: 5.0.into(),
-                    },
-                    ..Default::default()
+            // Graph visualization with overlays (using stack for absolute positioning)
+            {
+                let graph_base = Container::new(
+                    view_graph(&self.org_graph)
+                        .map(Message::GraphMessage)
+                )
+                .width(Length::Fill)
+                .height(Length::Fixed(self.scaled_size(500.0)))
+                .style(|_theme| {
+                    container::Style {
+                        background: Some(Background::Color(Color::from_rgb(0.95, 0.95, 0.95))),
+                        border: Border {
+                            color: Color::from_rgb(0.7, 0.7, 0.7),
+                            width: 1.0,
+                            radius: 5.0.into(),
+                        },
+                        ..Default::default()
+                    }
+                });
+
+                // Build stack with overlays
+                let mut stack_layers = vec![graph_base.into()];
+
+                // Add context menu overlay if visible
+                if self.context_menu.is_visible() {
+                    let menu_overlay = container(
+                        self.context_menu.view()
+                            .map(Message::ContextMenuMessage)
+                    )
+                    .padding(0);
+
+                    stack_layers.push(menu_overlay.into());
                 }
-            }),
 
-            // Phase 4: Interactive UI Components
-            row![
-                // Context menu (overlaid on graph in final version)
-                self.context_menu.view()
-                    .map(Message::ContextMenuMessage),
+                // Add property card overlay if visible
+                if self.property_card.is_editing() {
+                    let card_overlay = container(
+                        self.property_card.view()
+                            .map(Message::PropertyCardMessage)
+                    )
+                    .padding(0);
 
-                horizontal_space(),
+                    stack_layers.push(card_overlay.into());
+                }
 
-                // Property card
-                self.property_card.view()
-                    .map(Message::PropertyCardMessage),
-            ]
-            .spacing(self.scaled_padding(20)),
+                stack(stack_layers)
+            },
         ]
         .spacing(self.scaled_padding(20));
 

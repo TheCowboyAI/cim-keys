@@ -63,7 +63,7 @@ impl ContextMenu {
         self.position
     }
 
-    /// Render the context menu
+    /// Render the context menu positioned at the stored location
     pub fn view(&self) -> Element<'_, ContextMenuMessage> {
         if !self.visible {
             return container(column![]).into();
@@ -101,7 +101,7 @@ impl ContextMenu {
         .spacing(2)
         .padding(8);
 
-        container(menu_items)
+        let menu_container = container(menu_items)
             .width(Length::Fixed(180.0))
             .style(|theme: &Theme| {
                 container::Style {
@@ -118,6 +118,16 @@ impl ContextMenu {
                         blur_radius: 4.0,
                     },
                 }
+            });
+
+        // Position using padding from top-left of stack layer
+        // Note: Position is in canvas coordinates, we use it as-is for now
+        container(menu_container)
+            .padding(iced::Padding {
+                top: self.position.y.max(0.0),
+                right: 0.0,
+                bottom: 0.0,
+                left: self.position.x.max(0.0),
             })
             .into()
     }

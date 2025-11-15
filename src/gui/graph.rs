@@ -549,7 +549,13 @@ impl OrganizationGraph {
 
     pub fn handle_message(&mut self, message: GraphMessage) {
         match message {
-            GraphMessage::NodeClicked(id) => self.selected_node = Some(id),
+            GraphMessage::NodeClicked(id) => {
+                self.selected_node = Some(id);
+                // Clear dragging state (click without significant movement)
+                self.dragging_node = None;
+                self.drag_offset = Vector::new(0.0, 0.0);
+                self.drag_start_position = None;
+            },
             GraphMessage::NodeDragStarted { node_id, offset } => {
                 self.dragging_node = Some(node_id);
                 self.drag_offset = offset;
@@ -994,11 +1000,28 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                 }
                 canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
                     // End dragging if we were dragging
-                    if self.dragging_node.is_some() {
-                        return (
-                            canvas::event::Status::Captured,
-                            Some(GraphMessage::NodeDragEnded),
-                        );
+                    if let Some(node_id) = self.dragging_node {
+                        // Check if node actually moved significantly (more than 5 pixels)
+                        let moved_significantly = if let (Some(start_pos), Some(node)) = (self.drag_start_position, self.nodes.get(&node_id)) {
+                            let distance = ((node.position.x - start_pos.x).powi(2) + (node.position.y - start_pos.y).powi(2)).sqrt();
+                            distance > 5.0
+                        } else {
+                            false
+                        };
+
+                        if moved_significantly {
+                            // This was a drag operation
+                            return (
+                                canvas::event::Status::Captured,
+                                Some(GraphMessage::NodeDragEnded),
+                            );
+                        } else {
+                            // This was a click (no significant movement)
+                            return (
+                                canvas::event::Status::Captured,
+                                Some(GraphMessage::NodeClicked(node_id)),
+                            );
+                        }
                     }
                 }
                 // Phase 4: Right-click to show context menu
