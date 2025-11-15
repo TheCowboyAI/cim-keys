@@ -43,6 +43,9 @@ pub mod kuramoto_firefly_shader;
 pub mod debug_firefly_shader;
 pub mod firefly_math;
 pub mod firefly_renderer;
+pub mod context_menu;
+pub mod property_card;
+pub mod edge_indicator;
 
 use graph::{OrganizationGraph, GraphMessage};
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};

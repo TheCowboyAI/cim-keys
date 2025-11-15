@@ -21,9 +21,9 @@ use crate::domain::{
 
 /// Graph visualization widget for organizational structure
 pub struct OrganizationGraph {
-    nodes: HashMap<Uuid, GraphNode>,
-    edges: Vec<GraphEdge>,
-    selected_node: Option<Uuid>,
+    pub nodes: HashMap<Uuid, GraphNode>,
+    pub edges: Vec<GraphEdge>,
+    pub selected_node: Option<Uuid>,
     dragging_node: Option<Uuid>,  // Node currently being dragged
     drag_offset: Vector,  // Offset from node center to cursor when dragging started
     _viewport: Rectangle,  // Reserved for graph panning/zooming
