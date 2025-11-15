@@ -164,7 +164,6 @@ pub struct LocationEntry {
     pub location_id: Uuid,
     pub name: String,
     pub location_type: String,
-    pub security_level: String,
     pub organization_id: Uuid,
     pub created_at: DateTime<Utc>,
 }
@@ -496,12 +495,11 @@ impl OfflineKeyProjection {
     }
 
     /// Add a location to the organization
-    pub fn add_location(&mut self, location_id: Uuid, name: String, location_type: String, security_level: String, organization_id: Uuid) -> Result<(), ProjectionError> {
+    pub fn add_location(&mut self, location_id: Uuid, name: String, location_type: String, organization_id: Uuid) -> Result<(), ProjectionError> {
         let location_entry = LocationEntry {
             location_id,
             name,
             location_type,
-            security_level,
             organization_id,
             created_at: Utc::now(),
         };

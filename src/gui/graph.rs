@@ -209,7 +209,8 @@ impl OrganizationGraph {
 
     /// Add a location node to the graph
     pub fn add_location_node(&mut self, location: Location) {
-        let node_id = location.id;
+        use cim_domain::AggregateRoot;
+        let node_id = *location.id().as_uuid();
         let label = location.name.clone();
 
         let node = GraphNode {
@@ -1133,7 +1134,6 @@ pub fn view_graph(graph: &OrganizationGraph) -> Element<'_, GraphMessage> {
                     text("Selected Location:").size(16),
                     text(format!("Name: {}", loc.name)),
                     text(format!("Type: {:?}", loc.location_type)),
-                    text(format!("Security: {:?}", loc.security_level)),
                 ],
                 NodeType::Role(role) => column![
                     text("Selected Role:").size(16),

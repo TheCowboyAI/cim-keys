@@ -93,7 +93,12 @@ pub struct CimKeysApp {
     // Form fields for adding locations
     new_location_name: String,
     new_location_type: Option<crate::domain::LocationType>,
-    new_location_security_level: Option<crate::domain::SecurityLevel>,
+    // Address fields for physical locations
+    new_location_street: String,
+    new_location_city: String,
+    new_location_region: String,
+    new_location_country: String,
+    new_location_postal: String,
 
     // YubiKey fields
     yubikey_serial: String,
@@ -210,7 +215,11 @@ pub enum Message {
     // Location operations
     NewLocationNameChanged(String),
     NewLocationTypeSelected(crate::domain::LocationType),
-    NewLocationSecurityLevelSelected(crate::domain::SecurityLevel),
+    NewLocationStreetChanged(String),
+    NewLocationCityChanged(String),
+    NewLocationRegionChanged(String),
+    NewLocationCountryChanged(String),
+    NewLocationPostalChanged(String),
     AddLocation,
     RemoveLocation(Uuid),
 
@@ -396,7 +405,11 @@ impl CimKeysApp {
                 new_person_role: None,
                 new_location_name: String::new(),
                 new_location_type: None,
-                new_location_security_level: None,
+                new_location_street: String::new(),
+                new_location_city: String::new(),
+                new_location_region: String::new(),
+                new_location_country: String::new(),
+                new_location_postal: String::new(),
                 yubikey_serial: String::new(),
                 yubikey_assigned_to: None,
                 detected_yubikeys: Vec::new(),
@@ -839,8 +852,28 @@ impl CimKeysApp {
                 Task::none()
             }
 
-            Message::NewLocationSecurityLevelSelected(security_level) => {
-                self.new_location_security_level = Some(security_level);
+            Message::NewLocationStreetChanged(value) => {
+                self.new_location_street = value;
+                Task::none()
+            }
+
+            Message::NewLocationCityChanged(value) => {
+                self.new_location_city = value;
+                Task::none()
+            }
+
+            Message::NewLocationRegionChanged(value) => {
+                self.new_location_region = value;
+                Task::none()
+            }
+
+            Message::NewLocationCountryChanged(value) => {
+                self.new_location_country = value;
+                Task::none()
+            }
+
+            Message::NewLocationPostalChanged(value) => {
+                self.new_location_postal = value;
                 Task::none()
             }
 
@@ -851,13 +884,25 @@ impl CimKeysApp {
                     return Task::none();
                 }
 
-                if self.new_location_type.is_none() {
-                    self.error_message = Some("Please select a location type".to_string());
+                // Validate address fields for physical location
+                if self.new_location_street.is_empty() {
+                    self.error_message = Some("Street address is required".to_string());
                     return Task::none();
                 }
-
-                if self.new_location_security_level.is_none() {
-                    self.error_message = Some("Please select a security level".to_string());
+                if self.new_location_city.is_empty() {
+                    self.error_message = Some("City is required".to_string());
+                    return Task::none();
+                }
+                if self.new_location_region.is_empty() {
+                    self.error_message = Some("State/Region is required".to_string());
+                    return Task::none();
+                }
+                if self.new_location_country.is_empty() {
+                    self.error_message = Some("Country is required".to_string());
+                    return Task::none();
+                }
+                if self.new_location_postal.is_empty() {
+                    self.error_message = Some("Postal code is required".to_string());
                     return Task::none();
                 }
 
@@ -872,13 +917,26 @@ impl CimKeysApp {
 
                 let location_id = Uuid::now_v7();
                 let location_name = self.new_location_name.clone();
-                let location_type = format!("{}", self.new_location_type.unwrap());
-                let security_level = format!("{}", self.new_location_security_level.unwrap());
+                let location_type = "Physical".to_string();
+
+                // Clone address values for the async task
+                let _street = self.new_location_street.clone();
+                let _city = self.new_location_city.clone();
+                let _region = self.new_location_region.clone();
+                let _country = self.new_location_country.clone();
+                let _postal = self.new_location_postal.clone();
+
+                // TODO: Once projection supports full Location objects, create proper Address
+                // and pass Location with all address details
 
                 // Clear form fields immediately
                 self.new_location_name.clear();
                 self.new_location_type = None;
-                self.new_location_security_level = None;
+                self.new_location_street.clear();
+                self.new_location_city.clear();
+                self.new_location_region.clear();
+                self.new_location_country.clear();
+                self.new_location_postal.clear();
 
                 // Persist to projection
                 let projection = self.projection.clone();
@@ -886,7 +944,8 @@ impl CimKeysApp {
                 Task::perform(
                     async move {
                         let mut proj = projection.write().await;
-                        proj.add_location(location_id, location_name.clone(), location_type, security_level, org_id)
+                        // TODO: Update projection to use new Location from cim-domain-location
+                        proj.add_location(location_id, location_name.clone(), location_type, org_id)
                             .map(|_| format!("Added location: {}", location_name))
                             .map_err(|e| format!("Failed to add location: {}", e))
                     },
@@ -1569,7 +1628,7 @@ impl CimKeysApp {
             // Phase 4: Context Menu interactions
             Message::ContextMenuMessage(menu_msg) => {
                 use crate::mvi::intent::NodeCreationType;
-                use crate::domain::{Organization, OrganizationUnit, OrganizationUnitType, Location, LocationType, SecurityLevel, Role, Policy};
+                use crate::domain::{Organization, OrganizationUnit, OrganizationUnitType, Location, Role, Policy};
                 use crate::gui::graph::NodeType;
                 use crate::gui::graph_events::GraphEvent;
                 use chrono::Utc;
@@ -1623,15 +1682,25 @@ impl CimKeysApp {
                                 (NodeType::Person { person, role: KeyOwnerRole::Developer }, label, Color::from_rgb(0.5, 0.7, 0.3))
                             }
                             NodeCreationType::Location => {
-                                let location = Location {
-                                    id: node_id,
-                                    name: "New Location".to_string(),
-                                    location_type: LocationType::Office,
-                                    security_level: SecurityLevel::Basic,
-                                    address: None,
-                                    coordinates: None,
-                                    metadata: HashMap::new(),
-                                };
+                                use cim_domain::EntityId;
+                                use crate::domain::{Address, LocationMarker};
+
+                                // Create a placeholder physical location
+                                // Note: Use the "Locations" tab to create locations with full address details
+                                let address = Address::new(
+                                    "123 Main St".to_string(),
+                                    "City".to_string(),
+                                    "State".to_string(),
+                                    "Country".to_string(),
+                                    "00000".to_string(),
+                                );
+
+                                let location = Location::new_physical(
+                                    EntityId::<LocationMarker>::from_uuid(node_id),
+                                    "New Location (Edit Me)".to_string(),
+                                    address,
+                                ).expect("Failed to create location");
+
                                 let label = location.name.clone();
                                 (NodeType::Location(location), label, Color::from_rgb(0.6, 0.5, 0.4))
                             }
@@ -2418,25 +2487,7 @@ impl CimKeysApp {
     }
 
     fn view_locations(&self) -> Element<'_, Message> {
-        use crate::domain::{LocationType, SecurityLevel};
-
-        let location_type_options = vec![
-            LocationType::DataCenter,
-            LocationType::Office,
-            LocationType::CloudRegion,
-            LocationType::SafeDeposit,
-            LocationType::SecureStorage,
-            LocationType::HardwareToken,
-        ];
-
-        let security_level_options = vec![
-            SecurityLevel::Fips140Level4,
-            SecurityLevel::Fips140Level3,
-            SecurityLevel::Fips140Level2,
-            SecurityLevel::Fips140Level1,
-            SecurityLevel::Commercial,
-            SecurityLevel::Basic,
-        ];
+        // TODO: Re-implement location type picker once Display is implemented in cim-domain-location
 
         let content = column![
             text("Locations Management").size(self.scaled_text_size(20)),
@@ -2445,31 +2496,53 @@ impl CimKeysApp {
             // Add location form
             container(
                 column![
-                    text("Add New Location")
+                    text("Add New Physical Location")
                         .size(self.scaled_text_size(16))
                         .color(CowboyTheme::text_primary()),
+                    text("Default location type: Physical")
+                        .size(self.scaled_text_size(12))
+                        .color(CowboyTheme::text_secondary()),
+
+                    // Location name
+                    text_input("Location Name (e.g., Main Office, HQ)", &self.new_location_name)
+                        .on_input(Message::NewLocationNameChanged)
+                        .size(self.scaled_text_size(14))
+                        .style(CowboyCustomTheme::glass_input()),
+
+                    // Address section
+                    text("Address").size(self.scaled_text_size(14)).color(CowboyTheme::text_primary()),
+                    text_input("Street Address", &self.new_location_street)
+                        .on_input(Message::NewLocationStreetChanged)
+                        .size(self.scaled_text_size(14))
+                        .style(CowboyCustomTheme::glass_input()),
+
                     row![
-                        text_input("Location Name", &self.new_location_name)
-                            .on_input(Message::NewLocationNameChanged)
+                        text_input("City", &self.new_location_city)
+                            .on_input(Message::NewLocationCityChanged)
                             .size(self.scaled_text_size(14))
                             .style(CowboyCustomTheme::glass_input()),
-                        pick_list(
-                            location_type_options,
-                            self.new_location_type,
-                            Message::NewLocationTypeSelected,
-                        )
-                        .placeholder("Location Type"),
-                        pick_list(
-                            security_level_options,
-                            self.new_location_security_level,
-                            Message::NewLocationSecurityLevelSelected,
-                        )
-                        .placeholder("Security Level"),
-                        button("Add Location")
-                            .on_press(Message::AddLocation)
-                            .style(CowboyCustomTheme::primary_button())
+                        text_input("State/Region", &self.new_location_region)
+                            .on_input(Message::NewLocationRegionChanged)
+                            .size(self.scaled_text_size(14))
+                            .style(CowboyCustomTheme::glass_input()),
                     ]
                     .spacing(self.scaled_padding(10)),
+
+                    row![
+                        text_input("Country", &self.new_location_country)
+                            .on_input(Message::NewLocationCountryChanged)
+                            .size(self.scaled_text_size(14))
+                            .style(CowboyCustomTheme::glass_input()),
+                        text_input("Postal Code", &self.new_location_postal)
+                            .on_input(Message::NewLocationPostalChanged)
+                            .size(self.scaled_text_size(14))
+                            .style(CowboyCustomTheme::glass_input()),
+                    ]
+                    .spacing(self.scaled_padding(10)),
+
+                    button("Add Location")
+                        .on_press(Message::AddLocation)
+                        .style(CowboyCustomTheme::primary_button())
                 ]
                 .spacing(self.scaled_padding(10))
             )
@@ -2503,9 +2576,8 @@ impl CimKeysApp {
                                             text(location.name)
                                                 .size(self.scaled_text_size(16))
                                                 .color(CowboyTheme::text_primary()),
-                                            text(format!("Type: {} | Security: {}",
-                                                location.location_type,
-                                                location.security_level))
+                                            text(format!("Type: {}",
+                                                location.location_type))
                                                 .size(self.scaled_text_size(12))
                                                 .color(CowboyTheme::text_secondary()),
                                             text(format!("Created: {}",

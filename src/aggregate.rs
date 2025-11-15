@@ -175,10 +175,10 @@ impl KeyManagementAggregate {
         let key_id = Uuid::now_v7();
 
         // Extract domain context if provided
-        let (ownership, storage_location) = if let Some(context) = cmd.context {
-            (Some(context.actor), context.location)
+        let ownership = if let Some(context) = cmd.context {
+            Some(context.actor)
         } else {
-            (None, None)
+            None
         };
 
         // Create the event
@@ -199,7 +199,6 @@ impl KeyManagementAggregate {
                 jwt_use: None,
             },
             ownership,
-            storage_location,
         };
 
         Ok(vec![KeyEvent::KeyGenerated(event)])

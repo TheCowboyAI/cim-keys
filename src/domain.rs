@@ -15,6 +15,18 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc, Timelike};
 use std::collections::HashMap;
 
+// Import Location domain from cim-domain-location
+pub use cim_domain_location::{
+    Location,
+    LocationMarker,
+    Address,
+    GeoCoordinates,
+    LocationType,  // Physical, Virtual, Logical, Hybrid
+    VirtualLocation,
+    DefineLocation,  // Command
+    LocationDomainEvent,  // Events
+};
+
 // We define our own complete domain models here since cim-keys
 // is the master that creates the initial infrastructure domain
 
@@ -103,29 +115,6 @@ pub enum Permission {
     ModifyConfiguration,
 }
 
-/// Physical or logical location
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Location {
-    pub id: Uuid,
-    pub name: String,
-    pub location_type: LocationType,
-    pub security_level: SecurityLevel,
-    pub address: Option<String>,
-    pub coordinates: Option<(f64, f64)>,
-    pub metadata: HashMap<String, String>,
-}
-
-/// Type of location
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum LocationType {
-    DataCenter,
-    Office,
-    CloudRegion,
-    SafeDeposit,
-    SecureStorage,
-    HardwareToken,
-}
-
 /// Key ownership tied to a person in the organization
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyOwnership {
@@ -182,22 +171,6 @@ pub enum KeyPermission {
     CertifyOthers,
     RevokeOthers,
     BackupAccess,
-}
-
-/// Physical storage location of keys
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KeyStorageLocation {
-    /// Physical location where key material is stored
-    pub location_id: Uuid,
-
-    /// Type of storage at this location
-    pub storage_type: KeyStorageType,
-
-    /// Security level of the location
-    pub security_level: SecurityLevel,
-
-    /// Access controls for this location
-    pub access_controls: Vec<AccessControl>,
 }
 
 /// YubiKey configuration for a person
@@ -275,82 +248,6 @@ pub struct SslConfig {
     pub email: Option<String>,
     pub key_type: String,     // e.g., "prime256v1", "rsa2048"
     pub expiration: String,   // in days, e.g., "1825"
-}
-
-/// Type of key storage
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum KeyStorageType {
-    /// Hardware Security Module
-    HSM { model: String, serial: String },
-
-    /// YubiKey hardware token
-    YubiKey { serial: String },
-
-    /// Encrypted SD card
-    EncryptedSDCard { device_id: String },
-
-    /// Safe deposit box
-    SafeDeposit { box_number: String, bank: String },
-
-    /// Cloud HSM
-    CloudHSM { provider: String, region: String },
-
-    /// Paper backup
-    PaperBackup { copies: u32 },
-}
-
-/// Security level of storage
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SecurityLevel {
-    /// FIPS 140-2 Level 4 (highest)
-    Fips140Level4,
-
-    /// FIPS 140-2 Level 3
-    Fips140Level3,
-
-    /// FIPS 140-2 Level 2
-    Fips140Level2,
-
-    /// FIPS 140-2 Level 1
-    Fips140Level1,
-
-    /// Commercial grade encryption
-    Commercial,
-
-    /// Basic protection
-    Basic,
-}
-
-/// Access control for key storage
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AccessControl {
-    /// Who can access
-    pub authorized_person_id: Uuid,
-
-    /// Type of access
-    pub access_type: AccessType,
-
-    /// Multi-factor requirements
-    pub mfa_required: Vec<MfaRequirement>,
-}
-
-/// Type of access to key storage
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum AccessType {
-    Physical,
-    Remote,
-    Emergency,
-    Audit,
-}
-
-/// Multi-factor authentication requirements
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum MfaRequirement {
-    Biometric { type_: String },
-    PinCode { min_length: u8 },
-    HardwareToken { token_type: String },
-    TimeBasedOTP,
-    DualControl { other_person: Uuid },
 }
 
 /// NATS identity tied to organizational structure
@@ -431,9 +328,6 @@ pub struct KeyContext {
     /// Who is performing the operation
     pub actor: KeyOwnership,
 
-    /// Where the operation is happening
-    pub location: Option<KeyStorageLocation>,
-
     /// Organizational context
     pub org_context: Option<OrganizationalPKI>,
 
@@ -479,20 +373,6 @@ pub fn create_key_ownership(
     }
 }
 
-/// Create a storage location for keys
-pub fn create_storage_location(
-    location_id: Uuid,
-    storage_type: KeyStorageType,
-    security_level: SecurityLevel,
-) -> KeyStorageLocation {
-    KeyStorageLocation {
-        location_id,
-        storage_type,
-        security_level,
-        access_controls: Vec::new(),
-    }
-}
-
 /// Create NATS identity mapping for an organization
 pub fn create_nats_identity(
     org_id: Uuid,
@@ -517,32 +397,6 @@ impl std::fmt::Display for KeyOwnerRole {
             KeyOwnerRole::ServiceAccount => write!(f, "Service Account"),
             KeyOwnerRole::BackupHolder => write!(f, "Backup Holder"),
             KeyOwnerRole::Auditor => write!(f, "Auditor"),
-        }
-    }
-}
-
-impl std::fmt::Display for LocationType {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            LocationType::DataCenter => write!(f, "Data Center"),
-            LocationType::Office => write!(f, "Office"),
-            LocationType::CloudRegion => write!(f, "Cloud Region"),
-            LocationType::SafeDeposit => write!(f, "Safe Deposit"),
-            LocationType::SecureStorage => write!(f, "Secure Storage"),
-            LocationType::HardwareToken => write!(f, "Hardware Token"),
-        }
-    }
-}
-
-impl std::fmt::Display for SecurityLevel {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            SecurityLevel::Fips140Level4 => write!(f, "FIPS 140-2 Level 4"),
-            SecurityLevel::Fips140Level3 => write!(f, "FIPS 140-2 Level 3"),
-            SecurityLevel::Fips140Level2 => write!(f, "FIPS 140-2 Level 2"),
-            SecurityLevel::Fips140Level1 => write!(f, "FIPS 140-2 Level 1"),
-            SecurityLevel::Commercial => write!(f, "Commercial"),
-            SecurityLevel::Basic => write!(f, "Basic"),
         }
     }
 }

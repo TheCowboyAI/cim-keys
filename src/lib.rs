@@ -81,8 +81,10 @@ pub use aggregate::{KeyManagementAggregate, KeyManagementError};
 pub use projections::{OfflineKeyProjection, KeyManifest, ProjectionError};
 pub use domain::{
     Organization, OrganizationUnit, Person, PersonRole, Location,
-    KeyOwnership, KeyStorageLocation, KeyContext, NatsIdentity,
-    OrganizationalPKI, ServiceAccount
+    KeyOwnership, KeyContext, NatsIdentity,
+    OrganizationalPKI, ServiceAccount,
+    // Re-export Location types from cim-domain-location
+    LocationMarker, Address, GeoCoordinates, LocationType, VirtualLocation,
 };
 
 // Re-export from cim-domain for convenience

@@ -9,7 +9,7 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
 // Import domain types
-use crate::domain::{KeyOwnership, KeyStorageLocation};
+use crate::domain::KeyOwnership;
 
 /// Base event for all key operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,8 +94,6 @@ pub struct KeyGeneratedEvent {
     pub metadata: KeyMetadata,
     /// Domain context - who owns this key
     pub ownership: Option<KeyOwnership>,
-    /// Domain context - where this key is stored
-    pub storage_location: Option<KeyStorageLocation>,
 }
 
 /// Certificate was generated
