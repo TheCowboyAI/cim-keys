@@ -4,6 +4,7 @@
 //! NO communication state, NO port instances, NO async operations.
 
 use std::path::PathBuf;
+use iced::Point;
 
 /// Pure Display Model for MVI Layer
 #[derive(Debug, Clone)]
@@ -35,6 +36,14 @@ pub struct Model {
 
     // ===== Output Configuration =====
     pub output_directory: PathBuf,
+
+    // ===== Graph UI State (Phase 4) =====
+    pub graph_context_menu_visible: bool,
+    pub graph_context_menu_position: Point,
+    pub graph_property_card_visible: bool,
+    pub graph_property_card_node_id: Option<String>,
+    pub graph_edge_creation_active: bool,
+    pub graph_edge_creation_from: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -132,6 +141,13 @@ impl Default for Model {
             error_message: None,
             key_generation_progress: 0.0,
             output_directory: PathBuf::from("/tmp/cim-keys-output"),
+            // Graph UI state
+            graph_context_menu_visible: false,
+            graph_context_menu_position: Point::ORIGIN,
+            graph_property_card_visible: false,
+            graph_property_card_node_id: None,
+            graph_edge_creation_active: false,
+            graph_edge_creation_from: None,
         }
     }
 }
@@ -300,6 +316,56 @@ impl Model {
     pub fn without_master_seed(mut self) -> Self {
         self.master_seed = None;
         self.master_seed_derived = false;
+        self
+    }
+
+    // ===== Graph UI State Management (Phase 4) =====
+
+    /// Show context menu at position (pure function)
+    pub fn with_context_menu_shown(mut self, position: Point) -> Self {
+        self.graph_context_menu_visible = true;
+        self.graph_context_menu_position = position;
+        self
+    }
+
+    /// Hide context menu (pure function)
+    pub fn with_context_menu_hidden(mut self) -> Self {
+        self.graph_context_menu_visible = false;
+        self
+    }
+
+    /// Show property card for node (pure function)
+    pub fn with_property_card_shown(mut self, node_id: String) -> Self {
+        self.graph_property_card_visible = true;
+        self.graph_property_card_node_id = Some(node_id);
+        self
+    }
+
+    /// Hide property card (pure function)
+    pub fn with_property_card_hidden(mut self) -> Self {
+        self.graph_property_card_visible = false;
+        self.graph_property_card_node_id = None;
+        self
+    }
+
+    /// Start edge creation from node (pure function)
+    pub fn with_edge_creation_started(mut self, from_node: String) -> Self {
+        self.graph_edge_creation_active = true;
+        self.graph_edge_creation_from = Some(from_node);
+        self
+    }
+
+    /// Complete edge creation (pure function)
+    pub fn with_edge_creation_completed(mut self) -> Self {
+        self.graph_edge_creation_active = false;
+        self.graph_edge_creation_from = None;
+        self
+    }
+
+    /// Cancel edge creation (pure function)
+    pub fn with_edge_creation_cancelled(mut self) -> Self {
+        self.graph_edge_creation_active = false;
+        self.graph_edge_creation_from = None;
         self
     }
 }

@@ -18,6 +18,8 @@ use crate::domain::{
     Person, KeyDelegation, KeyOwnerRole, Organization, OrganizationUnit,
     Location, Policy, Role,
 };
+use super::edge_indicator::EdgeCreationIndicator;
+use super::graph_events::{EventStack, GraphEvent};
 
 /// Graph visualization widget for organizational structure
 pub struct OrganizationGraph {
@@ -29,6 +31,10 @@ pub struct OrganizationGraph {
     _viewport: Rectangle,  // Reserved for graph panning/zooming
     zoom: f32,
     pan_offset: Vector,
+    // Phase 4: Edge creation indicator
+    pub edge_indicator: EdgeCreationIndicator,
+    // Phase 4: Event sourcing for undo/redo
+    pub event_stack: EventStack,
 }
 
 /// A node in the organization graph (represents any domain entity)
@@ -114,6 +120,15 @@ pub enum GraphMessage {
     Pan(Vector),
     AutoLayout,
     AddEdge { from: Uuid, to: Uuid, edge_type: EdgeType },
+    // Phase 4: Context menu trigger
+    RightClick(Point),  // Right-click position (adjusted for zoom/pan)
+    // Phase 4: Cursor movement for edge indicator
+    CursorMoved(Point),  // Cursor position (adjusted for zoom/pan)
+    // Phase 4: Keyboard shortcuts
+    CancelEdgeCreation,  // Esc key - cancel edge creation
+    DeleteSelected,      // Delete key - delete selected node
+    Undo,                // Ctrl+Z - undo last action
+    Redo,                // Ctrl+Y or Ctrl+Shift+Z - redo last undone action
 }
 
 impl Default for OrganizationGraph {
@@ -133,6 +148,8 @@ impl OrganizationGraph {
             _viewport: Rectangle::new(Point::ORIGIN, Size::new(800.0, 600.0)),
             zoom: 1.0,
             pan_offset: Vector::new(0.0, 0.0),
+            edge_indicator: EdgeCreationIndicator::new(),
+            event_stack: EventStack::default(),
         }
     }
 
@@ -273,8 +290,72 @@ impl OrganizationGraph {
         self.selected_node = Some(node_id);
     }
 
+    /// Delete a node and all edges connected to it
+    pub fn delete_node(&mut self, node_id: Uuid) {
+        // Remove the node
+        self.nodes.remove(&node_id);
+
+        // Remove all edges connected to this node
+        self.edges.retain(|edge| edge.from != node_id && edge.to != node_id);
+
+        // Clear selection if this was the selected node
+        if self.selected_node == Some(node_id) {
+            self.selected_node = None;
+        }
+    }
+
     pub fn node_count(&self) -> usize {
         self.nodes.len()
+    }
+
+    /// Apply a graph event to update the graph state
+    /// This is the ONLY way to change graph state for undo/redo to work correctly
+    pub fn apply_event(&mut self, event: &GraphEvent) {
+        match event {
+            GraphEvent::NodeCreated { node_id, node_type, position, color, label, .. } => {
+                let node = GraphNode {
+                    id: *node_id,
+                    node_type: node_type.clone(),
+                    position: *position,
+                    color: *color,
+                    label: label.clone(),
+                };
+                self.nodes.insert(*node_id, node);
+            }
+            GraphEvent::NodeDeleted { node_id, .. } => {
+                self.nodes.remove(node_id);
+                // Remove all edges connected to this node
+                self.edges.retain(|edge| edge.from != *node_id && edge.to != *node_id);
+                // Clear selection if this was the selected node
+                if self.selected_node == Some(*node_id) {
+                    self.selected_node = None;
+                }
+            }
+            GraphEvent::NodePropertiesChanged { node_id, new_node_type, new_label, .. } => {
+                if let Some(node) = self.nodes.get_mut(node_id) {
+                    node.node_type = new_node_type.clone();
+                    node.label = new_label.clone();
+                }
+            }
+            GraphEvent::NodeMoved { node_id, new_position, .. } => {
+                if let Some(node) = self.nodes.get_mut(node_id) {
+                    node.position = *new_position;
+                }
+            }
+            GraphEvent::EdgeCreated { from, to, edge_type, color, .. } => {
+                self.edges.push(GraphEdge {
+                    from: *from,
+                    to: *to,
+                    edge_type: edge_type.clone(),
+                    color: *color,
+                });
+            }
+            GraphEvent::EdgeDeleted { from, to, edge_type, .. } => {
+                self.edges.retain(|edge| {
+                    !(edge.from == *from && edge.to == *to && edge.edge_type == *edge_type)
+                });
+            }
+        }
     }
 
     pub fn auto_layout(&mut self) {
@@ -505,6 +586,35 @@ impl OrganizationGraph {
             GraphMessage::AddEdge { from, to, edge_type } => {
                 self.add_edge(from, to, edge_type);
             }
+            // Phase 4: Right-click handled in main GUI (shows context menu)
+            GraphMessage::RightClick(_) => {}
+            // Phase 4: Update edge indicator position during edge creation
+            GraphMessage::CursorMoved(position) => {
+                self.edge_indicator.update_position(position);
+            }
+            // Phase 4: Cancel edge creation with Esc key
+            GraphMessage::CancelEdgeCreation => {
+                self.edge_indicator.cancel();
+            }
+            // Phase 4: Delete selected node with Delete key
+            GraphMessage::DeleteSelected => {
+                if let Some(node_id) = self.selected_node {
+                    self.delete_node(node_id);
+                    self.selected_node = None;
+                }
+            }
+            // Phase 4: Undo last action
+            GraphMessage::Undo => {
+                if let Some(compensating_event) = self.event_stack.undo() {
+                    self.apply_event(&compensating_event);
+                }
+            }
+            // Phase 4: Redo last undone action
+            GraphMessage::Redo => {
+                if let Some(compensating_event) = self.event_stack.redo() {
+                    self.apply_event(&compensating_event);
+                }
+            }
         }
     }
 
@@ -654,28 +764,68 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
             }
         }
 
-        // Draw nodes
+        // Draw nodes with 3D disc effect (tiddlywinks/necco wafer style)
         for (node_id, node) in &self.nodes {
             let is_selected = self.selected_node == Some(*node_id);
             let radius = if is_selected { 25.0 } else { 20.0 };
 
-            // Draw node circle
-            let circle = canvas::Path::circle(node.position, radius);
-            frame.fill(&circle, node.color);
+            // === Phase 4: 3D Disc Effect ===
 
-            // Draw selection ring if selected
+            // 1. Drop shadow (offset down-right for depth)
+            let shadow_offset = Point::new(
+                node.position.x + 2.0,
+                node.position.y + 2.0,
+            );
+            let shadow_circle = canvas::Path::circle(shadow_offset, radius);
+            frame.fill(&shadow_circle, Color::from_rgba(0.0, 0.0, 0.0, 0.3));
+
+            // 2. Base disc with gradient effect (concentric circles)
+            // Outer layer (darker edge for depth)
+            let outer_color = Color {
+                r: node.color.r * 0.7,
+                g: node.color.g * 0.7,
+                b: node.color.b * 0.7,
+                a: 1.0,
+            };
+            let outer_circle = canvas::Path::circle(node.position, radius);
+            frame.fill(&outer_circle, outer_color);
+
+            // Middle layer (base color)
+            let mid_circle = canvas::Path::circle(node.position, radius * 0.85);
+            frame.fill(&mid_circle, node.color);
+
+            // Inner highlight (lighter center for 3D effect)
+            let highlight_color = Color {
+                r: (node.color.r + 0.3).min(1.0),
+                g: (node.color.g + 0.3).min(1.0),
+                b: (node.color.b + 0.3).min(1.0),
+                a: 1.0,
+            };
+            let inner_circle = canvas::Path::circle(node.position, radius * 0.5);
+            frame.fill(&inner_circle, highlight_color);
+
+            // 3. Top highlight (glossy effect - small bright spot)
+            let highlight_pos = Point::new(
+                node.position.x - radius * 0.3,
+                node.position.y - radius * 0.3,
+            );
+            let highlight = canvas::Path::circle(highlight_pos, radius * 0.25);
+            frame.fill(&highlight, Color::from_rgba(1.0, 1.0, 1.0, 0.5));
+
+            // 4. Selection ring if selected
             if is_selected {
                 let selection_ring = canvas::Path::circle(node.position, radius + 3.0);
                 let stroke = canvas::Stroke::default()
-                    .with_color(Color::from_rgb(1.0, 1.0, 0.0))
+                    .with_color(Color::from_rgb(1.0, 0.84, 0.0)) // Gold color
                     .with_width(3.0);
                 frame.stroke(&selection_ring, stroke);
             }
 
-            // Draw border
+            // 5. Border (defines the disc edge)
+            let circle = canvas::Path::circle(node.position, radius);
             let border_stroke = canvas::Stroke::default()
-                .with_color(Color::BLACK)
-                .with_width(if is_selected { 2.0 } else { 1.0 });
+                .with_color(Color::from_rgba(0.0, 0.0, 0.0, 0.4))
+                .with_width(if is_selected { 2.0 } else { 1.5 });
             frame.stroke(&circle, border_stroke);
 
             // Draw node properties as multi-line text based on node type
@@ -770,6 +920,9 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
             });
         }
 
+        // Phase 4: Draw edge creation indicator (if active)
+        self.edge_indicator.draw(&mut frame, self);
+
         vec![frame.into_geometry()]
     }
 
@@ -820,7 +973,21 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                         );
                     }
                 }
+                // Phase 4: Right-click to show context menu
+                canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
+                    return (
+                        canvas::event::Status::Captured,
+                        Some(GraphMessage::RightClick(adjusted_position)),
+                    );
+                }
                 canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+                    // Update edge indicator if active
+                    if self.edge_indicator.is_active() {
+                        return (
+                            canvas::event::Status::Captured,
+                            Some(GraphMessage::CursorMoved(adjusted_position)),
+                        );
+                    }
                     // Continue dragging if we're dragging a node
                     if self.dragging_node.is_some() {
                         return (

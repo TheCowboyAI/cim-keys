@@ -33,6 +33,7 @@ use crate::{
 };
 
 pub mod graph;
+pub mod graph_events;
 pub mod event_emitter;
 pub mod cowboy_theme;
 pub mod animated_background;
@@ -53,6 +54,8 @@ use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
 // use kuramoto_firefly_shader::KuramotoFireflyShader;
 // use debug_firefly_shader::DebugFireflyShader;
 use firefly_renderer::FireflyRenderer;
+use context_menu::{ContextMenu, ContextMenuMessage};
+use property_card::{PropertyCard, PropertyCardMessage};
 
 /// Main application state
 pub struct CimKeysApp {
@@ -158,6 +161,11 @@ pub struct CimKeysApp {
     x509_port: Arc<dyn X509Port>,
     ssh_port: Arc<dyn SshKeyPort>,
     yubikey_port: Arc<dyn YubiKeyPort>,
+
+    // Phase 4: Interactive UI Components
+    context_menu: ContextMenu,
+    property_card: PropertyCard,
+    context_menu_node: Option<Uuid>,  // Node that context menu was opened on (if any)
 }
 
 /// Different tabs in the application
@@ -263,6 +271,10 @@ pub enum Message {
 
     // Graph interactions
     GraphMessage(GraphMessage),
+
+    // Phase 4: Interactive UI Component Messages
+    ContextMenuMessage(ContextMenuMessage),
+    PropertyCardMessage(PropertyCardMessage),
 
     // MVI Integration
     MviIntent(Intent),
@@ -431,6 +443,10 @@ impl CimKeysApp {
                 x509_port,
                 ssh_port,
                 yubikey_port,
+                // Phase 4: Interactive UI Components
+                context_menu: ContextMenu::new(),
+                property_card: PropertyCard::new(),
+                context_menu_node: None,
             },
             load_task,
         )
@@ -1409,8 +1425,38 @@ impl CimKeysApp {
             Message::GraphMessage(graph_msg) => {
                 match &graph_msg {
                     GraphMessage::NodeClicked(id) => {
-                        self.selected_person = Some(*id);
-                        self.status_message = "Selected person in graph".to_string();
+                        // Check if we're in edge creation mode
+                        if self.org_graph.edge_indicator.is_active() {
+                            // Complete edge creation
+                            if let Some(from_id) = self.org_graph.edge_indicator.from_node() {
+                                if from_id != *id {  // Don't allow self-edges
+                                    // Create edge with default type
+                                    use crate::gui::graph::EdgeType;
+                                    self.org_graph.add_edge(from_id, *id, EdgeType::Hierarchy);
+
+                                    if let (Some(from_node), Some(to_node)) = (
+                                        self.org_graph.nodes.get(&from_id),
+                                        self.org_graph.nodes.get(id)
+                                    ) {
+                                        self.status_message = format!("Created edge from '{}' to '{}'",
+                                            from_node.label, to_node.label);
+                                    }
+                                } else {
+                                    self.status_message = "Cannot create edge to same node".to_string();
+                                }
+                                self.org_graph.edge_indicator.complete();
+                            }
+                        } else {
+                            // Normal node selection
+                            self.selected_person = Some(*id);
+                            // Phase 4: Open property card when node is clicked
+                            if let Some(node) = self.org_graph.nodes.get(id) {
+                                self.property_card.set_node(*id, node.node_type.clone());
+                                self.status_message = format!("Editing '{}'", node.label);
+                            } else {
+                                self.status_message = "Selected node in graph".to_string();
+                            }
+                        }
                     }
                     GraphMessage::AutoLayout => {
                         self.org_graph.auto_layout();
@@ -1420,9 +1466,268 @@ impl CimKeysApp {
                         self.org_graph.add_edge(*from, *to, edge_type.clone());
                         self.status_message = String::from("Relationship added");
                     }
+                    // Phase 4: Right-click shows context menu
+                    GraphMessage::RightClick(position) => {
+                        // Check if we right-clicked on a node
+                        self.context_menu_node = None;
+                        for (node_id, node) in &self.org_graph.nodes {
+                            let dx = position.x - node.position.x;
+                            let dy = position.y - node.position.y;
+                            let distance = (dx * dx + dy * dy).sqrt();
+                            if distance <= 25.0 {  // Within node radius
+                                self.context_menu_node = Some(*node_id);
+                                break;
+                            }
+                        }
+
+                        self.context_menu.show(*position);
+                        if self.context_menu_node.is_some() {
+                            self.status_message = "Node context menu opened".to_string();
+                        } else {
+                            self.status_message = "Context menu opened".to_string();
+                        }
+                    }
+                    // Phase 4: Update edge indicator position during edge creation
+                    GraphMessage::CursorMoved(_position) => {
+                        // Edge indicator update handled in graph.handle_message
+                    }
+                    // Phase 4: Cancel edge creation with Esc key
+                    GraphMessage::CancelEdgeCreation => {
+                        if self.org_graph.edge_indicator.is_active() {
+                            self.status_message = "Edge creation cancelled".to_string();
+                        }
+                        // Cancellation handled in graph.handle_message
+                    }
+                    // Phase 4: Delete selected node with Delete key
+                    GraphMessage::DeleteSelected => {
+                        if let Some(node_id) = self.org_graph.selected_node {
+                            if let Some(node) = self.org_graph.nodes.get(&node_id) {
+                                self.status_message = format!("Deleted '{}'", node.label);
+                            } else {
+                                self.status_message = "Deleted selected node".to_string();
+                            }
+                            // Deletion handled in graph.handle_message
+                        } else {
+                            self.status_message = "No node selected to delete".to_string();
+                        }
+                    }
+                    // Phase 4: Undo last action
+                    GraphMessage::Undo => {
+                        if let Some(description) = self.org_graph.event_stack.undo_description() {
+                            self.status_message = format!("Undo: {}", description);
+                        } else {
+                            self.status_message = "Nothing to undo".to_string();
+                        }
+                        // Undo handled in graph.handle_message
+                    }
+                    // Phase 4: Redo last undone action
+                    GraphMessage::Redo => {
+                        if let Some(description) = self.org_graph.event_stack.redo_description() {
+                            self.status_message = format!("Redo: {}", description);
+                        } else {
+                            self.status_message = "Nothing to redo".to_string();
+                        }
+                        // Redo handled in graph.handle_message
+                    }
                     _ => {}
                 }
                 self.org_graph.handle_message(graph_msg);
+                Task::none()
+            }
+
+            // Phase 4: Context Menu interactions
+            Message::ContextMenuMessage(menu_msg) => {
+                use crate::mvi::intent::NodeCreationType;
+                use crate::domain::{Organization, OrganizationUnit, OrganizationUnitType, Location, LocationType, SecurityLevel, Role, Policy};
+                use chrono::Utc;
+                use std::collections::HashMap;
+
+                match menu_msg {
+                    ContextMenuMessage::CreateNode(node_type) => {
+                        let position = self.context_menu.position();
+                        let node_id = Uuid::now_v7();
+                        let dummy_org_id = self.organization_id.unwrap_or_else(|| Uuid::now_v7());
+
+                        // Create placeholder domain entity and add to graph
+                        match node_type {
+                            NodeCreationType::Organization => {
+                                let org = Organization {
+                                    id: node_id,
+                                    name: "New Organization".to_string(),
+                                    display_name: "New Organization".to_string(),
+                                    description: Some("Edit this organization".to_string()),
+                                    parent_id: None,
+                                    units: vec![],
+                                    created_at: Utc::now(),
+                                    metadata: HashMap::new(),
+                                };
+                                self.org_graph.add_organization_node(org);
+                            }
+                            NodeCreationType::OrganizationalUnit => {
+                                let unit = OrganizationUnit {
+                                    id: node_id,
+                                    name: "New Unit".to_string(),
+                                    unit_type: OrganizationUnitType::Department,
+                                    parent_unit_id: None,
+                                    responsible_person_id: None,
+                                };
+                                self.org_graph.add_org_unit_node(unit);
+                            }
+                            NodeCreationType::Person => {
+                                let person = Person {
+                                    id: node_id,
+                                    name: "New Person".to_string(),
+                                    email: "person@example.com".to_string(),
+                                    roles: vec![],
+                                    organization_id: dummy_org_id,
+                                    unit_ids: vec![],
+                                    created_at: Utc::now(),
+                                    active: true,
+                                };
+                                self.org_graph.add_node(person, KeyOwnerRole::Developer);
+                            }
+                            NodeCreationType::Location => {
+                                let location = Location {
+                                    id: node_id,
+                                    name: "New Location".to_string(),
+                                    location_type: LocationType::Office,
+                                    security_level: SecurityLevel::Basic,
+                                    address: None,
+                                    coordinates: None,
+                                    metadata: HashMap::new(),
+                                };
+                                self.org_graph.add_location_node(location);
+                            }
+                            NodeCreationType::Role => {
+                                let role = Role {
+                                    id: node_id,
+                                    name: "New Role".to_string(),
+                                    description: "Role description".to_string(),
+                                    organization_id: dummy_org_id,
+                                    unit_id: None,
+                                    required_policies: vec![],
+                                    responsibilities: vec![],
+                                    created_at: Utc::now(),
+                                    created_by: dummy_org_id, // Using org_id as placeholder
+                                    active: true,
+                                };
+                                self.org_graph.add_role_node(role);
+                            }
+                            NodeCreationType::Policy => {
+                                let policy = Policy {
+                                    id: node_id,
+                                    name: "New Policy".to_string(),
+                                    description: "Policy description".to_string(),
+                                    claims: vec![],
+                                    conditions: vec![],
+                                    priority: 0,
+                                    enabled: true,
+                                    created_at: Utc::now(),
+                                    created_by: dummy_org_id, // Using org_id as placeholder
+                                    metadata: HashMap::new(),
+                                };
+                                self.org_graph.add_policy_node(policy);
+                            }
+                        }
+
+                        // Position the new node at the click location
+                        if let Some(node) = self.org_graph.nodes.get_mut(&node_id) {
+                            node.position = position;
+                        }
+
+                        // Open property card for the new node
+                        if let Some(node) = self.org_graph.nodes.get(&node_id) {
+                            self.property_card.set_node(node_id, node.node_type.clone());
+                        }
+
+                        self.context_menu.hide();
+                        self.status_message = format!("Created {:?} node - edit properties", node_type);
+                    }
+                    ContextMenuMessage::CreateEdge => {
+                        // Start edge creation from the node where context menu was opened
+                        let source_node = self.context_menu_node.or(self.selected_person);
+
+                        if let Some(from_id) = source_node {
+                            if let Some(from_node) = self.org_graph.nodes.get(&from_id) {
+                                // Start edge creation indicator
+                                self.org_graph.edge_indicator.start(from_id, from_node.position);
+                                self.status_message = format!("Creating edge from '{}'- click target node", from_node.label);
+                            } else {
+                                self.status_message = "Please select a source node first".to_string();
+                            }
+                        } else {
+                            self.status_message = "Please right-click on a node to create an edge".to_string();
+                        }
+
+                        self.context_menu.hide();
+                    }
+                    ContextMenuMessage::Dismiss => {
+                        self.context_menu.hide();
+                    }
+                }
+                Task::none()
+            }
+
+            // Phase 4: Property Card interactions
+            Message::PropertyCardMessage(card_msg) => {
+                self.property_card.update(card_msg.clone());
+                match card_msg {
+                    PropertyCardMessage::Save => {
+                        // Apply property changes to the node in the graph
+                        if let Some(node_id) = self.property_card.node_id() {
+                            if let Some(node) = self.org_graph.nodes.get_mut(&node_id) {
+                                let new_name = self.property_card.name().to_string();
+                                let new_description = self.property_card.description().to_string();
+                                let new_email = self.property_card.email().to_string();
+                                let new_enabled = self.property_card.enabled();
+
+                                // Update the node's properties based on its type
+                                match &mut node.node_type {
+                                    graph::NodeType::Organization(org) => {
+                                        org.name = new_name.clone();
+                                        org.display_name = new_name.clone();
+                                        org.description = Some(new_description);
+                                    }
+                                    graph::NodeType::OrganizationalUnit(unit) => {
+                                        unit.name = new_name.clone();
+                                    }
+                                    graph::NodeType::Person { person, .. } => {
+                                        person.name = new_name.clone();
+                                        person.email = new_email;
+                                        person.active = new_enabled;
+                                    }
+                                    graph::NodeType::Location(location) => {
+                                        location.name = new_name.clone();
+                                    }
+                                    graph::NodeType::Role(role) => {
+                                        role.name = new_name.clone();
+                                        role.description = new_description;
+                                        role.active = new_enabled;
+                                    }
+                                    graph::NodeType::Policy(policy) => {
+                                        policy.name = new_name.clone();
+                                        policy.description = new_description;
+                                        policy.enabled = new_enabled;
+                                    }
+                                }
+
+                                // Update node label
+                                node.label = new_name.clone();
+
+                                self.status_message = format!("Saved changes to '{}'", new_name);
+                            }
+                        }
+                        self.property_card.clear();
+                    }
+                    PropertyCardMessage::Cancel => {
+                        self.property_card.clear();
+                        self.status_message = "Property changes cancelled".to_string();
+                    }
+                    PropertyCardMessage::Close => {
+                        self.property_card.clear();
+                    }
+                    _ => {}
+                }
                 Task::none()
             }
 
@@ -1676,10 +1981,39 @@ impl CimKeysApp {
                                 Key::Character(c) if c == "0" => {
                                     Some(Message::ResetScale)
                                 }
+                                // Phase 4: Undo/Redo shortcuts
+                                Key::Character(c) if c == "z" && !modifiers.shift() => {
+                                    Some(Message::GraphMessage(
+                                        crate::gui::graph::GraphMessage::Undo
+                                    ))
+                                }
+                                Key::Character(c) if c == "z" && modifiers.shift() => {
+                                    Some(Message::GraphMessage(
+                                        crate::gui::graph::GraphMessage::Redo
+                                    ))
+                                }
+                                Key::Character(c) if c == "y" => {
+                                    Some(Message::GraphMessage(
+                                        crate::gui::graph::GraphMessage::Redo
+                                    ))
+                                }
                                 _ => None,
                             }
                         } else {
-                            None
+                            // Phase 4: Keyboard shortcuts without modifiers
+                            match key {
+                                Key::Named(keyboard::key::Named::Escape) => {
+                                    Some(Message::GraphMessage(
+                                        crate::gui::graph::GraphMessage::CancelEdgeCreation
+                                    ))
+                                }
+                                Key::Named(keyboard::key::Named::Delete) => {
+                                    Some(Message::GraphMessage(
+                                        crate::gui::graph::GraphMessage::DeleteSelected
+                                    ))
+                                }
+                                _ => None,
+                            }
                         }
                     }
                     _ => None,
@@ -1972,6 +2306,20 @@ impl CimKeysApp {
                     ..Default::default()
                 }
             }),
+
+            // Phase 4: Interactive UI Components
+            row![
+                // Context menu (overlaid on graph in final version)
+                self.context_menu.view()
+                    .map(Message::ContextMenuMessage),
+
+                horizontal_space(),
+
+                // Property card
+                self.property_card.view()
+                    .map(Message::PropertyCardMessage),
+            ]
+            .spacing(self.scaled_padding(20)),
         ]
         .spacing(self.scaled_padding(20));
 
