@@ -28,6 +28,7 @@ pub struct OrganizationGraph {
     pub selected_node: Option<Uuid>,
     dragging_node: Option<Uuid>,  // Node currently being dragged
     drag_offset: Vector,  // Offset from node center to cursor when dragging started
+    drag_start_position: Option<Point>,  // Original position when drag started (for NodeMoved event)
     _viewport: Rectangle,  // Reserved for graph panning/zooming
     zoom: f32,
     pan_offset: Vector,
@@ -145,6 +146,7 @@ impl OrganizationGraph {
             selected_node: None,
             dragging_node: None,
             drag_offset: Vector::new(0.0, 0.0),
+            drag_start_position: None,
             _viewport: Rectangle::new(Point::ORIGIN, Size::new(800.0, 600.0)),
             zoom: 1.0,
             pan_offset: Vector::new(0.0, 0.0),
@@ -551,6 +553,10 @@ impl OrganizationGraph {
             GraphMessage::NodeDragStarted { node_id, offset } => {
                 self.dragging_node = Some(node_id);
                 self.drag_offset = offset;
+                // Capture starting position for NodeMoved event
+                if let Some(node) = self.nodes.get(&node_id) {
+                    self.drag_start_position = Some(node.position);
+                }
             }
             GraphMessage::NodeDragged(cursor_pos) => {
                 if let Some(node_id) = self.dragging_node {
@@ -559,6 +565,7 @@ impl OrganizationGraph {
                         let adjusted_x = (cursor_pos.x - self.pan_offset.x) / self.zoom;
                         let adjusted_y = (cursor_pos.y - self.pan_offset.y) / self.zoom;
 
+                        // Temporary position update during drag (no event yet)
                         node.position = Point::new(
                             adjusted_x - self.drag_offset.x,
                             adjusted_y - self.drag_offset.y,
@@ -567,8 +574,31 @@ impl OrganizationGraph {
                 }
             }
             GraphMessage::NodeDragEnded => {
+                // Create NodeMoved event when drag completes
+                if let (Some(node_id), Some(old_position)) = (self.dragging_node, self.drag_start_position) {
+                    if let Some(node) = self.nodes.get(&node_id) {
+                        let new_position = node.position;
+
+                        // Only create event if position actually changed
+                        if (new_position.x - old_position.x).abs() > 0.1
+                            || (new_position.y - old_position.y).abs() > 0.1 {
+                            use chrono::Utc;
+
+                            let event = GraphEvent::NodeMoved {
+                                node_id,
+                                old_position,
+                                new_position,
+                                timestamp: Utc::now(),
+                            };
+
+                            self.event_stack.push(event);
+                        }
+                    }
+                }
+
                 self.dragging_node = None;
                 self.drag_offset = Vector::new(0.0, 0.0);
+                self.drag_start_position = None;
             }
             GraphMessage::EdgeClicked { from: _, to: _ } => {}
             GraphMessage::ZoomIn => self.zoom = (self.zoom * 1.2).min(3.0),
