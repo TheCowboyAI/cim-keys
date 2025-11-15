@@ -1430,9 +1430,24 @@ impl CimKeysApp {
                             // Complete edge creation
                             if let Some(from_id) = self.org_graph.edge_indicator.from_node() {
                                 if from_id != *id {  // Don't allow self-edges
-                                    // Create edge with default type
+                                    // Create edge event with default type
                                     use crate::gui::graph::EdgeType;
-                                    self.org_graph.add_edge(from_id, *id, EdgeType::Hierarchy);
+                                    use crate::gui::graph_events::GraphEvent;
+                                    use chrono::Utc;
+
+                                    let edge_type = EdgeType::Hierarchy;
+                                    let color = Color::from_rgb(0.3, 0.3, 0.7);
+
+                                    let event = GraphEvent::EdgeCreated {
+                                        from: from_id,
+                                        to: *id,
+                                        edge_type,
+                                        color,
+                                        timestamp: Utc::now(),
+                                    };
+
+                                    self.org_graph.event_stack.push(event.clone());
+                                    self.org_graph.apply_event(&event);
 
                                     if let (Some(from_node), Some(to_node)) = (
                                         self.org_graph.nodes.get(&from_id),
@@ -1502,11 +1517,27 @@ impl CimKeysApp {
                     GraphMessage::DeleteSelected => {
                         if let Some(node_id) = self.org_graph.selected_node {
                             if let Some(node) = self.org_graph.nodes.get(&node_id) {
-                                self.status_message = format!("Deleted '{}'", node.label);
+                                use crate::gui::graph_events::GraphEvent;
+                                use chrono::Utc;
+
+                                // Create NodeDeleted event with snapshot for redo
+                                let event = GraphEvent::NodeDeleted {
+                                    node_id,
+                                    node_type: node.node_type.clone(),
+                                    position: node.position,
+                                    color: node.color,
+                                    label: node.label.clone(),
+                                    timestamp: Utc::now(),
+                                };
+
+                                let label = node.label.clone();
+                                self.org_graph.event_stack.push(event.clone());
+                                self.org_graph.apply_event(&event);
+
+                                self.status_message = format!("Deleted '{}'", label);
                             } else {
-                                self.status_message = "Deleted selected node".to_string();
+                                self.status_message = "Node not found".to_string();
                             }
-                            // Deletion handled in graph.handle_message
                         } else {
                             self.status_message = "No node selected to delete".to_string();
                         }
@@ -1539,6 +1570,8 @@ impl CimKeysApp {
             Message::ContextMenuMessage(menu_msg) => {
                 use crate::mvi::intent::NodeCreationType;
                 use crate::domain::{Organization, OrganizationUnit, OrganizationUnitType, Location, LocationType, SecurityLevel, Role, Policy};
+                use crate::gui::graph::NodeType;
+                use crate::gui::graph_events::GraphEvent;
                 use chrono::Utc;
                 use std::collections::HashMap;
 
@@ -1548,8 +1581,8 @@ impl CimKeysApp {
                         let node_id = Uuid::now_v7();
                         let dummy_org_id = self.organization_id.unwrap_or_else(|| Uuid::now_v7());
 
-                        // Create placeholder domain entity and add to graph
-                        match node_type {
+                        // Create placeholder domain entity and generate event
+                        let (graph_node_type, label, color) = match node_type {
                             NodeCreationType::Organization => {
                                 let org = Organization {
                                     id: node_id,
@@ -1561,7 +1594,8 @@ impl CimKeysApp {
                                     created_at: Utc::now(),
                                     metadata: HashMap::new(),
                                 };
-                                self.org_graph.add_organization_node(org);
+                                let label = org.name.clone();
+                                (NodeType::Organization(org), label, Color::from_rgb(0.2, 0.3, 0.6))
                             }
                             NodeCreationType::OrganizationalUnit => {
                                 let unit = OrganizationUnit {
@@ -1571,7 +1605,8 @@ impl CimKeysApp {
                                     parent_unit_id: None,
                                     responsible_person_id: None,
                                 };
-                                self.org_graph.add_org_unit_node(unit);
+                                let label = unit.name.clone();
+                                (NodeType::OrganizationalUnit(unit), label, Color::from_rgb(0.4, 0.5, 0.8))
                             }
                             NodeCreationType::Person => {
                                 let person = Person {
@@ -1584,7 +1619,8 @@ impl CimKeysApp {
                                     created_at: Utc::now(),
                                     active: true,
                                 };
-                                self.org_graph.add_node(person, KeyOwnerRole::Developer);
+                                let label = person.name.clone();
+                                (NodeType::Person { person, role: KeyOwnerRole::Developer }, label, Color::from_rgb(0.5, 0.7, 0.3))
                             }
                             NodeCreationType::Location => {
                                 let location = Location {
@@ -1596,7 +1632,8 @@ impl CimKeysApp {
                                     coordinates: None,
                                     metadata: HashMap::new(),
                                 };
-                                self.org_graph.add_location_node(location);
+                                let label = location.name.clone();
+                                (NodeType::Location(location), label, Color::from_rgb(0.6, 0.5, 0.4))
                             }
                             NodeCreationType::Role => {
                                 let role = Role {
@@ -1608,10 +1645,11 @@ impl CimKeysApp {
                                     required_policies: vec![],
                                     responsibilities: vec![],
                                     created_at: Utc::now(),
-                                    created_by: dummy_org_id, // Using org_id as placeholder
+                                    created_by: dummy_org_id,
                                     active: true,
                                 };
-                                self.org_graph.add_role_node(role);
+                                let label = role.name.clone();
+                                (NodeType::Role(role), label, Color::from_rgb(0.6, 0.3, 0.8))
                             }
                             NodeCreationType::Policy => {
                                 let policy = Policy {
@@ -1623,17 +1661,26 @@ impl CimKeysApp {
                                     priority: 0,
                                     enabled: true,
                                     created_at: Utc::now(),
-                                    created_by: dummy_org_id, // Using org_id as placeholder
+                                    created_by: dummy_org_id,
                                     metadata: HashMap::new(),
                                 };
-                                self.org_graph.add_policy_node(policy);
+                                let label = policy.name.clone();
+                                (NodeType::Policy(policy), label, Color::from_rgb(0.8, 0.6, 0.2))
                             }
-                        }
+                        };
 
-                        // Position the new node at the click location
-                        if let Some(node) = self.org_graph.nodes.get_mut(&node_id) {
-                            node.position = position;
-                        }
+                        // Create and apply NodeCreated event
+                        let event = GraphEvent::NodeCreated {
+                            node_id,
+                            node_type: graph_node_type,
+                            position,
+                            color,
+                            label,
+                            timestamp: Utc::now(),
+                        };
+
+                        self.org_graph.event_stack.push(event.clone());
+                        self.org_graph.apply_event(&event);
 
                         // Open property card for the new node
                         if let Some(node) = self.org_graph.nodes.get(&node_id) {
@@ -1673,46 +1720,75 @@ impl CimKeysApp {
                 self.property_card.update(card_msg.clone());
                 match card_msg {
                     PropertyCardMessage::Save => {
-                        // Apply property changes to the node in the graph
+                        // Create property change event
                         if let Some(node_id) = self.property_card.node_id() {
-                            if let Some(node) = self.org_graph.nodes.get_mut(&node_id) {
+                            if let Some(node) = self.org_graph.nodes.get(&node_id) {
+                                use crate::gui::graph_events::GraphEvent;
+                                use chrono::Utc;
+
                                 let new_name = self.property_card.name().to_string();
                                 let new_description = self.property_card.description().to_string();
                                 let new_email = self.property_card.email().to_string();
                                 let new_enabled = self.property_card.enabled();
 
-                                // Update the node's properties based on its type
-                                match &mut node.node_type {
+                                // Capture old state
+                                let old_node_type = node.node_type.clone();
+                                let old_label = node.label.clone();
+
+                                // Create updated node type with new values
+                                let new_node_type = match &node.node_type {
                                     graph::NodeType::Organization(org) => {
-                                        org.name = new_name.clone();
-                                        org.display_name = new_name.clone();
-                                        org.description = Some(new_description);
+                                        let mut updated = org.clone();
+                                        updated.name = new_name.clone();
+                                        updated.display_name = new_name.clone();
+                                        updated.description = Some(new_description);
+                                        graph::NodeType::Organization(updated)
                                     }
                                     graph::NodeType::OrganizationalUnit(unit) => {
-                                        unit.name = new_name.clone();
+                                        let mut updated = unit.clone();
+                                        updated.name = new_name.clone();
+                                        graph::NodeType::OrganizationalUnit(updated)
                                     }
-                                    graph::NodeType::Person { person, .. } => {
-                                        person.name = new_name.clone();
-                                        person.email = new_email;
-                                        person.active = new_enabled;
+                                    graph::NodeType::Person { person, role } => {
+                                        let mut updated = person.clone();
+                                        updated.name = new_name.clone();
+                                        updated.email = new_email;
+                                        updated.active = new_enabled;
+                                        graph::NodeType::Person { person: updated, role: *role }
                                     }
                                     graph::NodeType::Location(location) => {
-                                        location.name = new_name.clone();
+                                        let mut updated = location.clone();
+                                        updated.name = new_name.clone();
+                                        graph::NodeType::Location(updated)
                                     }
                                     graph::NodeType::Role(role) => {
-                                        role.name = new_name.clone();
-                                        role.description = new_description;
-                                        role.active = new_enabled;
+                                        let mut updated = role.clone();
+                                        updated.name = new_name.clone();
+                                        updated.description = new_description;
+                                        updated.active = new_enabled;
+                                        graph::NodeType::Role(updated)
                                     }
                                     graph::NodeType::Policy(policy) => {
-                                        policy.name = new_name.clone();
-                                        policy.description = new_description;
-                                        policy.enabled = new_enabled;
+                                        let mut updated = policy.clone();
+                                        updated.name = new_name.clone();
+                                        updated.description = new_description;
+                                        updated.enabled = new_enabled;
+                                        graph::NodeType::Policy(updated)
                                     }
-                                }
+                                };
 
-                                // Update node label
-                                node.label = new_name.clone();
+                                // Create and apply NodePropertiesChanged event
+                                let event = GraphEvent::NodePropertiesChanged {
+                                    node_id,
+                                    old_node_type,
+                                    old_label,
+                                    new_node_type,
+                                    new_label: new_name.clone(),
+                                    timestamp: Utc::now(),
+                                };
+
+                                self.org_graph.event_stack.push(event.clone());
+                                self.org_graph.apply_event(&event);
 
                                 self.status_message = format!("Saved changes to '{}'", new_name);
                             }

@@ -598,10 +598,8 @@ impl OrganizationGraph {
             }
             // Phase 4: Delete selected node with Delete key
             GraphMessage::DeleteSelected => {
-                if let Some(node_id) = self.selected_node {
-                    self.delete_node(node_id);
-                    self.selected_node = None;
-                }
+                // Deletion now handled via events in GUI layer
+                // The event application will handle node removal and edge cleanup
             }
             // Phase 4: Undo last action
             GraphMessage::Undo => {
