@@ -2440,7 +2440,7 @@ impl CimKeysApp {
                         .map(Message::GraphMessage)
                 )
                 .width(Length::Fill)
-                .height(Length::Fixed(self.scaled_size(500.0)))
+                .height(Length::Fill)
                 .style(|_theme| {
                     container::Style {
                         background: Some(Background::Color(Color::from_rgb(0.95, 0.95, 0.95))),
@@ -2481,9 +2481,13 @@ impl CimKeysApp {
                 stack(stack_layers)
             },
         ]
-        .spacing(self.scaled_padding(20));
+        .spacing(self.scaled_padding(20))
+        .height(Length::Fill);
 
-        scrollable(content).into()
+        container(scrollable(content))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
     }
 
     fn view_locations(&self) -> Element<'_, Message> {
