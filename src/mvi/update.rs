@@ -788,6 +788,181 @@ pub fn update(
             (updated, Task::none())
         }
 
+        // ===== Graph Intents (Phase 2 - Placeholders for future implementation) =====
+        Intent::UiGraphCreateNode { node_type, position } => {
+            let updated = model.with_status_message(format!(
+                "Creating {:?} node at ({}, {})",
+                node_type, position.0, position.1
+            ));
+            // TODO: Create actual node in graph state
+            (updated, Task::none())
+        }
+
+        Intent::UiGraphCreateEdgeStarted { from_node } => {
+            let updated = model.with_status_message(format!(
+                "Edge creation started from node {}",
+                from_node
+            ));
+            // TODO: Start edge creation mode
+            (updated, Task::none())
+        }
+
+        Intent::UiGraphCreateEdgeCompleted { from, to, edge_type } => {
+            let updated = model.with_status_message(format!(
+                "Edge created: {} -> {} ({})",
+                from, to, edge_type
+            ));
+            // TODO: Create actual edge in graph state
+            (updated, Task::none())
+        }
+
+        Intent::UiGraphCreateEdgeCancelled => {
+            let updated = model.with_status_message("Edge creation cancelled".to_string());
+            // TODO: Cancel edge creation mode
+            (updated, Task::none())
+        }
+
+        Intent::UiGraphNodeClicked { node_id } => {
+            let updated = model.with_status_message(format!("Node selected: {}", node_id));
+            // TODO: Select node in graph state
+            (updated, Task::none())
+        }
+
+        Intent::UiGraphDeleteNode { node_id } => {
+            let updated = model.with_status_message(format!("Deleting node: {}", node_id));
+            // TODO: Delete node from graph state
+            (updated, Task::none())
+        }
+
+        Intent::UiGraphDeleteEdge { from, to } => {
+            let updated = model.with_status_message(format!(
+                "Deleting edge: {} -> {}",
+                from, to
+            ));
+            // TODO: Delete edge from graph state
+            (updated, Task::none())
+        }
+
+        Intent::UiGraphEditNodeProperties { node_id } => {
+            let updated = model.with_status_message(format!(
+                "Editing properties for node: {}",
+                node_id
+            ));
+            // TODO: Open property editor
+            (updated, Task::none())
+        }
+
+        Intent::UiGraphPropertyChanged { node_id, property, value } => {
+            let updated = model.with_status_message(format!(
+                "Property changed: {}.{} = {}",
+                node_id, property, value
+            ));
+            // TODO: Update property in temporary state (not persisted yet)
+            (updated, Task::none())
+        }
+
+        Intent::UiGraphPropertiesSaved { node_id } => {
+            let updated = model.with_status_message(format!(
+                "Properties saved for node: {}",
+                node_id
+            ));
+            // TODO: Persist property changes
+            (updated, Task::none())
+        }
+
+        Intent::UiGraphPropertiesCancelled => {
+            let updated = model.with_status_message("Property editing cancelled".to_string());
+            // TODO: Discard property changes
+            (updated, Task::none())
+        }
+
+        Intent::UiGraphAutoLayout => {
+            let updated = model.with_status_message("Auto-layout applied".to_string());
+            // TODO: Apply auto-layout algorithm
+            (updated, Task::none())
+        }
+
+        // Domain events for graph changes
+        Intent::DomainNodeCreated { node_id, node_type } => {
+            let updated = model.with_status_message(format!(
+                "{} node created: {}",
+                node_type, node_id
+            ));
+            (updated, Task::none())
+        }
+
+        Intent::DomainEdgeCreated { from, to, edge_type } => {
+            let updated = model.with_status_message(format!(
+                "Edge created: {} -> {} ({})",
+                from, to, edge_type
+            ));
+            (updated, Task::none())
+        }
+
+        Intent::DomainNodeDeleted { node_id } => {
+            let updated = model.with_status_message(format!("Node deleted: {}", node_id));
+            (updated, Task::none())
+        }
+
+        Intent::DomainNodeUpdated { node_id, properties } => {
+            let updated = model.with_status_message(format!(
+                "Node updated: {} ({} properties changed)",
+                node_id,
+                properties.len()
+            ));
+            (updated, Task::none())
+        }
+
+        Intent::DomainOrganizationCreated { org_id, name } => {
+            let updated = model.with_status_message(format!(
+                "Organization created: {} (ID: {})",
+                name, org_id
+            ));
+            (updated, Task::none())
+        }
+
+        Intent::DomainOrgUnitCreated { unit_id, name, parent_id } => {
+            let updated = model.with_status_message(format!(
+                "Org unit created: {} (ID: {}, Parent: {:?})",
+                name, unit_id, parent_id
+            ));
+            (updated, Task::none())
+        }
+
+        Intent::DomainLocationCreated { location_id, name, location_type } => {
+            let updated = model.with_status_message(format!(
+                "Location created: {} ({}, ID: {})",
+                name, location_type, location_id
+            ));
+            (updated, Task::none())
+        }
+
+        Intent::DomainRoleCreated { role_id, name, organization_id } => {
+            let updated = model.with_status_message(format!(
+                "Role created: {} (ID: {}, Org: {})",
+                name, role_id, organization_id
+            ));
+            (updated, Task::none())
+        }
+
+        Intent::DomainPolicyCreated { policy_id, name, claims } => {
+            let updated = model.with_status_message(format!(
+                "Policy created: {} ({} claims, ID: {})",
+                name,
+                claims.len(),
+                policy_id
+            ));
+            (updated, Task::none())
+        }
+
+        Intent::DomainPolicyBound { policy_id, entity_id, entity_type } => {
+            let updated = model.with_status_message(format!(
+                "Policy bound: {} -> {} ({})",
+                policy_id, entity_id, entity_type
+            ));
+            (updated, Task::none())
+        }
+
         Intent::NoOp => {
             (model, Task::none())
         }

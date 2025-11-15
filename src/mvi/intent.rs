@@ -5,6 +5,17 @@
 
 use std::path::PathBuf;
 
+/// Type of node that can be created in the graph
+#[derive(Debug, Clone)]
+pub enum NodeCreationType {
+    Organization,
+    OrganizationalUnit,
+    Person,
+    Location,
+    Role,
+    Policy,
+}
+
 /// Intent - unified event source abstraction for ALL inputs
 ///
 /// **Design Principle**: Event source is explicit in the type.
@@ -122,6 +133,133 @@ pub enum Intent {
     /// Master seed derivation failed
     MasterSeedDerivationFailed {
         error: String,
+    },
+
+    // ===== Graph-Originated Intents =====
+    /// User clicked to create a new node in the graph
+    UiGraphCreateNode {
+        node_type: NodeCreationType,
+        position: (f32, f32),  // x, y coordinates
+    },
+
+    /// User started creating an edge by clicking a source node
+    UiGraphCreateEdgeStarted {
+        from_node: String,  // Node ID
+    },
+
+    /// User completed edge creation by clicking a target node
+    UiGraphCreateEdgeCompleted {
+        from: String,       // Source node ID
+        to: String,         // Target node ID
+        edge_type: String,  // Edge type as string for serialization
+    },
+
+    /// User cancelled edge creation
+    UiGraphCreateEdgeCancelled,
+
+    /// User clicked on a node to select it
+    UiGraphNodeClicked {
+        node_id: String,
+    },
+
+    /// User requested to delete a node
+    UiGraphDeleteNode {
+        node_id: String,
+    },
+
+    /// User requested to delete an edge
+    UiGraphDeleteEdge {
+        from: String,
+        to: String,
+    },
+
+    /// User opened property editor for a node
+    UiGraphEditNodeProperties {
+        node_id: String,
+    },
+
+    /// User changed a property value in the property editor
+    UiGraphPropertyChanged {
+        node_id: String,
+        property: String,
+        value: String,
+    },
+
+    /// User saved property changes
+    UiGraphPropertiesSaved {
+        node_id: String,
+    },
+
+    /// User cancelled property editing
+    UiGraphPropertiesCancelled,
+
+    /// User requested auto-layout of the graph
+    UiGraphAutoLayout,
+
+    // Domain events for graph changes
+    /// A node was created in the domain
+    DomainNodeCreated {
+        node_id: String,
+        node_type: String,
+    },
+
+    /// An edge was created in the domain
+    DomainEdgeCreated {
+        from: String,
+        to: String,
+        edge_type: String,
+    },
+
+    /// A node was deleted from the domain
+    DomainNodeDeleted {
+        node_id: String,
+    },
+
+    /// A node's properties were updated
+    DomainNodeUpdated {
+        node_id: String,
+        properties: Vec<(String, String)>,
+    },
+
+    /// An organization was created
+    DomainOrganizationCreated {
+        org_id: String,
+        name: String,
+    },
+
+    /// An organizational unit was created
+    DomainOrgUnitCreated {
+        unit_id: String,
+        name: String,
+        parent_id: Option<String>,
+    },
+
+    /// A location was created
+    DomainLocationCreated {
+        location_id: String,
+        name: String,
+        location_type: String,
+    },
+
+    /// A role was created
+    DomainRoleCreated {
+        role_id: String,
+        name: String,
+        organization_id: String,
+    },
+
+    /// A policy was created
+    DomainPolicyCreated {
+        policy_id: String,
+        name: String,
+        claims: Vec<String>,
+    },
+
+    /// A policy was bound to an entity
+    DomainPolicyBound {
+        policy_id: String,
+        entity_id: String,
+        entity_type: String,
     },
 
     // ===== Port-Originated Intents (Async Responses) =====
@@ -262,6 +400,19 @@ impl Intent {
                 | Intent::UiGenerateAllKeysClicked
                 | Intent::UiExportClicked { .. }
                 | Intent::UiProvisionYubiKeyClicked { .. }
+                // Graph intents
+                | Intent::UiGraphCreateNode { .. }
+                | Intent::UiGraphCreateEdgeStarted { .. }
+                | Intent::UiGraphCreateEdgeCompleted { .. }
+                | Intent::UiGraphCreateEdgeCancelled
+                | Intent::UiGraphNodeClicked { .. }
+                | Intent::UiGraphDeleteNode { .. }
+                | Intent::UiGraphDeleteEdge { .. }
+                | Intent::UiGraphEditNodeProperties { .. }
+                | Intent::UiGraphPropertyChanged { .. }
+                | Intent::UiGraphPropertiesSaved { .. }
+                | Intent::UiGraphPropertiesCancelled
+                | Intent::UiGraphAutoLayout
         )
     }
 
@@ -292,6 +443,17 @@ impl Intent {
                 | Intent::RootCAGenerated { .. }
                 | Intent::SSHKeyGenerated { .. }
                 | Intent::YubiKeyProvisioned { .. }
+                // Graph domain events
+                | Intent::DomainNodeCreated { .. }
+                | Intent::DomainEdgeCreated { .. }
+                | Intent::DomainNodeDeleted { .. }
+                | Intent::DomainNodeUpdated { .. }
+                | Intent::DomainOrganizationCreated { .. }
+                | Intent::DomainOrgUnitCreated { .. }
+                | Intent::DomainLocationCreated { .. }
+                | Intent::DomainRoleCreated { .. }
+                | Intent::DomainPolicyCreated { .. }
+                | Intent::DomainPolicyBound { .. }
         )
     }
 }

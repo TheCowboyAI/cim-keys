@@ -14,7 +14,10 @@ use iced::widget::text::{LineHeight, Shaping};
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::domain::{Person, KeyDelegation, KeyOwnerRole};
+use crate::domain::{
+    Person, KeyDelegation, KeyOwnerRole, Organization, OrganizationUnit,
+    Location, Policy, Role,
+};
 
 /// Graph visualization widget for organizational structure
 pub struct OrganizationGraph {
@@ -28,16 +31,25 @@ pub struct OrganizationGraph {
     pan_offset: Vector,
 }
 
-/// A node in the organization graph (represents a person)
+/// A node in the organization graph (represents any domain entity)
 #[derive(Debug, Clone)]
 pub struct GraphNode {
-    pub person: Person,
-    pub role: KeyOwnerRole,
+    pub id: Uuid,
+    pub node_type: NodeType,
     pub position: Point,
     pub color: Color,
-    pub keys_owned: usize,
-    pub keys_delegated_to: usize,
-    pub keys_delegated_from: usize,
+    pub label: String,
+}
+
+/// Type of node in the graph
+#[derive(Debug, Clone)]
+pub enum NodeType {
+    Organization(Organization),
+    OrganizationalUnit(OrganizationUnit),
+    Person { person: Person, role: KeyOwnerRole },
+    Location(Location),
+    Role(Role),
+    Policy(Policy),
 }
 
 /// An edge in the organization graph (represents relationship/delegation)
@@ -51,10 +63,39 @@ pub struct GraphEdge {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum EdgeType {
+    // Organizational hierarchy
+    /// Parent-child relationship (Organization → OrganizationalUnit)
+    ParentChild,
+    /// Manager relationship (Person → OrganizationalUnit)
+    ManagesUnit,
+    /// Membership (Person → OrganizationalUnit)
+    MemberOf,
+
+    // Key relationships
+    /// Key ownership (Person → Key)
+    OwnsKey,
+    /// Key delegation (Person → Person)
+    DelegatesKey(KeyDelegation),
+    /// Storage location (Key → Location)
+    StoredAt,
+
+    // Policy relationships
+    /// Role assignment (Person → Role)
+    HasRole,
+    /// Policy requirement (Role → Policy)
+    RoleRequiresPolicy,
+    /// Policy governance (Policy → Entity)
+    PolicyGovernsEntity,
+
+    // Trust relationships
+    /// Trust relationship (Organization → Organization)
+    Trusts,
+    /// Certificate authority (Key → Key)
+    CertifiedBy,
+
+    // Legacy (for backwards compatibility)
     /// Hierarchical relationship (manager -> report)
     Hierarchy,
-    /// Key delegation (owner -> delegate)
-    Delegation(KeyDelegation),
     /// Trust relationship (CA -> signed cert)
     Trust,
 }
@@ -95,24 +136,129 @@ impl OrganizationGraph {
         }
     }
 
+    /// Add a person node to the graph
     pub fn add_node(&mut self, person: Person, role: KeyOwnerRole) {
+        let node_id = person.id;
+        let label = person.name.clone();
+        let color = self.role_to_color(&role);
+
         let node = GraphNode {
-            person: person.clone(),
-            role,
-            position: self.calculate_node_position(person.id),
-            color: self.role_to_color(&role),
-            keys_owned: 0,
-            keys_delegated_to: 0,
-            keys_delegated_from: 0,
+            id: node_id,
+            node_type: NodeType::Person {
+                person: person.clone(),
+                role
+            },
+            position: self.calculate_node_position(node_id),
+            color,
+            label,
         };
 
-        self.nodes.insert(person.id, node);
+        self.nodes.insert(node_id, node);
+    }
+
+    /// Add an organization node to the graph
+    pub fn add_organization_node(&mut self, org: Organization) {
+        let node_id = org.id;
+        let label = org.name.clone();
+
+        let node = GraphNode {
+            id: node_id,
+            node_type: NodeType::Organization(org),
+            position: self.calculate_node_position(node_id),
+            color: Color::from_rgb(0.2, 0.3, 0.6), // Dark blue
+            label,
+        };
+
+        self.nodes.insert(node_id, node);
+    }
+
+    /// Add an organizational unit node to the graph
+    pub fn add_org_unit_node(&mut self, unit: OrganizationUnit) {
+        let node_id = unit.id;
+        let label = unit.name.clone();
+
+        let node = GraphNode {
+            id: node_id,
+            node_type: NodeType::OrganizationalUnit(unit),
+            position: self.calculate_node_position(node_id),
+            color: Color::from_rgb(0.4, 0.5, 0.8), // Light blue
+            label,
+        };
+
+        self.nodes.insert(node_id, node);
+    }
+
+    /// Add a location node to the graph
+    pub fn add_location_node(&mut self, location: Location) {
+        let node_id = location.id;
+        let label = location.name.clone();
+
+        let node = GraphNode {
+            id: node_id,
+            node_type: NodeType::Location(location),
+            position: self.calculate_node_position(node_id),
+            color: Color::from_rgb(0.6, 0.5, 0.4), // Brown/gray
+            label,
+        };
+
+        self.nodes.insert(node_id, node);
+    }
+
+    /// Add a role node to the graph
+    pub fn add_role_node(&mut self, role: Role) {
+        let node_id = role.id;
+        let label = role.name.clone();
+
+        let node = GraphNode {
+            id: node_id,
+            node_type: NodeType::Role(role),
+            position: self.calculate_node_position(node_id),
+            color: Color::from_rgb(0.6, 0.3, 0.8), // Purple
+            label,
+        };
+
+        self.nodes.insert(node_id, node);
+    }
+
+    /// Add a policy node to the graph
+    pub fn add_policy_node(&mut self, policy: Policy) {
+        let node_id = policy.id;
+        let label = policy.name.clone();
+
+        let node = GraphNode {
+            id: node_id,
+            node_type: NodeType::Policy(policy),
+            position: self.calculate_node_position(node_id),
+            color: Color::from_rgb(0.9, 0.7, 0.2), // Gold/yellow
+            label,
+        };
+
+        self.nodes.insert(node_id, node);
     }
 
     pub fn add_edge(&mut self, from: Uuid, to: Uuid, edge_type: EdgeType) {
         let color = match &edge_type {
+            // Organizational hierarchy - blues
+            EdgeType::ParentChild => Color::from_rgb(0.2, 0.4, 0.8),
+            EdgeType::ManagesUnit => Color::from_rgb(0.4, 0.2, 0.8),
+            EdgeType::MemberOf => Color::from_rgb(0.5, 0.5, 0.5),
+
+            // Key relationships - greens
+            EdgeType::OwnsKey => Color::from_rgb(0.2, 0.7, 0.2),
+            EdgeType::DelegatesKey(_) => Color::from_rgb(0.9, 0.6, 0.2),
+            EdgeType::StoredAt => Color::from_rgb(0.6, 0.5, 0.4),
+
+            // Policy relationships - gold/yellow
+            EdgeType::HasRole => Color::from_rgb(0.6, 0.3, 0.8),
+            EdgeType::RoleRequiresPolicy => Color::from_rgb(0.9, 0.7, 0.2),
+            EdgeType::PolicyGovernsEntity => Color::from_rgb(0.9, 0.7, 0.2),
+
+            // Trust relationships
+            EdgeType::Trusts => Color::from_rgb(0.7, 0.5, 0.3),
+            EdgeType::CertifiedBy => Color::from_rgb(0.7, 0.5, 0.3),
+
+            // Legacy
             EdgeType::Hierarchy => Color::from_rgb(0.3, 0.3, 0.7),
-            EdgeType::Delegation(_) => Color::from_rgb(0.3, 0.7, 0.3),
             EdgeType::Trust => Color::from_rgb(0.7, 0.5, 0.3),
         };
         self.edges.push(GraphEdge {
@@ -146,32 +292,51 @@ impl OrganizationGraph {
         }
     }
 
-    /// Hierarchical layout: organize nodes by role
+    /// Hierarchical layout: organize nodes by type and role
     fn hierarchical_layout(&mut self) {
         let center = Point { x: 400.0, y: 300.0 };
 
-        // Group nodes by role
-        let mut role_groups: HashMap<String, Vec<Uuid>> = HashMap::new();
+        // Group nodes by type
+        let mut type_groups: HashMap<String, Vec<Uuid>> = HashMap::new();
         for (id, node) in &self.nodes {
-            let role_key = format!("{:?}", node.role);
-            role_groups.entry(role_key).or_insert_with(Vec::new).push(*id);
+            let type_key = match &node.node_type {
+                NodeType::Organization(_) => "Organization",
+                NodeType::OrganizationalUnit(_) => "OrganizationalUnit",
+                NodeType::Person { role, .. } => match role {
+                    KeyOwnerRole::RootAuthority => "Person_RootAuthority",
+                    KeyOwnerRole::SecurityAdmin => "Person_SecurityAdmin",
+                    KeyOwnerRole::BackupHolder => "Person_BackupHolder",
+                    KeyOwnerRole::Auditor => "Person_Auditor",
+                    KeyOwnerRole::Developer => "Person_Developer",
+                    KeyOwnerRole::ServiceAccount => "Person_ServiceAccount",
+                },
+                NodeType::Location(_) => "Location",
+                NodeType::Role(_) => "Role",
+                NodeType::Policy(_) => "Policy",
+            };
+            type_groups.entry(type_key.to_string()).or_insert_with(Vec::new).push(*id);
         }
 
-        // Define role hierarchy (top to bottom)
-        let role_order = vec![
-            "RootAuthority",
-            "SecurityAdmin",
-            "BackupHolder",
-            "Auditor",
-            "Developer",
-            "ServiceAccount",
+        // Define node type hierarchy (top to bottom)
+        let type_order = vec![
+            "Organization",
+            "OrganizationalUnit",
+            "Role",
+            "Policy",
+            "Person_RootAuthority",
+            "Person_SecurityAdmin",
+            "Person_BackupHolder",
+            "Person_Auditor",
+            "Person_Developer",
+            "Person_ServiceAccount",
+            "Location",
         ];
 
         let mut y_offset = 100.0;
         let y_spacing = 120.0;
 
-        for role_name in role_order {
-            if let Some(node_ids) = role_groups.get(role_name) {
+        for type_name in type_order {
+            if let Some(node_ids) = type_groups.get(type_name) {
                 let x_spacing = 150.0;
                 let total_width = (node_ids.len() as f32 - 1.0) * x_spacing;
                 let start_x = center.x - total_width / 2.0;
@@ -428,8 +593,27 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
 
                 // Draw edge label
                 let edge_label = match &edge.edge_type {
+                    // Organizational
+                    EdgeType::ParentChild => "parent of",
+                    EdgeType::ManagesUnit => "manages",
+                    EdgeType::MemberOf => "member of",
+
+                    // Key relationships
+                    EdgeType::OwnsKey => "owns",
+                    EdgeType::DelegatesKey(_) => "delegates to",
+                    EdgeType::StoredAt => "stored at",
+
+                    // Policy relationships
+                    EdgeType::HasRole => "has role",
+                    EdgeType::RoleRequiresPolicy => "requires",
+                    EdgeType::PolicyGovernsEntity => "governs",
+
+                    // Trust
+                    EdgeType::Trusts => "trusts",
+                    EdgeType::CertifiedBy => "certified by",
+
+                    // Legacy
                     EdgeType::Hierarchy => "reports to",
-                    EdgeType::Delegation(_) => "delegates to",
                     EdgeType::Trust => "trusts",
                 };
 
@@ -494,23 +678,53 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                 .with_width(if is_selected { 2.0 } else { 1.0 });
             frame.stroke(&circle, border_stroke);
 
-            // Draw node properties as multi-line text
-            let role_str = match node.role {
-                KeyOwnerRole::RootAuthority => "Root CA",
-                KeyOwnerRole::SecurityAdmin => "Security Admin",
-                KeyOwnerRole::Developer => "Developer",
-                KeyOwnerRole::ServiceAccount => "Service",
-                KeyOwnerRole::BackupHolder => "Backup",
-                KeyOwnerRole::Auditor => "Auditor",
+            // Draw node properties as multi-line text based on node type
+            let (type_label, primary_text, secondary_text) = match &node.node_type {
+                NodeType::Organization(org) => (
+                    "Organization",
+                    org.name.clone(),
+                    org.display_name.clone(),
+                ),
+                NodeType::OrganizationalUnit(unit) => (
+                    "Unit",
+                    unit.name.clone(),
+                    format!("{:?}", unit.unit_type),
+                ),
+                NodeType::Person { person, role } => {
+                    let role_str = match role {
+                        KeyOwnerRole::RootAuthority => "Root CA",
+                        KeyOwnerRole::SecurityAdmin => "Security Admin",
+                        KeyOwnerRole::Developer => "Developer",
+                        KeyOwnerRole::ServiceAccount => "Service",
+                        KeyOwnerRole::BackupHolder => "Backup",
+                        KeyOwnerRole::Auditor => "Auditor",
+                    };
+                    (role_str, person.name.clone(), person.email.clone())
+                },
+                NodeType::Location(loc) => (
+                    "Location",
+                    loc.name.clone(),
+                    format!("{:?}", loc.location_type),
+                ),
+                NodeType::Role(role) => (
+                    "Role",
+                    role.name.clone(),
+                    role.description.clone(),
+                ),
+                NodeType::Policy(policy) => (
+                    "Policy",
+                    policy.name.clone(),
+                    format!("{} claims", policy.claims.len()),
+                ),
             };
 
-            // Name (below node)
+            // Primary text (below node)
             let name_position = Point::new(
                 node.position.x,
                 node.position.y + radius + 12.0,
             );
             frame.fill_text(canvas::Text {
-                content: node.person.name.clone(),
+                content: primary_text,
                 position: name_position,
                 color: Color::BLACK,
                 size: iced::Pixels(13.0),
@@ -521,13 +735,13 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                 shaping: Shaping::Advanced,
             });
 
-            // Email (below name)
+            // Secondary text (below primary)
             let email_position = Point::new(
                 node.position.x,
                 node.position.y + radius + 27.0,
             );
             frame.fill_text(canvas::Text {
-                content: node.person.email.clone(),
+                content: secondary_text,
                 position: email_position,
                 color: Color::from_rgb(0.4, 0.4, 0.4),
                 size: iced::Pixels(10.0),
@@ -538,13 +752,13 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                 shaping: Shaping::Advanced,
             });
 
-            // Role (above node)
+            // Type label (above node)
             let role_position = Point::new(
                 node.position.x,
                 node.position.y - radius - 8.0,
             );
             frame.fill_text(canvas::Text {
-                content: role_str.to_string(),
+                content: type_label.to_string(),
                 position: role_position,
                 color: node.color,
                 size: iced::Pixels(11.0),
@@ -679,16 +893,46 @@ pub fn view_graph(graph: &OrganizationGraph) -> Element<'_, GraphMessage> {
     // Show selected node details
     if let Some(selected_id) = graph.selected_node {
         if let Some(node) = graph.nodes.get(&selected_id) {
-            items = items.push(
-                column![
+            let details = match &node.node_type {
+                NodeType::Organization(org) => column![
+                    text("Selected Organization:").size(16),
+                    text(format!("Name: {}", org.name)),
+                    text(format!("Display Name: {}", org.display_name)),
+                    text(format!("Units: {}", org.units.len())),
+                ],
+                NodeType::OrganizationalUnit(unit) => column![
+                    text("Selected Unit:").size(16),
+                    text(format!("Name: {}", unit.name)),
+                    text(format!("Type: {:?}", unit.unit_type)),
+                ],
+                NodeType::Person { person, role } => column![
                     text("Selected Person:").size(16),
-                    text(format!("Name: {}", node.person.name)),
-                    text(format!("Email: {}", node.person.email)),
-                    text(format!("Role: {:?}", node.role)),
-                    text(format!("Keys Owned: {}", node.keys_owned)),
-                ]
-                .spacing(5)
-            );
+                    text(format!("Name: {}", person.name)),
+                    text(format!("Email: {}", person.email)),
+                    text(format!("Role: {:?}", role)),
+                ],
+                NodeType::Location(loc) => column![
+                    text("Selected Location:").size(16),
+                    text(format!("Name: {}", loc.name)),
+                    text(format!("Type: {:?}", loc.location_type)),
+                    text(format!("Security: {:?}", loc.security_level)),
+                ],
+                NodeType::Role(role) => column![
+                    text("Selected Role:").size(16),
+                    text(format!("Name: {}", role.name)),
+                    text(format!("Description: {}", role.description)),
+                    text(format!("Required Policies: {}", role.required_policies.len())),
+                ],
+                NodeType::Policy(policy) => column![
+                    text("Selected Policy:").size(16),
+                    text(format!("Name: {}", policy.name)),
+                    text(format!("Claims: {}", policy.claims.len())),
+                    text(format!("Conditions: {}", policy.conditions.len())),
+                    text(format!("Priority: {}", policy.priority)),
+                    text(format!("Enabled: {}", policy.enabled)),
+                ],
+            };
+            items = items.push(details.spacing(5));
         }
     }
 

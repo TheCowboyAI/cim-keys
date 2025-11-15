@@ -43,12 +43,21 @@
   - Pure Model updates
   - Hexagonal ports
 
-### What's Next (Phase 2+) 🚧
-- **Interactive node creation** (all entity types including Policy/Role)
-- **Interactive edge creation** (drag between nodes)
+### Phase 2: COMPLETE ✅ (Completed: 2025-01-15)
+- ✅ **Extended GraphNode for all entity types** (Organization, OrgUnit, Person, Location, Role, Policy)
+- ✅ **Extended EdgeType enum** (12 new semantic edge types + 2 legacy)
+- ✅ **Graph Interaction Intents** (23 new Intent variants in MVI system)
+  - 12 UI-originated intents (UiGraphCreateNode, UiGraphCreateEdge*, etc.)
+  - 11 Domain-originated events (DomainNodeCreated, DomainPolicyCreated, etc.)
+- ✅ **Update function handlers** (placeholder implementations ready for Phase 3)
+- ✅ **Type-aware rendering** (color-coded nodes, semantic edge labels)
+
+### What's Next (Phase 3+) 🚧
+- **Interactive node creation UI** (context menu, drag-and-drop)
+- **Interactive edge creation UI** (visual feedback, edge type selector)
 - **Property card UI** (edit entity attributes)
-- **Graph as primary interface** (beyond visualization)
-- **Graph Interaction Intents** (UiGraphCreateNode, UiGraphCreateEdge, etc.)
+- **Complete workflows** (create → edit → save)
+- **Graph as primary interface** (full interactive modeling)
 
 ## Design Principles
 
@@ -1069,7 +1078,23 @@ PolicyGovernsEntity:   ⚡⚡⚡▶  (lightning bolt, gold)
 
 **See**: `PHASE1_COMPLETE.md` for full details
 
-### Phase 2: Interactive Graph (Week 2)
+### Phase 2: Graph Interaction Intents ✅ COMPLETE (Completed: 2025-01-15)
+
+**Status**: All objectives met, code compiles, tests passing
+
+**Deliverables**:
+- ✅ Extended GraphNode to support all entity types (`src/gui/graph.rs:36-53`)
+- ✅ Added 6 node creation methods (one per entity type)
+- ✅ Extended EdgeType to 12 semantic types + 2 legacy (`src/gui/graph.rs:64-101`)
+- ✅ Added NodeCreationType enum (`src/mvi/intent.rs:9-17`)
+- ✅ Added 23 graph interaction Intents (`src/mvi/intent.rs:127-252`)
+- ✅ Added placeholder update handlers (`src/mvi/update.rs:791-964`)
+- ✅ Updated hierarchical layout for all node types
+- ✅ Updated rendering for type-specific display
+
+**Implementation**: See `PHASE2_COMPLETE.md` for full details
+
+### Phase 3: Interactive Graph UI (Week 2-3)
 - [ ] Context menu for node creation
 - [ ] Property card component
 - [ ] Node creation workflow
