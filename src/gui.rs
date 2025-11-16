@@ -2557,7 +2557,8 @@ impl CimKeysApp {
         .spacing(self.scaled_padding(20))
         .height(Length::Fill);
 
-        container(scrollable(content))
+        // Don't wrap in scrollable - it blocks mouse events to the canvas
+        container(content)
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
