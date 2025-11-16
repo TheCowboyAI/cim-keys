@@ -2039,20 +2039,20 @@ impl CimKeysApp {
             }
 
             Message::IncreaseScale => {
-                self.ui_scale = (self.ui_scale + 0.1).min(2.0);  // Max 2x scale
+                self.ui_scale = (self.ui_scale + 0.1).min(3.0);  // Max 3x scale
                 self.status_message = format!("UI Scale: {:.0}%", self.ui_scale * 100.0);
                 Task::none()
             }
 
             Message::DecreaseScale => {
-                self.ui_scale = (self.ui_scale - 0.1).max(0.5);  // Min 0.5x scale
+                self.ui_scale = (self.ui_scale - 0.1).max(1.0);  // Min 1x scale
                 self.status_message = format!("UI Scale: {:.0}%", self.ui_scale * 100.0);
                 Task::none()
             }
 
             Message::ResetScale => {
-                self.ui_scale = 1.0;
-                self.status_message = "UI Scale: 100%".to_string();
+                self.ui_scale = 2.0;  // Reset to default 2x scale
+                self.status_message = "UI Scale: 200%".to_string();
                 Task::none()
             }
         }
