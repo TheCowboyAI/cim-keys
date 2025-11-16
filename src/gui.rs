@@ -2564,9 +2564,14 @@ impl CimKeysApp {
                 // Add context menu overlay if visible
                 if self.context_menu.is_visible() {
                     let pos = self.context_menu.position();
+
+                    // Account for controls row height above the canvas in view_graph
+                    // Controls row: ~40px height + 10px spacing = ~50px offset
+                    const CONTROLS_HEIGHT_OFFSET: f32 = 50.0;
+
                     // Position menu at cursor location using column/row spacers
                     let menu_overlay = column![
-                        vertical_space().height(Length::Fixed(pos.y)),
+                        vertical_space().height(Length::Fixed(pos.y + CONTROLS_HEIGHT_OFFSET)),
                         row![
                             horizontal_space().width(Length::Fixed(pos.x)),
                             self.context_menu.view()
