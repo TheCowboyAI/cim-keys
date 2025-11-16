@@ -1598,15 +1598,15 @@ impl CimKeysApp {
                     }
                     // Phase 4: Right-click shows context menu
                     GraphMessage::RightClick(position) => {
-                        // Transform screen coordinates to canvas coordinates for hit detection
-                        let canvas_x = (position.x - self.org_graph.pan_offset.x) / self.org_graph.zoom;
-                        let canvas_y = (position.y - self.org_graph.pan_offset.y) / self.org_graph.zoom;
+                        // Position is now canvas-relative, transform to graph coordinates for hit detection
+                        let graph_x = (position.x - self.org_graph.pan_offset.x) / self.org_graph.zoom;
+                        let graph_y = (position.y - self.org_graph.pan_offset.y) / self.org_graph.zoom;
 
-                        // Check if we right-clicked on a node (using canvas coords)
+                        // Check if we right-clicked on a node (using graph coords)
                         self.context_menu_node = None;
                         for (node_id, node) in &self.org_graph.nodes {
-                            let dx = canvas_x - node.position.x;
-                            let dy = canvas_y - node.position.y;
+                            let dx = graph_x - node.position.x;
+                            let dy = graph_y - node.position.y;
                             let distance = (dx * dx + dy * dy).sqrt();
                             if distance <= 25.0 {  // Within node radius
                                 self.context_menu_node = Some(*node_id);
@@ -2565,8 +2565,8 @@ impl CimKeysApp {
                 if self.context_menu.is_visible() {
                     let pos = self.context_menu.position();
 
-                    // Account for controls row height above the canvas in view_graph
-                    // Controls row: ~40px height + 10px spacing = ~50px offset
+                    // Canvas sends canvas-relative coordinates, but stack overlay is positioned
+                    // relative to view_graph column (controls + canvas), so add controls offset
                     const CONTROLS_HEIGHT_OFFSET: f32 = 50.0;
 
                     // Position menu at cursor location using column/row spacers

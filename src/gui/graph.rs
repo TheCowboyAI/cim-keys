@@ -972,14 +972,19 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
         &self,
         state: &mut Self::State,
         event: canvas::Event,
-        _bounds: Rectangle,  // Reserved for hit testing within bounds
+        bounds: Rectangle,  // Canvas widget bounds for coordinate conversion
         cursor: mouse::Cursor,
     ) -> (canvas::event::Status, Option<GraphMessage>) {
         if let mouse::Cursor::Available(cursor_position) = cursor {
-            // Adjust cursor position for zoom and pan
+            // Convert window coordinates to canvas-relative coordinates
+            let canvas_relative_x = cursor_position.x - bounds.x;
+            let canvas_relative_y = cursor_position.y - bounds.y;
+            let canvas_relative = Point::new(canvas_relative_x, canvas_relative_y);
+
+            // Adjust cursor position for zoom and pan (for node hit detection)
             let adjusted_position = Point::new(
-                (cursor_position.x - self.pan_offset.x) / self.zoom,
-                (cursor_position.y - self.pan_offset.y) / self.zoom,
+                (canvas_relative_x - self.pan_offset.x) / self.zoom,
+                (canvas_relative_y - self.pan_offset.y) / self.zoom,
             );
 
             match event {
@@ -1044,7 +1049,7 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                 canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
                     return (
                         canvas::event::Status::Captured,
-                        Some(GraphMessage::RightClick(cursor_position)),  // Use actual screen coords, not canvas-adjusted!
+                        Some(GraphMessage::RightClick(canvas_relative)),  // Use canvas-relative coords!
                     );
                 }
                 canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
