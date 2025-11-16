@@ -1649,9 +1649,15 @@ impl CimKeysApp {
                         // Use adjusted screen coordinates for menu positioning
                         self.context_menu.show(Point::new(menu_x, menu_y));
                         if self.context_menu_node.is_some() {
-                            self.status_message = format!("Node context menu at ({:.0}, {:.0})", menu_x, menu_y);
+                            self.status_message = format!(
+                                "Node menu: click({:.0},{:.0}) → canvas({:.0},{:.0}) → menu({:.0},{:.0})",
+                                position.x, position.y, graph_x, graph_y, menu_x, menu_y
+                            );
                         } else {
-                            self.status_message = format!("Context menu at ({:.0}, {:.0})", menu_x, menu_y);
+                            self.status_message = format!(
+                                "Canvas menu: click({:.0},{:.0}) → menu({:.0},{:.0})",
+                                position.x, position.y, menu_x, menu_y
+                            );
                         }
                     }
                     // Phase 4: Update edge indicator position during edge creation
