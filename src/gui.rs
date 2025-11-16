@@ -6,7 +6,7 @@
 use iced::{
     application,
     widget::{button, column, container, row, text, text_input, Container, horizontal_space, vertical_space, pick_list, progress_bar, checkbox, scrollable, Space, image, stack},
-    Task, Element, Length, Color, Border, Theme, Background, Shadow, Alignment,
+    Task, Element, Length, Color, Border, Theme, Background, Shadow, Alignment, Point,
 };
 use iced_futures::Subscription;
 use serde::{Deserialize, Serialize};
@@ -1598,11 +1598,15 @@ impl CimKeysApp {
                     }
                     // Phase 4: Right-click shows context menu
                     GraphMessage::RightClick(position) => {
-                        // Check if we right-clicked on a node
+                        // Transform screen coordinates to canvas coordinates for hit detection
+                        let canvas_x = (position.x - self.org_graph.pan_offset.x) / self.org_graph.zoom;
+                        let canvas_y = (position.y - self.org_graph.pan_offset.y) / self.org_graph.zoom;
+
+                        // Check if we right-clicked on a node (using canvas coords)
                         self.context_menu_node = None;
                         for (node_id, node) in &self.org_graph.nodes {
-                            let dx = position.x - node.position.x;
-                            let dy = position.y - node.position.y;
+                            let dx = canvas_x - node.position.x;
+                            let dy = canvas_y - node.position.y;
                             let distance = (dx * dx + dy * dy).sqrt();
                             if distance <= 25.0 {  // Within node radius
                                 self.context_menu_node = Some(*node_id);
@@ -1610,11 +1614,44 @@ impl CimKeysApp {
                             }
                         }
 
-                        self.context_menu.show(*position);
+                        // Adjust menu position to keep it on screen
+                        // Menu is approximately 180px wide and 300px tall
+                        const MENU_WIDTH: f32 = 180.0;
+                        const MENU_HEIGHT: f32 = 300.0;
+                        const MIN_MARGIN: f32 = 10.0;
+
+                        // Use typical window dimensions for bounds checking
+                        // TODO: Track actual window size for precise bounds checking
+                        const TYPICAL_WIDTH: f32 = 1920.0;
+                        const TYPICAL_HEIGHT: f32 = 1080.0;
+
+                        let mut menu_x = position.x;
+                        let mut menu_y = position.y;
+
+                        // Adjust horizontally if menu would go off right edge
+                        if menu_x + MENU_WIDTH + MIN_MARGIN > TYPICAL_WIDTH {
+                            menu_x = TYPICAL_WIDTH - MENU_WIDTH - MIN_MARGIN;
+                        }
+                        // Ensure not off left edge
+                        if menu_x < MIN_MARGIN {
+                            menu_x = MIN_MARGIN;
+                        }
+
+                        // Adjust vertically if menu would go off bottom edge
+                        if menu_y + MENU_HEIGHT + MIN_MARGIN > TYPICAL_HEIGHT {
+                            menu_y = TYPICAL_HEIGHT - MENU_HEIGHT - MIN_MARGIN;
+                        }
+                        // Ensure not off top edge
+                        if menu_y < MIN_MARGIN {
+                            menu_y = MIN_MARGIN;
+                        }
+
+                        // Use adjusted screen coordinates for menu positioning
+                        self.context_menu.show(Point::new(menu_x, menu_y));
                         if self.context_menu_node.is_some() {
-                            self.status_message = "Node context menu opened".to_string();
+                            self.status_message = format!("Node context menu at ({:.0}, {:.0})", menu_x, menu_y);
                         } else {
-                            self.status_message = "Context menu opened".to_string();
+                            self.status_message = format!("Context menu at ({:.0}, {:.0})", menu_x, menu_y);
                         }
                     }
                     // Phase 4: Update edge indicator position during edge creation

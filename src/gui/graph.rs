@@ -1044,7 +1044,7 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                 canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
                     return (
                         canvas::event::Status::Captured,
-                        Some(GraphMessage::RightClick(adjusted_position)),
+                        Some(GraphMessage::RightClick(cursor_position)),  // Use actual screen coords, not canvas-adjusted!
                     );
                 }
                 canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
