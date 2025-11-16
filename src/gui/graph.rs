@@ -116,6 +116,10 @@ pub enum GraphMessage {
     NodeDragged(Point),  // New cursor position
     NodeDragEnded,
     EdgeClicked { from: Uuid, to: Uuid },
+    EdgeSelected(usize),  // Index of selected edge
+    EdgeDeleted(usize),   // Index of edge to delete
+    EdgeTypeChanged { edge_index: usize, new_type: EdgeType },  // Change edge relationship type
+    EdgeCreationStarted(Uuid),  // Start edge creation by dragging from node border
     ZoomIn,
     ZoomOut,
     ResetView,
@@ -128,7 +132,7 @@ pub enum GraphMessage {
     CursorMoved(Point),  // Cursor position (adjusted for zoom/pan)
     // Phase 4: Keyboard shortcuts
     CancelEdgeCreation,  // Esc key - cancel edge creation
-    DeleteSelected,      // Delete key - delete selected node
+    DeleteSelected,      // Delete key - delete selected node or edge
     Undo,                // Ctrl+Z - undo last action
     Redo,                // Ctrl+Y or Ctrl+Shift+Z - redo last undone action
 }
@@ -137,6 +141,35 @@ impl Default for OrganizationGraph {
     fn default() -> Self {
         Self::new()
     }
+}
+
+// Helper function to calculate distance from point to line segment
+fn distance_to_line_segment(point: Point, line_start: Point, line_end: Point) -> f32 {
+    let px = point.x;
+    let py = point.y;
+    let x1 = line_start.x;
+    let y1 = line_start.y;
+    let x2 = line_end.x;
+    let y2 = line_end.y;
+
+    let dx = x2 - x1;
+    let dy = y2 - y1;
+
+    if dx == 0.0 && dy == 0.0 {
+        // Line segment is a point
+        return ((px - x1).powi(2) + (py - y1).powi(2)).sqrt();
+    }
+
+    // Parameter t represents position along line segment (0 = start, 1 = end)
+    let t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy);
+    let t = t.clamp(0.0, 1.0);  // Clamp to line segment
+
+    // Closest point on line segment
+    let closest_x = x1 + t * dx;
+    let closest_y = y1 + t * dy;
+
+    // Distance from point to closest point
+    ((px - closest_x).powi(2) + (py - closest_y).powi(2)).sqrt()
 }
 
 impl OrganizationGraph {
@@ -359,6 +392,14 @@ impl OrganizationGraph {
                 self.edges.retain(|edge| {
                     !(edge.from == *from && edge.to == *to && edge.edge_type == *edge_type)
                 });
+            }
+            GraphEvent::EdgeTypeChanged { from, to, new_type, .. } => {
+                for edge in &mut self.edges {
+                    if edge.from == *from && edge.to == *to {
+                        edge.edge_type = new_type.clone();
+                        break;
+                    }
+                }
             }
         }
     }
@@ -624,6 +665,10 @@ impl OrganizationGraph {
             }
             GraphMessage::AddEdge { from, to, edge_type } => {
                 self.add_edge(from, to, edge_type);
+                // Complete edge indicator if it's active
+                if self.edge_indicator.is_active() {
+                    self.edge_indicator.complete();
+                }
             }
             // Phase 4: Right-click handled in main GUI (shows context menu)
             GraphMessage::RightClick(_) => {}
@@ -650,6 +695,53 @@ impl OrganizationGraph {
             GraphMessage::Redo => {
                 if let Some(compensating_event) = self.event_stack.redo() {
                     self.apply_event(&compensating_event);
+                }
+            }
+            // Edge editing messages
+            GraphMessage::EdgeSelected(index) => {
+                self.selected_edge = Some(index);
+                // Clear node selection when edge is selected
+                self.selected_node = None;
+            }
+            GraphMessage::EdgeCreationStarted(from_node) => {
+                // Start edge creation indicator from this node
+                if let Some(node) = self.nodes.get(&from_node) {
+                    self.edge_indicator.start(from_node, node.position);
+                }
+            }
+            GraphMessage::EdgeDeleted(index) => {
+                if index < self.edges.len() {
+                    let edge = self.edges[index].clone();
+                    use chrono::Utc;
+
+                    let event = GraphEvent::EdgeDeleted {
+                        from: edge.from,
+                        to: edge.to,
+                        edge_type: edge.edge_type,
+                        color: edge.color,
+                        timestamp: Utc::now(),
+                    };
+
+                    self.event_stack.push(event);
+                    self.edges.remove(index);
+                    self.selected_edge = None;
+                }
+            }
+            GraphMessage::EdgeTypeChanged { edge_index, new_type } => {
+                if edge_index < self.edges.len() {
+                    let old_type = self.edges[edge_index].edge_type.clone();
+                    use chrono::Utc;
+
+                    let event = GraphEvent::EdgeTypeChanged {
+                        from: self.edges[edge_index].from,
+                        to: self.edges[edge_index].to,
+                        old_type,
+                        new_type: new_type.clone(),
+                        timestamp: Utc::now(),
+                    };
+
+                    self.event_stack.push(event);
+                    self.edges[edge_index].edge_type = new_type;
                 }
             }
         }
@@ -991,33 +1083,79 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
 
             match event {
                 canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
-                    // Check if click is on a node - start dragging
+                    // Check if click is on a node
                     for (node_id, node) in &self.nodes {
                         let distance = ((adjusted_position.x - node.position.x).powi(2)
                             + (adjusted_position.y - node.position.y).powi(2))
                         .sqrt();
 
                         if distance <= 20.0 {
-                            // Track drag in canvas state
-                            state.dragging_node = Some(*node_id);
-                            state.drag_start_pos = Some(node.position);
+                            // Check if click is on border (outer ring) vs center
+                            // Border: 12-20 pixels from center → start edge creation
+                            // Center: 0-12 pixels from center → start node drag
+                            if distance >= 12.0 {
+                                // Border click - start edge creation
+                                return (
+                                    canvas::event::Status::Captured,
+                                    Some(GraphMessage::EdgeCreationStarted(*node_id)),
+                                );
+                            } else {
+                                // Center click - start node drag
+                                // Track drag in canvas state
+                                state.dragging_node = Some(*node_id);
+                                state.drag_start_pos = Some(node.position);
 
-                            // Calculate offset from node center to cursor
-                            let offset = Vector::new(
-                                adjusted_position.x - node.position.x,
-                                adjusted_position.y - node.position.y,
-                            );
-                            return (
-                                canvas::event::Status::Captured,
-                                Some(GraphMessage::NodeDragStarted {
-                                    node_id: *node_id,
-                                    offset
-                                }),
-                            );
+                                // Calculate offset from node center to cursor
+                                let offset = Vector::new(
+                                    adjusted_position.x - node.position.x,
+                                    adjusted_position.y - node.position.y,
+                                );
+                                return (
+                                    canvas::event::Status::Captured,
+                                    Some(GraphMessage::NodeDragStarted {
+                                        node_id: *node_id,
+                                        offset
+                                    }),
+                                );
+                            }
                         }
                     }
                 }
                 canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+                    // Check if we're creating an edge
+                    if self.edge_indicator.is_active() {
+                        if let Some(from_node_id) = self.edge_indicator.from_node() {
+                            // Check if we released over a different node
+                            for (node_id, node) in &self.nodes {
+                                if *node_id == from_node_id {
+                                    continue; // Skip the source node
+                                }
+
+                                let distance = ((adjusted_position.x - node.position.x).powi(2)
+                                    + (adjusted_position.y - node.position.y).powi(2))
+                                .sqrt();
+
+                                if distance <= 20.0 {
+                                    // Released over a target node - create the edge
+                                    // Use MemberOf as default edge type (user can change later)
+                                    return (
+                                        canvas::event::Status::Captured,
+                                        Some(GraphMessage::AddEdge {
+                                            from: from_node_id,
+                                            to: *node_id,
+                                            edge_type: EdgeType::MemberOf,
+                                        }),
+                                    );
+                                }
+                            }
+                        }
+                        // Released but not over a target node - cancel edge creation
+                        return (
+                            canvas::event::Status::Captured,
+                            Some(GraphMessage::CancelEdgeCreation),
+                        );
+                    }
+
                     // End dragging if we were dragging
                     if let Some(node_id) = state.dragging_node {
                         // Check if node actually moved significantly (more than 5 pixels)
@@ -1044,6 +1182,24 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                                 canvas::event::Status::Captured,
                                 Some(GraphMessage::NodeClicked(node_id)),
                             );
+                        }
+                    } else {
+                        // Not dragging - check if we clicked on an edge
+                        const EDGE_CLICK_THRESHOLD: f32 = 10.0;  // pixels
+                        for (index, edge) in self.edges.iter().enumerate() {
+                            if let (Some(from_node), Some(to_node)) = (self.nodes.get(&edge.from), self.nodes.get(&edge.to)) {
+                                let distance = distance_to_line_segment(
+                                    adjusted_position,
+                                    from_node.position,
+                                    to_node.position
+                                );
+                                if distance <= EDGE_CLICK_THRESHOLD {
+                                    return (
+                                        canvas::event::Status::Captured,
+                                        Some(GraphMessage::EdgeSelected(index)),
+                                    );
+                                }
+                            }
                         }
                     }
                 }

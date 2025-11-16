@@ -65,6 +65,14 @@ pub enum GraphEvent {
         color: Color,
         timestamp: DateTime<Utc>,
     },
+    /// Edge type was changed
+    EdgeTypeChanged {
+        from: Uuid,
+        to: Uuid,
+        old_type: EdgeType,
+        new_type: EdgeType,
+        timestamp: DateTime<Utc>,
+    },
 }
 
 impl GraphEvent {
@@ -139,6 +147,21 @@ impl GraphEvent {
                     timestamp: Utc::now(),
                 }
             }
+            GraphEvent::EdgeTypeChanged {
+                from,
+                to,
+                old_type,
+                new_type,
+                ..
+            } => {
+                GraphEvent::EdgeTypeChanged {
+                    from: *from,
+                    to: *to,
+                    old_type: new_type.clone(),
+                    new_type: old_type.clone(),
+                    timestamp: Utc::now(),
+                }
+            }
         }
     }
 
@@ -153,6 +176,9 @@ impl GraphEvent {
             GraphEvent::NodeMoved { node_id, .. } => format!("Moved node {:?}", node_id),
             GraphEvent::EdgeCreated { .. } => "Created edge".to_string(),
             GraphEvent::EdgeDeleted { .. } => "Deleted edge".to_string(),
+            GraphEvent::EdgeTypeChanged { old_type, new_type, .. } => {
+                format!("Changed edge from {:?} to {:?}", old_type, new_type)
+            }
         }
     }
 }

@@ -9,26 +9,35 @@ use iced::{
 use uuid::Uuid;
 use std::collections::HashSet;
 
-use crate::gui::graph::NodeType;
+use crate::gui::graph::{NodeType, EdgeType};
 use crate::domain::PolicyClaim;
 
-/// Property card for editing node properties
+/// What is being edited
+#[derive(Debug, Clone)]
+pub enum EditTarget {
+    Node { id: Uuid, node_type: NodeType },
+    Edge { index: usize, from: Uuid, to: Uuid, edge_type: EdgeType },
+}
+
+/// Property card for editing node and edge properties
 #[derive(Debug, Clone)]
 pub struct PropertyCard {
-    node_id: Option<Uuid>,
-    node_type: Option<NodeType>,
+    edit_target: Option<EditTarget>,
     dirty: bool,
-    // Temporary edit state
+    // Node edit state
     edit_name: String,
     edit_description: String,
     edit_email: String,
     edit_enabled: bool,
-    edit_claims: HashSet<PolicyClaim>,  // Selected policy claims
+    edit_claims: HashSet<PolicyClaim>,
+    // Edge edit state
+    edit_edge_type: EdgeType,
 }
 
 /// Messages emitted by the property card
 #[derive(Debug, Clone)]
 pub enum PropertyCardMessage {
+    // Node editing messages
     /// User changed the name field
     NameChanged(String),
     /// User changed the description field
@@ -39,6 +48,12 @@ pub enum PropertyCardMessage {
     EnabledToggled(bool),
     /// User toggled a policy claim
     ClaimToggled(PolicyClaim, bool),
+    // Edge editing messages
+    /// User changed edge type
+    EdgeTypeChanged(EdgeType),
+    /// User clicked delete edge button
+    DeleteEdge,
+    // Common messages
     /// User clicked save
     Save,
     /// User clicked cancel
@@ -57,20 +72,23 @@ impl PropertyCard {
     /// Create a new property card
     pub fn new() -> Self {
         Self {
-            node_id: None,
-            node_type: None,
+            edit_target: None,
             dirty: false,
             edit_name: String::new(),
             edit_description: String::new(),
             edit_email: String::new(),
             edit_enabled: true,
             edit_claims: HashSet::new(),
+            edit_edge_type: EdgeType::MemberOf,  // Default edge type
         }
     }
 
     /// Set the node to edit
     pub fn set_node(&mut self, node_id: Uuid, node_type: NodeType) {
-        self.node_id = Some(node_id);
+        self.edit_target = Some(EditTarget::Node {
+            id: node_id,
+            node_type: node_type.clone(),
+        });
         self.dirty = false;
 
         // Initialize edit fields from node data
@@ -113,25 +131,45 @@ impl PropertyCard {
                 self.edit_claims = policy.claims.iter().cloned().collect();
             }
         }
-
-        self.node_type = Some(node_type);
     }
 
-    /// Clear the selected node
+    /// Set the edge to edit
+    pub fn set_edge(&mut self, index: usize, from: Uuid, to: Uuid, edge_type: EdgeType) {
+        self.edit_target = Some(EditTarget::Edge {
+            index,
+            from,
+            to,
+            edge_type: edge_type.clone(),
+        });
+        self.dirty = false;
+        self.edit_edge_type = edge_type;
+    }
+
+    /// Clear the selected node or edge
     pub fn clear(&mut self) {
-        self.node_id = None;
-        self.node_type = None;
+        self.edit_target = None;
         self.dirty = false;
         self.edit_name.clear();
         self.edit_description.clear();
         self.edit_email.clear();
         self.edit_enabled = true;
         self.edit_claims.clear();
+        self.edit_edge_type = EdgeType::MemberOf;
     }
 
-    /// Check if a node is selected
+    /// Check if something is being edited
     pub fn is_editing(&self) -> bool {
-        self.node_id.is_some()
+        self.edit_target.is_some()
+    }
+
+    /// Check if editing a node (vs edge)
+    pub fn is_editing_node(&self) -> bool {
+        matches!(self.edit_target, Some(EditTarget::Node { .. }))
+    }
+
+    /// Check if editing an edge (vs node)
+    pub fn is_editing_edge(&self) -> bool {
+        matches!(self.edit_target, Some(EditTarget::Edge { .. }))
     }
 
     /// Check if there are unsaved changes
@@ -139,27 +177,38 @@ impl PropertyCard {
         self.dirty
     }
 
-    /// Get the node ID being edited
+    /// Get the node ID being edited (if editing a node)
     pub fn node_id(&self) -> Option<Uuid> {
-        self.node_id
+        match &self.edit_target {
+            Some(EditTarget::Node { id, .. }) => Some(*id),
+            _ => None,
+        }
     }
 
-    /// Get the edited name
+    /// Get the edge index being edited (if editing an edge)
+    pub fn edge_index(&self) -> Option<usize> {
+        match &self.edit_target {
+            Some(EditTarget::Edge { index, .. }) => Some(*index),
+            _ => None,
+        }
+    }
+
+    /// Get the edited name (for nodes)
     pub fn name(&self) -> &str {
         &self.edit_name
     }
 
-    /// Get the edited description
+    /// Get the edited description (for nodes)
     pub fn description(&self) -> &str {
         &self.edit_description
     }
 
-    /// Get the edited email
+    /// Get the edited email (for nodes)
     pub fn email(&self) -> &str {
         &self.edit_email
     }
 
-    /// Get the edited enabled state
+    /// Get the edited enabled state (for nodes)
     pub fn enabled(&self) -> bool {
         self.edit_enabled
     }
@@ -167,6 +216,11 @@ impl PropertyCard {
     /// Get the edited claims (for Policy nodes)
     pub fn claims(&self) -> Vec<PolicyClaim> {
         self.edit_claims.iter().cloned().collect()
+    }
+
+    /// Get the edited edge type (for edges)
+    pub fn edge_type(&self) -> EdgeType {
+        self.edit_edge_type.clone()
     }
 
     /// Handle messages from the property card
@@ -196,6 +250,13 @@ impl PropertyCard {
                 }
                 self.dirty = true;
             }
+            PropertyCardMessage::EdgeTypeChanged(edge_type) => {
+                self.edit_edge_type = edge_type;
+                self.dirty = true;
+            }
+            PropertyCardMessage::DeleteEdge => {
+                // Handled by parent
+            }
             PropertyCardMessage::Save => {
                 // Handled by parent
             }
@@ -211,19 +272,29 @@ impl PropertyCard {
     /// Render the property card
     pub fn view(&self) -> Element<'_, PropertyCardMessage> {
         if !self.is_editing() {
-            return container(text("Select a node to edit properties"))
+            return container(text("Select a node or edge to edit"))
                 .padding(20)
                 .into();
         }
 
-        let node_type_label = match &self.node_type {
-            Some(NodeType::Organization(_)) => "Organization",
-            Some(NodeType::OrganizationalUnit(_)) => "Organizational Unit",
-            Some(NodeType::Person { .. }) => "Person",
-            Some(NodeType::Location(_)) => "Location",
-            Some(NodeType::Role(_)) => "Role",
-            Some(NodeType::Policy(_)) => "Policy",
-            None => "Unknown",
+        match &self.edit_target {
+            Some(EditTarget::Node { node_type, .. }) => self.view_node(node_type),
+            Some(EditTarget::Edge { edge_type, .. }) => self.view_edge(edge_type),
+            None => container(text("Select a node or edge to edit"))
+                .padding(20)
+                .into(),
+        }
+    }
+
+    /// Render property card for editing a node
+    fn view_node(&self, node_type: &NodeType) -> Element<'_, PropertyCardMessage> {
+        let node_type_label = match node_type {
+            NodeType::Organization(_) => "Organization",
+            NodeType::OrganizationalUnit(_) => "Organizational Unit",
+            NodeType::Person { .. } => "Person",
+            NodeType::Location(_) => "Location",
+            NodeType::Role(_) => "Role",
+            NodeType::Policy(_) => "Policy",
         };
 
         let header: Row<'_, PropertyCardMessage> = row![
@@ -259,8 +330,8 @@ impl PropertyCard {
 
         // Description field (Organization, Role, Policy)
         if matches!(
-            &self.node_type,
-            Some(NodeType::Organization(_)) | Some(NodeType::Role(_)) | Some(NodeType::Policy(_))
+            node_type,
+            NodeType::Organization(_) | NodeType::Role(_) | NodeType::Policy(_)
         ) {
             fields = fields.push(
                 column![
@@ -274,7 +345,7 @@ impl PropertyCard {
         }
 
         // Email field (Person only)
-        if matches!(&self.node_type, Some(NodeType::Person { .. })) {
+        if matches!(node_type, NodeType::Person { .. }) {
             fields = fields.push(
                 column![
                     text("Email:").size(12),
@@ -288,13 +359,13 @@ impl PropertyCard {
 
         // Enabled checkbox (Person, Role, Policy)
         if matches!(
-            &self.node_type,
-            Some(NodeType::Person { .. }) | Some(NodeType::Role(_)) | Some(NodeType::Policy(_))
+            node_type,
+            NodeType::Person { .. } | NodeType::Role(_) | NodeType::Policy(_)
         ) {
-            let label = match &self.node_type {
-                Some(NodeType::Person { .. }) => "Active",
-                Some(NodeType::Role(_)) => "Active",
-                Some(NodeType::Policy(_)) => "Enabled",
+            let label = match node_type {
+                NodeType::Person { .. } => "Active",
+                NodeType::Role(_) => "Active",
+                NodeType::Policy(_) => "Enabled",
                 _ => "Enabled",
             };
 
@@ -308,7 +379,7 @@ impl PropertyCard {
         }
 
         // Claims checkboxes (Policy only)
-        if matches!(&self.node_type, Some(NodeType::Policy(_))) {
+        if matches!(node_type, NodeType::Policy(_)) {
             fields = fields.push(
                 text("Claims (Permissions):")
                     .size(12)
@@ -379,6 +450,154 @@ impl PropertyCard {
                     button::Style {
                         background: Some(iced::Background::Color(theme.palette().danger)),
                         text_color: iced::Color::WHITE,
+                        border: iced::Border::default(),
+                        shadow: iced::Shadow::default(),
+                    }
+                }),
+        ]
+        .spacing(10);
+
+        let content: Column<'_, PropertyCardMessage> = column![
+            header,
+            fields,
+            buttons,
+        ]
+        .spacing(15)
+        .padding(20);
+
+        container(content)
+            .width(Length::Fixed(300.0))
+            .style(|theme: &Theme| {
+                container::Style {
+                    background: Some(iced::Background::Color(theme.palette().background)),
+                    border: iced::Border {
+                        color: theme.palette().text,
+                        width: 1.0,
+                        radius: 8.0.into(),
+                    },
+                    text_color: Some(theme.palette().text),
+                    shadow: iced::Shadow {
+                        color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.4),
+                        offset: iced::Vector::new(4.0, 4.0),
+                        blur_radius: 8.0,
+                    },
+                }
+            })
+            .into()
+    }
+
+    /// Render property card for editing an edge
+    fn view_edge(&self, _edge_type: &EdgeType) -> Element<'_, PropertyCardMessage> {
+        let header: Row<'_, PropertyCardMessage> = row![
+            text("Edge Relationship").size(18),
+            button(text("✕").size(16))
+                .on_press(PropertyCardMessage::Close)
+                .style(|theme: &Theme, _status| {
+                    button::Style {
+                        background: None,
+                        text_color: theme.palette().danger,
+                        border: iced::Border::default(),
+                        shadow: iced::Shadow::default(),
+                    }
+                }),
+        ]
+        .spacing(10)
+        .align_y(iced::Alignment::Center);
+
+        let mut fields: Column<'_, PropertyCardMessage> = column![]
+            .spacing(10)
+            .padding(10);
+
+        // Edge type label
+        fields = fields.push(
+            text("Relationship Type:").size(12)
+        );
+
+        // Edge type picker (list of buttons for each type)
+        let edge_types = vec![
+            ("Parent-Child", EdgeType::ParentChild),
+            ("Manages Unit", EdgeType::ManagesUnit),
+            ("Member Of", EdgeType::MemberOf),
+            ("Owns Key", EdgeType::OwnsKey),
+            ("Stored At", EdgeType::StoredAt),
+            ("Has Role", EdgeType::HasRole),
+            ("Hierarchy", EdgeType::Hierarchy),
+            ("Trust", EdgeType::Trust),
+        ];
+
+        for (label, et) in edge_types {
+            let is_selected = matches!(
+                (&self.edit_edge_type, &et),
+                (EdgeType::ParentChild, EdgeType::ParentChild) |
+                (EdgeType::ManagesUnit, EdgeType::ManagesUnit) |
+                (EdgeType::MemberOf, EdgeType::MemberOf) |
+                (EdgeType::OwnsKey, EdgeType::OwnsKey) |
+                (EdgeType::StoredAt, EdgeType::StoredAt) |
+                (EdgeType::HasRole, EdgeType::HasRole) |
+                (EdgeType::Hierarchy, EdgeType::Hierarchy) |
+                (EdgeType::Trust, EdgeType::Trust)
+            );
+
+            fields = fields.push(
+                button(text(label).size(12))
+                    .on_press(PropertyCardMessage::EdgeTypeChanged(et))
+                    .width(Length::Fill)
+                    .style(move |theme: &Theme, _status| {
+                        if is_selected {
+                            button::Style {
+                                background: Some(iced::Background::Color(theme.palette().primary)),
+                                text_color: iced::Color::WHITE,
+                                border: iced::Border::default(),
+                                shadow: iced::Shadow::default(),
+                            }
+                        } else {
+                            button::Style::default()
+                        }
+                    })
+            );
+        }
+
+        // Dirty indicator
+        if self.dirty {
+            fields = fields.push(
+                text("* Unsaved changes")
+                    .size(11)
+                    .style(|theme: &Theme| {
+                        text::Style {
+                            color: Some(theme.palette().danger),
+                        }
+                    })
+            );
+        }
+
+        // Action buttons
+        let buttons: Row<'_, PropertyCardMessage> = row![
+            button(text("Save").size(12))
+                .on_press(PropertyCardMessage::Save)
+                .style(|theme: &Theme, _status| {
+                    button::Style {
+                        background: Some(iced::Background::Color(theme.palette().success)),
+                        text_color: iced::Color::WHITE,
+                        border: iced::Border::default(),
+                        shadow: iced::Shadow::default(),
+                    }
+                }),
+            button(text("Delete").size(12))
+                .on_press(PropertyCardMessage::DeleteEdge)
+                .style(|theme: &Theme, _status| {
+                    button::Style {
+                        background: Some(iced::Background::Color(theme.palette().danger)),
+                        text_color: iced::Color::WHITE,
+                        border: iced::Border::default(),
+                        shadow: iced::Shadow::default(),
+                    }
+                }),
+            button(text("Cancel").size(12))
+                .on_press(PropertyCardMessage::Cancel)
+                .style(|theme: &Theme, _status| {
+                    button::Style {
+                        background: None,
+                        text_color: theme.palette().text,
                         border: iced::Border::default(),
                         shadow: iced::Shadow::default(),
                     }

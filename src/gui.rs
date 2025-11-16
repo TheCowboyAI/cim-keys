@@ -1596,6 +1596,25 @@ impl CimKeysApp {
                         self.org_graph.add_edge(*from, *to, edge_type.clone());
                         self.status_message = String::from("Relationship added");
                     }
+                    GraphMessage::EdgeSelected(index) => {
+                        if let Some(edge) = self.org_graph.edges.get(*index) {
+                            self.property_card.set_edge(*index, edge.from, edge.to, edge.edge_type.clone());
+                            self.status_message = format!("Edge selected ({})", *index);
+                        }
+                    }
+                    GraphMessage::EdgeDeleted(_index) => {
+                        // Handled in graph.handle_message
+                        self.property_card.clear();
+                        self.status_message = String::from("Edge deleted");
+                    }
+                    GraphMessage::EdgeTypeChanged { .. } => {
+                        // Handled in graph.handle_message
+                        self.status_message = String::from("Edge type changed");
+                    }
+                    GraphMessage::EdgeCreationStarted(_node_id) => {
+                        // Handled in graph.handle_message (starts edge indicator)
+                        self.status_message = String::from("Drag to target node to create edge");
+                    }
                     // Phase 4: Right-click shows context menu
                     GraphMessage::RightClick(position) => {
                         // Position is now canvas-relative, transform to graph coordinates for hit detection
@@ -1893,8 +1912,21 @@ impl CimKeysApp {
                 self.property_card.update(card_msg.clone());
                 match card_msg {
                     PropertyCardMessage::Save => {
-                        // Create property change event
-                        if let Some(node_id) = self.property_card.node_id() {
+                        // Handle node or edge save
+                        if let Some(edge_index) = self.property_card.edge_index() {
+                            // Saving edge changes (edge type)
+                            if edge_index < self.org_graph.edges.len() {
+                                let new_edge_type = self.property_card.edge_type();
+                                // Send EdgeTypeChanged message to graph
+                                self.org_graph.handle_message(GraphMessage::EdgeTypeChanged {
+                                    edge_index,
+                                    new_type: new_edge_type,
+                                });
+                                self.status_message = "Edge type saved".to_string();
+                            }
+                            self.property_card.clear();
+                        } else if let Some(node_id) = self.property_card.node_id() {
+                            // Saving node changes
                             if let Some(node) = self.org_graph.nodes.get(&node_id) {
                                 use crate::gui::graph_events::GraphEvent;
                                 use chrono::Utc;
@@ -1975,6 +2007,14 @@ impl CimKeysApp {
                     }
                     PropertyCardMessage::Close => {
                         self.property_card.clear();
+                    }
+                    PropertyCardMessage::DeleteEdge => {
+                        if let Some(edge_index) = self.property_card.edge_index() {
+                            // Send EdgeDeleted message to graph
+                            self.org_graph.handle_message(GraphMessage::EdgeDeleted(edge_index));
+                            self.property_card.clear();
+                            self.status_message = "Edge deleted".to_string();
+                        }
                     }
                     _ => {}
                 }
