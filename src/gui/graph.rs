@@ -26,12 +26,12 @@ pub struct OrganizationGraph {
     pub nodes: HashMap<Uuid, GraphNode>,
     pub edges: Vec<GraphEdge>,
     pub selected_node: Option<Uuid>,
-    dragging_node: Option<Uuid>,  // Node currently being dragged
-    drag_offset: Vector,  // Offset from node center to cursor when dragging started
-    drag_start_position: Option<Point>,  // Original position when drag started (for NodeMoved event)
+    pub dragging_node: Option<Uuid>,  // Node currently being dragged
+    pub drag_offset: Vector,  // Offset from node center to cursor when dragging started
+    pub drag_start_position: Option<Point>,  // Original position when drag started (for NodeMoved event)
     _viewport: Rectangle,  // Reserved for graph panning/zooming
-    zoom: f32,
-    pan_offset: Vector,
+    pub zoom: f32,
+    pub pan_offset: Vector,
     // Phase 4: Edge creation indicator
     pub edge_indicator: EdgeCreationIndicator,
     // Phase 4: Event sourcing for undo/redo

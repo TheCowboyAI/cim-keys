@@ -1539,6 +1539,54 @@ impl CimKeysApp {
                             }
                         }
                     }
+                    GraphMessage::NodeDragStarted { node_id, offset } => {
+                        self.org_graph.dragging_node = Some(*node_id);
+                        self.org_graph.drag_offset = *offset;
+                        if let Some(node) = self.org_graph.nodes.get(node_id) {
+                            self.org_graph.drag_start_position = Some(node.position);
+                        }
+                    }
+                    GraphMessage::NodeDragged(cursor_position) => {
+                        if let Some(node_id) = self.org_graph.dragging_node {
+                            if let Some(node) = self.org_graph.nodes.get_mut(&node_id) {
+                                // Update node position based on cursor and drag offset
+                                let adjusted_x = (cursor_position.x - self.org_graph.pan_offset.x) / self.org_graph.zoom;
+                                let adjusted_y = (cursor_position.y - self.org_graph.pan_offset.y) / self.org_graph.zoom;
+                                node.position.x = adjusted_x - self.org_graph.drag_offset.x;
+                                node.position.y = adjusted_y - self.org_graph.drag_offset.y;
+                            }
+                        }
+                    }
+                    GraphMessage::NodeDragEnded => {
+                        if let Some(node_id) = self.org_graph.dragging_node {
+                            // Check if node actually moved
+                            if let (Some(start_pos), Some(node)) = (
+                                self.org_graph.drag_start_position,
+                                self.org_graph.nodes.get(&node_id)
+                            ) {
+                                let distance = ((node.position.x - start_pos.x).powi(2)
+                                    + (node.position.y - start_pos.y).powi(2)).sqrt();
+
+                                if distance > 5.0 {
+                                    // Create NodeMoved event for undo/redo
+                                    use crate::gui::graph_events::GraphEvent;
+                                    use chrono::Utc;
+
+                                    let event = GraphEvent::NodeMoved {
+                                        node_id,
+                                        old_position: start_pos,
+                                        new_position: node.position,
+                                        timestamp: Utc::now(),
+                                    };
+                                    self.org_graph.event_stack.push(event);
+                                    self.status_message = format!("Moved node to ({:.0}, {:.0})",
+                                        node.position.x, node.position.y);
+                                }
+                            }
+                        }
+                        self.org_graph.dragging_node = None;
+                        self.org_graph.drag_start_position = None;
+                    }
                     GraphMessage::AutoLayout => {
                         self.org_graph.auto_layout();
                         self.status_message = String::from("Graph layout updated");
