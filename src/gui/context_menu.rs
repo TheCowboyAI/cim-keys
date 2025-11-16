@@ -120,16 +120,9 @@ impl ContextMenu {
                 }
             });
 
-        // Position using padding from top-left of stack layer
-        // Note: Position is in canvas coordinates, we use it as-is for now
-        container(menu_container)
-            .padding(iced::Padding {
-                top: self.position.y.max(0.0),
-                right: 0.0,
-                bottom: 0.0,
-                left: self.position.x.max(0.0),
-            })
-            .into()
+        // Position is now handled by the parent using vertical_space/horizontal_space
+        // Don't apply positioning here or it will be doubled
+        menu_container.into()
     }
 }
 

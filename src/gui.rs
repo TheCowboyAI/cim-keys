@@ -2161,7 +2161,7 @@ impl CimKeysApp {
             header,
             text(&self.status_message)
                 .size(self.scaled_text_size(12))
-                .color(CowboyTheme::text_secondary()),
+                .color(Color::from_rgb(0.0, 0.0, 0.0)),  // Black for better contrast
             container(tab_bar)
                 .padding(self.scaled_padding(10))
                 .style(CowboyCustomTheme::glass_container()),
