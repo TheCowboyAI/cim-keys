@@ -148,7 +148,7 @@ impl OrganizationGraph {
             drag_offset: Vector::new(0.0, 0.0),
             drag_start_position: None,
             _viewport: Rectangle::new(Point::ORIGIN, Size::new(800.0, 600.0)),
-            zoom: 1.0,
+            zoom: 2.0,  // Default scale at 2.0
             pan_offset: Vector::new(0.0, 0.0),
             edge_indicator: EdgeCreationIndicator::new(),
             event_stack: EventStack::default(),
@@ -608,10 +608,10 @@ impl OrganizationGraph {
                 self.drag_start_position = None;
             }
             GraphMessage::EdgeClicked { from: _, to: _ } => {}
-            GraphMessage::ZoomIn => self.zoom = (self.zoom * 1.2).min(3.0),
-            GraphMessage::ZoomOut => self.zoom = (self.zoom / 1.2).max(0.3),
+            GraphMessage::ZoomIn => self.zoom = (self.zoom * 1.2).min(3.0),  // Max zoom 3.0
+            GraphMessage::ZoomOut => self.zoom = (self.zoom / 1.2).max(1.0),  // Min zoom 1.0
             GraphMessage::ResetView => {
-                self.zoom = 1.0;
+                self.zoom = 2.0;  // Reset to default scale
                 self.pan_offset = Vector::new(0.0, 0.0);
             }
             GraphMessage::Pan(delta) => {
