@@ -1064,7 +1064,7 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                     if state.dragging_node.is_some() {
                         return (
                             canvas::event::Status::Captured,
-                            Some(GraphMessage::NodeDragged(cursor_position)),
+                            Some(GraphMessage::NodeDragged(canvas_relative)),  // Use canvas-relative, not window coords!
                         );
                     }
                 }
