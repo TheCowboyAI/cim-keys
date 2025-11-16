@@ -1568,8 +1568,10 @@ impl CimKeysApp {
                         }
                     }
                     // Phase 4: Update edge indicator position during edge creation
-                    GraphMessage::CursorMoved(_position) => {
-                        // Edge indicator update handled in graph.handle_message
+                    GraphMessage::CursorMoved(position) => {
+                        if self.org_graph.edge_indicator.is_active() {
+                            self.org_graph.edge_indicator.update_position(*position);
+                        }
                     }
                     // Phase 4: Cancel edge creation with Esc key
                     GraphMessage::CancelEdgeCreation => {
@@ -2479,10 +2481,16 @@ impl CimKeysApp {
                 // Add property card overlay if visible
                 if self.property_card.is_editing() {
                     let card_overlay = container(
-                        self.property_card.view()
-                            .map(Message::PropertyCardMessage)
+                        container(
+                            self.property_card.view()
+                                .map(Message::PropertyCardMessage)
+                        )
+                        .padding(20)
+                        .align_x(iced::alignment::Horizontal::Right)
+                        .align_y(iced::alignment::Vertical::Top)
                     )
-                    .padding(0);
+                    .width(Length::Fill)
+                    .height(Length::Fill);
 
                     stack_layers.push(card_overlay.into());
                 }
