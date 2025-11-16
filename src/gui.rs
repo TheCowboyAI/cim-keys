@@ -449,7 +449,7 @@ impl CimKeysApp {
                 error_message: None,
                 animation_time: 0.0,
                 firefly_shader: FireflyRenderer::new(),
-                ui_scale: 1.0,  // Default scale for 1920x1080
+                ui_scale: 2.0,  // Default UI scale at 2.0 for better visibility
                 // MVI integration
                 mvi_model,
                 storage_port,
