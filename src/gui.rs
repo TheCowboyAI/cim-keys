@@ -2507,7 +2507,7 @@ impl CimKeysApp {
                         .map(Message::GraphMessage)
                 )
                 .width(Length::Fill)
-                .height(Length::Fixed(600.0))  // Explicit height so canvas is actually visible and clickable
+                .height(Length::FillPortion(10))  // Take most of the available space
                 .style(|_theme| {
                     container::Style {
                         background: Some(Background::Color(Color::from_rgb(0.95, 0.95, 0.95))),
