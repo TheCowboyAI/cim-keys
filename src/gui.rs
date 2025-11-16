@@ -5,7 +5,7 @@
 
 use iced::{
     application,
-    widget::{button, column, container, row, text, text_input, Container, horizontal_space, pick_list, progress_bar, checkbox, scrollable, Space, image, stack},
+    widget::{button, column, container, row, text, text_input, Container, horizontal_space, vertical_space, pick_list, progress_bar, checkbox, scrollable, Space, image, stack},
     Task, Element, Length, Color, Border, Theme, Background, Shadow, Alignment,
 };
 use iced_futures::Subscription;
@@ -2525,11 +2525,16 @@ impl CimKeysApp {
 
                 // Add context menu overlay if visible
                 if self.context_menu.is_visible() {
-                    let menu_overlay = container(
-                        self.context_menu.view()
-                            .map(Message::ContextMenuMessage)
-                    )
-                    .padding(0);
+                    let pos = self.context_menu.position();
+                    // Position menu at cursor location using column/row spacers
+                    let menu_overlay = column![
+                        vertical_space().height(Length::Fixed(pos.y)),
+                        row![
+                            horizontal_space().width(Length::Fixed(pos.x)),
+                            self.context_menu.view()
+                                .map(Message::ContextMenuMessage)
+                        ]
+                    ];
 
                     stack_layers.push(menu_overlay.into());
                 }
