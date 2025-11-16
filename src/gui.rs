@@ -1485,6 +1485,7 @@ impl CimKeysApp {
             Message::GraphMessage(graph_msg) => {
                 match &graph_msg {
                     GraphMessage::NodeClicked(id) => {
+                        self.status_message = format!("DEBUG: NodeClicked received for node {:?}", id);
                         // Check if we're in edge creation mode
                         if self.org_graph.edge_indicator.is_active() {
                             // Complete edge creation
