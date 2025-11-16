@@ -1512,8 +1512,10 @@ impl CimKeysApp {
                                         self.org_graph.nodes.get(&from_id),
                                         self.org_graph.nodes.get(id)
                                     ) {
-                                        self.status_message = format!("Created edge from '{}' to '{}'",
-                                            from_node.label, to_node.label);
+                                        self.status_message = format!("Created edge from '{}' to '{}' (Total edges: {})",
+                                            from_node.label, to_node.label, self.org_graph.edges.len());
+                                    } else {
+                                        self.status_message = format!("Edge created but nodes not found (Total edges: {})", self.org_graph.edges.len());
                                     }
                                 } else {
                                     self.status_message = "Cannot create edge to same node".to_string();
@@ -1527,7 +1529,10 @@ impl CimKeysApp {
                             // Phase 4: Open property card when node is clicked
                             if let Some(node) = self.org_graph.nodes.get(id) {
                                 self.property_card.set_node(*id, node.node_type.clone());
-                                self.status_message = format!("Editing '{}'", node.label);
+                                self.status_message = format!("Selected '{}' - property card: {}, selected_node: {:?}",
+                                    node.label,
+                                    if self.property_card.is_editing() { "open" } else { "closed" },
+                                    self.org_graph.selected_node);
                             } else {
                                 self.status_message = "Selected node in graph".to_string();
                             }
@@ -1771,12 +1776,12 @@ impl CimKeysApp {
                             if let Some(from_node) = self.org_graph.nodes.get(&from_id) {
                                 // Start edge creation indicator
                                 self.org_graph.edge_indicator.start(from_id, from_node.position);
-                                self.status_message = format!("Creating edge from '{}'- click target node", from_node.label);
+                                self.status_message = format!("Edge creation mode active - click target node (from: '{}')", from_node.label);
                             } else {
-                                self.status_message = "Please select a source node first".to_string();
+                                self.status_message = "Error: Source node not found in graph".to_string();
                             }
                         } else {
-                            self.status_message = "Please right-click on a node to create an edge".to_string();
+                            self.status_message = "Please right-click on a node first to select edge source".to_string();
                         }
 
                         self.context_menu.hide();
