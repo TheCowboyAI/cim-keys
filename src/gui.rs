@@ -1523,6 +1523,7 @@ impl CimKeysApp {
                         } else {
                             // Normal node selection
                             self.selected_person = Some(*id);
+                            self.org_graph.selected_node = Some(*id);  // Update graph's selected node
                             // Phase 4: Open property card when node is clicked
                             if let Some(node) = self.org_graph.nodes.get(id) {
                                 self.property_card.set_node(*id, node.node_type.clone());
