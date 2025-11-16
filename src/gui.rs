@@ -2488,17 +2488,17 @@ impl CimKeysApp {
 
                 // Add property card overlay if visible
                 if self.property_card.is_editing() {
+                    // Position card in top-right without blocking the rest of the canvas
                     let card_overlay = container(
-                        container(
+                        row![
+                            // Spacer to push card to the right
+                            horizontal_space(),
+                            // The actual property card
                             self.property_card.view()
                                 .map(Message::PropertyCardMessage)
-                        )
-                        .padding(20)
-                        .align_x(iced::alignment::Horizontal::Right)
-                        .align_y(iced::alignment::Vertical::Top)
+                        ]
                     )
-                    .width(Length::Fill)
-                    .height(Length::Fill);
+                    .padding(20);
 
                     stack_layers.push(card_overlay.into());
                 }
