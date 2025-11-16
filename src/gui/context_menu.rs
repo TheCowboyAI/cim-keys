@@ -14,6 +14,7 @@ use crate::mvi::intent::NodeCreationType;
 pub struct ContextMenu {
     position: Point,
     visible: bool,
+    ui_scale: f32,
 }
 
 /// Messages emitted by the context menu
@@ -39,12 +40,14 @@ impl ContextMenu {
         Self {
             position: Point::ORIGIN,
             visible: false,
+            ui_scale: 1.0,  // Will be updated when shown
         }
     }
 
-    /// Show the context menu at the given position
-    pub fn show(&mut self, position: Point) {
+    /// Show the context menu at the given position with UI scale
+    pub fn show(&mut self, position: Point, ui_scale: f32) {
         self.position = position;
+        self.ui_scale = ui_scale;
         self.visible = true;
     }
 
@@ -69,40 +72,47 @@ impl ContextMenu {
             return container(column![]).into();
         }
 
+        // Scale text sizes and spacing based on ui_scale
+        let header_size = (14.0 * self.ui_scale) as u16;
+        let item_size = (12.0 * self.ui_scale) as u16;
+        let spacing = (2.0 * self.ui_scale) as u16;
+        let padding = (8.0 * self.ui_scale) as u16;
+
         let menu_items: Column<'_, ContextMenuMessage> = column![
-            text("Create Node").size(14),
-            button(text("Organization").size(12))
+            text("Create Node").size(header_size),
+            button(text("Organization").size(item_size))
                 .on_press(ContextMenuMessage::CreateNode(NodeCreationType::Organization))
                 .width(Length::Fill),
-            button(text("Organizational Unit").size(12))
+            button(text("Organizational Unit").size(item_size))
                 .on_press(ContextMenuMessage::CreateNode(NodeCreationType::OrganizationalUnit))
                 .width(Length::Fill),
-            button(text("Person").size(12))
+            button(text("Person").size(item_size))
                 .on_press(ContextMenuMessage::CreateNode(NodeCreationType::Person))
                 .width(Length::Fill),
-            button(text("Location").size(12))
+            button(text("Location").size(item_size))
                 .on_press(ContextMenuMessage::CreateNode(NodeCreationType::Location))
                 .width(Length::Fill),
-            button(text("Role").size(12))
+            button(text("Role").size(item_size))
                 .on_press(ContextMenuMessage::CreateNode(NodeCreationType::Role))
                 .width(Length::Fill),
-            button(text("Policy").size(12))
+            button(text("Policy").size(item_size))
                 .on_press(ContextMenuMessage::CreateNode(NodeCreationType::Policy))
                 .width(Length::Fill),
             text("").size(4), // Separator
-            text("Other Actions").size(14),
-            button(text("Create Edge").size(12))
+            text("Other Actions").size(header_size),
+            button(text("Create Edge").size(item_size))
                 .on_press(ContextMenuMessage::CreateEdge)
                 .width(Length::Fill),
-            button(text("Cancel").size(12))
+            button(text("Cancel").size(item_size))
                 .on_press(ContextMenuMessage::Dismiss)
                 .width(Length::Fill),
         ]
-        .spacing(2)
-        .padding(8);
+        .spacing(spacing)
+        .padding(padding);
 
+        let menu_width = 180.0 * self.ui_scale;
         let menu_container = container(menu_items)
-            .width(Length::Fixed(180.0))
+            .width(Length::Fixed(menu_width))
             .style(|theme: &Theme| {
                 container::Style {
                     background: Some(iced::Background::Color(theme.palette().background)),

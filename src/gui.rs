@@ -1615,9 +1615,9 @@ impl CimKeysApp {
                         }
 
                         // Adjust menu position to keep it on screen
-                        // Menu is approximately 180px wide and 300px tall
-                        const MENU_WIDTH: f32 = 180.0;
-                        const MENU_HEIGHT: f32 = 300.0;
+                        // Menu dimensions scaled by ui_scale
+                        let menu_width = 180.0 * self.ui_scale;
+                        let menu_height = 300.0 * self.ui_scale;
                         const MIN_MARGIN: f32 = 10.0;
 
                         // Use typical window dimensions for bounds checking
@@ -1629,8 +1629,8 @@ impl CimKeysApp {
                         let mut menu_y = position.y;
 
                         // Adjust horizontally if menu would go off right edge
-                        if menu_x + MENU_WIDTH + MIN_MARGIN > TYPICAL_WIDTH {
-                            menu_x = TYPICAL_WIDTH - MENU_WIDTH - MIN_MARGIN;
+                        if menu_x + menu_width + MIN_MARGIN > TYPICAL_WIDTH {
+                            menu_x = TYPICAL_WIDTH - menu_width - MIN_MARGIN;
                         }
                         // Ensure not off left edge
                         if menu_x < MIN_MARGIN {
@@ -1638,8 +1638,8 @@ impl CimKeysApp {
                         }
 
                         // Adjust vertically if menu would go off bottom edge
-                        if menu_y + MENU_HEIGHT + MIN_MARGIN > TYPICAL_HEIGHT {
-                            menu_y = TYPICAL_HEIGHT - MENU_HEIGHT - MIN_MARGIN;
+                        if menu_y + menu_height + MIN_MARGIN > TYPICAL_HEIGHT {
+                            menu_y = TYPICAL_HEIGHT - menu_height - MIN_MARGIN;
                         }
                         // Ensure not off top edge
                         if menu_y < MIN_MARGIN {
@@ -1647,7 +1647,7 @@ impl CimKeysApp {
                         }
 
                         // Use adjusted screen coordinates for menu positioning
-                        self.context_menu.show(Point::new(menu_x, menu_y));
+                        self.context_menu.show(Point::new(menu_x, menu_y), self.ui_scale);
                         if self.context_menu_node.is_some() {
                             self.status_message = format!(
                                 "Node menu: click({:.0},{:.0}) → canvas({:.0},{:.0}) → menu({:.0},{:.0})",
