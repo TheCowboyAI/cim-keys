@@ -1751,6 +1751,9 @@ impl CimKeysApp {
                         self.org_graph.event_stack.push(event.clone());
                         self.org_graph.apply_event(&event);
 
+                        // Auto-layout to position the new node and re-align hierarchy
+                        self.org_graph.auto_layout();
+
                         // Open property card for the new node
                         if let Some(node) = self.org_graph.nodes.get(&node_id) {
                             self.property_card.set_node(node_id, node.node_type.clone());
