@@ -678,8 +678,15 @@ impl OrganizationGraph {
 }
 
 /// Implementation of canvas::Program for graph rendering
+/// Canvas state for tracking interaction during event processing
+#[derive(Debug, Default, Clone)]
+pub struct CanvasState {
+    dragging_node: Option<Uuid>,
+    drag_start_pos: Option<Point>,
+}
+
 impl canvas::Program<GraphMessage> for OrganizationGraph {
-    type State = ();
+    type State = CanvasState;
 
     fn draw(
         &self,
@@ -963,7 +970,7 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
 
     fn update(
         &self,
-        _state: &mut Self::State,
+        state: &mut Self::State,
         event: canvas::Event,
         _bounds: Rectangle,  // Reserved for hit testing within bounds
         cursor: mouse::Cursor,
@@ -984,6 +991,10 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                         .sqrt();
 
                         if distance <= 20.0 {
+                            // Track drag in canvas state
+                            state.dragging_node = Some(*node_id);
+                            state.drag_start_pos = Some(node.position);
+
                             // Calculate offset from node center to cursor
                             let offset = Vector::new(
                                 adjusted_position.x - node.position.x,
@@ -1001,14 +1012,18 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                 }
                 canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
                     // End dragging if we were dragging
-                    if let Some(node_id) = self.dragging_node {
+                    if let Some(node_id) = state.dragging_node {
                         // Check if node actually moved significantly (more than 5 pixels)
-                        let moved_significantly = if let (Some(start_pos), Some(node)) = (self.drag_start_position, self.nodes.get(&node_id)) {
+                        let moved_significantly = if let (Some(start_pos), Some(node)) = (state.drag_start_pos, self.nodes.get(&node_id)) {
                             let distance = ((node.position.x - start_pos.x).powi(2) + (node.position.y - start_pos.y).powi(2)).sqrt();
                             distance > 5.0
                         } else {
                             false
                         };
+
+                        // Clear drag state
+                        state.dragging_node = None;
+                        state.drag_start_pos = None;
 
                         if moved_significantly {
                             // This was a drag operation
@@ -1041,7 +1056,7 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                         );
                     }
                     // Continue dragging if we're dragging a node
-                    if self.dragging_node.is_some() {
+                    if state.dragging_node.is_some() {
                         return (
                             canvas::event::Status::Captured,
                             Some(GraphMessage::NodeDragged(cursor_position)),
