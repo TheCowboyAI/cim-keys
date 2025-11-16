@@ -487,7 +487,8 @@ impl CimKeysApp {
                 self.active_tab = tab;
                 self.status_message = match tab {
                     Tab::Welcome => "Welcome to CIM Keys".to_string(),
-                    Tab::Organization => "Organization Structure and Key Ownership".to_string(),
+                    Tab::Organization => format!("Organization Structure and Key Ownership (Graph: {} nodes, {} edges)",
+                        self.org_graph.nodes.len(), self.org_graph.edges.len()),
                     Tab::Locations => "Manage Corporate Locations".to_string(),
                     Tab::Keys => "Generate Cryptographic Keys".to_string(),
                     Tab::Export => "Export Domain Configuration".to_string(),
@@ -2279,6 +2280,13 @@ impl CimKeysApp {
         let content = column![
             text("Organization Structure").size(self.scaled_text_size(20)),
             text("Visualize and manage your organization's key ownership hierarchy").size(self.scaled_text_size(14)),
+
+            // Debug: Show graph state
+            text(format!("Graph State: {} nodes, {} edges",
+                self.org_graph.nodes.len(),
+                self.org_graph.edges.len()))
+                .size(self.scaled_text_size(12))
+                .color(Color::from_rgb(0.5, 0.5, 0.5)),
 
             // Domain creation/loading form (shows only if domain not loaded)
             if !self.domain_loaded {
