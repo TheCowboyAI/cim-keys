@@ -3,12 +3,14 @@
 //! Displays and allows editing of properties for selected graph nodes.
 
 use iced::{
-    widget::{button, checkbox, column, container, row, text, text_input, Column, Row},
+    widget::{button, checkbox, column, container, row, text, text_input, scrollable, Column, Row},
     Element, Length, Theme,
 };
 use uuid::Uuid;
+use std::collections::HashSet;
 
 use crate::gui::graph::NodeType;
+use crate::domain::PolicyClaim;
 
 /// Property card for editing node properties
 #[derive(Debug, Clone)]
@@ -21,6 +23,7 @@ pub struct PropertyCard {
     edit_description: String,
     edit_email: String,
     edit_enabled: bool,
+    edit_claims: HashSet<PolicyClaim>,  // Selected policy claims
 }
 
 /// Messages emitted by the property card
@@ -34,6 +37,8 @@ pub enum PropertyCardMessage {
     EmailChanged(String),
     /// User toggled the enabled checkbox
     EnabledToggled(bool),
+    /// User toggled a policy claim
+    ClaimToggled(PolicyClaim, bool),
     /// User clicked save
     Save,
     /// User clicked cancel
@@ -59,6 +64,7 @@ impl PropertyCard {
             edit_description: String::new(),
             edit_email: String::new(),
             edit_enabled: true,
+            edit_claims: HashSet::new(),
         }
     }
 
@@ -104,6 +110,7 @@ impl PropertyCard {
                 self.edit_description = policy.description.clone();
                 self.edit_email = String::new();
                 self.edit_enabled = policy.enabled;
+                self.edit_claims = policy.claims.iter().cloned().collect();
             }
         }
 
@@ -119,6 +126,7 @@ impl PropertyCard {
         self.edit_description.clear();
         self.edit_email.clear();
         self.edit_enabled = true;
+        self.edit_claims.clear();
     }
 
     /// Check if a node is selected
@@ -156,6 +164,11 @@ impl PropertyCard {
         self.edit_enabled
     }
 
+    /// Get the edited claims (for Policy nodes)
+    pub fn claims(&self) -> Vec<PolicyClaim> {
+        self.edit_claims.iter().cloned().collect()
+    }
+
     /// Handle messages from the property card
     pub fn update(&mut self, message: PropertyCardMessage) {
         match message {
@@ -173,6 +186,14 @@ impl PropertyCard {
             }
             PropertyCardMessage::EnabledToggled(enabled) => {
                 self.edit_enabled = enabled;
+                self.dirty = true;
+            }
+            PropertyCardMessage::ClaimToggled(claim, checked) => {
+                if checked {
+                    self.edit_claims.insert(claim);
+                } else {
+                    self.edit_claims.remove(&claim);
+                }
                 self.dirty = true;
             }
             PropertyCardMessage::Save => {
@@ -283,6 +304,47 @@ impl PropertyCard {
                         .on_toggle(PropertyCardMessage::EnabledToggled),
                 ]
                 .spacing(8)
+            );
+        }
+
+        // Claims checkboxes (Policy only)
+        if matches!(&self.node_type, Some(NodeType::Policy(_))) {
+            fields = fields.push(
+                text("Claims (Permissions):")
+                    .size(12)
+            );
+
+            // List of all available claims
+            let all_claims = vec![
+                PolicyClaim::CanGenerateKeys,
+                PolicyClaim::CanSignCode,
+                PolicyClaim::CanSignCertificates,
+                PolicyClaim::CanRevokeKeys,
+                PolicyClaim::CanDelegateKeys,
+                PolicyClaim::CanExportKeys,
+                PolicyClaim::CanBackupKeys,
+                PolicyClaim::CanRotateKeys,
+                PolicyClaim::CanAccessProduction,
+                PolicyClaim::CanAccessStaging,
+                PolicyClaim::CanAccessDevelopment,
+                PolicyClaim::CanModifyInfrastructure,
+                PolicyClaim::CanDeployServices,
+            ];
+
+            let mut claims_column = Column::new().spacing(2);
+            for claim in all_claims {
+                let is_checked = self.edit_claims.contains(&claim);
+                let claim_name = format!("{:?}", claim);
+                claims_column = claims_column.push(
+                    checkbox(&claim_name, is_checked)
+                        .on_toggle(move |checked| PropertyCardMessage::ClaimToggled(claim.clone(), checked))
+                        .size(11)
+                );
+            }
+
+            fields = fields.push(
+                scrollable(claims_column)
+                    .height(Length::Fixed(200.0))
             );
         }
 

@@ -1946,6 +1946,7 @@ impl CimKeysApp {
                                         updated.name = new_name.clone();
                                         updated.description = new_description;
                                         updated.enabled = new_enabled;
+                                        updated.claims = self.property_card.claims();
                                         graph::NodeType::Policy(updated)
                                     }
                                 };
