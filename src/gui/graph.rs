@@ -26,6 +26,7 @@ pub struct OrganizationGraph {
     pub nodes: HashMap<Uuid, GraphNode>,
     pub edges: Vec<GraphEdge>,
     pub selected_node: Option<Uuid>,
+    pub selected_edge: Option<usize>,  // Index of selected edge in edges Vec
     pub dragging_node: Option<Uuid>,  // Node currently being dragged
     pub drag_offset: Vector,  // Offset from node center to cursor when dragging started
     pub drag_start_position: Option<Point>,  // Original position when drag started (for NodeMoved event)
@@ -144,6 +145,7 @@ impl OrganizationGraph {
             nodes: HashMap::new(),
             edges: Vec::new(),
             selected_node: None,
+            selected_edge: None,
             dragging_node: None,
             drag_offset: Vector::new(0.0, 0.0),
             drag_start_position: None,
