@@ -1092,7 +1092,7 @@ pub fn view_graph(graph: &OrganizationGraph) -> Element<'_, GraphMessage> {
     // Full Canvas-based graph visualization
     let canvas = Canvas::new(graph)
         .width(Length::Fill)
-        .height(Length::Fixed(500.0));
+        .height(Length::Fill);
 
     let controls = row![
         button("Zoom In").on_press(GraphMessage::ZoomIn),
@@ -1106,7 +1106,8 @@ pub fn view_graph(graph: &OrganizationGraph) -> Element<'_, GraphMessage> {
         controls,
         canvas,
     ]
-    .spacing(10);
+    .spacing(10)
+    .height(Length::Fill);
 
 
     // Show selected node details
