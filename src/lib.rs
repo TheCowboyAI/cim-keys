@@ -46,6 +46,9 @@ pub mod commands;
 pub mod aggregate;
 pub mod projections;
 
+// Graph projection layer - Functorial lifting of domain events to cim-graph
+pub mod graph_projection;
+
 // Ports & Adapters for external integrations
 pub mod ports;
 pub mod adapters;

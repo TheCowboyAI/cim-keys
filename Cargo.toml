@@ -19,6 +19,7 @@ cim-domain-person = { path = "../cim-domain-person", optional = true }
 cim-domain-organization = { path = "../cim-domain-organization", optional = true }
 cim-domain-policy = { path = "../cim-domain-policy", optional = true }
 cim-domain-agent = { path = "../cim-domain-agent", optional = true }
+cim-graph = { path = "../cim-graph" }
 
 # Core dependencies
 thiserror = "2.0"
