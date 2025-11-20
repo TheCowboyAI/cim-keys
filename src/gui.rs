@@ -2501,6 +2501,75 @@ impl CimKeysApp {
                         self.org_graph.event_stack.push(event.clone());
                         self.org_graph.apply_event(&event);
 
+                        // Emit domain event and project to cim-graph (demonstration)
+                        #[cfg(feature = "policy")]
+                        {
+                            use super::gui::graph_events::GraphEvent as GuiGraphEvent;
+                            if let GuiGraphEvent::NodeCreated { node_type, .. } = &event {
+                                match node_type {
+                                    NodeType::Organization(org) => {
+                                        use cim_domain_organization::events::{OrganizationEvent, OrganizationCreated};
+                                        use cim_domain_organization::{OrganizationType, Organization as OrgMarker};
+                                        use cim_domain::{EntityId, MessageIdentity, CorrelationId, CausationId};
+
+                                        let event_id = Uuid::now_v7();
+                                        let domain_event = OrganizationEvent::OrganizationCreated(OrganizationCreated {
+                                            event_id,
+                                            identity: MessageIdentity {
+                                                correlation_id: CorrelationId::Single(event_id),
+                                                causation_id: CausationId(event_id),
+                                                message_id: event_id,
+                                            },
+                                            organization_id: EntityId::<OrgMarker>::new(),
+                                            name: org.name.clone(),
+                                            display_name: org.display_name.clone(),
+                                            organization_type: OrganizationType::Corporation,
+                                            parent_id: None,
+                                            metadata: serde_json::json!({}),
+                                            occurred_at: Utc::now(),
+                                        });
+
+                                        match self.graph_projector.lift_organization_event(&domain_event) {
+                                            Ok(graph_events) => {
+                                                tracing::debug!("✨ Generated {} cim-graph events for OrganizationCreated", graph_events.len());
+                                                for (i, evt) in graph_events.iter().enumerate() {
+                                                    tracing::debug!("  Event {}: {:?}", i+1, evt);
+                                                }
+                                            }
+                                            Err(e) => {
+                                                tracing::warn!("Failed to project OrganizationCreated event: {:?}", e);
+                                            }
+                                        }
+                                    }
+                                    NodeType::Person { person, .. } => {
+                                        use cim_domain_person::events::{PersonEvent, PersonCreated};
+                                        use cim_domain_person::value_objects::PersonName;
+                                        use cim_domain::EntityId;
+
+                                        let domain_event = PersonEvent::PersonCreated(PersonCreated {
+                                            person_id: EntityId::new(),
+                                            name: PersonName::new(person.name.clone(), "".to_string()),
+                                            source: "gui".to_string(),
+                                            created_at: Utc::now(),
+                                        });
+
+                                        match self.graph_projector.lift_person_event(&domain_event) {
+                                            Ok(graph_events) => {
+                                                tracing::debug!("✨ Generated {} cim-graph events for PersonCreated", graph_events.len());
+                                                for (i, evt) in graph_events.iter().enumerate() {
+                                                    tracing::debug!("  Event {}: {:?}", i+1, evt);
+                                                }
+                                            }
+                                            Err(e) => {
+                                                tracing::warn!("Failed to project PersonCreated event: {:?}", e);
+                                            }
+                                        }
+                                    }
+                                    _ => {} // Other node types don't have domain event demonstrations yet
+                                }
+                            }
+                        }
+
                         // Auto-layout to position the new node and re-align hierarchy
                         self.org_graph.auto_layout();
 
