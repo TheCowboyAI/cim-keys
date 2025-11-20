@@ -91,6 +91,10 @@ pub struct CimKeysApp {
     selected_person: Option<Uuid>,
     selected_node_type: Option<String>,  // Node type selected in "Add Node" dropdown
 
+    // Inline editing for newly created nodes
+    editing_new_node: Option<Uuid>,  // Node being edited inline
+    inline_edit_name: String,        // Name being edited
+
     // NATS infrastructure bootstrap (for graph visualization)
     nats_bootstrap: Option<crate::domain_projections::OrganizationBootstrap>,
 
@@ -287,6 +291,11 @@ pub enum Message {
     RemovePerson(Uuid),
     SelectPerson(Uuid),
     NodeTypeSelected(String),  // Context-aware node type selection from dropdown
+
+    // Inline editing for newly created nodes
+    InlineEditNameChanged(String),
+    InlineEditSubmit,
+    InlineEditCancel,
 
     // Location operations
     NewLocationNameChanged(String),
@@ -552,6 +561,8 @@ impl CimKeysApp {
                 org_graph: OrganizationGraph::new(),
                 selected_person: None,
                 selected_node_type: None,
+                editing_new_node: None,
+                inline_edit_name: String::new(),
                 nats_bootstrap: None,
                 new_person_name: String::new(),
                 new_person_email: String::new(),
@@ -989,6 +1000,55 @@ impl CimKeysApp {
             Message::NodeTypeSelected(node_type) => {
                 self.selected_node_type = Some(node_type.clone());
                 self.status_message = format!("Click on canvas to place new {} node", node_type);
+                Task::none()
+            }
+
+            Message::InlineEditNameChanged(name) => {
+                self.inline_edit_name = name;
+                Task::none()
+            }
+
+            Message::InlineEditSubmit => {
+                if let Some(node_id) = self.editing_new_node {
+                    // Update the node's label in the graph
+                    if let Some(node) = self.org_graph.nodes.get_mut(&node_id) {
+                        use crate::gui::graph::NodeType;
+                        node.label = self.inline_edit_name.clone();
+
+                        // Also update the underlying domain entity based on node type
+                        match &mut node.node_type {
+                            NodeType::Person { person, .. } => {
+                                person.name = self.inline_edit_name.clone();
+                            }
+                            NodeType::OrganizationalUnit(unit) => {
+                                unit.name = self.inline_edit_name.clone();
+                            }
+                            _ => {}
+                        }
+
+                        self.status_message = format!("Updated node name to '{}'", self.inline_edit_name);
+                    }
+
+                    // Clear editing state
+                    self.editing_new_node = None;
+                    self.inline_edit_name.clear();
+                }
+                Task::none()
+            }
+
+            Message::InlineEditCancel => {
+                if self.editing_new_node.is_some() {
+                    // Cancel inline editing
+                    self.editing_new_node = None;
+                    self.inline_edit_name.clear();
+                    self.status_message = "Edit cancelled".to_string();
+                } else {
+                    // No inline edit active - cancel edge creation instead
+                    self.org_graph.handle_message(crate::gui::graph::GraphMessage::CancelEdgeCreation);
+                    if self.org_graph.edge_indicator.is_active() {
+                        self.status_message = "Edge creation cancelled".to_string();
+                    }
+                }
                 Task::none()
             }
 
@@ -2236,7 +2296,10 @@ impl CimKeysApp {
                             self.org_graph.event_stack.push(event.clone());
                             self.org_graph.apply_event(&event);
 
-                            self.status_message = format!("Created '{}' at ({:.0}, {:.0})", label, position.x, position.y);
+                            // Start inline editing for the new node
+                            self.editing_new_node = Some(node_id);
+                            self.inline_edit_name = label.clone();
+                            self.status_message = format!("Created '{}' - edit name and press Enter", label);
                             self.selected_node_type = None;  // Clear selection after placing
                         } else {
                             // No node type selected - just a normal canvas click
@@ -3241,9 +3304,8 @@ impl CimKeysApp {
                                     Some(Message::ToggleHelp)
                                 }
                                 Key::Named(keyboard::key::Named::Escape) => {
-                                    Some(Message::GraphMessage(
-                                        crate::gui::graph::GraphMessage::CancelEdgeCreation
-                                    ))
+                                    // Send InlineEditCancel - it will handle both cases
+                                    Some(Message::InlineEditCancel)
                                 }
                                 Key::Named(keyboard::key::Named::Delete) => {
                                     Some(Message::GraphMessage(
@@ -3487,6 +3549,48 @@ impl CimKeysApp {
                 ];
 
                 stack_layers.push(menu_overlay.into());
+            }
+
+            // Add inline edit overlay if editing a newly created node
+            if let Some(node_id) = self.editing_new_node {
+                if let Some(node) = self.org_graph.nodes.get(&node_id) {
+                    use iced::widget::text_input;
+                    const TOOLBAR_OFFSET: f32 = 36.0;
+
+                    // Transform node position to screen coordinates
+                    let screen_x = node.position.x * self.org_graph.zoom + self.org_graph.pan_offset.x;
+                    let screen_y = node.position.y * self.org_graph.zoom + self.org_graph.pan_offset.y + TOOLBAR_OFFSET;
+
+                    // Position input slightly below the node
+                    let input_y = screen_y + 30.0;
+
+                    let edit_overlay = column![
+                        vertical_space().height(Length::Fixed(input_y)),
+                        row![
+                            horizontal_space().width(Length::Fixed(screen_x - 75.0)), // Center on node (150px wide input)
+                            container(
+                                text_input("Node name...", &self.inline_edit_name)
+                                    .on_input(Message::InlineEditNameChanged)
+                                    .on_submit(Message::InlineEditSubmit)
+                                    .size(14)
+                                    .padding(6)
+                                    .width(Length::Fixed(150.0))
+                            )
+                            .padding(4)
+                            .style(|_theme| container::Style {
+                                background: Some(Background::Color(Color::from_rgba8(40, 40, 50, 0.95))),
+                                border: Border {
+                                    color: Color::from_rgb(0.4, 0.6, 0.8),
+                                    width: 2.0,
+                                    radius: 4.0.into(),
+                                },
+                                ..Default::default()
+                            })
+                        ]
+                    ];
+
+                    stack_layers.push(edit_overlay.into());
+                }
             }
 
             // Add property card overlay if editing
