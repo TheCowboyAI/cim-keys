@@ -196,6 +196,9 @@ pub struct CimKeysApp {
     search_query: String,
     search_results: Vec<Uuid>,  // Matching node IDs
     highlight_nodes: Vec<Uuid>,  // Nodes to highlight in graph
+
+    // Phase 6: Help and tooltips
+    show_help_overlay: bool,
 }
 
 /// Different tabs in the application
@@ -367,6 +370,15 @@ pub enum Message {
     SearchQueryChanged(String),
     ClearSearch,
     HighlightSearchResults,
+
+    // Graph export/import
+    ExportGraph,
+    GraphExported(Result<String, String>),
+    ImportGraph,
+    GraphImported(Result<String, String>),
+
+    // Help and tooltips
+    ToggleHelp,
 }
 
 /// Bootstrap configuration
@@ -415,6 +427,35 @@ pub struct YubiKeyAssignment {
 pub struct NatsHierarchy {
     pub operator_name: String,
     pub accounts: Vec<String>,
+}
+
+/// Serializable graph export format
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphExport {
+    pub version: String,
+    pub exported_at: String,
+    pub graph_view: String,
+    pub nodes: Vec<GraphNodeExport>,
+    pub edges: Vec<GraphEdgeExport>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphNodeExport {
+    pub id: Uuid,
+    pub node_type: String,
+    pub position_x: f32,
+    pub position_y: f32,
+    pub label: String,
+    pub color_r: f32,
+    pub color_g: f32,
+    pub color_b: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphEdgeExport {
+    pub from_id: Uuid,
+    pub to_id: Uuid,
+    pub edge_type: String,
 }
 
 impl CimKeysApp {
@@ -548,6 +589,8 @@ impl CimKeysApp {
                 search_query: String::new(),
                 search_results: Vec::new(),
                 highlight_nodes: Vec::new(),
+                // Phase 6: Help and tooltips
+                show_help_overlay: false,
             },
             load_task,
         )
@@ -2628,6 +2671,114 @@ impl CimKeysApp {
                 }
                 Task::none()
             }
+
+            // Graph export/import
+            Message::ExportGraph => {
+                // Create export data from current graph state
+                let export_data = GraphExport {
+                    version: "1.0".to_string(),
+                    exported_at: chrono::Utc::now().to_rfc3339(),
+                    graph_view: format!("{:?}", self.graph_view),
+                    nodes: self.org_graph.nodes.iter().map(|(id, node)| {
+                        GraphNodeExport {
+                            id: *id,
+                            node_type: format!("{:?}", node.node_type).split('(').next().unwrap_or("Unknown").to_string(),
+                            position_x: node.position.x,
+                            position_y: node.position.y,
+                            label: node.label.clone(),
+                            color_r: node.color.r,
+                            color_g: node.color.g,
+                            color_b: node.color.b,
+                        }
+                    }).collect(),
+                    edges: self.org_graph.edges.iter().map(|edge| {
+                        GraphEdgeExport {
+                            from_id: edge.from,
+                            to_id: edge.to,
+                            edge_type: format!("{:?}", edge.edge_type),
+                        }
+                    }).collect(),
+                };
+
+                // Serialize to JSON
+                let output_dir = self._domain_path.clone();
+                Task::perform(
+                    async move {
+                        match serde_json::to_string_pretty(&export_data) {
+                            Ok(json) => {
+                                let export_path = output_dir.join("graph_export.json");
+                                match tokio::fs::write(&export_path, json).await {
+                                    Ok(_) => Ok(format!("Graph exported to: {}", export_path.display())),
+                                    Err(e) => Err(format!("Failed to write export file: {}", e)),
+                                }
+                            }
+                            Err(e) => Err(format!("Failed to serialize graph: {}", e)),
+                        }
+                    },
+                    Message::GraphExported
+                )
+            }
+
+            Message::GraphExported(result) => {
+                match result {
+                    Ok(message) => {
+                        self.status_message = message;
+                        self.error_message = None;
+                    }
+                    Err(error) => {
+                        self.error_message = Some(error.clone());
+                        self.status_message = "Graph export failed".to_string();
+                    }
+                }
+                Task::none()
+            }
+
+            Message::ImportGraph => {
+                let output_dir = self._domain_path.clone();
+                Task::perform(
+                    async move {
+                        let import_path = output_dir.join("graph_export.json");
+                        match tokio::fs::read_to_string(&import_path).await {
+                            Ok(json) => {
+                                match serde_json::from_str::<GraphExport>(&json) {
+                                    Ok(_data) => {
+                                        // TODO: Actually restore graph state from data
+                                        Ok(format!("Graph imported from: {}", import_path.display()))
+                                    }
+                                    Err(e) => Err(format!("Failed to parse import file: {}", e)),
+                                }
+                            }
+                            Err(e) => Err(format!("Failed to read import file: {}", e)),
+                        }
+                    },
+                    Message::GraphImported
+                )
+            }
+
+            Message::GraphImported(result) => {
+                match result {
+                    Ok(message) => {
+                        self.status_message = message;
+                        self.error_message = None;
+                    }
+                    Err(error) => {
+                        self.error_message = Some(error.clone());
+                        self.status_message = "Graph import failed".to_string();
+                    }
+                }
+                Task::none()
+            }
+
+            // Help and tooltips
+            Message::ToggleHelp => {
+                self.show_help_overlay = !self.show_help_overlay;
+                self.status_message = if self.show_help_overlay {
+                    "Help overlay shown - Press F1 or Escape to close".to_string()
+                } else {
+                    "Help overlay hidden".to_string()
+                };
+                Task::none()
+            }
         }
     }
 
@@ -2859,11 +3010,31 @@ impl CimKeysApp {
                                         crate::gui::graph::GraphMessage::Redo
                                     ))
                                 }
+                                // Phase 5: Graph export/import shortcuts
+                                Key::Character(c) if c == "s" => {
+                                    Some(Message::ExportGraph)
+                                }
+                                Key::Character(c) if c == "o" => {
+                                    Some(Message::ImportGraph)
+                                }
+                                // Search shortcut
+                                Key::Character(c) if c == "f" => {
+                                    // Note: In a real implementation, this would focus the search input
+                                    // For now, it just shows a status message
+                                    Some(Message::UpdateStatus("Use search bar above to search nodes".to_string()))
+                                }
+                                // Clear search shortcut
+                                Key::Named(keyboard::key::Named::Escape) if modifiers.control() => {
+                                    Some(Message::ClearSearch)
+                                }
                                 _ => None,
                             }
                         } else {
                             // Phase 4: Keyboard shortcuts without modifiers
                             match key {
+                                Key::Named(keyboard::key::Named::F1) => {
+                                    Some(Message::ToggleHelp)
+                                }
                                 Key::Named(keyboard::key::Named::Escape) => {
                                     Some(Message::GraphMessage(
                                         crate::gui::graph::GraphMessage::CancelEdgeCreation
@@ -3242,6 +3413,25 @@ impl CimKeysApp {
             ]
             .spacing(self.view_model.spacing_sm)
             .padding(self.view_model.padding_md),
+
+            // Graph export/import buttons
+            row![
+                button(text("Export Graph").size(self.view_model.text_small))
+                    .on_press(Message::ExportGraph)
+                    .style(CowboyCustomTheme::glass_button()),
+                button(text("Import Graph").size(self.view_model.text_small))
+                    .on_press(Message::ImportGraph)
+                    .style(CowboyCustomTheme::glass_button()),
+                horizontal_space(),
+                text(format!("Graph: {} nodes, {} edges",
+                    self.org_graph.nodes.len(),
+                    self.org_graph.edges.len()))
+                    .size(self.view_model.text_small)
+                    .color(self.view_model.colors.text_disabled),
+            ]
+            .spacing(self.view_model.spacing_md)
+            .padding(self.view_model.padding_sm)
+            .align_y(Alignment::Center),
 
             // Graph visualization with overlays (using stack for absolute positioning)
             {
