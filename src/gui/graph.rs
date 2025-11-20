@@ -785,7 +785,7 @@ impl OrganizationGraph {
         use std::collections::HashMap;
 
         // Create mapping from person_id to person for ownership edges
-        let person_map: HashMap<Uuid, &crate::projections::PersonEntry> =
+        let _person_map: HashMap<Uuid, &crate::projections::PersonEntry> =
             people.iter().map(|p| (p.person_id, p)).collect();
 
         // Common PIV slot names
@@ -1519,7 +1519,7 @@ impl OrganizationGraph {
 
     /// Circular layout - arranges nodes in concentric circles by type
     fn apply_circular_layout(&mut self) {
-        use std::f32::consts::PI;
+        
 
         // Group nodes by type
         let mut person_nodes = Vec::new();

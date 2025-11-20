@@ -612,7 +612,7 @@ impl VerifiableCredential {
     }
 
     /// Verify the credential signature
-    pub fn verify(&self, issuer_public_key: &PublicKey) -> Result<(), ValueObjectError> {
+    pub fn verify(&self, _issuer_public_key: &PublicKey) -> Result<(), ValueObjectError> {
         // Verify the proof signature matches the credential content
         // This would use the actual cryptographic verification
         Ok(())

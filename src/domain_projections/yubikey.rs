@@ -12,11 +12,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use std::collections::HashMap;
 
-use crate::domain::{Person, Organization, KeyContext};
+use crate::domain::{Person, Organization};
 use crate::events::KeyPurpose;
 use crate::state_machines::{PivSlot, PinPolicy, TouchPolicy, SlotPlan};
 use crate::value_objects::{
-    Certificate, PublicKey,
     YubiKeyPivConfiguration, FirmwareVersion, PinValue, PukValue,
     ManagementKeyValue, ManagementKeyAlgorithm, SlotState,
 };
@@ -132,6 +131,7 @@ impl YubiKeyProvisioningProjection {
     /// - SlotAllocationPlannedEvent
     /// - PinPolicyConfiguredEvent
     /// - ManagementKeyRotationPlannedEvent
+    #[allow(unused_variables)]
     pub fn project_from_person(
         person: &Person,
         organization: &Organization,
@@ -304,6 +304,7 @@ impl YubiKeyProvisioningProjection {
     /// - PinConfiguredEvent
     /// - ManagementKeyRotatedEvent
     /// - SlotAllocationPlannedEvent (for each slot)
+    #[allow(unused_variables)]
     pub fn project_complete_configuration(
         person: &Person,
         organization: &Organization,

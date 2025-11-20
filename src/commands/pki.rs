@@ -7,9 +7,9 @@
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::domain::{KeyContext, KeyOwnership, Organization, Person};
+use crate::domain::{KeyContext, KeyOwnership, Organization};
 use crate::domain_projections::CertificateRequestProjection;
-use crate::events::{CertificateGeneratedEvent, KeyEvent, KeyGeneratedEvent};
+use crate::events::KeyEvent;
 use crate::events::{KeyAlgorithm, KeyPurpose};
 use crate::value_objects::{
     Certificate, CertificateSubject, PublicKey, Validity,

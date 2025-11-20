@@ -8,17 +8,15 @@
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::domain::{AccountIdentity, Organization, OrganizationUnit, UserIdentity};
-use crate::domain_projections::{
-    JwtClaimsProjection, JwtSigningProjection, NatsProjection, NKeyProjection,
-};
+use crate::domain::{AccountIdentity, Organization, UserIdentity};
+use crate::domain_projections::NatsProjection;
 use crate::events::{
-    AccountabilityValidatedEvent, AccountabilityViolatedEvent, AgentCreatedEvent, KeyEvent,
+    AccountabilityValidatedEvent, AccountabilityViolatedEvent, KeyEvent,
     NatsAccountCreatedEvent, NatsOperatorCreatedEvent, NatsUserCreatedEvent,
     ServiceAccountCreatedEvent,
 };
 use crate::value_objects::{
-    AccountLimits, NatsCredential, NatsJwt, NKeyPair, NKeyType, Permissions, UserLimits,
+    AccountLimits, NatsCredential, NatsJwt, NKeyPair, Permissions, UserLimits,
 };
 
 // ============================================================================
@@ -182,7 +180,7 @@ pub fn handle_create_nats_user(cmd: CreateNatsUser) -> Result<NatsUserCreated, S
                         identity_id: cmd.user.id(),
                         identity_type: match &cmd.user {
                             UserIdentity::Person(_) => "Person".to_string(),
-                            #[cfg(feature = "agent")]
+                            #[cfg(feature = "cim-domain-agent")]
                             UserIdentity::Agent(_) => "Agent".to_string(),
                             UserIdentity::ServiceAccount(_) => "ServiceAccount".to_string(),
                         },
@@ -202,7 +200,7 @@ pub fn handle_create_nats_user(cmd: CreateNatsUser) -> Result<NatsUserCreated, S
                         identity_id: cmd.user.id(),
                         identity_type: match &cmd.user {
                             UserIdentity::Person(_) => "Person".to_string(),
-                            #[cfg(feature = "agent")]
+                            #[cfg(feature = "cim-domain-agent")]
                             UserIdentity::Agent(_) => "Agent".to_string(),
                             UserIdentity::ServiceAccount(_) => "ServiceAccount".to_string(),
                         },
@@ -231,7 +229,7 @@ pub fn handle_create_nats_user(cmd: CreateNatsUser) -> Result<NatsUserCreated, S
                 created_at: Utc::now(),
             }));
         }
-        #[cfg(feature = "agent")]
+        #[cfg(feature = "cim-domain-agent")]
         UserIdentity::Agent(agent) => {
             events.push(KeyEvent::AgentCreated(AgentCreatedEvent {
                 agent_id: agent.id,

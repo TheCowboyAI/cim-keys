@@ -203,6 +203,7 @@ pub struct CimKeysApp {
     // Phase 7: Loading indicators
     loading_export: bool,
     loading_import: bool,
+    #[allow(dead_code)]
     loading_graph_data: bool,
 
     // Phase 8: Node/edge type filtering
@@ -3614,7 +3615,7 @@ impl CimKeysApp {
 
                     // Average connections per node
                     let avg_connections = if total_nodes > 0 {
-                        (total_edges as f32 * 2.0 / total_nodes as f32)
+                        total_edges as f32 * 2.0 / total_nodes as f32
                     } else {
                         0.0
                     };

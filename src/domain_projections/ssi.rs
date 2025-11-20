@@ -90,6 +90,7 @@ impl DidDocumentProjection {
     /// Emits:
     /// - PersonDidProjectedEvent
     /// - DidDocumentCreatedEvent
+    #[allow(unused_variables)]
     pub fn project_person_did(
         person: &Person,
         person_cert: &Certificate,
@@ -136,6 +137,7 @@ impl DidDocumentProjection {
     }
 
     /// Project certificate chain to DID document with full verification chain
+    #[allow(unused_variables)]
     pub fn project_certificate_chain_to_did(
         person: &Person,
         leaf_cert: &Certificate,

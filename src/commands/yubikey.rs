@@ -4,13 +4,12 @@
 //
 // User Stories: US-014, US-015, US-016, US-018
 
-use chrono::Utc;
 use uuid::Uuid;
 
 use crate::domain::{Organization, Person};
 use crate::domain_projections::YubiKeyProvisioningProjection;
 use crate::events::KeyEvent;
-use crate::state_machines::{PivSlot, YubiKeyProvisioningState};
+use crate::state_machines::PivSlot;
 use crate::value_objects::{
     FirmwareVersion, ManagementKeyAlgorithm, ManagementKeyValue, PinValue, PukValue,
     YubiKeyPivConfiguration,
@@ -55,7 +54,7 @@ pub struct YubiKeySecurityConfigured {
 pub fn handle_configure_yubikey_security(
     cmd: ConfigureYubiKeySecurity,
 ) -> Result<YubiKeySecurityConfigured, String> {
-    let mut events = Vec::new();
+    let events = Vec::new();
     let mut warnings = Vec::new();
 
     // Step 1: Create factory-fresh configuration
@@ -228,7 +227,7 @@ pub fn handle_provision_complete_yubikey(
     all_events.extend(security_config.events.clone());
 
     // Step 2: Get provisioning plan from projection
-    let plan = if cmd.is_administrator {
+    let _plan = if cmd.is_administrator {
         YubiKeyProvisioningProjection::project_for_administrator(
             &cmd.person,
             &cmd.organization,

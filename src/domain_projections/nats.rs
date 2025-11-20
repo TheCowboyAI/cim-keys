@@ -11,7 +11,7 @@
 // Each projection step emits events for audit trail.
 
 use chrono::{DateTime, Duration, Utc};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::domain::{
@@ -122,7 +122,7 @@ impl NKeyProjection {
         match user {
             UserIdentity::Person(person) => Self::project_user_nkey(person, organization),
 
-            #[cfg(feature = "agent")]
+            #[cfg(feature = "cim-domain-agent")]
             UserIdentity::Agent(agent) => NKeyGenerationParams {
                 key_type: NKeyType::User,
                 name: format!("{} ({}) Agent", agent.name, organization.name),
@@ -851,7 +851,7 @@ impl NatsProjection {
         }
 
         // Step 4: Create Service Account identities (if any)
-        let mut service_accounts = std::collections::HashMap::new();
+        let service_accounts = std::collections::HashMap::new();
         // TODO: Extract service accounts from organization metadata when available
 
         OrganizationBootstrap {

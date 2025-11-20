@@ -8,7 +8,6 @@
 
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::domain::{KeyContext, Organization, Person, OrganizationUnit};
 use crate::events::KeyPurpose;

@@ -5,8 +5,8 @@
 
 use clap::{Parser, Subcommand};
 use cim_keys::{
-    Organization, Person, OrganizationUnit,
-    domain_projections::{NatsProjection, OrganizationBootstrap},
+    Organization, Person,
+    domain_projections::NatsProjection,
 };
 use std::fs;
 use std::path::PathBuf;

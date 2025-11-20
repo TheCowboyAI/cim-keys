@@ -28,7 +28,7 @@ pub use cim_domain_location::{
 };
 
 // Import Agent domain from cim-domain-agent (optional feature)
-#[cfg(feature = "agent")]
+#[cfg(feature = "cim-domain-agent")]
 pub use cim_domain_agent::{
     Agent,
     AgentType,
@@ -362,7 +362,7 @@ pub enum UserIdentity {
 
     /// Automated agent (requires 'agent' feature)
     /// MUST have responsible_person_id set in Agent structure
-    #[cfg(feature = "agent")]
+    #[cfg(feature = "cim-domain-agent")]
     Agent(Agent),
 
     /// Service account (non-agent automated system)
@@ -375,7 +375,7 @@ impl UserIdentity {
     pub fn id(&self) -> Uuid {
         match self {
             UserIdentity::Person(p) => p.id,
-            #[cfg(feature = "agent")]
+            #[cfg(feature = "cim-domain-agent")]
             UserIdentity::Agent(a) => a.id,
             UserIdentity::ServiceAccount(sa) => sa.id,
         }
@@ -385,7 +385,7 @@ impl UserIdentity {
     pub fn name(&self) -> &str {
         match self {
             UserIdentity::Person(p) => &p.name,
-            #[cfg(feature = "agent")]
+            #[cfg(feature = "cim-domain-agent")]
             UserIdentity::Agent(a) => &a.name,
             UserIdentity::ServiceAccount(sa) => &sa.name,
         }
@@ -395,7 +395,7 @@ impl UserIdentity {
     pub fn organization_id(&self) -> Uuid {
         match self {
             UserIdentity::Person(p) => p.organization_id,
-            #[cfg(feature = "agent")]
+            #[cfg(feature = "cim-domain-agent")]
             UserIdentity::Agent(a) => a.organization_id,
             UserIdentity::ServiceAccount(sa) => sa.owning_unit_id, // TODO: Get org from unit
         }
@@ -405,7 +405,7 @@ impl UserIdentity {
     pub fn is_active(&self) -> bool {
         match self {
             UserIdentity::Person(p) => p.active,
-            #[cfg(feature = "agent")]
+            #[cfg(feature = "cim-domain-agent")]
             UserIdentity::Agent(a) => a.active,
             UserIdentity::ServiceAccount(sa) => sa.active,
         }
@@ -415,7 +415,7 @@ impl UserIdentity {
     pub fn credential_identifier(&self) -> String {
         match self {
             UserIdentity::Person(p) => format!("person-{}", p.email),
-            #[cfg(feature = "agent")]
+            #[cfg(feature = "cim-domain-agent")]
             UserIdentity::Agent(a) => format!("agent-{}", a.name.to_lowercase().replace(' ', "-")),
             UserIdentity::ServiceAccount(sa) => format!("service-{}", sa.name.to_lowercase().replace(' ', "-")),
         }
@@ -432,7 +432,7 @@ impl UserIdentity {
     pub fn responsible_person_id(&self) -> Option<Uuid> {
         match self {
             UserIdentity::Person(_) => None, // Self-accountable
-            #[cfg(feature = "agent")]
+            #[cfg(feature = "cim-domain-agent")]
             UserIdentity::Agent(a) => Some(a.responsible_person_id),
             UserIdentity::ServiceAccount(sa) => Some(sa.responsible_person_id),
         }
@@ -448,7 +448,7 @@ impl UserIdentity {
         match self {
             UserIdentity::Person(_) => Ok(()), // Self-accountable, no validation needed
 
-            #[cfg(feature = "agent")]
+            #[cfg(feature = "cim-domain-agent")]
             UserIdentity::Agent(agent) => {
                 // Verify responsible person exists
                 let person_exists = organization.units.iter().any(|_unit| {
@@ -474,7 +474,7 @@ impl UserIdentity {
     pub fn accountability_info(&self) -> String {
         match self {
             UserIdentity::Person(p) => format!("Person {} (self-accountable)", p.name),
-            #[cfg(feature = "agent")]
+            #[cfg(feature = "cim-domain-agent")]
             UserIdentity::Agent(a) => format!(
                 "Agent {} (responsible: person-{})",
                 a.name, a.responsible_person_id

@@ -160,7 +160,7 @@ pub fn handle_export_to_encrypted_storage(
 
     // Step 5: Generate manifest if requested
     let manifest_path = if cmd.include_manifest {
-        let manifest = generate_manifest(&cmd, &events)?;
+        let _manifest = generate_manifest(&cmd, &events)?;
         let path = cmd.output_directory.join("manifest.json");
 
         // TODO: Write manifest to file
@@ -220,7 +220,7 @@ fn validate_export_directory(path: &PathBuf) -> Result<(), String> {
 }
 
 /// Export key to file (stub implementation)
-fn export_key_stub(key_item: &KeyExportItem) -> Result<u64, String> {
+fn export_key_stub(_key_item: &KeyExportItem) -> Result<u64, String> {
     // TODO: Implement actual key export
     // 1. Serialize public key based on export_format (PEM, DER, SSH, etc.)
     // 2. Write to destination_path with proper permissions (0600)
@@ -231,7 +231,7 @@ fn export_key_stub(key_item: &KeyExportItem) -> Result<u64, String> {
 }
 
 /// Export certificate to file (stub implementation)
-fn export_certificate_stub(cert_item: &CertificateExportItem) -> Result<u64, String> {
+fn export_certificate_stub(_cert_item: &CertificateExportItem) -> Result<u64, String> {
     // TODO: Implement actual certificate export
     // 1. Serialize certificate based on export_format (PEM, DER)
     // 2. Write to destination_path
@@ -242,7 +242,7 @@ fn export_certificate_stub(cert_item: &CertificateExportItem) -> Result<u64, Str
 }
 
 /// Export NATS configuration to credentials file (stub implementation)
-fn export_nats_config_stub(nats_item: &NatsIdentityExportItem) -> Result<u64, String> {
+fn export_nats_config_stub(_nats_item: &NatsIdentityExportItem) -> Result<u64, String> {
     // TODO: Implement actual NATS credentials file export
     // 1. Create credentials file format:
     //    -----BEGIN NATS USER JWT-----
@@ -311,6 +311,7 @@ fn generate_manifest(
 
 /// Export manifest structure
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct ExportManifest {
     manifest_id: Uuid,
     organization_id: Uuid,
@@ -324,6 +325,7 @@ struct ExportManifest {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct ManifestKeyEntry {
     key_id: Uuid,
     purpose: String,
@@ -332,6 +334,7 @@ struct ManifestKeyEntry {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct ManifestCertEntry {
     cert_id: Uuid,
     subject: String,
@@ -340,6 +343,7 @@ struct ManifestCertEntry {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct ManifestNatsEntry {
     identity_id: Uuid,
     identity_type: String,
