@@ -398,7 +398,7 @@ pub enum Message {
     ExportGraph,
     GraphExported(Result<String, String>),
     ImportGraph,
-    GraphImported(Result<String, String>),
+    GraphImported(Result<Option<GraphExport>, String>),
 
     // Help and tooltips
     ToggleHelp,
@@ -2797,9 +2797,9 @@ impl CimKeysApp {
                         match tokio::fs::read_to_string(&import_path).await {
                             Ok(json) => {
                                 match serde_json::from_str::<GraphExport>(&json) {
-                                    Ok(_data) => {
-                                        // TODO: Actually restore graph state from data
-                                        Ok(format!("Graph imported from: {}", import_path.display()))
+                                    Ok(data) => {
+                                        // Return the parsed data for restoration
+                                        Ok(Some(data))
                                     }
                                     Err(e) => Err(format!("Failed to parse import file: {}", e)),
                                 }
@@ -2816,8 +2816,24 @@ impl CimKeysApp {
                 self.loading_import = false;
 
                 match result {
-                    Ok(message) => {
-                        self.status_message = message;
+                    Ok(Some(graph_data)) => {
+                        // Restore node positions from imported data
+                        let mut restored_count = 0;
+                        for node_export in &graph_data.nodes {
+                            if let Some(node) = self.org_graph.nodes.get_mut(&node_export.id) {
+                                node.position = Point::new(node_export.position_x, node_export.position_y);
+                                restored_count += 1;
+                            }
+                        }
+                        self.status_message = format!(
+                            "Graph imported: restored positions for {} nodes (exported at: {})",
+                            restored_count,
+                            graph_data.exported_at
+                        );
+                        self.error_message = None;
+                    }
+                    Ok(None) => {
+                        self.status_message = "Graph import completed (no data)".to_string();
                         self.error_message = None;
                     }
                     Err(error) => {
