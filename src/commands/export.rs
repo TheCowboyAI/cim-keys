@@ -438,8 +438,12 @@ mod tests {
             metadata: Default::default(),
         };
 
+        // Use /tmp for testing which should exist on all systems
+        let test_dir = std::env::temp_dir().join(format!("cim-keys-test-{}", Uuid::now_v7()));
+        std::fs::create_dir_all(&test_dir).unwrap();
+
         let cmd = ExportToEncryptedStorage {
-            output_directory: PathBuf::from("/mnt/encrypted/test"),
+            output_directory: test_dir.clone(),
             organization: org,
             keys: vec![],
             certificates: vec![],
@@ -457,6 +461,9 @@ mod tests {
             .iter()
             .any(|e| matches!(e, KeyEvent::ManifestCreated(_))));
         assert!(result.manifest_path.is_some());
+
+        // Clean up test directory
+        std::fs::remove_dir_all(&test_dir).ok();
     }
 
     #[test]

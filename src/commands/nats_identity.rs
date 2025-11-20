@@ -355,6 +355,7 @@ pub fn handle_bootstrap_nats_infrastructure(
 mod tests {
     use super::*;
     use crate::domain::{Organization, OrganizationUnit, OrganizationUnitType, Person};
+    use crate::value_objects::NKeyType;
 
     #[test]
     fn test_create_operator_emits_event() {

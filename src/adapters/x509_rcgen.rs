@@ -4,7 +4,7 @@
 
 use async_trait::async_trait;
 use rcgen::{
-    BasicConstraints, Certificate as RcgenCertificate, CertificateParams, DistinguishedName,
+    BasicConstraints, CertificateParams, DistinguishedName,
     DnType, ExtendedKeyUsagePurpose, IsCa, KeyPair as RcgenKeyPair, KeyUsagePurpose,
     SanType, SerialNumber,
 };
@@ -43,21 +43,6 @@ impl RcgenX509Adapter {
         }
 
         dn
-    }
-
-    /// Convert rcgen DistinguishedName to CertificateSubject
-    fn dn_to_subject(_dn: &DistinguishedName) -> CertificateSubject {
-        // TODO: Extract DN fields from rcgen DistinguishedName
-        // For now, return a placeholder
-        CertificateSubject {
-            common_name: "".to_string(),
-            organization: None,
-            organizational_unit: None,
-            country: None,
-            state: None,
-            locality: None,
-            email: None,
-        }
     }
 
     /// Convert KeyUsage to rcgen KeyUsagePurpose
@@ -183,7 +168,7 @@ impl X509Port for RcgenX509Adapter {
 
     async fn sign_csr(
         &self,
-        csr: &CertificateSigningRequest,
+        _csr: &CertificateSigningRequest,
         _ca_cert: &Certificate,
         _ca_key: &PrivateKey,
         _validity_days: u32,

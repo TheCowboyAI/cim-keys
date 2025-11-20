@@ -48,31 +48,63 @@ pub struct KeyPairGenerated {
 ///
 /// User Story: US-012, US-013
 pub fn handle_generate_key_pair(cmd: GenerateKeyPair) -> Result<KeyPairGenerated, String> {
-    let events = Vec::new();
+    let mut events = Vec::new();
 
     // Step 1: Determine algorithm (from command or purpose recommendation)
     let algorithm = cmd.algorithm.unwrap_or_else(|| {
         // Use purpose recommendation
-        // TODO: Update KeyAlgorithmRecommendation to match actual KeyAlgorithm variants
         match cmd.purpose.recommended_algorithm() {
             crate::value_objects::key_purposes::KeyAlgorithmRecommendation::Ed25519 => {
                 KeyAlgorithm::Ed25519
             }
-            // TODO: Add X25519, EcdsaP256, EcdsaP384, Rsa2048, Rsa4096 variants to KeyAlgorithm
             _ => KeyAlgorithm::Ed25519, // Default to Ed25519 for now
         }
     });
 
-    // Step 2: Generate key pair (stub - needs actual crypto)
+    // Step 2: Generate key pair using ed25519-dalek
     let key_id = Uuid::now_v7();
+
+    // Generate Ed25519 key pair
+    use ed25519_dalek::SigningKey;
+
+    let signing_key = SigningKey::from_bytes(&rand::random::<[u8; 32]>());
+    let verifying_key = signing_key.verifying_key();
+
+    // Convert to bytes
+    let public_key_bytes = verifying_key.to_bytes();
+
     let public_key = PublicKey {
         algorithm: algorithm.clone(),
-        data: vec![0u8; 32], // TODO: Generate real key
+        data: public_key_bytes.to_vec(),
         format: crate::value_objects::PublicKeyFormat::Der,
     };
 
     // Step 3: Emit key generated event
-    // TODO: Create and emit KeyGeneratedEvent
+    events.push(crate::events::KeyEvent::KeyGenerated(
+        crate::events::KeyGeneratedEvent {
+            key_id,
+            algorithm: algorithm.clone(),
+            purpose: match cmd.purpose {
+                crate::value_objects::AuthKeyPurpose::X509ServerAuth => KeyPurpose::Authentication,
+                crate::value_objects::AuthKeyPurpose::X509CodeSigning => KeyPurpose::Signing,
+                crate::value_objects::AuthKeyPurpose::GpgEncryption => KeyPurpose::Encryption,
+                _ => KeyPurpose::Authentication,
+            },
+            generated_at: Utc::now(),
+            generated_by: "system".to_string(),
+            hardware_backed: false,
+            metadata: crate::events::KeyMetadata {
+                label: format!("Key pair for {:?}", cmd.purpose),
+                description: Some(format!("Generated {:?} key for {:?}", algorithm, cmd.purpose)),
+                tags: vec![],
+                attributes: std::collections::HashMap::new(),
+                jwt_kid: None,
+                jwt_alg: None,
+                jwt_use: None,
+            },
+            ownership: Some(cmd.owner_context.actor.clone()),
+        },
+    ));
 
     Ok(KeyPairGenerated {
         key_id,
@@ -141,8 +173,48 @@ pub fn handle_generate_root_ca(cmd: GenerateRootCA) -> Result<RootCAGenerated, S
     // Step 2: Project organization to root CA CSR
     let _csr = CertificateRequestProjection::project_root_ca(&cmd.organization, key_pair.public_key.clone());
 
-    // Step 3: Generate self-signed certificate
-    // TODO: Use rcgen to generate certificate from CSR
+    // Step 3: Generate self-signed certificate using rcgen
+    use rcgen::{CertificateParams, DistinguishedName, DnType, IsCa, BasicConstraints, KeyUsagePurpose, SerialNumber, KeyPair as RcgenKeyPair};
+    use time::{Duration as TimeDuration, OffsetDateTime};
+
+    // Generate a new key pair for the certificate
+    let rcgen_key_pair = RcgenKeyPair::generate()
+        .map_err(|e| format!("Failed to generate key pair: {}", e))?;
+
+    // Create certificate parameters
+    let mut params = CertificateParams::default();
+    let mut dn = DistinguishedName::new();
+    dn.push(DnType::CommonName, format!("{} Root CA", cmd.organization.name));
+    dn.push(DnType::OrganizationName, cmd.organization.name.clone());
+    dn.push(DnType::CountryName, "US");
+    params.distinguished_name = dn;
+    params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+
+    // Set validity period
+    let not_before = OffsetDateTime::now_utc();
+    let not_after = not_before + TimeDuration::days((cmd.validity_years * 365) as i64);
+    params.not_before = not_before;
+    params.not_after = not_after;
+
+    // CA key usages
+    params.key_usages = vec![
+        KeyUsagePurpose::KeyCertSign,
+        KeyUsagePurpose::CrlSign,
+        KeyUsagePurpose::DigitalSignature,
+    ];
+
+    // Generate serial number
+    params.serial_number = Some(SerialNumber::from(1u64));
+
+    // Generate the self-signed certificate
+    let rcgen_cert = params.self_signed(&rcgen_key_pair)
+        .map_err(|e| format!("Failed to generate root CA certificate: {}", e))?;
+
+    // Get DER and PEM
+    let der = rcgen_cert.der().to_vec();
+    let pem = rcgen_cert.pem();
+
+    // Create the certificate structure
     let certificate = Certificate {
         serial_number: "1".to_string(),
         subject: CertificateSubject {
@@ -169,15 +241,32 @@ pub fn handle_generate_root_ca(cmd: GenerateRootCA) -> Result<RootCAGenerated, S
             not_after: Utc::now() + chrono::Duration::days((cmd.validity_years * 365) as i64),
         },
         signature: crate::value_objects::Signature {
-            algorithm: crate::value_objects::SignatureAlgorithm::Ed25519, // TODO: Map from cmd.algorithm
-            data: vec![0u8; 64], // TODO: Generate real signature
+            algorithm: crate::value_objects::SignatureAlgorithm::Ed25519,
+            data: vec![0u8; 64], // Signature is embedded in DER/PEM
         },
-        der: vec![],  // TODO: Generate real DER
-        pem: String::new(), // TODO: Generate real PEM
+        der,
+        pem,
     };
 
     // Step 4: Emit certificate generated event
-    // TODO: Create and emit CertificateGeneratedEvent
+    events.push(crate::events::KeyEvent::CertificateGenerated(
+        crate::events::CertificateGeneratedEvent {
+            cert_id: ca_id,
+            key_id: key_pair.key_id,
+            subject: certificate.subject.common_name.clone(),
+            issuer: None, // Self-signed root CA
+            not_before: certificate.validity.not_before,
+            not_after: certificate.validity.not_after,
+            is_ca: true,
+            san: vec![],
+            key_usage: vec![
+                "KeyCertSign".to_string(),
+                "CrlSign".to_string(),
+                "DigitalSignature".to_string(),
+            ],
+            extended_key_usage: vec![],
+        },
+    ));
 
     Ok(RootCAGenerated {
         ca_id,
