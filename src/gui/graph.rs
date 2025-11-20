@@ -21,6 +21,7 @@ use crate::domain::{
 use crate::domain_projections::NatsIdentityProjection;
 use super::edge_indicator::EdgeCreationIndicator;
 use super::graph_events::{EventStack, GraphEvent};
+use super::GraphLayout;
 
 /// Graph visualization widget for organizational structure
 pub struct OrganizationGraph {
@@ -1374,6 +1375,205 @@ impl OrganizationGraph {
             }
             NodeType::YubiKey { .. } | NodeType::PivSlot { .. } => {
                 self.filter_show_yubikey
+            }
+        }
+    }
+
+    /// Apply the specified layout algorithm to reposition all nodes
+    pub fn apply_layout(&mut self, layout: GraphLayout) {
+        match layout {
+            GraphLayout::Manual => {
+                // Manual layout - do nothing, keep current positions
+            }
+            GraphLayout::Hierarchical => {
+                self.apply_hierarchical_layout();
+            }
+            GraphLayout::ForceDirected => {
+                self.apply_force_directed_layout();
+            }
+            GraphLayout::Circular => {
+                self.apply_circular_layout();
+            }
+        }
+    }
+
+    /// Hierarchical tree layout - arranges nodes in layers based on relationships
+    fn apply_hierarchical_layout(&mut self) {
+        let mut layers: Vec<Vec<Uuid>> = Vec::new();
+        let mut visited: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
+
+        // Find root nodes (nodes with no incoming edges)
+        let mut root_nodes: Vec<Uuid> = Vec::new();
+        for node_id in self.nodes.keys() {
+            let has_incoming = self.edges.iter().any(|e| e.to == *node_id);
+            if !has_incoming {
+                root_nodes.push(*node_id);
+            }
+        }
+
+        if !root_nodes.is_empty() {
+            layers.push(root_nodes.clone());
+            visited.extend(root_nodes.iter());
+        }
+
+        // Build layers using BFS
+        while let Some(current_layer) = layers.last().cloned() {
+            let mut next_layer = Vec::new();
+            for node_id in current_layer {
+                // Find all children (outgoing edges)
+                for edge in &self.edges {
+                    if edge.from == node_id && !visited.contains(&edge.to) {
+                        next_layer.push(edge.to);
+                        visited.insert(edge.to);
+                    }
+                }
+            }
+            if next_layer.is_empty() {
+                break;
+            }
+            layers.push(next_layer);
+        }
+
+        // Position nodes in layers
+        let layer_height = 150.0;
+        let node_spacing = 120.0;
+
+        for (layer_index, layer) in layers.iter().enumerate() {
+            let y = 100.0 + (layer_index as f32) * layer_height;
+            let layer_width = (layer.len() as f32) * node_spacing;
+            let start_x = -layer_width / 2.0;
+
+            for (node_index, node_id) in layer.iter().enumerate() {
+                if let Some(node) = self.nodes.get_mut(node_id) {
+                    node.position = Point::new(
+                        start_x + (node_index as f32) * node_spacing,
+                        y,
+                    );
+                }
+            }
+        }
+    }
+
+    /// Force-directed layout using simple spring simulation
+    fn apply_force_directed_layout(&mut self) {
+        // Simple force-directed algorithm
+        let iterations = 100;
+        let k = 80.0; // Optimal distance
+        let c = 0.01; // Cooling factor
+
+        for iteration in 0..iterations {
+            let mut forces: HashMap<Uuid, Vector> = HashMap::new();
+
+            // Calculate repulsive forces between all nodes
+            let node_ids: Vec<Uuid> = self.nodes.keys().cloned().collect();
+            for i in 0..node_ids.len() {
+                for j in (i + 1)..node_ids.len() {
+                    let id1 = node_ids[i];
+                    let id2 = node_ids[j];
+
+                    if let (Some(node1), Some(node2)) = (self.nodes.get(&id1), self.nodes.get(&id2)) {
+                        let dx = node2.position.x - node1.position.x;
+                        let dy = node2.position.y - node1.position.y;
+                        let distance = (dx * dx + dy * dy).sqrt().max(0.1);
+
+                        let repulsion = (k * k) / distance;
+                        let fx = (dx / distance) * repulsion;
+                        let fy = (dy / distance) * repulsion;
+
+                        let force1 = forces.entry(id1).or_insert(Vector::new(0.0, 0.0));
+                        *force1 = Vector::new(force1.x - fx, force1.y - fy);
+                        let force2 = forces.entry(id2).or_insert(Vector::new(0.0, 0.0));
+                        *force2 = Vector::new(force2.x + fx, force2.y + fy);
+                    }
+                }
+            }
+
+            // Calculate attractive forces for connected nodes
+            for edge in &self.edges {
+                if let (Some(node1), Some(node2)) = (self.nodes.get(&edge.from), self.nodes.get(&edge.to)) {
+                    let dx = node2.position.x - node1.position.x;
+                    let dy = node2.position.y - node1.position.y;
+                    let distance = (dx * dx + dy * dy).sqrt().max(0.1);
+
+                    let attraction = (distance * distance) / k;
+                    let fx = (dx / distance) * attraction;
+                    let fy = (dy / distance) * attraction;
+
+                    let force_from = forces.entry(edge.from).or_insert(Vector::new(0.0, 0.0));
+                    *force_from = Vector::new(force_from.x + fx, force_from.y + fy);
+                    let force_to = forces.entry(edge.to).or_insert(Vector::new(0.0, 0.0));
+                    *force_to = Vector::new(force_to.x - fx, force_to.y - fy);
+                }
+            }
+
+            // Apply forces with cooling
+            let temperature = 1.0 - (iteration as f32 / iterations as f32);
+            for (node_id, force) in forces {
+                if let Some(node) = self.nodes.get_mut(&node_id) {
+                    node.position.x += force.x * c * temperature;
+                    node.position.y += force.y * c * temperature;
+                }
+            }
+        }
+    }
+
+    /// Circular layout - arranges nodes in concentric circles by type
+    fn apply_circular_layout(&mut self) {
+        use std::f32::consts::PI;
+
+        // Group nodes by type
+        let mut person_nodes = Vec::new();
+        let mut org_nodes = Vec::new();
+        let mut nats_nodes = Vec::new();
+        let mut pki_nodes = Vec::new();
+        let mut yubikey_nodes = Vec::new();
+
+        for (id, node) in &self.nodes {
+            match &node.node_type {
+                NodeType::Person { .. } => person_nodes.push(*id),
+                NodeType::Organization(_) | NodeType::OrganizationalUnit(_) |
+                NodeType::Location(_) | NodeType::Role(_) | NodeType::Policy(_) => {
+                    org_nodes.push(*id);
+                }
+                NodeType::NatsOperator(_) | NodeType::NatsAccount(_) |
+                NodeType::NatsUser(_) | NodeType::NatsServiceAccount(_) => {
+                    nats_nodes.push(*id);
+                }
+                NodeType::RootCertificate { .. } | NodeType::IntermediateCertificate { .. } |
+                NodeType::LeafCertificate { .. } => {
+                    pki_nodes.push(*id);
+                }
+                NodeType::YubiKey { .. } | NodeType::PivSlot { .. } => {
+                    yubikey_nodes.push(*id);
+                }
+            }
+        }
+
+        // Position each group in concentric circles
+        self.position_circle(&person_nodes, 80.0);
+        self.position_circle(&org_nodes, 160.0);
+        self.position_circle(&nats_nodes, 240.0);
+        self.position_circle(&pki_nodes, 320.0);
+        self.position_circle(&yubikey_nodes, 400.0);
+    }
+
+    /// Helper to position nodes in a circle
+    fn position_circle(&mut self, node_ids: &[Uuid], radius: f32) {
+        use std::f32::consts::PI;
+
+        if node_ids.is_empty() {
+            return;
+        }
+
+        let angle_step = 2.0 * PI / node_ids.len() as f32;
+
+        for (index, node_id) in node_ids.iter().enumerate() {
+            let angle = index as f32 * angle_step;
+            if let Some(node) = self.nodes.get_mut(node_id) {
+                node.position = Point::new(
+                    radius * angle.cos(),
+                    radius * angle.sin(),
+                );
             }
         }
     }

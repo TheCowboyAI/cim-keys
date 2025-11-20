@@ -211,6 +211,17 @@ pub struct CimKeysApp {
     filter_show_nats: bool,
     filter_show_pki: bool,
     filter_show_yubikey: bool,
+    // Phase 9: Graph layout options
+    current_layout: GraphLayout,
+}
+
+/// Graph layout algorithms
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GraphLayout {
+    Manual,        // User-positioned nodes (default)
+    Hierarchical,  // Top-down tree layout
+    ForceDirected, // Spring/force simulation
+    Circular,      // Concentric circles
 }
 
 /// Different tabs in the application
@@ -398,6 +409,10 @@ pub enum Message {
     ToggleFilterNats,
     ToggleFilterPki,
     ToggleFilterYubiKey,
+
+    // Graph layout options
+    ChangeLayout(GraphLayout),
+    ApplyLayout,
 }
 
 /// Bootstrap configuration
@@ -620,6 +635,8 @@ impl CimKeysApp {
                 filter_show_nats: true,
                 filter_show_pki: true,
                 filter_show_yubikey: true,
+                // Phase 9: Graph layout options
+                current_layout: GraphLayout::Manual,
             },
             load_task,
         )
@@ -2853,6 +2870,26 @@ impl CimKeysApp {
                 self.status_message = format!("YubiKey nodes {}", if self.filter_show_yubikey { "shown" } else { "hidden" });
                 Task::none()
             }
+
+            // Graph layout options
+            Message::ChangeLayout(layout) => {
+                self.current_layout = layout;
+                let layout_name = match layout {
+                    GraphLayout::Manual => "Manual",
+                    GraphLayout::Hierarchical => "Hierarchical",
+                    GraphLayout::ForceDirected => "Force-Directed",
+                    GraphLayout::Circular => "Circular",
+                };
+                self.status_message = format!("Layout changed to {}", layout_name);
+                Task::none()
+            }
+            Message::ApplyLayout => {
+                self.status_message = "Applying layout...".to_string();
+                // Apply the selected layout algorithm
+                self.org_graph.apply_layout(self.current_layout);
+                self.status_message = "Layout applied successfully".to_string();
+                Task::none()
+            }
         }
     }
 
@@ -3638,6 +3675,34 @@ impl CimKeysApp {
             )
             .padding(self.view_model.padding_md)
             .style(CowboyCustomTheme::pastel_teal_card()),
+
+            // Graph layout controls
+            container(
+                row![
+                    text("Layout:").size(self.view_model.text_small).color(self.view_model.colors.text_disabled),
+                    horizontal_space(),
+                    button(text(if self.current_layout == GraphLayout::Manual { "→ Manual" } else { "Manual" }).size(self.view_model.text_small))
+                        .on_press(Message::ChangeLayout(GraphLayout::Manual))
+                        .style(CowboyCustomTheme::glass_button()),
+                    button(text(if self.current_layout == GraphLayout::Hierarchical { "→ Hierarchical" } else { "Hierarchical" }).size(self.view_model.text_small))
+                        .on_press(Message::ChangeLayout(GraphLayout::Hierarchical))
+                        .style(CowboyCustomTheme::glass_button()),
+                    button(text(if self.current_layout == GraphLayout::ForceDirected { "→ Force-Directed" } else { "Force-Directed" }).size(self.view_model.text_small))
+                        .on_press(Message::ChangeLayout(GraphLayout::ForceDirected))
+                        .style(CowboyCustomTheme::glass_button()),
+                    button(text(if self.current_layout == GraphLayout::Circular { "→ Circular" } else { "Circular" }).size(self.view_model.text_small))
+                        .on_press(Message::ChangeLayout(GraphLayout::Circular))
+                        .style(CowboyCustomTheme::glass_button()),
+                    horizontal_space(),
+                    button(text("Apply Layout").size(self.view_model.text_small))
+                        .on_press(Message::ApplyLayout)
+                        .style(CowboyCustomTheme::security_button()),
+                ]
+                .spacing(self.view_model.spacing_md)
+                .align_y(Alignment::Center)
+            )
+            .padding(self.view_model.padding_md)
+            .style(CowboyCustomTheme::pastel_mint_card()),
 
             // Graph visualization with overlays (using stack for absolute positioning)
             {
