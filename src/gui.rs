@@ -6,7 +6,7 @@
 use iced::{
     application,
     widget::{button, column, container, row, text, text_input, Container, horizontal_space, vertical_space, pick_list, progress_bar, checkbox, scrollable, Space, image, stack},
-    Task, Element, Length, Border, Theme, Background, Shadow, Alignment, Point,
+    Task, Element, Length, Border, Theme, Background, Shadow, Alignment, Point, Color,
 };
 use iced_futures::Subscription;
 use serde::{Deserialize, Serialize};
@@ -3275,525 +3275,116 @@ impl CimKeysApp {
     fn view_organization(&self) -> Element<'_, Message> {
         use graph::view_graph;
 
-        let role_options = vec![
-            KeyOwnerRole::RootAuthority,
-            KeyOwnerRole::SecurityAdmin,
-            KeyOwnerRole::Developer,
-            KeyOwnerRole::ServiceAccount,
-            KeyOwnerRole::BackupHolder,
-            KeyOwnerRole::Auditor,
-        ];
+        // ============================================================================
+        // GRAPH-FIRST INTERFACE
+        // Minimal toolbar + full-screen graph as primary working surface
+        // ============================================================================
 
-        let content = column![
-            text("Organization Structure").size(self.view_model.text_xlarge),
-            text("Visualize and manage your organization's key ownership hierarchy").size(self.view_model.text_normal),
-
-            // Debug: Show graph state
-            text(format!("Graph State: {} nodes, {} edges",
-                self.org_graph.nodes.len(),
-                self.org_graph.edges.len()))
-                .size(self.view_model.text_small)
-                .color(self.view_model.colors.text_disabled),
-
-            // Domain creation/loading form (shows only if domain not loaded)
-            if !self.domain_loaded {
-                container(
-                    column![
-                        text("Create or Load Domain")
-                            .size(self.view_model.text_medium)
-                            .color(CowboyTheme::text_primary()),
-                        row![
-                            text_input("Organization Name", &self.organization_name)
-                                .on_input(Message::OrganizationNameChanged)
-                                .size(self.view_model.text_medium)
-                                .style(CowboyCustomTheme::glass_input()),
-                            text_input("Domain", &self.organization_domain)
-                                .on_input(Message::OrganizationDomainChanged)
-                                .size(self.view_model.text_medium)
-                                .style(CowboyCustomTheme::glass_input()),
-                        ]
-                        .spacing(self.view_model.spacing_md),
-
-                        text("Master Passphrase (encrypts SD card storage)")
-                            .size(self.view_model.text_normal)
-                            .color(CowboyTheme::text_primary()),
-                        row![
-                            text_input("Master Passphrase", &self.master_passphrase)
-                                .on_input(Message::MasterPassphraseChanged)
-                                .size(self.view_model.text_medium)
-                                .secure(true)
-                                .style(CowboyCustomTheme::glass_input()),
-                            text_input("Confirm Passphrase", &self.master_passphrase_confirm)
-                                .on_input(Message::MasterPassphraseConfirmChanged)
-                                .size(self.view_model.text_medium)
-                                .secure(true)
-                                .style(CowboyCustomTheme::glass_input()),
-                        ]
-                        .spacing(self.view_model.spacing_md),
-
-                        // Passphrase validation feedback
-                        if !self.master_passphrase.is_empty() || !self.master_passphrase_confirm.is_empty() {
-                            let passphrase_matches = self.master_passphrase == self.master_passphrase_confirm;
-                            let passphrase_strong = self.master_passphrase.len() >= 12;
-                            let has_uppercase = self.master_passphrase.chars().any(|c| c.is_uppercase());
-                            let has_lowercase = self.master_passphrase.chars().any(|c| c.is_lowercase());
-                            let has_digit = self.master_passphrase.chars().any(|c| c.is_numeric());
-                            let has_special = self.master_passphrase.chars().any(|c| !c.is_alphanumeric());
-
-                            column![
-                                if passphrase_strong {
-                                    text("✅ Length: 12+ characters").size(self.view_model.text_small).color(self.view_model.colors.success)
-                                } else {
-                                    text(format!("❌ Length: {}/12 characters", self.master_passphrase.len())).size(self.view_model.text_small).color(self.view_model.colors.error)
-                                },
-                                if has_uppercase {
-                                    text("✅ Contains uppercase letter").size(self.view_model.text_small).color(self.view_model.colors.success)
-                                } else {
-                                    text("❌ Needs uppercase letter").size(self.view_model.text_small).color(self.view_model.colors.error)
-                                },
-                                if has_lowercase {
-                                    text("✅ Contains lowercase letter").size(self.view_model.text_small).color(self.view_model.colors.success)
-                                } else {
-                                    text("❌ Needs lowercase letter").size(self.view_model.text_small).color(self.view_model.colors.error)
-                                },
-                                if has_digit {
-                                    text("✅ Contains number").size(self.view_model.text_small).color(self.view_model.colors.success)
-                                } else {
-                                    text("❌ Needs number").size(self.view_model.text_small).color(self.view_model.colors.error)
-                                },
-                                if has_special {
-                                    text("✅ Contains special character").size(self.view_model.text_small).color(self.view_model.colors.success)
-                                } else {
-                                    text("❌ Needs special character").size(self.view_model.text_small).color(self.view_model.colors.error)
-                                },
-                                if passphrase_matches && !self.master_passphrase.is_empty() {
-                                    text("✅ Passphrases match").size(self.view_model.text_small).color(self.view_model.colors.success)
-                                } else if !self.master_passphrase_confirm.is_empty() {
-                                    text("❌ Passphrases do not match").size(self.view_model.text_small).color(self.view_model.colors.error)
-                                } else {
-                                    text("").size(self.view_model.text_small)
-                                },
-                            ]
-                            .spacing(self.view_model.spacing_sm)
-                        } else {
-                            column![].spacing(0)
-                        },
-
-                        {
-                            // Validate passphrase before allowing domain creation
-                            let passphrase_valid = {
-                                let matches = self.master_passphrase == self.master_passphrase_confirm;
-                                let long_enough = self.master_passphrase.len() >= 12;
-                                let has_upper = self.master_passphrase.chars().any(|c| c.is_uppercase());
-                                let has_lower = self.master_passphrase.chars().any(|c| c.is_lowercase());
-                                let has_digit = self.master_passphrase.chars().any(|c| c.is_numeric());
-                                let has_special = self.master_passphrase.chars().any(|c| !c.is_alphanumeric());
-
-                                matches && long_enough && has_upper && has_lower && has_digit && has_special
-                            };
-
-                            let create_button = if passphrase_valid {
-                                button("Create New Domain")
-                                    .on_press(Message::CreateNewDomain)
-                                    .style(CowboyCustomTheme::primary_button())
-                            } else {
-                                button("Create New Domain")
-                                    .style(CowboyCustomTheme::glass_button())
-                            };
-
-                            row![
-                                button("Load Existing Domain")
-                                    .on_press(Message::LoadExistingDomain)
-                                    .style(CowboyCustomTheme::glass_button()),
-                                create_button,
-                            ]
-                            .spacing(self.view_model.spacing_md)
-                        },
-                    ]
-                    .spacing(self.view_model.spacing_md)
-                )
-                .padding(self.view_model.padding_lg)
-                .style(CowboyCustomTheme::pastel_cream_card())
-            } else {
-                container(
-                    column![
-                        text(format!("✅ Domain: {} ({})", self.organization_name, self.organization_domain))
-                            .size(self.view_model.text_medium)
-                            .color(CowboyTheme::text_primary()),
-                    ]
-                )
-                .padding(self.view_model.padding_lg)
-                .style(CowboyCustomTheme::pastel_cream_card())
-            },
-
-
-            // Add person form
-            container(
-                column![
-                    text("Add Person to Organization")
-                        .size(self.view_model.text_medium)
-                        .color(CowboyTheme::text_primary()),
-                    row![
-                        text_input("Name", &self.new_person_name)
-                            .on_input(Message::NewPersonNameChanged)
-                            .size(self.view_model.text_normal)
-                            .style(CowboyCustomTheme::glass_input()),
-                        text_input("Email", &self.new_person_email)
-                            .on_input(Message::NewPersonEmailChanged)
-                            .size(self.view_model.text_normal)
-                            .style(CowboyCustomTheme::glass_input()),
-                        pick_list(
-                            role_options,
-                            self.new_person_role,
-                            Message::NewPersonRoleSelected,
-                        )
-                        .placeholder("Select Role")
-                        .style(CowboyCustomTheme::glass_pick_list()),
-                        button("Add Person")
-                            .on_press(Message::AddPerson)
-                            .style(CowboyCustomTheme::primary_button())
-                    ]
-                    .spacing(self.view_model.spacing_md),
-                ]
-                .spacing(self.view_model.spacing_md)
-            )
-            .padding(self.view_model.padding_lg)
-            .style(CowboyCustomTheme::pastel_teal_card()),
-
-            // Search bar
-            container(
-                row![
-                    text_input("Search nodes (name, type, or description)...", &self.search_query)
-                        .on_input(Message::SearchQueryChanged)
-                        .size(self.view_model.text_normal)
-                        .style(CowboyCustomTheme::glass_input())
-                        .width(Length::Fill),
-                    if !self.search_query.is_empty() {
-                        button(text("Clear").size(self.view_model.text_small))
-                            .on_press(Message::ClearSearch)
-                            .style(CowboyCustomTheme::glass_button())
-                    } else {
-                        button(text("Clear").size(self.view_model.text_small))
-                            .style(CowboyCustomTheme::glass_button())
-                    },
-                    if !self.search_results.is_empty() {
-                        container(
-                            text(format!("{} results", self.search_results.len()))
-                                .size(self.view_model.text_small)
-                                .color(self.view_model.colors.success)
-                        )
-                        .padding(self.view_model.padding_sm)
-                    } else if !self.search_query.is_empty() {
-                        container(
-                            text("No results")
-                                .size(self.view_model.text_small)
-                                .color(self.view_model.colors.text_disabled)
-                        )
-                        .padding(self.view_model.padding_sm)
-                    } else {
-                        container(text("").size(self.view_model.text_small))
-                    }
-                ]
-                .spacing(self.view_model.spacing_md)
-                .align_y(Alignment::Center)
-            )
-            .padding(self.view_model.padding_md)
-            .style(CowboyCustomTheme::pastel_mint_card()),
-
-            // Graph View Toggle Buttons
+        // Minimal top toolbar - essential info only
+        let toolbar = container(
             row![
-                if self.graph_view == GraphView::Organization {
-                    button(text("Organization").size(self.view_model.text_small))
-                        .on_press(Message::GraphViewSelected(GraphView::Organization))
-                        .style(CowboyCustomTheme::primary_button())
+                // Domain status (ultra-compact)
+                if self.domain_loaded {
+                    text(format!("🏢 {} | {} nodes, {} edges",
+                        self.organization_name,
+                        self.org_graph.nodes.len(),
+                        self.org_graph.edges.len()))
+                        .size(14)
                 } else {
-                    button(text("Organization").size(self.view_model.text_small))
-                        .on_press(Message::GraphViewSelected(GraphView::Organization))
-                        .style(CowboyCustomTheme::glass_button())
-                },
-                if self.graph_view == GraphView::NatsInfrastructure {
-                    button(text("NATS Infrastructure").size(self.view_model.text_small))
-                        .on_press(Message::GraphViewSelected(GraphView::NatsInfrastructure))
-                        .style(CowboyCustomTheme::primary_button())
-                } else {
-                    button(text("NATS Infrastructure").size(self.view_model.text_small))
-                        .on_press(Message::GraphViewSelected(GraphView::NatsInfrastructure))
-                        .style(CowboyCustomTheme::glass_button())
-                },
-                if self.graph_view == GraphView::PkiTrustChain {
-                    button(text("PKI Trust Chain").size(self.view_model.text_small))
-                        .on_press(Message::GraphViewSelected(GraphView::PkiTrustChain))
-                        .style(CowboyCustomTheme::primary_button())
-                } else {
-                    button(text("PKI Trust Chain").size(self.view_model.text_small))
-                        .on_press(Message::GraphViewSelected(GraphView::PkiTrustChain))
-                        .style(CowboyCustomTheme::glass_button())
-                },
-                if self.graph_view == GraphView::YubiKeyDetails {
-                    button(text("YubiKey Details").size(self.view_model.text_small))
-                        .on_press(Message::GraphViewSelected(GraphView::YubiKeyDetails))
-                        .style(CowboyCustomTheme::primary_button())
-                } else {
-                    button(text("YubiKey Details").size(self.view_model.text_small))
-                        .on_press(Message::GraphViewSelected(GraphView::YubiKeyDetails))
-                        .style(CowboyCustomTheme::glass_button())
-                },
-            ]
-            .spacing(self.view_model.spacing_sm)
-            .padding(self.view_model.padding_md),
-
-            // Graph export/import buttons
-            row![
-                if self.loading_export {
-                    button(text("Exporting...").size(self.view_model.text_small))
-                        .style(CowboyCustomTheme::glass_button())
-                } else {
-                    button(text("Export Graph").size(self.view_model.text_small))
-                        .on_press(Message::ExportGraph)
-                        .style(CowboyCustomTheme::glass_button())
-                },
-                if self.loading_import {
-                    button(text("Importing...").size(self.view_model.text_small))
-                        .style(CowboyCustomTheme::glass_button())
-                } else {
-                    button(text("Import Graph").size(self.view_model.text_small))
-                        .on_press(Message::ImportGraph)
-                        .style(CowboyCustomTheme::glass_button())
+                    text("⚠️  No domain - Right-click canvas to create")
+                        .size(14)
+                        .color(self.view_model.colors.warning)
                 },
                 horizontal_space(),
-                text(format!("Graph: {} nodes, {} edges",
-                    self.org_graph.nodes.len(),
-                    self.org_graph.edges.len()))
-                    .size(self.view_model.text_small)
-                    .color(self.view_model.colors.text_disabled),
+                // View mode icons
+                text(match self.graph_view {
+                    GraphView::Organization => "📊 Organization",
+                    GraphView::NatsInfrastructure => "🌐 NATS",
+                    GraphView::PkiTrustChain => "🔐 PKI",
+                    GraphView::YubiKeyDetails => "🔑 YubiKey",
+                }).size(14),
+                horizontal_space(),
+                // Reset view button
+                button(text("↻").size(14))
+                    .on_press(Message::GraphMessage(graph::GraphMessage::ResetView))
+                    .style(CowboyCustomTheme::glass_button()),
             ]
-            .spacing(self.view_model.spacing_md)
-            .padding(self.view_model.padding_sm)
-            .align_y(Alignment::Center),
+            .spacing(self.view_model.spacing_sm)
+            .align_y(Alignment::Center)
+        )
+        .padding(self.view_model.padding_sm)
+        .width(Length::Fill)
+        .style(|_theme| container::Style {
+            background: Some(Background::Color(Color::from_rgba8(20, 20, 30, 0.8))),
+            ..Default::default()
+        });
 
-            // Graph statistics panel
-            container(
-                {
-                    // Calculate statistics
-                    let total_nodes = self.org_graph.nodes.len();
-                    let total_edges = self.org_graph.edges.len();
+        // THE GRAPH - this is the primary interface!
+        let graph_canvas = {
+            let graph_base = Container::new(
+                view_graph(&self.org_graph)
+                    .map(Message::GraphMessage)
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)  // FILL ALL SPACE!
+            .style(|_theme| {
+                container::Style {
+                    background: Some(Background::Color(self.view_model.colors.background)),
+                    border: Border {
+                        color: self.view_model.colors.blue_bright,
+                        width: 1.0,
+                        radius: 0.0.into(),
+                    },
+                    ..Default::default()
+                }
+            });
 
-                    // Count nodes by type
-                    let mut node_counts = std::collections::HashMap::new();
-                    for node in self.org_graph.nodes.values() {
-                        let node_type_name = match &node.node_type {
-                            graph::NodeType::Person { .. } => "Person",
-                            graph::NodeType::Organization(_) => "Organization",
-                            graph::NodeType::OrganizationalUnit(_) => "Unit",
-                            graph::NodeType::Location(_) => "Location",
-                            graph::NodeType::Role(_) => "Role",
-                            graph::NodeType::Policy(_) => "Policy",
-                            graph::NodeType::NatsOperator(_) => "NATS Operator",
-                            graph::NodeType::NatsAccount(_) => "NATS Account",
-                            graph::NodeType::NatsUser(_) => "NATS User",
-                            graph::NodeType::NatsServiceAccount(_) => "Service Account",
-                            graph::NodeType::RootCertificate { .. } => "Root CA",
-                            graph::NodeType::IntermediateCertificate { .. } => "Intermediate CA",
-                            graph::NodeType::LeafCertificate { .. } => "Leaf Cert",
-                            graph::NodeType::YubiKey { .. } => "YubiKey",
-                            graph::NodeType::PivSlot { .. } => "PIV Slot",
-                        };
-                        *node_counts.entry(node_type_name).or_insert(0) += 1;
-                    }
+            // Build stack with overlays
+            let mut stack_layers = vec![graph_base.into()];
 
-                    // Calculate graph density
-                    let max_edges = if total_nodes > 1 {
-                        total_nodes * (total_nodes - 1)
-                    } else {
-                        1
-                    };
-                    let density_percent = if max_edges > 0 {
-                        (total_edges as f32 / max_edges as f32 * 100.0) as u32
-                    } else {
-                        0
-                    };
+            // Add context menu overlay if visible
+            if self.context_menu.is_visible() {
+                let pos = self.context_menu.position();
+                const TOOLBAR_OFFSET: f32 = 36.0;
 
-                    // Average connections per node
-                    let avg_connections = if total_nodes > 0 {
-                        total_edges as f32 * 2.0 / total_nodes as f32
-                    } else {
-                        0.0
-                    };
-
+                let menu_overlay = column![
+                    vertical_space().height(Length::Fixed(pos.y + TOOLBAR_OFFSET)),
                     row![
-                        // Overall stats
-                        container(
-                            column![
-                                text("Graph Overview").size(self.view_model.text_small).color(self.view_model.colors.text_disabled),
-                                text(format!("{} nodes", total_nodes)).size(self.view_model.text_medium),
-                                text(format!("{} edges", total_edges)).size(self.view_model.text_small),
-                                text(format!("Density: {}%", density_percent)).size(self.view_model.text_small),
-                                text(format!("Avg: {:.1} connections/node", avg_connections)).size(self.view_model.text_small),
-                            ]
-                            .spacing(4)
-                        )
-                        .padding(self.view_model.padding_sm),
-
-                        vertical_space(),
-
-                        // Node type breakdown
-                        container(
-                            column(
-                                {
-                                    let mut items = vec![
-                                        text("Node Types").size(self.view_model.text_small).color(self.view_model.colors.text_disabled).into()
-                                    ];
-                                    let mut sorted_counts: Vec<_> = node_counts.iter().collect();
-                                    sorted_counts.sort_by(|a, b| b.1.cmp(a.1));
-                                    for (node_type, count) in sorted_counts.iter().take(5) {
-                                        items.push(
-                                            text(format!("{}: {}", node_type, count))
-                                                .size(self.view_model.text_small)
-                                                .into()
-                                        );
-                                    }
-                                    items
-                                }
-                            )
-                            .spacing(4)
-                        )
-                        .padding(self.view_model.padding_sm),
+                        horizontal_space().width(Length::Fixed(pos.x)),
+                        self.context_menu.view()
+                            .map(Message::ContextMenuMessage)
                     ]
-                    .spacing(self.view_model.spacing_lg)
-                    .align_y(Alignment::Center)
-                }
-            )
-            .padding(self.view_model.padding_md)
-            .style(CowboyCustomTheme::pastel_coral_card()),
+                ];
 
-            // Node/edge type filters
-            container(
-                row![
-                    text("Filter by Type:").size(self.view_model.text_small).color(self.view_model.colors.text_disabled),
-                    horizontal_space(),
-                    checkbox("People", self.filter_show_people)
-                        .on_toggle(|_| Message::ToggleFilterPeople)
-                        .size(self.view_model.text_small),
-                    checkbox("Organizations", self.filter_show_orgs)
-                        .on_toggle(|_| Message::ToggleFilterOrgs)
-                        .size(self.view_model.text_small),
-                    checkbox("NATS", self.filter_show_nats)
-                        .on_toggle(|_| Message::ToggleFilterNats)
-                        .size(self.view_model.text_small),
-                    checkbox("PKI/Certs", self.filter_show_pki)
-                        .on_toggle(|_| Message::ToggleFilterPki)
-                        .size(self.view_model.text_small),
-                    checkbox("YubiKeys", self.filter_show_yubikey)
-                        .on_toggle(|_| Message::ToggleFilterYubiKey)
-                        .size(self.view_model.text_small),
-                ]
-                .spacing(self.view_model.spacing_md)
-                .align_y(Alignment::Center)
-            )
-            .padding(self.view_model.padding_md)
-            .style(CowboyCustomTheme::pastel_teal_card()),
+                stack_layers.push(menu_overlay.into());
+            }
 
-            // Graph layout controls
-            container(
-                row![
-                    text("Layout:").size(self.view_model.text_small).color(self.view_model.colors.text_disabled),
-                    horizontal_space(),
-                    button(text(if self.current_layout == GraphLayout::Manual { "→ Manual" } else { "Manual" }).size(self.view_model.text_small))
-                        .on_press(Message::ChangeLayout(GraphLayout::Manual))
-                        .style(CowboyCustomTheme::glass_button()),
-                    button(text(if self.current_layout == GraphLayout::Hierarchical { "→ Hierarchical" } else { "Hierarchical" }).size(self.view_model.text_small))
-                        .on_press(Message::ChangeLayout(GraphLayout::Hierarchical))
-                        .style(CowboyCustomTheme::glass_button()),
-                    button(text(if self.current_layout == GraphLayout::ForceDirected { "→ Force-Directed" } else { "Force-Directed" }).size(self.view_model.text_small))
-                        .on_press(Message::ChangeLayout(GraphLayout::ForceDirected))
-                        .style(CowboyCustomTheme::glass_button()),
-                    button(text(if self.current_layout == GraphLayout::Circular { "→ Circular" } else { "Circular" }).size(self.view_model.text_small))
-                        .on_press(Message::ChangeLayout(GraphLayout::Circular))
-                        .style(CowboyCustomTheme::glass_button()),
-                    horizontal_space(),
-                    button(text("Apply Layout").size(self.view_model.text_small))
-                        .on_press(Message::ApplyLayout)
-                        .style(CowboyCustomTheme::security_button()),
-                ]
-                .spacing(self.view_model.spacing_md)
-                .align_y(Alignment::Center)
-            )
-            .padding(self.view_model.padding_md)
-            .style(CowboyCustomTheme::pastel_mint_card()),
-
-            // Graph visualization with overlays (using stack for absolute positioning)
-            {
-                let graph_base = Container::new(
-                    view_graph(&self.org_graph)
-                        .map(Message::GraphMessage)
+            // Add property card overlay if editing
+            if self.property_card.is_editing() {
+                let card_overlay = container(
+                    row![
+                        horizontal_space(),
+                        self.property_card.view()
+                            .map(Message::PropertyCardMessage)
+                    ]
                 )
-                .width(Length::Fill)
-                .height(Length::FillPortion(10))  // Take most of the available space
-                .style(|_theme| {
-                    container::Style {
-                        background: Some(Background::Color(self.view_model.colors.background)),  // Black background
-                        border: Border {
-                            color: self.view_model.colors.blue_bright,  // Bright blue border for visibility
-                            width: 2.0,  // Thicker border
-                            radius: 12.0.into(),  // More rounded
-                        },
-                        shadow: iced::Shadow {
-                            color: self.view_model.colors.blue_glow,  // Blue glow effect
-                            offset: iced::Vector::new(0.0, 0.0),  // No offset for even glow
-                            blur_radius: 16.0,  // Large blur for soft glow
-                        },
-                        ..Default::default()
-                    }
-                });
+                .padding(20);
 
-                // Build stack with overlays
-                let mut stack_layers = vec![graph_base.into()];
+                stack_layers.push(card_overlay.into());
+            }
 
-                // Add context menu overlay if visible
-                if self.context_menu.is_visible() {
-                    let pos = self.context_menu.position();
+            stack(stack_layers)
+        };
 
-                    // Canvas sends canvas-relative coordinates, but stack overlay is positioned
-                    // relative to view_graph column (controls + canvas), so add controls offset
-                    const CONTROLS_HEIGHT_OFFSET: f32 = 50.0;
-
-                    // Position menu at cursor location using column/row spacers
-                    let menu_overlay = column![
-                        vertical_space().height(Length::Fixed(pos.y + CONTROLS_HEIGHT_OFFSET)),
-                        row![
-                            horizontal_space().width(Length::Fixed(pos.x)),
-                            self.context_menu.view()
-                                .map(Message::ContextMenuMessage)
-                        ]
-                    ];
-
-                    stack_layers.push(menu_overlay.into());
-                }
-
-                // Add property card overlay if visible
-                if self.property_card.is_editing() {
-                    // Position card in top-right without blocking the rest of the canvas
-                    let card_overlay = container(
-                        row![
-                            // Spacer to push card to the right
-                            horizontal_space(),
-                            // The actual property card
-                            self.property_card.view()
-                                .map(Message::PropertyCardMessage)
-                        ]
-                    )
-                    .padding(20);
-
-                    stack_layers.push(card_overlay.into());
-                }
-
-                stack(stack_layers)
-            },
+        // Simple two-row layout: tiny toolbar + massive graph
+        let content = column![
+            toolbar,
+            graph_canvas,
         ]
-        .spacing(self.view_model.spacing_xl)
+        .spacing(0)
         .height(Length::Fill);
 
-        // Don't wrap in scrollable - it blocks mouse events to the canvas
+
         container(content)
             .width(Length::Fill)
             .height(Length::Fill)
