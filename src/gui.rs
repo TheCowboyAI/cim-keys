@@ -88,6 +88,7 @@ pub struct CimKeysApp {
 
     // Graph visualization
     org_graph: OrganizationGraph,
+    graph_projector: crate::graph_projection::GraphProjector,  // Functorial projection to cim-graph
     selected_person: Option<Uuid>,
     selected_node_type: Option<String>,  // Node type selected in "Add Node" dropdown
 
@@ -559,6 +560,7 @@ impl CimKeysApp {
                 event_emitter: CimEventEmitter::new(default_org),
                 _event_subscriber: GuiEventSubscriber::new(default_org),
                 org_graph: OrganizationGraph::new(),
+                graph_projector: crate::graph_projection::GraphProjector::new(),
                 selected_person: None,
                 selected_node_type: None,
                 editing_new_node: None,
@@ -2306,6 +2308,9 @@ impl CimKeysApp {
                                 }
                             };
 
+                            // Clone node type for domain event projection before moving it
+                            let node_type_for_domain = graph_node_type.clone();
+
                             // Create NodeCreated event
                             let event = GraphEvent::NodeCreated {
                                 node_id,
@@ -2318,6 +2323,41 @@ impl CimKeysApp {
 
                             self.org_graph.event_stack.push(event.clone());
                             self.org_graph.apply_event(&event);
+
+                            // Emit domain event and project to cim-graph (demonstration)
+                            // In production, this would create a real PersonCreated domain event
+                            // and persist it to NATS/IPLD via the GraphProjector
+                            #[cfg(feature = "policy")]
+                            {
+                                use cim_domain_person::events::{PersonEvent, PersonCreated};
+                                use cim_domain_person::value_objects::PersonName;
+                                use cim_domain::EntityId;
+
+                                if let NodeType::Person { person, .. } = &node_type_for_domain {
+                                    // Create domain event (using new EntityId for demonstration)
+                                    // In production, would properly convert person.id to EntityId
+                                    let domain_event = PersonEvent::PersonCreated(PersonCreated {
+                                        person_id: EntityId::new(),
+                                        name: PersonName::new(person.name.clone(), "".to_string()),
+                                        source: "gui".to_string(),
+                                        created_at: Utc::now(),
+                                    });
+
+                                    // Lift to cim-graph events using GraphProjector
+                                    match self.graph_projector.lift_person_event(&domain_event) {
+                                        Ok(graph_events) => {
+                                            // TODO: Persist graph_events to NATS/IPLD
+                                            tracing::debug!("✨ Generated {} cim-graph events for PersonCreated", graph_events.len());
+                                            for (i, evt) in graph_events.iter().enumerate() {
+                                                tracing::debug!("  Event {}: {:?}", i+1, evt);
+                                            }
+                                        }
+                                        Err(e) => {
+                                            tracing::warn!("Failed to project PersonCreated event: {:?}", e);
+                                        }
+                                    }
+                                }
+                            }
 
                             // Start inline editing for the new node
                             self.editing_new_node = Some(node_id);
