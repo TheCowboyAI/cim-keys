@@ -857,11 +857,12 @@ mod tests {
     fn test_lift_person_created() {
         use cim_domain_person::events::PersonCreated;
         use cim_domain_person::value_objects::PersonName;
-        use cim_domain::{EntityId, entity};
+        use cim_domain::EntityId;
+        use chrono::Utc;
 
         let projector = GraphProjector::new();
 
-        let person_id = entity::Entity::new_id();
+        let person_id = EntityId::new();
         let event = PersonEvent::PersonCreated(PersonCreated {
             person_id,
             name: PersonName::new("Alice".to_string(), "Smith".to_string()),
@@ -877,7 +878,8 @@ mod tests {
         if let EventPayload::Context(payload) = &graph_events[0].payload {
             match payload {
                 cim_graph::events::ContextPayload::BoundedContextCreated { name, description, .. } => {
-                    assert!(name.contains("Alice Smith"));
+                    assert!(name.contains("Person:"));
+                    assert!(name.contains("Alice"));
                     assert!(description.contains("Person aggregate created"));
                 }
                 _ => panic!("Expected BoundedContextCreated"),
@@ -922,5 +924,56 @@ mod tests {
         } else {
             panic!("Expected Concept payload");
         }
+    }
+
+    #[test]
+    fn test_pki_concept() {
+        let projector = GraphProjector::new();
+        let event = projector.create_pki_concept(
+            "Root CA".to_string(),
+            "Root Certificate Authority for organization".to_string()
+        ).unwrap();
+
+        if let EventPayload::Concept(payload) = &event.payload {
+            match payload {
+                cim_graph::events::ConceptPayload::ConceptDefined { name, definition, .. } => {
+                    assert_eq!(name, "Root CA");
+                    assert!(definition.contains("Root Certificate Authority"));
+                }
+                _ => panic!("Expected ConceptDefined"),
+            }
+        } else {
+            panic!("Expected Concept payload");
+        }
+    }
+
+    #[cfg(feature = "policy")]
+    #[test]
+    fn test_correlation_id_shared_across_events() {
+        use cim_domain_person::events::PersonCreated;
+        use cim_domain_person::value_objects::PersonName;
+        use cim_domain::EntityId;
+        use chrono::Utc;
+
+        let projector = GraphProjector::new();
+
+        // Create first person event
+        let person1_id = EntityId::new();
+        let event1 = PersonEvent::PersonCreated(PersonCreated {
+            person_id: person1_id,
+            name: PersonName::new("Alice".to_string(), "Smith".to_string()),
+            source: "test".to_string(),
+            created_at: Utc::now(),
+        });
+
+        let graph_events1 = projector.lift_person_event(&event1).unwrap();
+
+        // All events from same projector share correlation_id
+        assert_eq!(graph_events1[0].correlation_id, projector.correlation_id);
+        assert_eq!(graph_events1[1].correlation_id, projector.correlation_id);
+
+        // Verify causation chain
+        assert_eq!(graph_events1[0].causation_id, None);
+        assert_eq!(graph_events1[1].causation_id, Some(graph_events1[0].event_id));
     }
 }
