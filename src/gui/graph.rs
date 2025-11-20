@@ -279,7 +279,7 @@ impl OrganizationGraph {
             drag_offset: Vector::new(0.0, 0.0),
             drag_start_position: None,
             _viewport: Rectangle::new(Point::ORIGIN, Size::new(800.0, 600.0)),
-            zoom: 2.0,  // Default scale at 2.0
+            zoom: 1.0,  // Default 1:1 scale
             pan_offset: Vector::new(0.0, 0.0),
             edge_indicator: EdgeCreationIndicator::new(),
             event_stack: EventStack::default(),
@@ -1238,10 +1238,10 @@ impl OrganizationGraph {
                 self.drag_start_position = None;
             }
             GraphMessage::EdgeClicked { from: _, to: _ } => {}
-            GraphMessage::ZoomIn => self.zoom = (self.zoom * 1.2).min(3.0),  // Max zoom 3.0
-            GraphMessage::ZoomOut => self.zoom = (self.zoom / 1.2).max(1.0),  // Min zoom 1.0
+            GraphMessage::ZoomIn => self.zoom = (self.zoom * 1.2).min(10.0),  // Max zoom 10.0 (zoom in closer)
+            GraphMessage::ZoomOut => self.zoom = (self.zoom / 1.2).max(0.1),  // Min zoom 0.1 (zoom out much further)
             GraphMessage::ResetView => {
-                self.zoom = 2.0;  // Reset to default scale
+                self.zoom = 1.0;  // Reset to 1:1 scale
                 self.pan_offset = Vector::new(0.0, 0.0);
             }
             GraphMessage::Pan(delta) => {
@@ -1585,6 +1585,10 @@ impl OrganizationGraph {
 pub struct CanvasState {
     dragging_node: Option<Uuid>,
     drag_start_pos: Option<Point>,
+    // Panning state
+    panning: bool,
+    pan_start_pos: Option<Point>,
+    pan_start_offset: Vector,
 }
 
 impl canvas::Program<GraphMessage> for OrganizationGraph {
@@ -1979,6 +1983,18 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
             );
 
             match event {
+                // Middle mouse button for panning
+                canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Middle)) => {
+                    state.panning = true;
+                    state.pan_start_pos = Some(canvas_relative);
+                    state.pan_start_offset = self.pan_offset;
+                    return (canvas::event::Status::Captured, None);
+                }
+                canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Middle)) => {
+                    state.panning = false;
+                    state.pan_start_pos = None;
+                    return (canvas::event::Status::Captured, None);
+                }
                 canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                     // Check if click is on a node
                     for (node_id, node) in &self.nodes {
@@ -2108,6 +2124,20 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                     );
                 }
                 canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+                    // Handle panning with middle mouse button
+                    if state.panning {
+                        if let Some(pan_start) = state.pan_start_pos {
+                            let delta = Vector::new(
+                                canvas_relative.x - pan_start.x,
+                                canvas_relative.y - pan_start.y,
+                            );
+                            let new_offset = state.pan_start_offset + delta;
+                            return (
+                                canvas::event::Status::Captured,
+                                Some(GraphMessage::Pan(new_offset - self.pan_offset)),
+                            );
+                        }
+                    }
                     // Update edge indicator if active
                     if self.edge_indicator.is_active() {
                         return (
