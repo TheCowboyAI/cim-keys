@@ -1010,21 +1010,44 @@ impl CimKeysApp {
 
             Message::InlineEditSubmit => {
                 if let Some(node_id) = self.editing_new_node {
-                    // Update the node's label in the graph
-                    if let Some(node) = self.org_graph.nodes.get_mut(&node_id) {
+                    // FRP: Create event instead of direct mutation
+                    if let Some(node) = self.org_graph.nodes.get(&node_id) {
                         use crate::gui::graph::NodeType;
-                        node.label = self.inline_edit_name.clone();
+                        use crate::gui::graph_events::GraphEvent;
+                        use chrono::Utc;
 
-                        // Also update the underlying domain entity based on node type
-                        match &mut node.node_type {
-                            NodeType::Person { person, .. } => {
-                                person.name = self.inline_edit_name.clone();
+                        // Clone old state for compensating event (undo)
+                        let old_node_type = node.node_type.clone();
+                        let old_label = node.label.clone();
+
+                        // Create new node type with updated name in domain entity
+                        let new_node_type = match &node.node_type {
+                            NodeType::Person { person, role } => {
+                                let mut updated_person = person.clone();
+                                updated_person.name = self.inline_edit_name.clone();
+                                NodeType::Person { person: updated_person, role: *role }
                             }
                             NodeType::OrganizationalUnit(unit) => {
-                                unit.name = self.inline_edit_name.clone();
+                                let mut updated_unit = unit.clone();
+                                updated_unit.name = self.inline_edit_name.clone();
+                                NodeType::OrganizationalUnit(updated_unit)
                             }
-                            _ => {}
-                        }
+                            other => other.clone(), // No change for other types
+                        };
+
+                        // Create immutable event
+                        let event = GraphEvent::NodePropertiesChanged {
+                            node_id,
+                            old_node_type,
+                            old_label,
+                            new_node_type,
+                            new_label: self.inline_edit_name.clone(),
+                            timestamp: Utc::now(),
+                        };
+
+                        // Apply event through event sourcing system
+                        self.org_graph.event_stack.push(event.clone());
+                        self.org_graph.apply_event(&event);
 
                         self.status_message = format!("Updated node name to '{}'", self.inline_edit_name);
                     }
