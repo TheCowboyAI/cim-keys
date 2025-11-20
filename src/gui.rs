@@ -3296,13 +3296,43 @@ impl CimKeysApp {
                         .color(self.view_model.colors.warning)
                 },
                 horizontal_space(),
-                // View mode icons
-                text(match self.graph_view {
-                    GraphView::Organization => "📊 Organization",
-                    GraphView::NatsInfrastructure => "🌐 NATS",
-                    GraphView::PkiTrustChain => "🔐 PKI",
-                    GraphView::YubiKeyDetails => "🔑 YubiKey",
-                }).size(14),
+                // View mode switcher buttons
+                if self.graph_view == GraphView::Organization {
+                    button(text("📊").size(14))
+                        .on_press(Message::GraphViewSelected(GraphView::Organization))
+                        .style(CowboyCustomTheme::primary_button())
+                } else {
+                    button(text("📊").size(14))
+                        .on_press(Message::GraphViewSelected(GraphView::Organization))
+                        .style(CowboyCustomTheme::glass_button())
+                },
+                if self.graph_view == GraphView::NatsInfrastructure {
+                    button(text("🌐").size(14))
+                        .on_press(Message::GraphViewSelected(GraphView::NatsInfrastructure))
+                        .style(CowboyCustomTheme::primary_button())
+                } else {
+                    button(text("🌐").size(14))
+                        .on_press(Message::GraphViewSelected(GraphView::NatsInfrastructure))
+                        .style(CowboyCustomTheme::glass_button())
+                },
+                if self.graph_view == GraphView::PkiTrustChain {
+                    button(text("🔐").size(14))
+                        .on_press(Message::GraphViewSelected(GraphView::PkiTrustChain))
+                        .style(CowboyCustomTheme::primary_button())
+                } else {
+                    button(text("🔐").size(14))
+                        .on_press(Message::GraphViewSelected(GraphView::PkiTrustChain))
+                        .style(CowboyCustomTheme::glass_button())
+                },
+                if self.graph_view == GraphView::YubiKeyDetails {
+                    button(text("🔑").size(14))
+                        .on_press(Message::GraphViewSelected(GraphView::YubiKeyDetails))
+                        .style(CowboyCustomTheme::primary_button())
+                } else {
+                    button(text("🔑").size(14))
+                        .on_press(Message::GraphViewSelected(GraphView::YubiKeyDetails))
+                        .style(CowboyCustomTheme::glass_button())
+                },
                 horizontal_space(),
                 // Reset view button
                 button(text("↻").size(14))
