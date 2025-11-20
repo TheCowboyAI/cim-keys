@@ -1,0 +1,51 @@
+# CIM Keys Configuration Example
+#
+# Copy this file to config.toml and customize for your environment
+
+# Operational mode: "Offline", "Online", or "Hybrid"
+# - Offline: Events logged locally only (for air-gapped key generation)
+# - Online: Events published to NATS in real-time
+# - Hybrid: Events logged locally and queued for later batch upload
+mode = "Offline"
+
+[nats]
+# Enable NATS event publishing
+enabled = false
+
+# NATS server URL
+url = "nats://leaf-node-1.local:4222"
+
+# JetStream stream name for graph events
+stream_name = "CIM_GRAPH_EVENTS"
+
+# Object store bucket for IPLD payloads
+object_store_bucket = "cim-graph-payloads"
+
+# Source identifier (identifies this publisher)
+source_id = "cim-keys-v0.8.0"
+
+# Subject prefix for published events
+# Events will be published to: {subject_prefix}.{context}.events.{type}.{event}
+subject_prefix = "cim.graph"
+
+# NATS credentials file (optional, for authentication)
+# credentials_file = "/path/to/nats.creds"
+
+# TLS configuration (optional)
+# [nats.tls]
+# ca_cert = "/path/to/ca-cert.pem"
+# client_cert = "/path/to/client-cert.pem"
+# client_key = "/path/to/client-key.pem"
+
+[storage]
+# Directory for offline event storage
+offline_events_dir = "/mnt/encrypted/cim-keys/events"
+
+# Directory for generated keys output
+keys_output_dir = "/mnt/encrypted/cim-keys/keys"
+
+# Enable automatic backup
+enable_backup = false
+
+# Backup directory (required if enable_backup = true)
+# backup_dir = "/backup/cim-keys"
