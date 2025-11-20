@@ -6,7 +6,7 @@
 use iced::{
     application,
     widget::{button, column, container, row, text, text_input, Container, horizontal_space, vertical_space, pick_list, progress_bar, checkbox, scrollable, Space, image, stack},
-    Task, Element, Length, Color, Border, Theme, Background, Shadow, Alignment, Point,
+    Task, Element, Length, Border, Theme, Background, Shadow, Alignment, Point,
 };
 use iced_futures::Subscription;
 use serde::{Deserialize, Serialize};
@@ -30,6 +30,8 @@ use crate::{
         MockSshKeyAdapter,
         YubiKeyCliAdapter,
     },
+    // Icons
+    icons::{self, ICON_WARNING},
 };
 
 pub mod graph;
@@ -46,10 +48,12 @@ pub mod firefly_math;
 pub mod firefly_renderer;
 pub mod context_menu;
 pub mod property_card;
+pub mod view_model;
 pub mod edge_indicator;
 
 use graph::{OrganizationGraph, GraphMessage};
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
+use view_model::ViewModel;
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
 // use kuramoto_firefly_shader::KuramotoFireflyShader;
 // use debug_firefly_shader::DebugFireflyShader;
@@ -61,6 +65,7 @@ use property_card::{PropertyCard, PropertyCardMessage};
 pub struct CimKeysApp {
     // Tab navigation
     active_tab: Tab,
+    graph_view: GraphView,
 
     // Domain configuration
     domain_loaded: bool,
@@ -84,6 +89,9 @@ pub struct CimKeysApp {
     // Graph visualization
     org_graph: OrganizationGraph,
     selected_person: Option<Uuid>,
+
+    // NATS infrastructure bootstrap (for graph visualization)
+    nats_bootstrap: Option<crate::domain_projections::OrganizationBootstrap>,
 
     // Form fields for adding people
     new_person_name: String,
@@ -122,6 +130,15 @@ pub struct CimKeysApp {
     server_cert_cn_input: String,
     server_cert_sans_input: String,
     selected_intermediate_ca: Option<String>,
+    selected_cert_location: Option<String>,  // Storage location for certificates
+
+    // Certificate metadata fields (editable before generation)
+    cert_organization: String,
+    cert_organizational_unit: String,
+    cert_locality: String,
+    cert_state_province: String,
+    cert_country: String,
+    cert_validity_days: String,  // String for text input, will parse to u32
 
     // Export configuration
     export_path: PathBuf,
@@ -148,17 +165,20 @@ pub struct CimKeysApp {
     // Root passphrase for PKI
     root_passphrase: String,
     root_passphrase_confirm: String,
+    show_passphrase: bool,  // Toggle to show/hide passphrase
 
     // Status
     status_message: String,
     error_message: Option<String>,
+    overwrite_warning: Option<String>,  // Warning message when about to overwrite existing cert/key
+    pending_generation_action: Option<Message>,  // Action to perform after overwrite confirmation
 
     // Animation
     animation_time: f32,
     firefly_shader: FireflyRenderer,
 
-    // Responsive scaling
-    ui_scale: f32,  // Scale factor for UI elements (1.0 = base size at 1920x1080)
+    // View Model (centralized sizing and layout)
+    view_model: ViewModel,
 
     // MVI Integration (Option A: Quick Integration)
     mvi_model: MviModel,
@@ -171,6 +191,11 @@ pub struct CimKeysApp {
     context_menu: ContextMenu,
     property_card: PropertyCard,
     context_menu_node: Option<Uuid>,  // Node that context menu was opened on (if any)
+
+    // Phase 5: Search and filtering
+    search_query: String,
+    search_results: Vec<Uuid>,  // Matching node IDs
+    highlight_nodes: Vec<Uuid>,  // Nodes to highlight in graph
 }
 
 /// Different tabs in the application
@@ -183,11 +208,33 @@ pub enum Tab {
     Export,
 }
 
+/// Graph visualization mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GraphView {
+    /// Organization structure (default)
+    Organization,
+    /// NATS infrastructure (operator/accounts/users)
+    NatsInfrastructure,
+    /// PKI certificate trust chain
+    PkiTrustChain,
+    /// YubiKey provisioning and PIV slots
+    YubiKeyDetails,
+}
+
+impl Default for GraphView {
+    fn default() -> Self {
+        GraphView::Organization
+    }
+}
+
 /// Messages for the application
 #[derive(Debug, Clone)]
 pub enum Message {
     // Tab Navigation
     TabSelected(Tab),
+
+    // Graph View Selection
+    GraphViewSelected(GraphView),
 
     // Domain operations
     CreateNewDomain,
@@ -238,6 +285,13 @@ pub enum Message {
     ServerCertCNChanged(String),
     ServerCertSANsChanged(String),
     SelectIntermediateCA(String),
+    SelectCertLocation(String),
+    CertOrganizationChanged(String),
+    CertOrganizationalUnitChanged(String),
+    CertLocalityChanged(String),
+    CertStateProvinceChanged(String),
+    CertCountryChanged(String),
+    CertValidityDaysChanged(String),
     GenerateServerCert,
     GenerateSSHKeys,
     GenerateAllKeys,
@@ -257,12 +311,25 @@ pub enum Message {
     // NATS Hierarchy operations
     GenerateNatsHierarchy,
     NatsHierarchyGenerated(Result<String, String>),
+    NatsBootstrapCreated(Box<crate::domain_projections::OrganizationBootstrap>),
     ExportToNsc,
     NscExported(Result<String, String>),
+
+    // PKI operations
+    PkiCertificatesLoaded(Vec<crate::projections::CertificateEntry>),
+
+    // YubiKey operations
+    YubiKeyDataLoaded(Vec<crate::projections::YubiKeyEntry>, Vec<crate::projections::PersonEntry>),
 
     // Root passphrase operations
     RootPassphraseChanged(String),
     RootPassphraseConfirmChanged(String),
+    TogglePassphraseVisibility,
+    GenerateRandomPassphrase,
+
+    // Overwrite confirmation
+    ConfirmOverwrite(bool),  // true = proceed, false = cancel
+    DismissOverwriteWarning,
 
     // Collapsible section toggles
     ToggleRootCA,
@@ -295,6 +362,11 @@ pub enum Message {
     IncreaseScale,
     DecreaseScale,
     ResetScale,
+
+    // Search and filtering
+    SearchQueryChanged(String),
+    ClearSearch,
+    HighlightSearchResults,
 }
 
 /// Bootstrap configuration
@@ -347,7 +419,7 @@ pub struct NatsHierarchy {
 
 impl CimKeysApp {
     fn new(output_dir: String) -> (Self, Task<Message>) {
-        let aggregate = Arc::new(RwLock::new(KeyManagementAggregate::new()));
+        let aggregate = Arc::new(RwLock::new(KeyManagementAggregate::new(uuid::Uuid::now_v7())));
         let projection = Arc::new(RwLock::new(
             OfflineKeyProjection::new(&output_dir).expect("Failed to create projection")
         ));
@@ -386,6 +458,7 @@ impl CimKeysApp {
         (
             Self {
                 active_tab: Tab::Welcome,
+                graph_view: GraphView::default(),
                 domain_loaded: false,
                 _domain_path: PathBuf::from(&output_dir),
                 organization_name: String::new(),
@@ -400,6 +473,7 @@ impl CimKeysApp {
                 _event_subscriber: GuiEventSubscriber::new(default_org),
                 org_graph: OrganizationGraph::new(),
                 selected_person: None,
+                nats_bootstrap: None,
                 new_person_name: String::new(),
                 new_person_email: String::new(),
                 new_person_role: None,
@@ -427,6 +501,13 @@ impl CimKeysApp {
                 server_cert_cn_input: String::new(),
                 server_cert_sans_input: String::new(),
                 selected_intermediate_ca: None,
+                selected_cert_location: None,
+                cert_organization: String::from("CIM Organization"),
+                cert_organizational_unit: String::from("Infrastructure"),
+                cert_locality: String::from(""),
+                cert_state_province: String::from(""),
+                cert_country: String::from("US"),
+                cert_validity_days: String::from("365"),
                 export_path: PathBuf::from(&output_dir),
                 include_public_keys: true,
                 include_certificates: true,
@@ -445,11 +526,14 @@ impl CimKeysApp {
                 keys_collapsed: true,
                 root_passphrase: String::new(),
                 root_passphrase_confirm: String::new(),
-                status_message: String::from("🔐 Welcome to CIM Keys - Offline Key Management System"),
+                show_passphrase: false,
+                status_message: String::from("[LOCK] Welcome to CIM Keys - Offline Key Management System"),
                 error_message: None,
+                overwrite_warning: None,
+                pending_generation_action: None,
                 animation_time: 0.0,
                 firefly_shader: FireflyRenderer::new(),
-                ui_scale: 2.0,  // Default UI scale at 2.0 for better visibility
+                view_model: ViewModel::default(),  // Initialize view model with scale 1.0
                 // MVI integration
                 mvi_model,
                 storage_port,
@@ -460,23 +544,15 @@ impl CimKeysApp {
                 context_menu: ContextMenu::new(),
                 property_card: PropertyCard::new(),
                 context_menu_node: None,
+                // Phase 5: Search and filtering
+                search_query: String::new(),
+                search_results: Vec::new(),
+                highlight_nodes: Vec::new(),
             },
             load_task,
         )
     }
 
-    // Helper methods for responsive scaling
-    fn scaled_text_size(&self, base_size: u16) -> u16 {
-        (base_size as f32 * self.ui_scale).round() as u16
-    }
-
-    fn scaled_padding(&self, base_padding: u16) -> u16 {
-        (base_padding as f32 * self.ui_scale).round() as u16
-    }
-
-    fn scaled_size(&self, base_size: f32) -> f32 {
-        base_size * self.ui_scale
-    }
 
     // Note: Title method removed - window title now set via iced::Settings
 
@@ -493,6 +569,57 @@ impl CimKeysApp {
                     Tab::Keys => "Generate Cryptographic Keys".to_string(),
                     Tab::Export => "Export Domain Configuration".to_string(),
                 };
+                Task::none()
+            }
+
+            Message::GraphViewSelected(view) => {
+                self.graph_view = view;
+
+                // Populate the graph based on the selected view
+                match view {
+                    GraphView::Organization => {
+                        // Organization view is already populated
+                        self.status_message = format!("Organization Structure (Graph: {} nodes, {} edges)",
+                            self.org_graph.nodes.len(), self.org_graph.edges.len());
+                    }
+                    GraphView::NatsInfrastructure => {
+                        if let Some(ref bootstrap) = self.nats_bootstrap {
+                            // Clear the graph and populate with NATS infrastructure
+                            self.org_graph.nodes.clear();
+                            self.org_graph.edges.clear();
+                            self.org_graph.populate_nats_infrastructure(bootstrap);
+                            self.status_message = format!("NATS Infrastructure (Graph: {} nodes, {} edges)",
+                                self.org_graph.nodes.len(), self.org_graph.edges.len());
+                        } else {
+                            self.status_message = "NATS Infrastructure View - Generate NATS hierarchy first".to_string();
+                        }
+                    }
+                    GraphView::PkiTrustChain => {
+                        // Get certificates from projection
+                        let projection = self.projection.clone();
+                        return Task::perform(
+                            async move {
+                                let proj = projection.read().await;
+                                let certs = proj.get_certificates().to_vec();
+                                certs
+                            },
+                            |certs| Message::PkiCertificatesLoaded(certs)
+                        );
+                    }
+                    GraphView::YubiKeyDetails => {
+                        // Get YubiKeys and people from projection
+                        let projection = self.projection.clone();
+                        return Task::perform(
+                            async move {
+                                let proj = projection.read().await;
+                                let yubikeys = proj.get_yubikeys().to_vec();
+                                let people = proj.get_people().to_vec();
+                                (yubikeys, people)
+                            },
+                            |(yubikeys, people)| Message::YubiKeyDataLoaded(yubikeys, people)
+                        );
+                    }
+                }
                 Task::none()
             }
 
@@ -1070,7 +1197,7 @@ impl CimKeysApp {
                                 ).await {
                                     Ok(_public_key) => {
                                         results.push(format!(
-                                            "✓ {} ({}) - {} provisioned in slot {:?}",
+                                            "[OK] {} ({}) - {} provisioned in slot {:?}",
                                             config.name,
                                             serial,
                                             match config.role {
@@ -1099,7 +1226,7 @@ impl CimKeysApp {
                             }
                         }
 
-                        if results.iter().all(|r| r.starts_with('✓')) {
+                        if results.iter().all(|r| r.starts_with("[OK]")) {
                             Ok(results.join("\n"))
                         } else {
                             Err(results.join("\n"))
@@ -1174,8 +1301,59 @@ impl CimKeysApp {
                 Task::none()
             }
 
+            Message::SelectCertLocation(location) => {
+                self.selected_cert_location = Some(location);
+                Task::none()
+            }
+
+            Message::CertOrganizationChanged(org) => {
+                self.cert_organization = org;
+                Task::none()
+            }
+
+            Message::CertOrganizationalUnitChanged(ou) => {
+                self.cert_organizational_unit = ou;
+                Task::none()
+            }
+
+            Message::CertLocalityChanged(locality) => {
+                self.cert_locality = locality;
+                Task::none()
+            }
+
+            Message::CertStateProvinceChanged(state) => {
+                self.cert_state_province = state;
+                Task::none()
+            }
+
+            Message::CertCountryChanged(country) => {
+                self.cert_country = country;
+                Task::none()
+            }
+
+            Message::CertValidityDaysChanged(days) => {
+                self.cert_validity_days = days;
+                Task::none()
+            }
+
             Message::GenerateServerCert => {
                 if let Some(ref ca_name) = self.selected_intermediate_ca {
+                    // Check if a certificate with this CN already exists
+                    let cn_to_check = format!("CN={}", self.server_cert_cn_input);
+                    let existing_cert = self.loaded_certificates.iter()
+                        .find(|cert| cert.subject.contains(&cn_to_check));
+
+                    if let Some(existing) = existing_cert {
+                        // Certificate already exists, show overwrite warning
+                        self.overwrite_warning = Some(format!(
+                            "A server certificate with CN='{}' already exists (created {}). Do you want to overwrite it?",
+                            self.server_cert_cn_input,
+                            existing.not_before.format("%Y-%m-%d")
+                        ));
+                        self.pending_generation_action = Some(Message::GenerateServerCert);
+                        return Task::none();
+                    }
+
                     self.status_message = format!(
                         "Generating server certificate for '{}' signed by '{}'...",
                         self.server_cert_cn_input, ca_name
@@ -1382,12 +1560,125 @@ impl CimKeysApp {
                     Ok(operator_id) => {
                         self.nats_hierarchy_generated = true;
                         self.nats_operator_id = Some(Uuid::parse_str(&operator_id).unwrap_or_else(|_| Uuid::now_v7()));
-                        self.status_message = format!("✓ NATS hierarchy generated for {}", self.organization_name);
+                        self.status_message = format!("[OK] NATS hierarchy generated for {}", self.organization_name);
+
+                        // Build OrganizationBootstrap for graph visualization
+                        let org_id = self.organization_id.unwrap_or_else(|| Uuid::now_v7());
+                        let org_name = self.organization_name.clone();
+                        let org_domain = self.organization_domain.clone();
+                        let projection = self.projection.clone();
+
+                        return Task::perform(
+                            async move {
+                                let proj = projection.read().await;
+                                let people_info = proj.get_people();
+
+                                // Construct domain Organization for NATS projection
+                                use crate::domain::{Organization, OrganizationUnit, OrganizationUnitType, Person, PersonRole, RoleType, RoleScope, Permission};
+                                use std::collections::HashMap;
+
+                                let org = Organization {
+                                    id: org_id,
+                                    name: org_name.clone(),
+                                    display_name: org_name.clone(),
+                                    description: Some(format!("Organization for {}", org_domain)),
+                                    parent_id: None,
+                                    units: vec![
+                                        OrganizationUnit {
+                                            id: org_id,  // Use same ID for default unit
+                                            name: format!("{} - Default", org_name),
+                                            unit_type: OrganizationUnitType::Infrastructure,
+                                            parent_unit_id: None,
+                                            responsible_person_id: None,
+                                        }
+                                    ],
+                                    created_at: chrono::Utc::now(),
+                                    metadata: HashMap::new(),
+                                };
+
+                                // Convert PersonEntry to domain Person
+                                let people: Vec<Person> = people_info.iter().map(|p| Person {
+                                    id: p.person_id,
+                                    name: p.name.clone(),
+                                    email: p.email.clone(),
+                                    roles: vec![PersonRole {
+                                        role_type: RoleType::Operator,  // Default role for visualization
+                                        scope: RoleScope::Organization,
+                                        permissions: vec![Permission::ViewAuditLogs],
+                                    }],
+                                    organization_id: org_id,
+                                    unit_ids: vec![org_id],  // Assign to default unit
+                                    created_at: p.created_at,
+                                    active: true,
+                                }).collect();
+
+                                // Use NatsProjection to bootstrap the organization
+                                use crate::domain_projections::NatsProjection;
+                                let bootstrap = NatsProjection::bootstrap_organization(&org, &people);
+                                bootstrap
+                            },
+                            |bootstrap| Message::NatsBootstrapCreated(Box::new(bootstrap))
+                        );
                     }
                     Err(e) => {
                         self.error_message = Some(format!("NATS generation failed: {}", e));
                     }
                 }
+                Task::none()
+            }
+
+            Message::NatsBootstrapCreated(bootstrap) => {
+                // Store the bootstrap for graph visualization
+                self.nats_bootstrap = Some(*bootstrap);
+
+                // Automatically switch to NATS Infrastructure view
+                self.graph_view = GraphView::NatsInfrastructure;
+
+                // Populate the graph with NATS infrastructure
+                if let Some(ref bootstrap) = self.nats_bootstrap {
+                    self.org_graph.nodes.clear();
+                    self.org_graph.edges.clear();
+                    self.org_graph.populate_nats_infrastructure(bootstrap);
+                    self.status_message = format!("[OK] NATS Infrastructure visualized ({} nodes, {} edges)",
+                        self.org_graph.nodes.len(), self.org_graph.edges.len());
+                }
+
+                Task::none()
+            }
+
+            Message::PkiCertificatesLoaded(certificates) => {
+                // Populate the PKI trust chain graph
+                self.org_graph.nodes.clear();
+                self.org_graph.edges.clear();
+
+                if certificates.is_empty() {
+                    self.status_message = "PKI Trust Chain View - No certificates generated yet".to_string();
+                } else {
+                    self.org_graph.populate_pki_trust_chain(&certificates);
+                    self.status_message = format!("PKI Trust Chain ({} certificates, {} nodes, {} edges)",
+                        certificates.len(),
+                        self.org_graph.nodes.len(),
+                        self.org_graph.edges.len());
+                }
+
+                Task::none()
+            }
+
+            Message::YubiKeyDataLoaded(yubikeys, people) => {
+                // Populate the YubiKey hardware graph
+                self.org_graph.nodes.clear();
+                self.org_graph.edges.clear();
+
+                if yubikeys.is_empty() {
+                    self.status_message = "YubiKey Details View - No YubiKeys provisioned yet".to_string();
+                } else {
+                    self.org_graph.populate_yubikey_graph(&yubikeys, &people);
+                    self.status_message = format!("YubiKey Details ({} devices, {} nodes, {} edges)",
+                        yubikeys.len(),
+                        self.org_graph.nodes.len(),
+                        self.org_graph.edges.len());
+                }
+
                 Task::none()
             }
 
@@ -1409,7 +1700,7 @@ impl CimKeysApp {
             Message::NscExported(result) => {
                 match result {
                     Ok(path) => {
-                        self.status_message = format!("✓ NATS hierarchy exported to NSC store: {}", path);
+                        self.status_message = format!("[OK] NATS hierarchy exported to NSC store: {}", path);
                     }
                     Err(e) => {
                         self.error_message = Some(format!("NSC export failed: {}", e));
@@ -1426,6 +1717,52 @@ impl CimKeysApp {
 
             Message::RootPassphraseConfirmChanged(passphrase) => {
                 self.root_passphrase_confirm = passphrase;
+                Task::none()
+            }
+
+            Message::TogglePassphraseVisibility => {
+                self.show_passphrase = !self.show_passphrase;
+                Task::none()
+            }
+
+            Message::GenerateRandomPassphrase => {
+                use rand::Rng;
+                const CHARSET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%^&*()-_=+[]{}|;:,.<>?";
+                let mut rng = rand::thread_rng();
+                let length = rng.gen_range(24..=32);
+                let passphrase: String = (0..length)
+                    .map(|_| {
+                        let idx = rng.gen_range(0..CHARSET.len());
+                        CHARSET[idx] as char
+                    })
+                    .collect();
+
+                self.root_passphrase = passphrase.clone();
+                self.root_passphrase_confirm = passphrase;
+                self.show_passphrase = true;  // Auto-show when generated
+                Task::none()
+            }
+
+            // Overwrite confirmation
+            Message::ConfirmOverwrite(proceed) => {
+                if proceed {
+                    // User confirmed, proceed with the pending action
+                    if let Some(action) = self.pending_generation_action.take() {
+                        self.overwrite_warning = None;
+                        return self.update(action);
+                    }
+                } else {
+                    // User cancelled, clear the warning and pending action
+                    self.overwrite_warning = None;
+                    self.pending_generation_action = None;
+                    self.status_message = "[CANCEL] Generation cancelled by user".to_string();
+                }
+                Task::none()
+            }
+
+            Message::DismissOverwriteWarning => {
+                self.overwrite_warning = None;
+                self.pending_generation_action = None;
                 Task::none()
             }
 
@@ -1497,7 +1834,7 @@ impl CimKeysApp {
                                     use chrono::Utc;
 
                                     let edge_type = EdgeType::Hierarchy;
-                                    let color = Color::from_rgb(0.3, 0.3, 0.7);
+                                    let color = self.view_model.colors.node_edge_highlight;
 
                                     let event = GraphEvent::EdgeCreated {
                                         from: from_id,
@@ -1592,8 +1929,8 @@ impl CimKeysApp {
                         self.org_graph.auto_layout();
                         self.status_message = String::from("Graph layout updated");
                     }
-                    GraphMessage::AddEdge { from, to, edge_type } => {
-                        self.org_graph.add_edge(*from, *to, edge_type.clone());
+                    GraphMessage::AddEdge { .. } => {
+                        // Handled in graph.handle_message (line 1744)
                         self.status_message = String::from("Relationship added");
                     }
                     GraphMessage::EdgeSelected(index) => {
@@ -1635,8 +1972,8 @@ impl CimKeysApp {
 
                         // Adjust menu position to keep it on screen
                         // Menu dimensions scaled by ui_scale
-                        let menu_width = 180.0 * self.ui_scale;
-                        let menu_height = 300.0 * self.ui_scale;
+                        let menu_width = 180.0 * self.view_model.scale;
+                        let menu_height = 300.0 * self.view_model.scale;
                         const MIN_MARGIN: f32 = 10.0;
 
                         // Use typical window dimensions for bounds checking
@@ -1666,7 +2003,7 @@ impl CimKeysApp {
                         }
 
                         // Use adjusted screen coordinates for menu positioning
-                        self.context_menu.show(Point::new(menu_x, menu_y), self.ui_scale);
+                        self.context_menu.show(Point::new(menu_x, menu_y), self.view_model.scale);
                         if self.context_menu_node.is_some() {
                             self.status_message = format!(
                                 "Node menu: click({:.0},{:.0}) → canvas({:.0},{:.0}) → menu({:.0},{:.0})",
@@ -1774,7 +2111,7 @@ impl CimKeysApp {
                                     metadata: HashMap::new(),
                                 };
                                 let label = org.name.clone();
-                                (NodeType::Organization(org), label, Color::from_rgb(0.2, 0.3, 0.6))
+                                (NodeType::Organization(org), label, self.view_model.colors.node_organization)
                             }
                             NodeCreationType::OrganizationalUnit => {
                                 let unit = OrganizationUnit {
@@ -1785,7 +2122,7 @@ impl CimKeysApp {
                                     responsible_person_id: None,
                                 };
                                 let label = unit.name.clone();
-                                (NodeType::OrganizationalUnit(unit), label, Color::from_rgb(0.4, 0.5, 0.8))
+                                (NodeType::OrganizationalUnit(unit), label, self.view_model.colors.node_unit)
                             }
                             NodeCreationType::Person => {
                                 let person = Person {
@@ -1799,7 +2136,7 @@ impl CimKeysApp {
                                     active: true,
                                 };
                                 let label = person.name.clone();
-                                (NodeType::Person { person, role: KeyOwnerRole::Developer }, label, Color::from_rgb(0.5, 0.7, 0.3))
+                                (NodeType::Person { person, role: KeyOwnerRole::Developer }, label, self.view_model.colors.node_person)
                             }
                             NodeCreationType::Location => {
                                 use cim_domain::EntityId;
@@ -1822,7 +2159,7 @@ impl CimKeysApp {
                                 ).expect("Failed to create location");
 
                                 let label = location.name.clone();
-                                (NodeType::Location(location), label, Color::from_rgb(0.6, 0.5, 0.4))
+                                (NodeType::Location(location), label, self.view_model.colors.node_location)
                             }
                             NodeCreationType::Role => {
                                 let role = Role {
@@ -1838,7 +2175,7 @@ impl CimKeysApp {
                                     active: true,
                                 };
                                 let label = role.name.clone();
-                                (NodeType::Role(role), label, Color::from_rgb(0.6, 0.3, 0.8))
+                                (NodeType::Role(role), label, self.view_model.colors.node_role)
                             }
                             NodeCreationType::Policy => {
                                 let policy = Policy {
@@ -1854,7 +2191,7 @@ impl CimKeysApp {
                                     metadata: HashMap::new(),
                                 };
                                 let label = policy.name.clone();
-                                (NodeType::Policy(policy), label, Color::from_rgb(0.8, 0.6, 0.2))
+                                (NodeType::Policy(policy), label, self.view_model.colors.orange_warning)
                             }
                         };
 
@@ -1981,6 +2318,70 @@ impl CimKeysApp {
                                         updated.claims = self.property_card.claims();
                                         graph::NodeType::Policy(updated)
                                     }
+                                    // NATS Infrastructure - read-only, return unchanged
+                                    graph::NodeType::NatsOperator(identity) => {
+                                        graph::NodeType::NatsOperator(identity.clone())
+                                    }
+                                    graph::NodeType::NatsAccount(identity) => {
+                                        graph::NodeType::NatsAccount(identity.clone())
+                                    }
+                                    graph::NodeType::NatsUser(identity) => {
+                                        graph::NodeType::NatsUser(identity.clone())
+                                    }
+                                    graph::NodeType::NatsServiceAccount(identity) => {
+                                        graph::NodeType::NatsServiceAccount(identity.clone())
+                                    }
+                                    // PKI Trust Chain - read-only, return unchanged
+                                    graph::NodeType::RootCertificate { cert_id, subject, issuer, not_before, not_after, key_usage } => {
+                                        graph::NodeType::RootCertificate {
+                                            cert_id: *cert_id,
+                                            subject: subject.clone(),
+                                            issuer: issuer.clone(),
+                                            not_before: *not_before,
+                                            not_after: *not_after,
+                                            key_usage: key_usage.clone(),
+                                        }
+                                    }
+                                    graph::NodeType::IntermediateCertificate { cert_id, subject, issuer, not_before, not_after, key_usage } => {
+                                        graph::NodeType::IntermediateCertificate {
+                                            cert_id: *cert_id,
+                                            subject: subject.clone(),
+                                            issuer: issuer.clone(),
+                                            not_before: *not_before,
+                                            not_after: *not_after,
+                                            key_usage: key_usage.clone(),
+                                        }
+                                    }
+                                    graph::NodeType::LeafCertificate { cert_id, subject, issuer, not_before, not_after, key_usage, san } => {
+                                        graph::NodeType::LeafCertificate {
+                                            cert_id: *cert_id,
+                                            subject: subject.clone(),
+                                            issuer: issuer.clone(),
+                                            not_before: *not_before,
+                                            not_after: *not_after,
+                                            key_usage: key_usage.clone(),
+                                            san: san.clone(),
+                                        }
+                                    }
+                                    // YubiKey Hardware - read-only, return unchanged
+                                    graph::NodeType::YubiKey { device_id, serial, version, provisioned_at, slots_used } => {
+                                        graph::NodeType::YubiKey {
+                                            device_id: *device_id,
+                                            serial: serial.clone(),
+                                            version: version.clone(),
+                                            provisioned_at: *provisioned_at,
+                                            slots_used: slots_used.clone(),
+                                        }
+                                    }
+                                    graph::NodeType::PivSlot { slot_id, slot_name, yubikey_serial, has_key, certificate_subject } => {
+                                        graph::NodeType::PivSlot {
+                                            slot_id: *slot_id,
+                                            slot_name: slot_name.clone(),
+                                            yubikey_serial: yubikey_serial.clone(),
+                                            has_key: *has_key,
+                                            certificate_subject: certificate_subject.clone(),
+                                        }
+                                    }
                                 };
 
                                 // Create and apply NodePropertiesChanged event
@@ -2054,6 +2455,29 @@ impl CimKeysApp {
 
             // MVI Integration Handler
             Message::MviIntent(intent) => {
+                // Check for completion events and update status
+                use crate::mvi::intent::Intent;
+                match &intent {
+                    Intent::PortX509IntermediateCAGenerated { name, fingerprint, .. } => {
+                        self.status_message = format!("[OK] Intermediate CA '{}' generated successfully! Fingerprint: {}", name, fingerprint);
+                        self.key_generation_progress = 0.4;
+                    }
+                    Intent::PortX509ServerCertGenerated { common_name, fingerprint, signed_by, .. } => {
+                        self.status_message = format!("[OK] Server certificate for '{}' generated! Signed by: {} | Fingerprint: {}", common_name, signed_by, fingerprint);
+                        self.key_generation_progress = 0.6;
+                    }
+                    Intent::PortX509GenerationFailed { error } => {
+                        self.error_message = Some(format!("Certificate generation failed: {}", error));
+                    }
+                    Intent::PortSSHKeypairGenerated { person_id, fingerprint, .. } => {
+                        self.status_message = format!("[OK] SSH key for person {} generated! Fingerprint: {}", person_id, fingerprint);
+                    }
+                    Intent::PortSSHGenerationFailed { person_id, error } => {
+                        self.error_message = Some(format!("SSH key generation failed for {}: {}", person_id, error));
+                    }
+                    _ => {}
+                }
+
                 // Call the pure MVI update function
                 let (updated_model, task) = crate::mvi::update(
                     self.mvi_model.clone(),
@@ -2080,20 +2504,128 @@ impl CimKeysApp {
             }
 
             Message::IncreaseScale => {
-                self.ui_scale = (self.ui_scale + 0.1).min(3.0);  // Max 3x scale
-                self.status_message = format!("UI Scale: {:.0}%", self.ui_scale * 100.0);
+                let new_scale = (self.view_model.scale + 0.1).min(3.0);  // Max 3x scale
+                self.view_model.set_scale(new_scale);
+                self.status_message = format!("UI Scale: {:.0}%", new_scale * 100.0);
                 Task::none()
             }
 
             Message::DecreaseScale => {
-                self.ui_scale = (self.ui_scale - 0.1).max(1.0);  // Min 1x scale
-                self.status_message = format!("UI Scale: {:.0}%", self.ui_scale * 100.0);
+                let new_scale = (self.view_model.scale - 0.1).max(0.5);  // Min 0.5x scale
+                self.view_model.set_scale(new_scale);
+                self.status_message = format!("UI Scale: {:.0}%", new_scale * 100.0);
                 Task::none()
             }
 
             Message::ResetScale => {
-                self.ui_scale = 2.0;  // Reset to default 2x scale
-                self.status_message = "UI Scale: 200%".to_string();
+                self.view_model.set_scale(1.0);  // Reset to default 1x scale
+                self.status_message = "UI Scale: 100%".to_string();
+                Task::none()
+            }
+
+            // Search and filtering
+            Message::SearchQueryChanged(query) => {
+                self.search_query = query.clone();
+
+                // Clear previous results
+                self.search_results.clear();
+                self.highlight_nodes.clear();
+
+                // If query is empty, don't search
+                if query.trim().is_empty() {
+                    self.status_message = "Search cleared".to_string();
+                    return Task::none();
+                }
+
+                // Search through all nodes in the graph
+                let query_lower = query.to_lowercase();
+                for (node_id, node) in &self.org_graph.nodes {
+                    let matches = match &node.node_type {
+                        graph::NodeType::Person { person, .. } => {
+                            person.name.to_lowercase().contains(&query_lower) ||
+                            person.email.to_lowercase().contains(&query_lower)
+                        }
+                        graph::NodeType::Organization(org) => {
+                            org.name.to_lowercase().contains(&query_lower) ||
+                            org.display_name.to_lowercase().contains(&query_lower) ||
+                            org.description.as_ref().map_or(false, |d| d.to_lowercase().contains(&query_lower))
+                        }
+                        graph::NodeType::OrganizationalUnit(unit) => {
+                            unit.name.to_lowercase().contains(&query_lower)
+                        }
+                        graph::NodeType::Location(location) => {
+                            location.name.to_lowercase().contains(&query_lower)
+                        }
+                        graph::NodeType::Role(role) => {
+                            role.name.to_lowercase().contains(&query_lower)
+                        }
+                        graph::NodeType::Policy(policy) => {
+                            policy.name.to_lowercase().contains(&query_lower)
+                        }
+                        graph::NodeType::NatsOperator(_) => {
+                            "nats operator".contains(&query_lower) || "operator".contains(&query_lower)
+                        }
+                        graph::NodeType::NatsAccount(_) => {
+                            "nats account".contains(&query_lower) || "account".contains(&query_lower)
+                        }
+                        graph::NodeType::NatsUser(_) => {
+                            "nats user".contains(&query_lower) || "user".contains(&query_lower)
+                        }
+                        graph::NodeType::NatsServiceAccount(_) => {
+                            "service account".contains(&query_lower) || "service".contains(&query_lower)
+                        }
+                        graph::NodeType::RootCertificate { subject, .. } => {
+                            "root".contains(&query_lower) || "certificate".contains(&query_lower) ||
+                            subject.to_lowercase().contains(&query_lower)
+                        }
+                        graph::NodeType::IntermediateCertificate { subject, .. } => {
+                            "intermediate".contains(&query_lower) || "certificate".contains(&query_lower) ||
+                            subject.to_lowercase().contains(&query_lower)
+                        }
+                        graph::NodeType::LeafCertificate { subject, .. } => {
+                            "leaf".contains(&query_lower) || "certificate".contains(&query_lower) ||
+                            subject.to_lowercase().contains(&query_lower)
+                        }
+                        graph::NodeType::YubiKey { serial, .. } => {
+                            "yubikey".contains(&query_lower) || serial.to_lowercase().contains(&query_lower)
+                        }
+                        graph::NodeType::PivSlot { slot_name, .. } => {
+                            "piv".contains(&query_lower) || "slot".contains(&query_lower) ||
+                            slot_name.to_lowercase().contains(&query_lower)
+                        }
+                    };
+
+                    if matches {
+                        self.search_results.push(*node_id);
+                        self.highlight_nodes.push(*node_id);
+                    }
+                }
+
+                let result_count = self.search_results.len();
+                self.status_message = if result_count == 0 {
+                    format!("No results found for '{}'", query)
+                } else if result_count == 1 {
+                    "Found 1 matching node".to_string()
+                } else {
+                    format!("Found {} matching nodes", result_count)
+                };
+
+                Task::none()
+            }
+
+            Message::ClearSearch => {
+                self.search_query.clear();
+                self.search_results.clear();
+                self.highlight_nodes.clear();
+                self.status_message = "Search cleared".to_string();
+                Task::none()
+            }
+
+            Message::HighlightSearchResults => {
+                // This message can be used to re-apply highlighting or cycle through results
+                if !self.search_results.is_empty() {
+                    self.status_message = format!("Highlighting {} search results", self.search_results.len());
+                }
                 Task::none()
             }
         }
@@ -2105,24 +2637,24 @@ impl CimKeysApp {
         // Cowboy AI logo with glass morphism styling
         let logo_container = container(
             image("assets/logo.png")
-                .width(Length::Fixed(self.scaled_size(80.0)))
-                .height(Length::Fixed(self.scaled_size(80.0)))
+                .width(Length::Fixed(80.0 * self.view_model.scale))
+                .height(Length::Fixed(80.0 * self.view_model.scale))
         )
-        .width(Length::Fixed(self.scaled_size(100.0)))
-        .height(Length::Fixed(self.scaled_size(100.0)))
-        .padding(self.scaled_padding(10))
-        .center(Length::Fixed(self.scaled_size(100.0)))
+        .width(Length::Fixed(100.0 * self.view_model.scale))
+        .height(Length::Fixed(100.0 * self.view_model.scale))
+        .padding(self.view_model.padding_md)
+        .center(Length::Fixed(100.0 * self.view_model.scale))
         .style(|_theme: &Theme| {
             container::Style {
                 background: Some(CowboyTheme::logo_radial_gradient()),
                 border: Border {
-                    color: Color::from_rgba(0.4, 0.7, 0.75, 0.5),  // Teal border
+                    color: self.view_model.colors.with_alpha(self.view_model.colors.info, 0.5),  // Teal border
                     width: 2.0,
                     radius: 12.0.into(),
                 },
                 text_color: Some(CowboyTheme::text_primary()),
                 shadow: Shadow {
-                    color: Color::from_rgba(0.0, 0.0, 0.0, 0.4),
+                    color: self.view_model.colors.shadow_default,
                     offset: iced::Vector::new(0.0, 4.0),
                     blur_radius: 16.0,
                 },
@@ -2131,23 +2663,23 @@ impl CimKeysApp {
 
         // Tab bar
         let tab_bar = row![
-            button(text("Welcome").size(self.scaled_text_size(14)))
+            button(text("Welcome").size(self.view_model.text_normal))
                 .on_press(Message::TabSelected(Tab::Welcome))
                 .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Welcome)),
-            button(text("Organization").size(self.scaled_text_size(14)))
+            button(text("Organization").size(self.view_model.text_normal))
                 .on_press(Message::TabSelected(Tab::Organization))
                 .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Organization)),
-            button(text("Locations").size(self.scaled_text_size(14)))
+            button(text("Locations").size(self.view_model.text_normal))
                 .on_press(Message::TabSelected(Tab::Locations))
                 .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Locations)),
-            button(text("Keys").size(self.scaled_text_size(14)))
+            button(text("Keys").size(self.view_model.text_normal))
                 .on_press(Message::TabSelected(Tab::Keys))
                 .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Keys)),
-            button(text("Export").size(self.scaled_text_size(14)))
+            button(text("Export").size(self.view_model.text_normal))
                 .on_press(Message::TabSelected(Tab::Export))
                 .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Export)),
         ]
-        .spacing((5.0 * self.ui_scale) as u16);
+        .spacing(self.view_model.spacing_sm);
 
         // Tab content
         let content = match self.active_tab {
@@ -2162,20 +2694,20 @@ impl CimKeysApp {
         let error_display = self.error_message.as_ref().map(|error| container(
                     row![
                         text(format!("❌ {}", error))
-                            .size(self.scaled_text_size(14))
+                            .size(self.view_model.text_normal)
                             .color(CowboyTheme::text_primary()),
                         horizontal_space(),
                         button("✕")
                             .on_press(Message::ClearError)
                             .style(CowboyCustomTheme::glass_button())
                     ]
-                    .padding(self.scaled_padding(10))
+                    .padding(self.view_model.padding_md)
                 )
                 .style(|_theme: &Theme| container::Style {
                     background: Some(CowboyTheme::warning_gradient()),
                     text_color: Some(CowboyTheme::text_primary()),
                     border: Border {
-                        color: Color::from_rgba(1.0, 1.0, 1.0, 0.3),
+                        color: self.view_model.colors.with_alpha(self.view_model.colors.text_light, 0.3),
                         width: 1.0,
                         radius: 10.0.into(),
                     },
@@ -2187,30 +2719,70 @@ impl CimKeysApp {
             logo_container,
             column![
                 text("CIM Keys - Offline Key Management System")
-                    .size(self.scaled_text_size(24))
+                    .size(self.view_model.text_header)
                     .color(CowboyTheme::text_primary()),
                 text("The Cowboy AI Infrastructure")
-                    .size(self.scaled_text_size(14))
+                    .size(self.view_model.text_normal)
                     .color(CowboyTheme::text_secondary()),
             ]
-            .spacing((5.0 * self.ui_scale) as u16),
+            .spacing(self.view_model.spacing_sm),
         ]
-        .spacing(self.scaled_padding(20))
+        .spacing(self.view_model.spacing_xl)
         .align_y(iced::Alignment::Center);
 
         let mut main_column = column![
             header,
             text(&self.status_message)
-                .size(self.scaled_text_size(12))
-                .color(Color::from_rgb(0.0, 0.0, 0.0)),  // Black for better contrast
+                .size(self.view_model.text_small)
+                .color(self.view_model.colors.text_primary),  // Light gray for visibility on dark background
             container(tab_bar)
-                .padding(self.scaled_padding(10))
+                .padding(self.view_model.padding_md)
                 .style(CowboyCustomTheme::glass_container()),
         ]
-        .spacing(self.scaled_padding(10));
+        .spacing(self.view_model.spacing_md);
 
         if let Some(error) = error_display {
             main_column = main_column.push(error);
+        }
+
+        // Add overwrite warning dialog if present
+        if let Some(ref warning_msg) = self.overwrite_warning {
+            let warning_dialog = container(
+                column![
+                    text(warning_msg)
+                        .size(self.view_model.text_normal)
+                        .color(self.view_model.colors.warning),  // Yellow warning color
+                    row![
+                        button("Cancel")
+                            .on_press(Message::ConfirmOverwrite(false))
+                            .style(CowboyCustomTheme::glass_button())
+                            .padding(self.view_model.padding_md),
+                        button("Proceed & Overwrite")
+                            .on_press(Message::ConfirmOverwrite(true))
+                            .style(CowboyCustomTheme::security_button())
+                            .padding(self.view_model.padding_md),
+                    ]
+                    .spacing(self.view_model.spacing_md)
+                ]
+                .spacing(self.view_model.spacing_lg)
+            )
+            .padding(self.view_model.padding_xl)
+            .style(|_theme| container::Style {
+                text_color: None,
+                background: Some(Background::Color(self.view_model.colors.orange_warning)),
+                border: Border {
+                    color: self.view_model.colors.yellow_warning,
+                    width: 2.0,
+                    radius: 12.0.into(),
+                },
+                shadow: iced::Shadow {
+                    color: self.view_model.colors.shadow_yellow,
+                    offset: iced::Vector::new(0.0, 0.0),
+                    blur_radius: 16.0,
+                },
+            });
+
+            main_column = main_column.push(warning_dialog);
         }
 
         main_column = main_column.push(content);
@@ -2347,33 +2919,36 @@ impl CimKeysApp {
 
     fn view_welcome(&self) -> Element<'_, Message> {
         let content = column![
-            text("Welcome to CIM Keys!").size(self.scaled_text_size(28)),
-            text("Generate and manage cryptographic keys for your CIM infrastructure").size(self.scaled_text_size(16)),
+            text("Welcome to CIM Keys!").size(self.view_model.text_header),
+            text("Generate and manage cryptographic keys for your CIM infrastructure").size(self.view_model.text_medium),
             container(
                 column![
-                    text("⚠️ Security Notice").size(self.scaled_text_size(18)),
-                    text("This application should be run on an air-gapped computer for maximum security.").size(self.scaled_text_size(14)),
-                    text("All keys are generated offline and stored on encrypted SD cards.").size(self.scaled_text_size(14)),
+                    row![
+                        icons::icon_sized(ICON_WARNING, self.view_model.text_large),
+                        text(" Security Notice").size(self.view_model.text_large),
+                    ].spacing(self.view_model.spacing_sm),
+                    text("This application should be run on an air-gapped computer for maximum security.").size(self.view_model.text_normal),
+                    text("All keys are generated offline and stored on encrypted SD cards.").size(self.view_model.text_normal),
                 ]
-                .spacing((5.0 * self.ui_scale) as u16)
+                .spacing(self.view_model.spacing_sm)
             )
             .style(CowboyCustomTheme::pastel_coral_card())
-            .padding(self.scaled_padding(20)),
+            .padding(self.view_model.padding_xl),
 
             container(
                 column![
-                    text("Getting Started").size(self.scaled_text_size(20)),
-                    text("Choose how you want to proceed:").size(self.scaled_text_size(14)),
+                    text("Getting Started").size(self.view_model.text_xlarge),
+                    text("Choose how you want to proceed:").size(self.view_model.text_normal),
 
                     row![
                         button("Import from Secrets")
                             .on_press(Message::ImportFromSecrets)
                             .style(CowboyCustomTheme::security_button()),
                         text("Load cowboyai.json and secrets.json files")
-                            .size(self.scaled_text_size(12))
+                            .size(self.view_model.text_small)
                             .color(CowboyTheme::text_secondary()),
                     ]
-                    .spacing(self.scaled_padding(10))
+                    .spacing(self.view_model.spacing_md)
                     .align_y(Alignment::Center),
 
                     row![
@@ -2381,19 +2956,19 @@ impl CimKeysApp {
                             .on_press(Message::TabSelected(Tab::Organization))
                             .style(CowboyCustomTheme::primary_button()),
                         text("Manually create your organization")
-                            .size(self.scaled_text_size(12))
+                            .size(self.view_model.text_small)
                             .color(CowboyTheme::text_secondary()),
                     ]
-                    .spacing(self.scaled_padding(10))
+                    .spacing(self.view_model.spacing_md)
                     .align_y(Alignment::Center),
                 ]
-                .spacing(self.scaled_padding(15))
+                .spacing(self.view_model.spacing_lg)
             )
-            .padding(self.scaled_padding(20))
+            .padding(self.view_model.padding_xl)
             .style(CowboyCustomTheme::glass_container()),
         ]
-        .spacing(self.scaled_padding(20))
-        .padding(self.scaled_padding(10));
+        .spacing(self.view_model.spacing_xl)
+        .padding(self.view_model.padding_md);
 
         scrollable(content).into()
     }
@@ -2411,51 +2986,51 @@ impl CimKeysApp {
         ];
 
         let content = column![
-            text("Organization Structure").size(self.scaled_text_size(20)),
-            text("Visualize and manage your organization's key ownership hierarchy").size(self.scaled_text_size(14)),
+            text("Organization Structure").size(self.view_model.text_xlarge),
+            text("Visualize and manage your organization's key ownership hierarchy").size(self.view_model.text_normal),
 
             // Debug: Show graph state
             text(format!("Graph State: {} nodes, {} edges",
                 self.org_graph.nodes.len(),
                 self.org_graph.edges.len()))
-                .size(self.scaled_text_size(12))
-                .color(Color::from_rgb(0.5, 0.5, 0.5)),
+                .size(self.view_model.text_small)
+                .color(self.view_model.colors.text_disabled),
 
             // Domain creation/loading form (shows only if domain not loaded)
             if !self.domain_loaded {
                 container(
                     column![
                         text("Create or Load Domain")
-                            .size(self.scaled_text_size(16))
+                            .size(self.view_model.text_medium)
                             .color(CowboyTheme::text_primary()),
                         row![
                             text_input("Organization Name", &self.organization_name)
                                 .on_input(Message::OrganizationNameChanged)
-                                .size(self.scaled_text_size(16))
+                                .size(self.view_model.text_medium)
                                 .style(CowboyCustomTheme::glass_input()),
                             text_input("Domain", &self.organization_domain)
                                 .on_input(Message::OrganizationDomainChanged)
-                                .size(self.scaled_text_size(16))
+                                .size(self.view_model.text_medium)
                                 .style(CowboyCustomTheme::glass_input()),
                         ]
-                        .spacing(self.scaled_padding(10)),
+                        .spacing(self.view_model.spacing_md),
 
                         text("Master Passphrase (encrypts SD card storage)")
-                            .size(self.scaled_text_size(14))
+                            .size(self.view_model.text_normal)
                             .color(CowboyTheme::text_primary()),
                         row![
                             text_input("Master Passphrase", &self.master_passphrase)
                                 .on_input(Message::MasterPassphraseChanged)
-                                .size(self.scaled_text_size(16))
+                                .size(self.view_model.text_medium)
                                 .secure(true)
                                 .style(CowboyCustomTheme::glass_input()),
                             text_input("Confirm Passphrase", &self.master_passphrase_confirm)
                                 .on_input(Message::MasterPassphraseConfirmChanged)
-                                .size(self.scaled_text_size(16))
+                                .size(self.view_model.text_medium)
                                 .secure(true)
                                 .style(CowboyCustomTheme::glass_input()),
                         ]
-                        .spacing(self.scaled_padding(10)),
+                        .spacing(self.view_model.spacing_md),
 
                         // Passphrase validation feedback
                         if !self.master_passphrase.is_empty() || !self.master_passphrase_confirm.is_empty() {
@@ -2468,39 +3043,39 @@ impl CimKeysApp {
 
                             column![
                                 if passphrase_strong {
-                                    text("✅ Length: 12+ characters").size(self.scaled_text_size(12)).color(Color::from_rgb(0.0, 0.6, 0.0))
+                                    text("✅ Length: 12+ characters").size(self.view_model.text_small).color(self.view_model.colors.success)
                                 } else {
-                                    text(format!("❌ Length: {}/12 characters", self.master_passphrase.len())).size(self.scaled_text_size(12)).color(Color::from_rgb(0.8, 0.0, 0.0))
+                                    text(format!("❌ Length: {}/12 characters", self.master_passphrase.len())).size(self.view_model.text_small).color(self.view_model.colors.error)
                                 },
                                 if has_uppercase {
-                                    text("✅ Contains uppercase letter").size(self.scaled_text_size(12)).color(Color::from_rgb(0.0, 0.6, 0.0))
+                                    text("✅ Contains uppercase letter").size(self.view_model.text_small).color(self.view_model.colors.success)
                                 } else {
-                                    text("❌ Needs uppercase letter").size(self.scaled_text_size(12)).color(Color::from_rgb(0.8, 0.0, 0.0))
+                                    text("❌ Needs uppercase letter").size(self.view_model.text_small).color(self.view_model.colors.error)
                                 },
                                 if has_lowercase {
-                                    text("✅ Contains lowercase letter").size(self.scaled_text_size(12)).color(Color::from_rgb(0.0, 0.6, 0.0))
+                                    text("✅ Contains lowercase letter").size(self.view_model.text_small).color(self.view_model.colors.success)
                                 } else {
-                                    text("❌ Needs lowercase letter").size(self.scaled_text_size(12)).color(Color::from_rgb(0.8, 0.0, 0.0))
+                                    text("❌ Needs lowercase letter").size(self.view_model.text_small).color(self.view_model.colors.error)
                                 },
                                 if has_digit {
-                                    text("✅ Contains number").size(self.scaled_text_size(12)).color(Color::from_rgb(0.0, 0.6, 0.0))
+                                    text("✅ Contains number").size(self.view_model.text_small).color(self.view_model.colors.success)
                                 } else {
-                                    text("❌ Needs number").size(self.scaled_text_size(12)).color(Color::from_rgb(0.8, 0.0, 0.0))
+                                    text("❌ Needs number").size(self.view_model.text_small).color(self.view_model.colors.error)
                                 },
                                 if has_special {
-                                    text("✅ Contains special character").size(self.scaled_text_size(12)).color(Color::from_rgb(0.0, 0.6, 0.0))
+                                    text("✅ Contains special character").size(self.view_model.text_small).color(self.view_model.colors.success)
                                 } else {
-                                    text("❌ Needs special character").size(self.scaled_text_size(12)).color(Color::from_rgb(0.8, 0.0, 0.0))
+                                    text("❌ Needs special character").size(self.view_model.text_small).color(self.view_model.colors.error)
                                 },
                                 if passphrase_matches && !self.master_passphrase.is_empty() {
-                                    text("✅ Passphrases match").size(self.scaled_text_size(12)).color(Color::from_rgb(0.0, 0.6, 0.0))
+                                    text("✅ Passphrases match").size(self.view_model.text_small).color(self.view_model.colors.success)
                                 } else if !self.master_passphrase_confirm.is_empty() {
-                                    text("❌ Passphrases do not match").size(self.scaled_text_size(12)).color(Color::from_rgb(0.8, 0.0, 0.0))
+                                    text("❌ Passphrases do not match").size(self.view_model.text_small).color(self.view_model.colors.error)
                                 } else {
-                                    text("").size(self.scaled_text_size(12))
+                                    text("").size(self.view_model.text_small)
                                 },
                             ]
-                            .spacing(self.scaled_padding(5))
+                            .spacing(self.view_model.spacing_sm)
                         } else {
                             column![].spacing(0)
                         },
@@ -2533,22 +3108,22 @@ impl CimKeysApp {
                                     .style(CowboyCustomTheme::glass_button()),
                                 create_button,
                             ]
-                            .spacing(self.scaled_padding(10))
+                            .spacing(self.view_model.spacing_md)
                         },
                     ]
-                    .spacing(self.scaled_padding(10))
+                    .spacing(self.view_model.spacing_md)
                 )
-                .padding(self.scaled_padding(15))
+                .padding(self.view_model.padding_lg)
                 .style(CowboyCustomTheme::pastel_cream_card())
             } else {
                 container(
                     column![
                         text(format!("✅ Domain: {} ({})", self.organization_name, self.organization_domain))
-                            .size(self.scaled_text_size(16))
+                            .size(self.view_model.text_medium)
                             .color(CowboyTheme::text_primary()),
                     ]
                 )
-                .padding(self.scaled_padding(15))
+                .padding(self.view_model.padding_lg)
                 .style(CowboyCustomTheme::pastel_cream_card())
             },
 
@@ -2557,33 +3132,116 @@ impl CimKeysApp {
             container(
                 column![
                     text("Add Person to Organization")
-                        .size(self.scaled_text_size(16))
+                        .size(self.view_model.text_medium)
                         .color(CowboyTheme::text_primary()),
                     row![
                         text_input("Name", &self.new_person_name)
                             .on_input(Message::NewPersonNameChanged)
-                            .size(self.scaled_text_size(14))
+                            .size(self.view_model.text_normal)
                             .style(CowboyCustomTheme::glass_input()),
                         text_input("Email", &self.new_person_email)
                             .on_input(Message::NewPersonEmailChanged)
-                            .size(self.scaled_text_size(14))
+                            .size(self.view_model.text_normal)
                             .style(CowboyCustomTheme::glass_input()),
                         pick_list(
                             role_options,
                             self.new_person_role,
                             Message::NewPersonRoleSelected,
                         )
-                        .placeholder("Select Role"),
+                        .placeholder("Select Role")
+                        .style(CowboyCustomTheme::glass_pick_list()),
                         button("Add Person")
                             .on_press(Message::AddPerson)
                             .style(CowboyCustomTheme::primary_button())
                     ]
-                    .spacing(self.scaled_padding(10)),
+                    .spacing(self.view_model.spacing_md),
                 ]
-                .spacing(self.scaled_padding(10))
+                .spacing(self.view_model.spacing_md)
             )
-            .padding(self.scaled_padding(15))
+            .padding(self.view_model.padding_lg)
             .style(CowboyCustomTheme::pastel_teal_card()),
+
+            // Search bar
+            container(
+                row![
+                    text_input("Search nodes (name, type, or description)...", &self.search_query)
+                        .on_input(Message::SearchQueryChanged)
+                        .size(self.view_model.text_normal)
+                        .style(CowboyCustomTheme::glass_input())
+                        .width(Length::Fill),
+                    if !self.search_query.is_empty() {
+                        button(text("Clear").size(self.view_model.text_small))
+                            .on_press(Message::ClearSearch)
+                            .style(CowboyCustomTheme::glass_button())
+                    } else {
+                        button(text("Clear").size(self.view_model.text_small))
+                            .style(CowboyCustomTheme::glass_button())
+                    },
+                    if !self.search_results.is_empty() {
+                        container(
+                            text(format!("{} results", self.search_results.len()))
+                                .size(self.view_model.text_small)
+                                .color(self.view_model.colors.success)
+                        )
+                        .padding(self.view_model.padding_sm)
+                    } else if !self.search_query.is_empty() {
+                        container(
+                            text("No results")
+                                .size(self.view_model.text_small)
+                                .color(self.view_model.colors.text_disabled)
+                        )
+                        .padding(self.view_model.padding_sm)
+                    } else {
+                        container(text("").size(self.view_model.text_small))
+                    }
+                ]
+                .spacing(self.view_model.spacing_md)
+                .align_y(Alignment::Center)
+            )
+            .padding(self.view_model.padding_md)
+            .style(CowboyCustomTheme::pastel_mint_card()),
+
+            // Graph View Toggle Buttons
+            row![
+                if self.graph_view == GraphView::Organization {
+                    button(text("Organization").size(self.view_model.text_small))
+                        .on_press(Message::GraphViewSelected(GraphView::Organization))
+                        .style(CowboyCustomTheme::primary_button())
+                } else {
+                    button(text("Organization").size(self.view_model.text_small))
+                        .on_press(Message::GraphViewSelected(GraphView::Organization))
+                        .style(CowboyCustomTheme::glass_button())
+                },
+                if self.graph_view == GraphView::NatsInfrastructure {
+                    button(text("NATS Infrastructure").size(self.view_model.text_small))
+                        .on_press(Message::GraphViewSelected(GraphView::NatsInfrastructure))
+                        .style(CowboyCustomTheme::primary_button())
+                } else {
+                    button(text("NATS Infrastructure").size(self.view_model.text_small))
+                        .on_press(Message::GraphViewSelected(GraphView::NatsInfrastructure))
+                        .style(CowboyCustomTheme::glass_button())
+                },
+                if self.graph_view == GraphView::PkiTrustChain {
+                    button(text("PKI Trust Chain").size(self.view_model.text_small))
+                        .on_press(Message::GraphViewSelected(GraphView::PkiTrustChain))
+                        .style(CowboyCustomTheme::primary_button())
+                } else {
+                    button(text("PKI Trust Chain").size(self.view_model.text_small))
+                        .on_press(Message::GraphViewSelected(GraphView::PkiTrustChain))
+                        .style(CowboyCustomTheme::glass_button())
+                },
+                if self.graph_view == GraphView::YubiKeyDetails {
+                    button(text("YubiKey Details").size(self.view_model.text_small))
+                        .on_press(Message::GraphViewSelected(GraphView::YubiKeyDetails))
+                        .style(CowboyCustomTheme::primary_button())
+                } else {
+                    button(text("YubiKey Details").size(self.view_model.text_small))
+                        .on_press(Message::GraphViewSelected(GraphView::YubiKeyDetails))
+                        .style(CowboyCustomTheme::glass_button())
+                },
+            ]
+            .spacing(self.view_model.spacing_sm)
+            .padding(self.view_model.padding_md),
 
             // Graph visualization with overlays (using stack for absolute positioning)
             {
@@ -2595,11 +3253,16 @@ impl CimKeysApp {
                 .height(Length::FillPortion(10))  // Take most of the available space
                 .style(|_theme| {
                     container::Style {
-                        background: Some(Background::Color(Color::from_rgb(0.95, 0.95, 0.95))),
+                        background: Some(Background::Color(self.view_model.colors.background)),  // Black background
                         border: Border {
-                            color: Color::from_rgb(0.7, 0.7, 0.7),
-                            width: 1.0,
-                            radius: 5.0.into(),
+                            color: self.view_model.colors.blue_bright,  // Bright blue border for visibility
+                            width: 2.0,  // Thicker border
+                            radius: 12.0.into(),  // More rounded
+                        },
+                        shadow: iced::Shadow {
+                            color: self.view_model.colors.blue_glow,  // Blue glow effect
+                            offset: iced::Vector::new(0.0, 0.0),  // No offset for even glow
+                            blur_radius: 16.0,  // Large blur for soft glow
                         },
                         ..Default::default()
                     }
@@ -2649,7 +3312,7 @@ impl CimKeysApp {
                 stack(stack_layers)
             },
         ]
-        .spacing(self.scaled_padding(20))
+        .spacing(self.view_model.spacing_xl)
         .height(Length::Fill);
 
         // Don't wrap in scrollable - it blocks mouse events to the canvas
@@ -2663,63 +3326,63 @@ impl CimKeysApp {
         // TODO: Re-implement location type picker once Display is implemented in cim-domain-location
 
         let content = column![
-            text("Locations Management").size(self.scaled_text_size(20)),
-            text("Manage corporate locations where keys and certificates are stored").size(self.scaled_text_size(14)),
+            text("Locations Management").size(self.view_model.text_xlarge),
+            text("Manage corporate locations where keys and certificates are stored").size(self.view_model.text_normal),
 
             // Add location form
             container(
                 column![
                     text("Add New Physical Location")
-                        .size(self.scaled_text_size(16))
+                        .size(self.view_model.text_medium)
                         .color(CowboyTheme::text_primary()),
                     text("Default location type: Physical")
-                        .size(self.scaled_text_size(12))
+                        .size(self.view_model.text_small)
                         .color(CowboyTheme::text_secondary()),
 
                     // Location name
                     text_input("Location Name (e.g., Main Office, HQ)", &self.new_location_name)
                         .on_input(Message::NewLocationNameChanged)
-                        .size(self.scaled_text_size(14))
+                        .size(self.view_model.text_normal)
                         .style(CowboyCustomTheme::glass_input()),
 
                     // Address section
-                    text("Address").size(self.scaled_text_size(14)).color(CowboyTheme::text_primary()),
+                    text("Address").size(self.view_model.text_normal).color(CowboyTheme::text_primary()),
                     text_input("Street Address", &self.new_location_street)
                         .on_input(Message::NewLocationStreetChanged)
-                        .size(self.scaled_text_size(14))
+                        .size(self.view_model.text_normal)
                         .style(CowboyCustomTheme::glass_input()),
 
                     row![
                         text_input("City", &self.new_location_city)
                             .on_input(Message::NewLocationCityChanged)
-                            .size(self.scaled_text_size(14))
+                            .size(self.view_model.text_normal)
                             .style(CowboyCustomTheme::glass_input()),
                         text_input("State/Region", &self.new_location_region)
                             .on_input(Message::NewLocationRegionChanged)
-                            .size(self.scaled_text_size(14))
+                            .size(self.view_model.text_normal)
                             .style(CowboyCustomTheme::glass_input()),
                     ]
-                    .spacing(self.scaled_padding(10)),
+                    .spacing(self.view_model.spacing_md),
 
                     row![
                         text_input("Country", &self.new_location_country)
                             .on_input(Message::NewLocationCountryChanged)
-                            .size(self.scaled_text_size(14))
+                            .size(self.view_model.text_normal)
                             .style(CowboyCustomTheme::glass_input()),
                         text_input("Postal Code", &self.new_location_postal)
                             .on_input(Message::NewLocationPostalChanged)
-                            .size(self.scaled_text_size(14))
+                            .size(self.view_model.text_normal)
                             .style(CowboyCustomTheme::glass_input()),
                     ]
-                    .spacing(self.scaled_padding(10)),
+                    .spacing(self.view_model.spacing_md),
 
                     button("Add Location")
                         .on_press(Message::AddLocation)
                         .style(CowboyCustomTheme::primary_button())
                 ]
-                .spacing(self.scaled_padding(10))
+                .spacing(self.view_model.spacing_md)
             )
-            .padding(self.scaled_padding(15))
+            .padding(self.view_model.padding_lg)
             .style(CowboyCustomTheme::pastel_mint_card()),
 
             {
@@ -2732,14 +3395,14 @@ impl CimKeysApp {
                         container(
                             column![
                                 text("No locations added yet")
-                                    .size(self.scaled_text_size(14))
+                                    .size(self.view_model.text_normal)
                                     .color(CowboyTheme::text_secondary()),
                             ]
                         )
-                        .padding(self.scaled_padding(15))
+                        .padding(self.view_model.padding_lg)
                         .style(CowboyCustomTheme::pastel_cream_card())
                     } else {
-                        let mut location_list = column![].spacing(self.scaled_padding(10));
+                        let mut location_list = column![].spacing(self.view_model.spacing_md);
 
                         for location in locations {
                             location_list = location_list.push(
@@ -2747,49 +3410,49 @@ impl CimKeysApp {
                                     row![
                                         column![
                                             text(location.name)
-                                                .size(self.scaled_text_size(16))
+                                                .size(self.view_model.text_medium)
                                                 .color(CowboyTheme::text_primary()),
                                             text(format!("Type: {}",
                                                 location.location_type))
-                                                .size(self.scaled_text_size(12))
+                                                .size(self.view_model.text_small)
                                                 .color(CowboyTheme::text_secondary()),
                                             text(format!("Created: {}",
                                                 location.created_at.format("%Y-%m-%d %H:%M UTC")))
-                                                .size(self.scaled_text_size(11))
+                                                .size(self.view_model.text_small)
                                                 .color(CowboyTheme::text_secondary()),
                                         ]
-                                        .spacing(self.scaled_padding(5)),
+                                        .spacing(self.view_model.spacing_sm),
                                         horizontal_space(),
                                         button("Remove")
                                             .on_press(Message::RemoveLocation(location.location_id))
                                             .style(CowboyCustomTheme::security_button())
                                     ]
                                     .align_y(Alignment::Center)
-                                    .spacing(self.scaled_padding(10))
+                                    .spacing(self.view_model.spacing_md)
                                 )
-                                .padding(self.scaled_padding(12))
+                                .padding(self.view_model.padding_md)
                                 .style(CowboyCustomTheme::pastel_teal_card())
                             );
                         }
 
                         container(location_list)
-                            .padding(self.scaled_padding(15))
+                            .padding(self.view_model.padding_lg)
                             .style(CowboyCustomTheme::pastel_cream_card())
                     }
                 } else {
                     container(
                         text("Loading locations...")
-                            .size(self.scaled_text_size(14))
+                            .size(self.view_model.text_normal)
                             .color(CowboyTheme::text_secondary())
                     )
-                    .padding(self.scaled_padding(15))
+                    .padding(self.view_model.padding_lg)
                     .style(CowboyCustomTheme::pastel_cream_card())
                 };
 
                 location_container
             },
         ]
-        .spacing(self.scaled_padding(20));
+        .spacing(self.view_model.spacing_xl);
 
         scrollable(content).into()
     }
@@ -2798,80 +3461,159 @@ impl CimKeysApp {
         let progress_percentage = self.key_generation_progress * 100.0;
 
         let content = column![
-            text("Generate Keys for Organization").size(self.scaled_text_size(24)),
-            text("Generate cryptographic keys for all organization members").size(self.scaled_text_size(15)),
+            text("Generate Keys for Organization").size(self.view_model.text_header),
+            text("Generate cryptographic keys for all organization members").size(self.view_model.text_large),
 
             // Root Passphrase Section
             container(
                 column![
-                    text("Root Passphrase (Required for PKI Operations)")
-                        .size(self.scaled_text_size(18))
-                        .color(CowboyTheme::text_primary()),
+                    row![
+                        text("Root Passphrase (Required for PKI Operations)")
+                            .size(self.view_model.text_large)
+                            .color(CowboyTheme::text_primary()),
+                        horizontal_space(),
+                        button(if self.show_passphrase { icons::icon(icons::ICON_VISIBILITY_OFF) } else { icons::icon(icons::ICON_VISIBILITY) })
+                            .on_press(Message::TogglePassphraseVisibility)
+                            .style(CowboyCustomTheme::glass_button()),
+                        button(text("Generate Random").size(self.view_model.text_small))
+                            .on_press(Message::GenerateRandomPassphrase)
+                            .style(CowboyCustomTheme::primary_button()),
+                    ]
+                    .spacing(self.view_model.spacing_sm)
+                    .align_y(iced::Alignment::Center),
                     text_input("Root Passphrase", &self.root_passphrase)
                         .on_input(Message::RootPassphraseChanged)
-                        .secure(true)
-                        .size(self.scaled_text_size(16))
-                        .padding(self.scaled_padding(12))
+                        .secure(!self.show_passphrase)  // Toggle based on show_passphrase
+                        .size(self.view_model.text_medium)
+                        .padding(self.view_model.padding_md)
                         .style(CowboyCustomTheme::glass_input()),
                     text_input("Confirm Root Passphrase", &self.root_passphrase_confirm)
                         .on_input(Message::RootPassphraseConfirmChanged)
-                        .secure(true)
-                        .size(self.scaled_text_size(16))
-                        .padding(self.scaled_padding(12))
+                        .secure(!self.show_passphrase)  // Toggle based on show_passphrase
+                        .size(self.view_model.text_medium)
+                        .padding(self.view_model.padding_md)
                         .style(CowboyCustomTheme::glass_input()),
                     if !self.root_passphrase.is_empty() && self.root_passphrase == self.root_passphrase_confirm {
-                        text("✓ Passphrases match")
-                            .size(self.scaled_text_size(14))
-                            .color(Color::from_rgb(0.2, 0.9, 0.2))
+                        text("[OK] Passphrases match")
+                            .size(self.view_model.text_normal)
+                            .color(self.view_model.colors.green_success)
                     } else if !self.root_passphrase.is_empty() && !self.root_passphrase_confirm.is_empty() {
                         text("✗ Passphrases do not match")
-                            .size(self.scaled_text_size(14))
-                            .color(Color::from_rgb(0.9, 0.2, 0.2))
+                            .size(self.view_model.text_normal)
+                            .color(self.view_model.colors.error)
                     } else {
                         text("")
                     }
                 ]
-                .spacing(self.scaled_padding(12))
+                .spacing(self.view_model.spacing_md)
             )
-            .padding(self.scaled_padding(20))
+            .padding(self.view_model.padding_xl)
             .style(CowboyCustomTheme::pastel_coral_card()),
 
             container(
                 column![
                     text("PKI Hierarchy Generation")
-                        .size(self.scaled_text_size(18))
+                        .size(self.view_model.text_large)
                         .color(CowboyTheme::text_primary()),
 
                     // Root CA Section
-                    text("1. Root CA (Trust Anchor)").size(self.scaled_text_size(16)),
+                    text("1. Root CA (Trust Anchor)").size(self.view_model.text_medium),
                     button("Generate Root CA")
                         .on_press(Message::GenerateRootCA)
-                        .padding(self.scaled_padding(14))
+                        .padding(self.view_model.padding_lg)
                         .style(CowboyCustomTheme::security_button()),
 
                     // Intermediate CA Section
-                    text("2. Intermediate CA (Signing-Only, pathlen:0)").size(self.scaled_text_size(16)),
+                    text("2. Intermediate CA (Signing-Only, pathlen:0)").size(self.view_model.text_medium),
                     text_input("CA Name (e.g., 'Engineering')", &self.intermediate_ca_name_input)
                         .on_input(Message::IntermediateCANameChanged)
-                        .size(self.scaled_text_size(16))
-                        .padding(self.scaled_padding(12))
+                        .size(self.view_model.text_medium)
+                        .padding(self.view_model.padding_md)
                         .style(CowboyCustomTheme::glass_input()),
+
+                    // Storage location picker for intermediate CA
+                    if !self.loaded_locations.is_empty() {
+                        let location_names: Vec<String> = self.loaded_locations
+                            .iter()
+                            .map(|loc| loc.name.clone())
+                            .collect();
+
+                        row![
+                            text("Storage Location:").size(self.view_model.text_normal),
+                            pick_list(
+                                location_names,
+                                self.selected_cert_location.clone(),
+                                Message::SelectCertLocation,
+                            )
+                            .placeholder("Select Storage Location")
+                        ]
+                        .spacing(self.view_model.spacing_md)
+                    } else {
+                        row![
+                            text("Storage Location:").size(self.view_model.text_normal).color(self.view_model.colors.text_tertiary),
+                            text("(no locations defined)").size(self.view_model.text_normal).color(self.view_model.colors.text_tertiary),
+                        ]
+                        .spacing(self.view_model.spacing_md)
+                    },
+
                     button("Generate Intermediate CA")
                         .on_press(Message::GenerateIntermediateCA)
-                        .padding(self.scaled_padding(14))
+                        .padding(self.view_model.padding_lg)
                         .style(CowboyCustomTheme::primary_button()),
 
                     // Server Certificate Section
-                    text("3. Server Certificates").size(self.scaled_text_size(16)),
+                    text("3. Server Certificates").size(self.view_model.text_medium),
                     text_input("Common Name (e.g., 'nats.example.com')", &self.server_cert_cn_input)
                         .on_input(Message::ServerCertCNChanged)
-                        .size(self.scaled_text_size(16))
-                        .padding(self.scaled_padding(12))
+                        .size(self.view_model.text_medium)
+                        .padding(self.view_model.padding_md)
                         .style(CowboyCustomTheme::glass_input()),
                     text_input("SANs (comma-separated DNS names or IPs)", &self.server_cert_sans_input)
                         .on_input(Message::ServerCertSANsChanged)
-                        .size(self.scaled_text_size(16))
-                        .padding(self.scaled_padding(12))
+                        .size(self.view_model.text_medium)
+                        .padding(self.view_model.padding_md)
+                        .style(CowboyCustomTheme::glass_input()),
+
+                    // Certificate metadata fields (collapsible section for details)
+                    text("Certificate Details").size(self.view_model.text_normal).color(self.view_model.colors.text_secondary),
+
+                    row![
+                        text_input("Organization", &self.cert_organization)
+                            .on_input(Message::CertOrganizationChanged)
+                            .size(self.view_model.text_normal)
+                            .padding(self.view_model.padding_md)
+                            .style(CowboyCustomTheme::glass_input()),
+                        text_input("Organizational Unit", &self.cert_organizational_unit)
+                            .on_input(Message::CertOrganizationalUnitChanged)
+                            .size(self.view_model.text_normal)
+                            .padding(self.view_model.padding_md)
+                            .style(CowboyCustomTheme::glass_input()),
+                    ]
+                    .spacing(self.view_model.spacing_md),
+
+                    row![
+                        text_input("Locality/City", &self.cert_locality)
+                            .on_input(Message::CertLocalityChanged)
+                            .size(self.view_model.text_normal)
+                            .padding(self.view_model.padding_md)
+                            .style(CowboyCustomTheme::glass_input()),
+                        text_input("State/Province", &self.cert_state_province)
+                            .on_input(Message::CertStateProvinceChanged)
+                            .size(self.view_model.text_normal)
+                            .padding(self.view_model.padding_md)
+                            .style(CowboyCustomTheme::glass_input()),
+                        text_input("Country (2-letter code)", &self.cert_country)
+                            .on_input(Message::CertCountryChanged)
+                            .size(self.view_model.text_normal)
+                            .padding(self.view_model.padding_md)
+                            .style(CowboyCustomTheme::glass_input()),
+                    ]
+                    .spacing(self.view_model.spacing_md),
+
+                    text_input("Validity (days)", &self.cert_validity_days)
+                        .on_input(Message::CertValidityDaysChanged)
+                        .size(self.view_model.text_normal)
+                        .padding(self.view_model.padding_md)
                         .style(CowboyCustomTheme::glass_input()),
 
                     // CA selection picker
@@ -2882,7 +3624,7 @@ impl CimKeysApp {
                             .collect();
 
                         row![
-                            text("Signing CA:").size(self.scaled_text_size(14)),
+                            text("Signing CA:").size(self.view_model.text_normal),
                             pick_list(
                                 ca_names,
                                 self.selected_intermediate_ca.clone(),
@@ -2890,13 +3632,38 @@ impl CimKeysApp {
                             )
                             .placeholder("Select Intermediate CA")
                         ]
-                        .spacing(self.scaled_padding(10))
+                        .spacing(self.view_model.spacing_md)
                     } else {
                         row![
-                            text("Signing CA:").size(self.scaled_text_size(14)).color(Color::from_rgb(0.6, 0.6, 0.6)),
-                            text("(generate an intermediate CA first)").size(self.scaled_text_size(14)).color(Color::from_rgb(0.6, 0.6, 0.6)),
+                            text("Signing CA:").size(self.view_model.text_normal).color(self.view_model.colors.text_tertiary),
+                            text("(generate an intermediate CA first)").size(self.view_model.text_normal).color(self.view_model.colors.text_tertiary),
                         ]
-                        .spacing(self.scaled_padding(10))
+                        .spacing(self.view_model.spacing_md)
+                    },
+
+                    // Storage location picker
+                    if !self.loaded_locations.is_empty() {
+                        let location_names: Vec<String> = self.loaded_locations
+                            .iter()
+                            .map(|loc| loc.name.clone())
+                            .collect();
+
+                        row![
+                            text("Storage Location:").size(self.view_model.text_normal),
+                            pick_list(
+                                location_names,
+                                self.selected_cert_location.clone(),
+                                Message::SelectCertLocation,
+                            )
+                            .placeholder("Select Storage Location")
+                        ]
+                        .spacing(self.view_model.spacing_md)
+                    } else {
+                        row![
+                            text("Storage Location:").size(self.view_model.text_normal).color(self.view_model.colors.text_tertiary),
+                            text("(no locations defined)").size(self.view_model.text_normal).color(self.view_model.colors.text_tertiary),
+                        ]
+                        .spacing(self.view_model.spacing_md)
                     },
 
                     button("Generate Server Certificate")
@@ -2908,19 +3675,19 @@ impl CimKeysApp {
                        || !self.mvi_model.key_generation_status.server_certificates.is_empty() {
                         container(
                             column![
-                                text("Generated Certificates").size(self.scaled_text_size(16)).color(Color::from_rgb(0.3, 0.8, 0.3)),
+                                text("Generated Certificates").size(self.view_model.text_medium).color(self.view_model.colors.success),
 
                                 // Intermediate CAs
                                 if !self.mvi_model.key_generation_status.intermediate_cas.is_empty() {
                                     iced::widget::Column::with_children(
                                         self.mvi_model.key_generation_status.intermediate_cas.iter().map(|ca| {
-                                            text(format!("  ✓ CA: {} - {}", ca.name, &ca.fingerprint[..16]))
-                                                .size(self.scaled_text_size(12))
-                                                .color(Color::from_rgb(0.3, 0.8, 0.3))
+                                            text(format!("  [OK] CA: {} - {}", ca.name, &ca.fingerprint[..16]))
+                                                .size(self.view_model.text_small)
+                                                .color(self.view_model.colors.success)
                                                 .into()
                                         }).collect::<Vec<_>>()
                                     )
-                                    .spacing((3.0 * self.ui_scale) as u16)
+                                    .spacing(self.view_model.spacing_xs)
                                 } else {
                                     column![]
                                 },
@@ -2930,25 +3697,25 @@ impl CimKeysApp {
                                     iced::widget::Column::with_children(
                                         self.mvi_model.key_generation_status.server_certificates.iter().map(|cert| {
                                             column![
-                                                text(format!("  ✓ Server: {} (signed by: {})", cert.common_name, cert.signed_by))
-                                                    .size(self.scaled_text_size(12))
-                                                    .color(Color::from_rgb(0.3, 0.8, 0.3)),
+                                                text(format!("  [OK] Server: {} (signed by: {})", cert.common_name, cert.signed_by))
+                                                    .size(self.view_model.text_small)
+                                                    .color(self.view_model.colors.success),
                                                 text(format!("    Fingerprint: {}", &cert.fingerprint[..16]))
-                                                    .size(self.scaled_text_size(11))
-                                                    .color(Color::from_rgb(0.5, 0.5, 0.5)),
+                                                    .size(self.view_model.text_small)
+                                                    .color(self.view_model.colors.text_disabled),
                                             ]
-                                            .spacing((2.0 * self.ui_scale) as u16)
+                                            .spacing(self.view_model.spacing_xs)
                                             .into()
                                         }).collect::<Vec<_>>()
                                     )
-                                    .spacing((5.0 * self.ui_scale) as u16)
+                                    .spacing(self.view_model.spacing_sm)
                                 } else {
                                     column![]
                                 },
                             ]
-                            .spacing(self.scaled_padding(10))
+                            .spacing(self.view_model.spacing_md)
                         )
-                        .padding(self.scaled_padding(10))
+                        .padding(self.view_model.padding_md)
                         .style(CowboyCustomTheme::card_container())
                     } else {
                         container(text(""))
@@ -2960,13 +3727,13 @@ impl CimKeysApp {
                             row![
                                 button(if self.yubikey_section_collapsed { "▶" } else { "▼" })
                                     .on_press(Message::ToggleYubiKeySection)
-                                    .padding(self.scaled_padding(8))
+                                    .padding(self.view_model.padding_sm)
                                     .style(CowboyCustomTheme::glass_button()),
                                 text("4. YubiKey Hardware Detection")
-                                    .size(self.scaled_text_size(18))
+                                    .size(self.view_model.text_large)
                                     .color(CowboyTheme::text_primary()),
                             ]
-                            .spacing(self.scaled_padding(10))
+                            .spacing(self.view_model.spacing_md)
                             .align_y(Alignment::Center),
 
                             if !self.yubikey_section_collapsed {
@@ -2974,46 +3741,46 @@ impl CimKeysApp {
                                     row![
                                         button("Detect YubiKeys")
                                             .on_press(Message::DetectYubiKeys)
-                                            .padding(self.scaled_padding(14))
+                                            .padding(self.view_model.padding_lg)
                                             .style(CowboyCustomTheme::security_button()),
                                         text(&self.yubikey_detection_status)
-                                            .size(self.scaled_text_size(14))
+                                            .size(self.view_model.text_normal)
                                             .color(CowboyTheme::text_secondary()),
                                     ]
-                                    .spacing(self.scaled_padding(10))
+                                    .spacing(self.view_model.spacing_md)
                                     .align_y(Alignment::Center),
 
                     // Display detected YubiKeys
                     if !self.detected_yubikeys.is_empty() {
-                        let mut yubikey_list = column![].spacing(self.scaled_padding(5));
+                        let mut yubikey_list = column![].spacing(self.view_model.spacing_sm);
 
                         for device in &self.detected_yubikeys {
                             yubikey_list = yubikey_list.push(
                                 row![
-                                    text(format!("  ✓ {} v{} - Serial: {}",
+                                    text(format!("  [OK] {} v{} - Serial: {}",
                                         device.model,
                                         device.version,
                                         device.serial))
-                                        .size(self.scaled_text_size(12))
+                                        .size(self.view_model.text_small)
                                         .color(if device.piv_enabled {
-                                            Color::from_rgb(0.3, 0.8, 0.3)
+                                            self.view_model.colors.green_success
                                         } else {
-                                            Color::from_rgb(0.8, 0.5, 0.2)
+                                            self.view_model.colors.orange_warning
                                         }),
                                     if !device.piv_enabled {
                                         text(" (PIV not enabled)")
-                                            .size(self.scaled_text_size(11))
-                                            .color(Color::from_rgb(0.8, 0.5, 0.2))
+                                            .size(self.view_model.text_small)
+                                            .color(self.view_model.colors.orange_warning)
                                     } else {
                                         text("")
                                     }
                                 ]
-                                .spacing(self.scaled_padding(5))
+                                .spacing(self.view_model.spacing_sm)
                             );
                         }
 
                         container(yubikey_list)
-                            .padding(self.scaled_padding(10))
+                            .padding(self.view_model.padding_md)
                             .style(CowboyCustomTheme::card_container())
                     } else {
                         container(text(""))
@@ -3022,18 +3789,18 @@ impl CimKeysApp {
                     // YubiKey Configurations (imported from secrets)
                     if !self.yubikey_configs.is_empty() {
                         text(format!("🔑 YubiKey Configurations ({} imported)", self.yubikey_configs.len()))
-                            .size(self.scaled_text_size(14))
+                            .size(self.view_model.text_normal)
                             .color(CowboyTheme::text_primary())
                     } else {
                         text("")
                     },
 
                     if !self.yubikey_configs.is_empty() {
-                        let mut config_list = column![].spacing(self.scaled_padding(8));
+                        let mut config_list = column![].spacing(self.view_model.spacing_sm);
 
                         for config in &self.yubikey_configs {
                             let role_str = match config.role {
-                                crate::domain::YubiKeyRole::RootCA => "🔐 Root CA",
+                                crate::domain::YubiKeyRole::RootCA => "[LOCK] Root CA",
                                 crate::domain::YubiKeyRole::Backup => "💾 Backup",
                                 crate::domain::YubiKeyRole::User => "👤 User",
                                 crate::domain::YubiKeyRole::Service => "⚙️ Service",
@@ -3043,57 +3810,57 @@ impl CimKeysApp {
                                 container(
                                     column![
                                         text(format!("{} - {}", role_str, config.name))
-                                            .size(self.scaled_text_size(13))
+                                            .size(self.view_model.text_normal)
                                             .color(CowboyTheme::text_primary()),
                                         row![
                                             column![
                                                 text(format!("Serial: {}", config.serial))
-                                                    .size(self.scaled_text_size(11))
+                                                    .size(self.view_model.text_small)
                                                     .color(CowboyTheme::text_secondary()),
                                                 text(format!("Owner: {}", config.owner_email))
-                                                    .size(self.scaled_text_size(11))
+                                                    .size(self.view_model.text_small)
                                                     .color(CowboyTheme::text_secondary()),
                                             ]
-                                            .spacing(self.scaled_padding(2)),
+                                            .spacing(self.view_model.spacing_xs),
                                             horizontal_space(),
                                             column![
                                                 text(format!("PIN: {}", config.piv.pin))
-                                                    .size(self.scaled_text_size(11))
-                                                    .color(Color::from_rgb(0.8, 0.6, 0.2)),
+                                                    .size(self.view_model.text_small)
+                                                    .color(self.view_model.colors.orange_warning),
                                                 text(format!("PUK: {}", config.piv.puk))
-                                                    .size(self.scaled_text_size(11))
-                                                    .color(Color::from_rgb(0.8, 0.6, 0.2)),
+                                                    .size(self.view_model.text_small)
+                                                    .color(self.view_model.colors.orange_warning),
                                                 text(format!("Mgmt: {}...", &config.piv.mgmt_key[..12]))
-                                                    .size(self.scaled_text_size(10))
-                                                    .color(Color::from_rgb(0.8, 0.6, 0.2)),
+                                                    .size(self.view_model.text_tiny)
+                                                    .color(self.view_model.colors.orange_warning),
                                             ]
-                                            .spacing(self.scaled_padding(2))
+                                            .spacing(self.view_model.spacing_xs)
                                             .align_x(iced::alignment::Horizontal::Right),
                                         ]
                                         .align_y(Alignment::Center),
                                     ]
-                                    .spacing(self.scaled_padding(5))
+                                    .spacing(self.view_model.spacing_sm)
                                 )
-                                .padding(self.scaled_padding(10))
+                                .padding(self.view_model.padding_md)
                                 .style(CowboyCustomTheme::pastel_coral_card())
                             );
                         }
 
                         container(config_list)
-                            .padding(self.scaled_padding(10))
+                            .padding(self.view_model.padding_md)
                             .style(CowboyCustomTheme::card_container())
                     } else {
                         container(text(""))
                     },
                                 ]
-                                .spacing(self.scaled_padding(12))
+                                .spacing(self.view_model.spacing_md)
                             } else {
                                 column![]
                             }
                         ]
-                        .spacing(self.scaled_padding(12))
+                        .spacing(self.view_model.spacing_md)
                     )
-                    .padding(self.scaled_padding(20))
+                    .padding(self.view_model.padding_xl)
                     .style(CowboyCustomTheme::pastel_mint_card()),
 
                     // Loaded Certificates from Manifest (Collapsible)
@@ -3103,69 +3870,69 @@ impl CimKeysApp {
                                 row![
                                     button(if self.certificates_collapsed { "▶" } else { "▼" })
                                         .on_press(Message::ToggleCertificatesSection)
-                                        .padding(self.scaled_padding(8))
+                                        .padding(self.view_model.padding_sm)
                                         .style(CowboyCustomTheme::glass_button()),
                                     text(format!("📜 Certificates from Manifest ({} loaded)", self.loaded_certificates.len()))
-                                        .size(self.scaled_text_size(16))
+                                        .size(self.view_model.text_medium)
                                         .color(CowboyTheme::text_primary()),
                                 ]
-                                .spacing(self.scaled_padding(10))
+                                .spacing(self.view_model.spacing_md)
                                 .align_y(Alignment::Center),
 
                                 if !self.certificates_collapsed {
                                     {
-                                        let mut cert_list = column![].spacing(self.scaled_padding(6));
+                                        let mut cert_list = column![].spacing(self.view_model.spacing_sm);
 
                                         for cert in &self.loaded_certificates {
                                             cert_list = cert_list.push(
                                                 container(
                                                     column![
-                                                        text(format!("🔐 {}{}", cert.subject, if cert.is_ca { " (CA)" } else { "" }))
-                                                            .size(self.scaled_text_size(12))
-                                                            .color(if cert.is_ca { Color::from_rgb(0.8, 0.3, 0.3) } else { Color::from_rgb(0.3, 0.6, 0.8) }),
+                                                        text(format!("[LOCK] {}{}", cert.subject, if cert.is_ca { " (CA)" } else { "" }))
+                                                            .size(self.view_model.text_small)
+                                                            .color(if cert.is_ca { self.view_model.colors.red_error } else { self.view_model.colors.info }),
                                                         row![
                                                             column![
                                                                 text(format!("Serial: {}...", &cert.serial_number.chars().take(16).collect::<String>()))
-                                                                    .size(self.scaled_text_size(10))
+                                                                    .size(self.view_model.text_tiny)
                                                                     .color(CowboyTheme::text_secondary()),
                                                                 if let Some(ref issuer) = cert.issuer {
                                                                     text(format!("Issuer: {}", issuer))
-                                                                        .size(self.scaled_text_size(10))
+                                                                        .size(self.view_model.text_tiny)
                                                                         .color(CowboyTheme::text_secondary())
                                                                 } else {
                                                                     text("")
                                                                 },
                                                             ]
-                                                            .spacing(self.scaled_padding(2)),
+                                                            .spacing(self.view_model.spacing_xs),
                                                             horizontal_space(),
                                                             column![
                                                                 text(format!("Valid: {} to {}",
                                                                     cert.not_before.format("%Y-%m-%d"),
                                                                     cert.not_after.format("%Y-%m-%d")))
-                                                                    .size(self.scaled_text_size(10))
+                                                                    .size(self.view_model.text_tiny)
                                                                     .color(CowboyTheme::text_secondary()),
                                                             ]
                                                             .align_x(iced::alignment::Horizontal::Right),
                                                         ]
                                                     ]
-                                                    .spacing(self.scaled_padding(3))
+                                                    .spacing(self.view_model.spacing_xs)
                                                 )
-                                                .padding(self.scaled_padding(8))
+                                                .padding(self.view_model.padding_sm)
                                                 .style(CowboyCustomTheme::pastel_teal_card())
                                             );
                                         }
 
                                         container(cert_list)
-                                            .padding(self.scaled_padding(10))
+                                            .padding(self.view_model.padding_md)
                                             .style(CowboyCustomTheme::card_container())
                                     }
                                 } else {
                                     container(text(""))
                                 }
                             ]
-                            .spacing(self.scaled_padding(12))
+                            .spacing(self.view_model.spacing_md)
                         )
-                        .padding(self.scaled_padding(20))
+                        .padding(self.view_model.padding_xl)
                         .style(CowboyCustomTheme::pastel_teal_card())
                     } else {
                         container(text(""))
@@ -3178,57 +3945,57 @@ impl CimKeysApp {
                                 row![
                                     button(if self.keys_collapsed { "▶" } else { "▼" })
                                         .on_press(Message::ToggleKeysSection)
-                                        .padding(self.scaled_padding(8))
+                                        .padding(self.view_model.padding_sm)
                                         .style(CowboyCustomTheme::glass_button()),
                                     text(format!("🔑 Keys from Manifest ({} loaded)", self.loaded_keys.len()))
-                                        .size(self.scaled_text_size(16))
+                                        .size(self.view_model.text_medium)
                                         .color(CowboyTheme::text_primary()),
                                 ]
-                                .spacing(self.scaled_padding(10))
+                                .spacing(self.view_model.spacing_md)
                                 .align_y(Alignment::Center),
 
                                 if !self.keys_collapsed {
                                     {
-                                        let mut key_list = column![].spacing(self.scaled_padding(6));
+                                        let mut key_list = column![].spacing(self.view_model.spacing_sm);
 
                                         for key in &self.loaded_keys {
                             key_list = key_list.push(
                                 container(
                                     column![
-                                        text(format!("🔐 {} - {}", key.label, format!("{:?}", key.algorithm)))
-                                            .size(self.scaled_text_size(12))
-                                            .color(if key.revoked { Color::from_rgb(0.8, 0.3, 0.3) } else { Color::from_rgb(0.3, 0.8, 0.3) }),
+                                        text(format!("[LOCK] {} - {}", key.label, format!("{:?}", key.algorithm)))
+                                            .size(self.view_model.text_small)
+                                            .color(if key.revoked { self.view_model.colors.red_error } else { self.view_model.colors.green_success }),
                                         row![
                                             column![
                                                 text(format!("Purpose: {:?}", key.purpose))
-                                                    .size(self.scaled_text_size(10))
+                                                    .size(self.view_model.text_tiny)
                                                     .color(CowboyTheme::text_secondary()),
                                                 if key.hardware_backed {
                                                     if let Some(ref serial) = key.yubikey_serial {
                                                         text(format!("YubiKey: {}", serial))
-                                                            .size(self.scaled_text_size(10))
-                                                            .color(Color::from_rgb(0.3, 0.6, 0.8))
+                                                            .size(self.view_model.text_tiny)
+                                                            .color(self.view_model.colors.info)
                                                     } else {
                                                         text("Hardware-backed")
-                                                            .size(self.scaled_text_size(10))
-                                                            .color(Color::from_rgb(0.3, 0.6, 0.8))
+                                                            .size(self.view_model.text_tiny)
+                                                            .color(self.view_model.colors.info)
                                                     }
                                                 } else {
                                                     text("Software key")
-                                                        .size(self.scaled_text_size(10))
+                                                        .size(self.view_model.text_tiny)
                                                         .color(CowboyTheme::text_secondary())
                                                 },
                                             ]
-                                            .spacing(self.scaled_padding(2)),
+                                            .spacing(self.view_model.spacing_xs),
                                             horizontal_space(),
                                             column![
                                                 text(format!("Created: {}", key.created_at.format("%Y-%m-%d")))
-                                                    .size(self.scaled_text_size(10))
+                                                    .size(self.view_model.text_tiny)
                                                     .color(CowboyTheme::text_secondary()),
                                                 if key.revoked {
-                                                    text("⚠️ REVOKED")
-                                                        .size(self.scaled_text_size(10))
-                                                        .color(Color::from_rgb(0.8, 0.3, 0.3))
+                                                    text("[WARNING] REVOKED")
+                                                        .size(self.view_model.text_tiny)
+                                                        .color(self.view_model.colors.red_error)
                                                 } else {
                                                     text("")
                                                 },
@@ -3236,24 +4003,24 @@ impl CimKeysApp {
                                             .align_x(iced::alignment::Horizontal::Right),
                                         ]
                                     ]
-                                    .spacing(self.scaled_padding(3))
+                                    .spacing(self.view_model.spacing_xs)
                                 )
-                                .padding(self.scaled_padding(8))
+                                .padding(self.view_model.padding_sm)
                                 .style(CowboyCustomTheme::pastel_mint_card())
                             );
                         }
 
                                         container(key_list)
-                                            .padding(self.scaled_padding(10))
+                                            .padding(self.view_model.padding_md)
                                             .style(CowboyCustomTheme::card_container())
                                     }
                                 } else {
                                     container(text(""))
                                 }
                             ]
-                            .spacing(self.scaled_padding(12))
+                            .spacing(self.view_model.spacing_md)
                         )
-                        .padding(self.scaled_padding(20))
+                        .padding(self.view_model.padding_xl)
                         .style(CowboyCustomTheme::pastel_cream_card())
                     } else {
                         container(text(""))
@@ -3265,13 +4032,13 @@ impl CimKeysApp {
                             row![
                                 button(if self.nats_section_collapsed { "▶" } else { "▼" })
                                     .on_press(Message::ToggleNatsSection)
-                                    .padding(self.scaled_padding(8))
+                                    .padding(self.view_model.padding_sm)
                                     .style(CowboyCustomTheme::glass_button()),
                                 text("5. NATS Hierarchy (Operator/Account/User)")
-                                    .size(self.scaled_text_size(18))
+                                    .size(self.view_model.text_large)
                                     .color(CowboyTheme::text_primary()),
                             ]
-                            .spacing(self.scaled_padding(10))
+                            .spacing(self.view_model.spacing_md)
                             .align_y(Alignment::Center),
 
                             if !self.nats_section_collapsed {
@@ -3279,29 +4046,29 @@ impl CimKeysApp {
                                     row![
                                         button("Generate NATS Hierarchy")
                                             .on_press(Message::GenerateNatsHierarchy)
-                                            .padding(self.scaled_padding(14))
+                                            .padding(self.view_model.padding_lg)
                                             .style(CowboyCustomTheme::security_button()),
                                         if self.nats_hierarchy_generated {
-                                            text("✓ NATS hierarchy generated")
-                                                .size(self.scaled_text_size(14))
-                                                .color(Color::from_rgb(0.3, 0.8, 0.3))
+                                            text("[OK] NATS hierarchy generated")
+                                                .size(self.view_model.text_normal)
+                                                .color(self.view_model.colors.success)
                                         } else {
                                             text("Generate NATS operator, accounts, and users")
-                                                .size(self.scaled_text_size(14))
+                                                .size(self.view_model.text_normal)
                                                 .color(CowboyTheme::text_secondary())
                                         }
                                     ]
-                                    .spacing(self.scaled_padding(10))
+                                    .spacing(self.view_model.spacing_md)
                                     .align_y(Alignment::Center),
                                 ]
-                                .spacing(self.scaled_padding(12))
+                                .spacing(self.view_model.spacing_md)
                             } else {
                                 column![]
                             }
                         ]
-                        .spacing(self.scaled_padding(12))
+                        .spacing(self.view_model.spacing_md)
                     )
-                    .padding(self.scaled_padding(20))
+                    .padding(self.view_model.padding_xl)
                     .style(CowboyCustomTheme::pastel_coral_card()),
 
                     // Step 6: Other Key Generation (Card with Collapse)
@@ -3310,88 +4077,92 @@ impl CimKeysApp {
                             row![
                                 button(if self.keys_collapsed { "▶" } else { "▼" })
                                     .on_press(Message::ToggleKeysSection)
-                                    .padding(self.scaled_padding(8))
+                                    .padding(self.view_model.padding_sm)
                                     .style(CowboyCustomTheme::glass_button()),
                                 text("6. Other Keys")
-                                    .size(self.scaled_text_size(18))
+                                    .size(self.view_model.text_large)
                                     .color(CowboyTheme::text_primary()),
                             ]
-                            .spacing(self.scaled_padding(10))
+                            .spacing(self.view_model.spacing_md)
                             .align_y(Alignment::Center),
 
                             if !self.keys_collapsed {
                                 column![
                                     button("Generate SSH Keys for All")
                                         .on_press(Message::GenerateSSHKeys)
-                                        .padding(self.scaled_padding(14))
+                                        .padding(self.view_model.padding_lg)
                                         .style(CowboyCustomTheme::primary_button()),
                                     button("Provision YubiKeys")
                                         .on_press(Message::ProvisionYubiKey)
-                                        .padding(self.scaled_padding(14))
+                                        .padding(self.view_model.padding_lg)
                                         .style(CowboyCustomTheme::glass_button()),
                                     button("Generate All Keys")
                                         .on_press(Message::GenerateAllKeys)
-                                        .padding(self.scaled_padding(14))
+                                        .padding(self.view_model.padding_lg)
                                         .style(CowboyCustomTheme::security_button()),
                                 ]
-                                .spacing(self.scaled_padding(12))
+                                .spacing(self.view_model.spacing_md)
                             } else {
                                 column![]
                             }
                         ]
-                        .spacing(self.scaled_padding(12))
+                        .spacing(self.view_model.spacing_md)
                     )
-                    .padding(self.scaled_padding(20))
+                    .padding(self.view_model.padding_xl)
                     .style(CowboyCustomTheme::pastel_mint_card()),
                 ]
-                .spacing(self.scaled_padding(10))
+                .spacing(self.view_model.spacing_md)
             )
-            .padding(self.scaled_padding(15))
+            .padding(self.view_model.padding_lg)
             .style(CowboyCustomTheme::pastel_mint_card()),
 
             if self.key_generation_progress > 0.0 {
                 container(
                     column![
-                        text(format!("Progress: {:.0}%", progress_percentage)).size(self.scaled_text_size(14)),
+                        text(format!("Progress: {:.0}%", progress_percentage)).size(self.view_model.text_normal),
                         progress_bar(0.0..=1.0, self.key_generation_progress),
                         text(format!("{} of {} keys generated",
                             self.keys_generated,
-                            self.total_keys_to_generate)).size(self.scaled_text_size(12)),
+                            self.total_keys_to_generate)).size(self.view_model.text_small),
                     ]
-                    .spacing((5.0 * self.ui_scale) as u16)
+                    .spacing(self.view_model.spacing_sm)
                 )
-                .padding(self.scaled_padding(10))
+                .padding(self.view_model.padding_md)
             } else {
-                container(text("No key generation in progress").size(self.scaled_text_size(14)))
+                container(text("No key generation in progress").size(self.view_model.text_normal))
             }
         ]
-        .spacing(self.scaled_padding(20))
-        .padding(self.scaled_padding(10));
+        .spacing(self.view_model.spacing_xl)
+        .padding(self.view_model.padding_md);
 
         scrollable(content).into()
     }
 
     fn view_export(&self) -> Element<'_, Message> {
         let content = column![
-            text("Export Domain Configuration").size(self.scaled_text_size(20)),
-            text("Export your domain configuration to encrypted storage").size(self.scaled_text_size(14)),
+            text("Export Domain Configuration").size(self.view_model.text_xlarge),
+            text("Export your domain configuration to encrypted storage").size(self.view_model.text_normal),
 
             container(
                 column![
                     text("Export Options")
-                        .size(self.scaled_text_size(16))
+                        .size(self.view_model.text_medium)
                         .color(CowboyTheme::text_primary()),
                     text_input("Output Directory", &self.export_path.display().to_string())
                         .on_input(Message::ExportPathChanged)
                         .style(CowboyCustomTheme::glass_input()),
                     checkbox("Include public keys", self.include_public_keys)
-                        .on_toggle(Message::TogglePublicKeys),
+                        .on_toggle(Message::TogglePublicKeys)
+                        .style(CowboyCustomTheme::light_checkbox()),
                     checkbox("Include certificates", self.include_certificates)
-                        .on_toggle(Message::ToggleCertificates),
+                        .on_toggle(Message::ToggleCertificates)
+                        .style(CowboyCustomTheme::light_checkbox()),
                     checkbox("Generate NATS configuration", self.include_nats_config)
-                        .on_toggle(Message::ToggleNatsConfig),
+                        .on_toggle(Message::ToggleNatsConfig)
+                        .style(CowboyCustomTheme::light_checkbox()),
                     checkbox("Include private keys (requires password)", self.include_private_keys)
-                        .on_toggle(Message::TogglePrivateKeys),
+                        .on_toggle(Message::TogglePrivateKeys)
+                        .style(CowboyCustomTheme::light_checkbox()),
                     if self.include_private_keys {
                         text_input("Encryption Password", &self.export_password)
                             .on_input(Message::ExportPasswordChanged)
@@ -3403,9 +4174,9 @@ impl CimKeysApp {
                             .style(CowboyCustomTheme::glass_input())
                     },
                 ]
-                .spacing(self.scaled_padding(10))
+                .spacing(self.view_model.spacing_md)
             )
-            .padding(self.scaled_padding(15))
+            .padding(self.view_model.padding_lg)
             .style(CowboyCustomTheme::pastel_cream_card()),
 
             button("Export to Encrypted SD Card")
@@ -3417,31 +4188,31 @@ impl CimKeysApp {
                 container(
                     column![
                         text("Export NATS Hierarchy to NSC")
-                            .size(self.scaled_text_size(16))
+                            .size(self.view_model.text_medium)
                             .color(CowboyTheme::text_primary()),
                         text(format!("Export directory: {}", self.nats_export_path.display()))
-                            .size(self.scaled_text_size(12))
+                            .size(self.view_model.text_small)
                             .color(CowboyTheme::text_secondary()),
                         button("Export to NSC Store")
                             .on_press(Message::ExportToNsc)
                             .style(CowboyCustomTheme::primary_button()),
                     ]
-                    .spacing(self.scaled_padding(10))
+                    .spacing(self.view_model.spacing_md)
                 )
-                .padding(self.scaled_padding(15))
+                .padding(self.view_model.padding_lg)
                 .style(CowboyCustomTheme::pastel_teal_card())
             } else {
                 container(
                     text("Generate NATS hierarchy first to enable NSC export")
-                        .size(self.scaled_text_size(14))
-                        .color(Color::from_rgb(0.6, 0.6, 0.6))
+                        .size(self.view_model.text_normal)
+                        .color(self.view_model.colors.text_tertiary)
                 )
-                .padding(self.scaled_padding(15))
+                .padding(self.view_model.padding_lg)
                 .style(CowboyCustomTheme::card_container())
             },
         ]
-        .spacing(self.scaled_padding(20))
-        .padding(self.scaled_padding(10));
+        .spacing(self.view_model.spacing_xl)
+        .padding(self.view_model.padding_md);
 
         scrollable(content).into()
     }
@@ -3556,9 +4327,10 @@ async fn generate_all_keys(
 
     // Generate a test SSH key for demonstration
     let ssh_cmd = GenerateSshKeyCommand {
-        command_id: cim_domain::CommandId::new(),
+        command_id: cim_domain::EntityId::new(),
+        person_id: uuid::Uuid::now_v7(),
         key_type: "ed25519".to_string(),
-        comment: "test@example.com".to_string(),
+        comment: Some("test@example.com".to_string()),
         requestor: "GUI User".to_string(),
     };
 
@@ -3840,6 +4612,6 @@ pub async fn run(output_dir: String) -> iced::Result {
     application("CIM Keys", CimKeysApp::update, CimKeysApp::view)
         .subscription(|app| app.subscription())
         .theme(|app| app.theme())
-        .font(include_bytes!("../assets/fonts/NotoColorEmoji.ttf"))
+        .font(include_bytes!("../assets/fonts/MaterialIcons-Regular.ttf"))
         .run_with(|| CimKeysApp::new(output_dir))
 }

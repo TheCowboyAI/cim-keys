@@ -4,13 +4,14 @@
 
 use iced::{
     widget::{button, checkbox, column, container, row, text, text_input, scrollable, Column, Row},
-    Element, Length, Theme,
+    Color, Element, Length, Theme,
 };
 use uuid::Uuid;
 use std::collections::HashSet;
 
 use crate::gui::graph::{NodeType, EdgeType};
-use crate::domain::PolicyClaim;
+use crate::domain::{PolicyClaim, RoleType};
+use crate::icons::{self, ICON_CLOSE};
 
 /// What is being edited
 #[derive(Debug, Clone)]
@@ -30,6 +31,7 @@ pub struct PropertyCard {
     edit_email: String,
     edit_enabled: bool,
     edit_claims: HashSet<PolicyClaim>,
+    edit_roles: HashSet<RoleType>,
     // Edge edit state
     edit_edge_type: EdgeType,
 }
@@ -48,6 +50,8 @@ pub enum PropertyCardMessage {
     EnabledToggled(bool),
     /// User toggled a policy claim
     ClaimToggled(PolicyClaim, bool),
+    /// User toggled a role
+    RoleToggled(RoleType, bool),
     // Edge editing messages
     /// User changed edge type
     EdgeTypeChanged(EdgeType),
@@ -79,6 +83,7 @@ impl PropertyCard {
             edit_email: String::new(),
             edit_enabled: true,
             edit_claims: HashSet::new(),
+            edit_roles: HashSet::new(),
             edit_edge_type: EdgeType::MemberOf,  // Default edge type
         }
     }
@@ -110,6 +115,7 @@ impl PropertyCard {
                 self.edit_description = String::new();
                 self.edit_email = person.email.clone();
                 self.edit_enabled = person.active;
+                self.edit_roles = person.roles.iter().map(|r| r.role_type.clone()).collect();
             }
             NodeType::Location(loc) => {
                 self.edit_name = loc.name.clone();
@@ -129,6 +135,63 @@ impl PropertyCard {
                 self.edit_email = String::new();
                 self.edit_enabled = policy.enabled;
                 self.edit_claims = policy.claims.iter().cloned().collect();
+            }
+            // NATS Infrastructure - read-only, no editing
+            NodeType::NatsOperator(identity) => {
+                self.edit_name = "NATS Operator".to_string();
+                self.edit_description = format!("NKey: {}", identity.nkey.public_key.public_key());
+                self.edit_email = String::new();
+                self.edit_enabled = true;
+            }
+            NodeType::NatsAccount(identity) => {
+                self.edit_name = "NATS Account".to_string();
+                self.edit_description = format!("NKey: {}", identity.nkey.public_key.public_key());
+                self.edit_email = String::new();
+                self.edit_enabled = true;
+            }
+            NodeType::NatsUser(identity) => {
+                self.edit_name = "NATS User".to_string();
+                self.edit_description = format!("NKey: {}", identity.nkey.public_key.public_key());
+                self.edit_email = String::new();
+                self.edit_enabled = true;
+            }
+            NodeType::NatsServiceAccount(identity) => {
+                self.edit_name = "Service Account".to_string();
+                self.edit_description = format!("NKey: {}", identity.nkey.public_key.public_key());
+                self.edit_email = String::new();
+                self.edit_enabled = true;
+            }
+            // PKI Trust Chain - read-only, no editing
+            NodeType::RootCertificate { subject, issuer, .. } => {
+                self.edit_name = format!("Root CA: {}", subject);
+                self.edit_description = format!("Issuer: {}", issuer);
+                self.edit_email = String::new();
+                self.edit_enabled = true;
+            }
+            NodeType::IntermediateCertificate { subject, issuer, .. } => {
+                self.edit_name = format!("Intermediate CA: {}", subject);
+                self.edit_description = format!("Issuer: {}", issuer);
+                self.edit_email = String::new();
+                self.edit_enabled = true;
+            }
+            NodeType::LeafCertificate { subject, issuer, .. } => {
+                self.edit_name = format!("Certificate: {}", subject);
+                self.edit_description = format!("Issuer: {}", issuer);
+                self.edit_email = String::new();
+                self.edit_enabled = true;
+            }
+            // YubiKey Hardware - read-only, no editing
+            NodeType::YubiKey { serial, version, .. } => {
+                self.edit_name = format!("YubiKey {}", serial);
+                self.edit_description = format!("Version: {}", version);
+                self.edit_email = String::new();
+                self.edit_enabled = true;
+            }
+            NodeType::PivSlot { slot_name, yubikey_serial, has_key, .. } => {
+                self.edit_name = slot_name.clone();
+                self.edit_description = format!("YubiKey {} - {}", yubikey_serial, if *has_key { "In use" } else { "Empty" });
+                self.edit_email = String::new();
+                self.edit_enabled = *has_key;
             }
         }
     }
@@ -154,6 +217,7 @@ impl PropertyCard {
         self.edit_email.clear();
         self.edit_enabled = true;
         self.edit_claims.clear();
+        self.edit_roles.clear();
         self.edit_edge_type = EdgeType::MemberOf;
     }
 
@@ -218,6 +282,11 @@ impl PropertyCard {
         self.edit_claims.iter().cloned().collect()
     }
 
+    /// Get the edited roles (for Person nodes)
+    pub fn roles(&self) -> Vec<RoleType> {
+        self.edit_roles.iter().cloned().collect()
+    }
+
     /// Get the edited edge type (for edges)
     pub fn edge_type(&self) -> EdgeType {
         self.edit_edge_type.clone()
@@ -247,6 +316,14 @@ impl PropertyCard {
                     self.edit_claims.insert(claim);
                 } else {
                     self.edit_claims.remove(&claim);
+                }
+                self.dirty = true;
+            }
+            PropertyCardMessage::RoleToggled(role, checked) => {
+                if checked {
+                    self.edit_roles.insert(role);
+                } else {
+                    self.edit_roles.remove(&role);
                 }
                 self.dirty = true;
             }
@@ -287,7 +364,23 @@ impl PropertyCard {
     }
 
     /// Render property card for editing a node
-    fn view_node(&self, node_type: &NodeType) -> Element<'_, PropertyCardMessage> {
+    fn view_node<'a>(&self, node_type: &'a NodeType) -> Element<'a, PropertyCardMessage> {
+        // For read-only infrastructure types, show detailed info panel instead of edit fields
+        match node_type {
+            NodeType::NatsOperator(_) | NodeType::NatsAccount(_) |
+            NodeType::NatsUser(_) | NodeType::NatsServiceAccount(_) => {
+                return self.view_nats_details(node_type);
+            }
+            NodeType::RootCertificate { .. } | NodeType::IntermediateCertificate { .. } |
+            NodeType::LeafCertificate { .. } => {
+                return self.view_certificate_details(node_type);
+            }
+            NodeType::YubiKey { .. } | NodeType::PivSlot { .. } => {
+                return self.view_yubikey_details(node_type);
+            }
+            _ => {}
+        }
+
         let node_type_label = match node_type {
             NodeType::Organization(_) => "Organization",
             NodeType::OrganizationalUnit(_) => "Organizational Unit",
@@ -295,11 +388,12 @@ impl PropertyCard {
             NodeType::Location(_) => "Location",
             NodeType::Role(_) => "Role",
             NodeType::Policy(_) => "Policy",
+            _ => "Unknown",
         };
 
         let header: Row<'_, PropertyCardMessage> = row![
             text(node_type_label).size(18),
-            button(text("✕").size(16))
+            button(icons::icon_sized(ICON_CLOSE, 16))
                 .on_press(PropertyCardMessage::Close)
                 .style(|theme: &Theme, _status| {
                     button::Style {
@@ -354,6 +448,40 @@ impl PropertyCard {
                         .width(Length::Fill),
                 ]
                 .spacing(4)
+            );
+        }
+
+        // Roles checkboxes (Person only)
+        if matches!(node_type, NodeType::Person { .. }) {
+            fields = fields.push(
+                text("Roles:")
+                    .size(12)
+            );
+
+            // List of all available roles
+            let all_roles = vec![
+                RoleType::Executive,
+                RoleType::Administrator,
+                RoleType::Developer,
+                RoleType::Operator,
+                RoleType::Auditor,
+                RoleType::Service,
+            ];
+
+            let mut roles_column = Column::new().spacing(2);
+            for role in all_roles {
+                let is_checked = self.edit_roles.contains(&role);
+                let role_name = format!("{:?}", role);
+                roles_column = roles_column.push(
+                    checkbox(&role_name, is_checked)
+                        .on_toggle(move |checked| PropertyCardMessage::RoleToggled(role.clone(), checked))
+                        .size(11)
+                );
+            }
+
+            fields = fields.push(
+                scrollable(roles_column)
+                    .height(Length::Fixed(150.0))
             );
         }
 
@@ -490,7 +618,7 @@ impl PropertyCard {
     fn view_edge(&self, _edge_type: &EdgeType) -> Element<'_, PropertyCardMessage> {
         let header: Row<'_, PropertyCardMessage> = row![
             text("Edge Relationship").size(18),
-            button(text("✕").size(16))
+            button(icons::icon_sized(ICON_CLOSE, 16))
                 .on_press(PropertyCardMessage::Close)
                 .style(|theme: &Theme, _status| {
                     button::Style {
@@ -505,8 +633,8 @@ impl PropertyCard {
         .align_y(iced::Alignment::Center);
 
         let mut fields: Column<'_, PropertyCardMessage> = column![]
-            .spacing(10)
-            .padding(10);
+            .spacing(5)
+            .padding(5);
 
         // Edge type label
         fields = fields.push(
@@ -610,8 +738,8 @@ impl PropertyCard {
             fields,
             buttons,
         ]
-        .spacing(15)
-        .padding(20);
+        .spacing(8)
+        .padding(12);
 
         container(content)
             .width(Length::Fixed(300.0))
@@ -632,6 +760,284 @@ impl PropertyCard {
                 }
             })
             .into()
+    }
+
+    /// Render detailed NATS infrastructure information (read-only)
+    fn view_nats_details<'a>(&self, node_type: &'a NodeType) -> Element<'a, PropertyCardMessage> {
+        let (title, details) = match node_type {
+            NodeType::NatsOperator(identity) => (
+                "NATS Operator",
+                column![
+                    self.detail_row("Type:", "Root Authority"),
+                    self.detail_row("Public Key:", &identity.nkey.public_key.public_key()[..32]),
+                    self.detail_row("Key Type:", &format!("{:?}", identity.nkey.key_type)),
+                    text("JWT Token:").size(12).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    scrollable(
+                        text(identity.jwt.token())
+                            .size(10)
+                            .font(iced::Font::MONOSPACE)
+                    ).height(Length::Fixed(100.0)),
+                    self.detail_row("Has Credential:", if identity.credential.is_some() { "Yes" } else { "No" }),
+                ].spacing(8)
+            ),
+            NodeType::NatsAccount(identity) => (
+                "NATS Account",
+                column![
+                    self.detail_row("Type:", "Account (Organizational Unit)"),
+                    self.detail_row("Public Key:", &identity.nkey.public_key.public_key()[..32]),
+                    self.detail_row("Key Type:", &format!("{:?}", identity.nkey.key_type)),
+                    text("JWT Token:").size(12).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    scrollable(
+                        text(identity.jwt.token())
+                            .size(10)
+                            .font(iced::Font::MONOSPACE)
+                    ).height(Length::Fixed(100.0)),
+                    self.detail_row("Has Credential:", if identity.credential.is_some() { "Yes" } else { "No" }),
+                ].spacing(8)
+            ),
+            NodeType::NatsUser(identity) => (
+                "NATS User",
+                column![
+                    self.detail_row("Type:", "User (Person)"),
+                    self.detail_row("Public Key:", &identity.nkey.public_key.public_key()[..32]),
+                    self.detail_row("Key Type:", &format!("{:?}", identity.nkey.key_type)),
+                    text("JWT Token:").size(12).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    scrollable(
+                        text(identity.jwt.token())
+                            .size(10)
+                            .font(iced::Font::MONOSPACE)
+                    ).height(Length::Fixed(100.0)),
+                    self.detail_row("Has Credential:", if identity.credential.is_some() { "Yes" } else { "No" }),
+                ].spacing(8)
+            ),
+            NodeType::NatsServiceAccount(identity) => (
+                "NATS Service Account",
+                column![
+                    self.detail_row("Type:", "Service (Automation)"),
+                    self.detail_row("Public Key:", &identity.nkey.public_key.public_key()[..32]),
+                    self.detail_row("Key Type:", &format!("{:?}", identity.nkey.key_type)),
+                    text("JWT Token:").size(12).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    scrollable(
+                        text(identity.jwt.token())
+                            .size(10)
+                            .font(iced::Font::MONOSPACE)
+                    ).height(Length::Fixed(100.0)),
+                    self.detail_row("Has Credential:", if identity.credential.is_some() { "Yes" } else { "No" }),
+                ].spacing(8)
+            ),
+            _ => ("Unknown", column![].spacing(8)),
+        };
+
+        container(
+            column![
+                row![
+                    text(title).size(18),
+                    button(icons::icon_sized(ICON_CLOSE, 16))
+                        .on_press(PropertyCardMessage::Close)
+                        .style(|theme: &Theme, _status| {
+                            button::Style {
+                                background: None,
+                                text_color: theme.palette().danger,
+                                border: iced::Border::default(),
+                                shadow: iced::Shadow::default(),
+                            }
+                        }),
+                ].spacing(10).align_y(iced::Alignment::Center),
+                scrollable(details).height(Length::Fill),
+            ].spacing(10).padding(15)
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+    }
+
+    /// Render detailed PKI certificate information (read-only)
+    fn view_certificate_details<'a>(&self, node_type: &'a NodeType) -> Element<'a, PropertyCardMessage> {
+        let (title, details) = match node_type {
+            NodeType::RootCertificate { subject, issuer, not_before, not_after, key_usage, .. } => (
+                "Root CA Certificate",
+                column![
+                    self.detail_row("Certificate Type:", "Root Certificate Authority"),
+                    self.detail_row("Subject:", subject),
+                    self.detail_row("Issuer:", issuer),
+                    self.detail_row("Valid From:", &not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+                    self.detail_row("Valid Until:", &not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+                    self.detail_row("Validity:", &format!("{} days", (not_after.signed_duration_since(*not_before).num_days()))),
+                    text("Key Usage:").size(12).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    column(key_usage.iter().map(|usage| {
+                        text(format!("  • {}", usage)).size(11).into()
+                    }).collect::<Vec<_>>()).spacing(2),
+                    self.detail_row("Trust Level:", "Root (Highest)"),
+                    self.detail_row("Path Length:", "Unlimited"),
+                ].spacing(8)
+            ),
+            NodeType::IntermediateCertificate { subject, issuer, not_before, not_after, key_usage, .. } => (
+                "Intermediate CA Certificate",
+                column![
+                    self.detail_row("Certificate Type:", "Intermediate Certificate Authority"),
+                    self.detail_row("Subject:", subject),
+                    self.detail_row("Issuer:", issuer),
+                    self.detail_row("Valid From:", &not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+                    self.detail_row("Valid Until:", &not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+                    self.detail_row("Validity:", &format!("{} days", (not_after.signed_duration_since(*not_before).num_days()))),
+                    text("Key Usage:").size(12).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    column(key_usage.iter().map(|usage| {
+                        text(format!("  • {}", usage)).size(11).into()
+                    }).collect::<Vec<_>>()).spacing(2),
+                    self.detail_row("Trust Level:", "Intermediate"),
+                    self.detail_row("Can Sign:", "Leaf Certificates"),
+                ].spacing(8)
+            ),
+            NodeType::LeafCertificate { subject, issuer, not_before, not_after, key_usage, san, .. } => (
+                "Leaf Certificate",
+                column![
+                    self.detail_row("Certificate Type:", "End Entity Certificate"),
+                    self.detail_row("Subject:", subject),
+                    self.detail_row("Issuer:", issuer),
+                    self.detail_row("Valid From:", &not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+                    self.detail_row("Valid Until:", &not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+                    self.detail_row("Validity:", &format!("{} days", (not_after.signed_duration_since(*not_before).num_days()))),
+                    text("Key Usage:").size(12).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    column(key_usage.iter().map(|usage| {
+                        text(format!("  • {}", usage)).size(11).into()
+                    }).collect::<Vec<_>>()).spacing(2),
+                    if !san.is_empty() {
+                        column![
+                            text("Subject Alternative Names:").size(12).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                            column(san.iter().map(|name| {
+                                text(format!("  • {}", name)).size(11).into()
+                            }).collect::<Vec<_>>()).spacing(2),
+                        ].spacing(4)
+                    } else {
+                        column![].into()
+                    },
+                    self.detail_row("Trust Level:", "Leaf (End Entity)"),
+                ].spacing(8)
+            ),
+            _ => ("Unknown", column![].spacing(8)),
+        };
+
+        container(
+            column![
+                row![
+                    text(title).size(18),
+                    button(icons::icon_sized(ICON_CLOSE, 16))
+                        .on_press(PropertyCardMessage::Close)
+                        .style(|theme: &Theme, _status| {
+                            button::Style {
+                                background: None,
+                                text_color: theme.palette().danger,
+                                border: iced::Border::default(),
+                                shadow: iced::Shadow::default(),
+                            }
+                        }),
+                ].spacing(10).align_y(iced::Alignment::Center),
+                scrollable(details).height(Length::Fill),
+            ].spacing(10).padding(15)
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+    }
+
+    /// Render detailed YubiKey hardware information (read-only)
+    fn view_yubikey_details<'a>(&self, node_type: &'a NodeType) -> Element<'a, PropertyCardMessage> {
+        let (title, details) = match node_type {
+            NodeType::YubiKey { serial, version, provisioned_at, slots_used, .. } => (
+                "YubiKey Hardware Token",
+                column![
+                    self.detail_row("Device Type:", "YubiKey Hardware Security Module"),
+                    self.detail_row("Serial Number:", serial),
+                    self.detail_row("Firmware Version:", version),
+                    self.detail_row("Provisioned:",
+                        &provisioned_at
+                            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+                            .unwrap_or_else(|| "Not provisioned".to_string())
+                    ),
+                    self.detail_row("Slots Used:", &format!("{} / 4", slots_used.len())),
+                    text("Active PIV Slots:").size(12).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    if !slots_used.is_empty() {
+                        column(slots_used.iter().map(|slot| {
+                            text(format!("  • Slot {}", slot)).size(11).into()
+                        }).collect::<Vec<_>>()).spacing(2)
+                    } else {
+                        column![text("  No slots in use").size(11).color(Color::from_rgb(0.5, 0.5, 0.5))].into()
+                    },
+                    text("Available Slots:").size(12).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    column![
+                        text("  • 9A - Authentication (PIV)").size(11),
+                        text("  • 9C - Digital Signature (PIV)").size(11),
+                        text("  • 9D - Key Management (PIV)").size(11),
+                        text("  • 9E - Card Authentication (PIV)").size(11),
+                    ].spacing(2),
+                ].spacing(8)
+            ),
+            NodeType::PivSlot { slot_name, yubikey_serial, has_key, certificate_subject, .. } => (
+                "PIV Slot",
+                column![
+                    self.detail_row("Slot:", slot_name),
+                    self.detail_row("YubiKey:", yubikey_serial),
+                    self.detail_row("Status:", if *has_key { "In Use" } else { "Empty" }),
+                    self.detail_row("Purpose:", {
+                        if slot_name.contains("9A") {
+                            "Authentication - SSH, VPN, System Login"
+                        } else if slot_name.contains("9C") {
+                            "Digital Signature - Code Signing, Email Signing"
+                        } else if slot_name.contains("9D") {
+                            "Key Management - Encryption, Decryption"
+                        } else if slot_name.contains("9E") {
+                            "Card Authentication - Physical Access"
+                        } else {
+                            "Unknown"
+                        }
+                    }),
+                    if *has_key {
+                        self.detail_row("Certificate Subject:",
+                            certificate_subject.as_deref().unwrap_or("No certificate loaded"))
+                    } else {
+                        self.detail_row("Certificate:", "None (empty slot)")
+                    },
+                    self.detail_row("Algorithm:", if *has_key { "RSA 2048 or ECC P-256" } else { "N/A" }),
+                    self.detail_row("Touch Policy:", "Not configured"),
+                    self.detail_row("PIN Policy:", "Default (once per session)"),
+                ].spacing(8)
+            ),
+            _ => ("Unknown", column![].spacing(8)),
+        };
+
+        container(
+            column![
+                row![
+                    text(title).size(18),
+                    button(icons::icon_sized(ICON_CLOSE, 16))
+                        .on_press(PropertyCardMessage::Close)
+                        .style(|theme: &Theme, _status| {
+                            button::Style {
+                                background: None,
+                                text_color: theme.palette().danger,
+                                border: iced::Border::default(),
+                                shadow: iced::Shadow::default(),
+                            }
+                        }),
+                ].spacing(10).align_y(iced::Alignment::Center),
+                scrollable(details).height(Length::Fill),
+            ].spacing(10).padding(15)
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+    }
+
+    /// Helper to create a detail row (label: value)
+    fn detail_row(&self, label: impl Into<String>, value: impl Into<String>) -> Row<'static, PropertyCardMessage> {
+        let label_str = label.into();
+        let value_str = value.into();
+        row![
+            text(label_str).size(12).color(Color::from_rgb(0.7, 0.7, 0.8)).width(Length::Fixed(150.0)),
+            text(value_str).size(12),
+        ]
+        .spacing(10)
+        .align_y(iced::Alignment::Center)
     }
 }
 
