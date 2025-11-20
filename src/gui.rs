@@ -199,6 +199,11 @@ pub struct CimKeysApp {
 
     // Phase 6: Help and tooltips
     show_help_overlay: bool,
+
+    // Phase 7: Loading indicators
+    loading_export: bool,
+    loading_import: bool,
+    loading_graph_data: bool,
 }
 
 /// Different tabs in the application
@@ -591,6 +596,10 @@ impl CimKeysApp {
                 highlight_nodes: Vec::new(),
                 // Phase 6: Help and tooltips
                 show_help_overlay: false,
+                // Phase 7: Loading indicators
+                loading_export: false,
+                loading_import: false,
+                loading_graph_data: false,
             },
             load_task,
         )
@@ -2674,6 +2683,10 @@ impl CimKeysApp {
 
             // Graph export/import
             Message::ExportGraph => {
+                // Set loading state
+                self.loading_export = true;
+                self.status_message = "Exporting graph...".to_string();
+
                 // Create export data from current graph state
                 let export_data = GraphExport {
                     version: "1.0".to_string(),
@@ -2720,6 +2733,9 @@ impl CimKeysApp {
             }
 
             Message::GraphExported(result) => {
+                // Clear loading state
+                self.loading_export = false;
+
                 match result {
                     Ok(message) => {
                         self.status_message = message;
@@ -2734,6 +2750,9 @@ impl CimKeysApp {
             }
 
             Message::ImportGraph => {
+                // Set loading state
+                self.loading_import = true;
+                self.status_message = "Importing graph...".to_string();
                 let output_dir = self._domain_path.clone();
                 Task::perform(
                     async move {
@@ -2756,6 +2775,9 @@ impl CimKeysApp {
             }
 
             Message::GraphImported(result) => {
+                // Clear loading state
+                self.loading_import = false;
+
                 match result {
                     Ok(message) => {
                         self.status_message = message;
@@ -3416,12 +3438,22 @@ impl CimKeysApp {
 
             // Graph export/import buttons
             row![
-                button(text("Export Graph").size(self.view_model.text_small))
-                    .on_press(Message::ExportGraph)
-                    .style(CowboyCustomTheme::glass_button()),
-                button(text("Import Graph").size(self.view_model.text_small))
-                    .on_press(Message::ImportGraph)
-                    .style(CowboyCustomTheme::glass_button()),
+                if self.loading_export {
+                    button(text("Exporting...").size(self.view_model.text_small))
+                        .style(CowboyCustomTheme::glass_button())
+                } else {
+                    button(text("Export Graph").size(self.view_model.text_small))
+                        .on_press(Message::ExportGraph)
+                        .style(CowboyCustomTheme::glass_button())
+                },
+                if self.loading_import {
+                    button(text("Importing...").size(self.view_model.text_small))
+                        .style(CowboyCustomTheme::glass_button())
+                } else {
+                    button(text("Import Graph").size(self.view_model.text_small))
+                        .on_press(Message::ImportGraph)
+                        .style(CowboyCustomTheme::glass_button())
+                },
                 horizontal_space(),
                 text(format!("Graph: {} nodes, {} edges",
                     self.org_graph.nodes.len(),
@@ -3432,6 +3464,101 @@ impl CimKeysApp {
             .spacing(self.view_model.spacing_md)
             .padding(self.view_model.padding_sm)
             .align_y(Alignment::Center),
+
+            // Graph statistics panel
+            container(
+                {
+                    // Calculate statistics
+                    let total_nodes = self.org_graph.nodes.len();
+                    let total_edges = self.org_graph.edges.len();
+
+                    // Count nodes by type
+                    let mut node_counts = std::collections::HashMap::new();
+                    for node in self.org_graph.nodes.values() {
+                        let node_type_name = match &node.node_type {
+                            graph::NodeType::Person { .. } => "Person",
+                            graph::NodeType::Organization(_) => "Organization",
+                            graph::NodeType::OrganizationalUnit(_) => "Unit",
+                            graph::NodeType::Location(_) => "Location",
+                            graph::NodeType::Role(_) => "Role",
+                            graph::NodeType::Policy(_) => "Policy",
+                            graph::NodeType::NatsOperator(_) => "NATS Operator",
+                            graph::NodeType::NatsAccount(_) => "NATS Account",
+                            graph::NodeType::NatsUser(_) => "NATS User",
+                            graph::NodeType::NatsServiceAccount(_) => "Service Account",
+                            graph::NodeType::RootCertificate { .. } => "Root CA",
+                            graph::NodeType::IntermediateCertificate { .. } => "Intermediate CA",
+                            graph::NodeType::LeafCertificate { .. } => "Leaf Cert",
+                            graph::NodeType::YubiKey { .. } => "YubiKey",
+                            graph::NodeType::PivSlot { .. } => "PIV Slot",
+                        };
+                        *node_counts.entry(node_type_name).or_insert(0) += 1;
+                    }
+
+                    // Calculate graph density
+                    let max_edges = if total_nodes > 1 {
+                        total_nodes * (total_nodes - 1)
+                    } else {
+                        1
+                    };
+                    let density_percent = if max_edges > 0 {
+                        (total_edges as f32 / max_edges as f32 * 100.0) as u32
+                    } else {
+                        0
+                    };
+
+                    // Average connections per node
+                    let avg_connections = if total_nodes > 0 {
+                        (total_edges as f32 * 2.0 / total_nodes as f32)
+                    } else {
+                        0.0
+                    };
+
+                    row![
+                        // Overall stats
+                        container(
+                            column![
+                                text("Graph Overview").size(self.view_model.text_small).color(self.view_model.colors.text_disabled),
+                                text(format!("{} nodes", total_nodes)).size(self.view_model.text_medium),
+                                text(format!("{} edges", total_edges)).size(self.view_model.text_small),
+                                text(format!("Density: {}%", density_percent)).size(self.view_model.text_small),
+                                text(format!("Avg: {:.1} connections/node", avg_connections)).size(self.view_model.text_small),
+                            ]
+                            .spacing(4)
+                        )
+                        .padding(self.view_model.padding_sm),
+
+                        vertical_space(),
+
+                        // Node type breakdown
+                        container(
+                            column(
+                                {
+                                    let mut items = vec![
+                                        text("Node Types").size(self.view_model.text_small).color(self.view_model.colors.text_disabled).into()
+                                    ];
+                                    let mut sorted_counts: Vec<_> = node_counts.iter().collect();
+                                    sorted_counts.sort_by(|a, b| b.1.cmp(a.1));
+                                    for (node_type, count) in sorted_counts.iter().take(5) {
+                                        items.push(
+                                            text(format!("{}: {}", node_type, count))
+                                                .size(self.view_model.text_small)
+                                                .into()
+                                        );
+                                    }
+                                    items
+                                }
+                            )
+                            .spacing(4)
+                        )
+                        .padding(self.view_model.padding_sm),
+                    ]
+                    .spacing(self.view_model.spacing_lg)
+                    .align_y(Alignment::Center)
+                }
+            )
+            .padding(self.view_model.padding_md)
+            .style(CowboyCustomTheme::pastel_coral_card()),
 
             // Graph visualization with overlays (using stack for absolute positioning)
             {
