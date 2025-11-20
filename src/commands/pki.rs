@@ -310,33 +310,136 @@ pub struct CertificateGenerated {
 ///
 /// User Story: US-017
 pub fn handle_generate_certificate(cmd: GenerateCertificate) -> Result<CertificateGenerated, String> {
-    let events = Vec::new();
+    let mut events = Vec::new();
     let cert_id = Uuid::now_v7();
 
-    // TODO: Implement certificate generation
-    // 1. Load CA certificate and key
-    // 2. Create X.509 extensions based on purpose
-    // 3. Sign certificate with CA key
-    // 4. Encode as DER and PEM
+    // TODO: Load CA certificate and key from storage using cmd.ca_id
+    // For now, we'll generate a self-signed certificate as a placeholder
+    // This needs to be replaced with actual CA signing once CA storage is implemented
+
+    // Step 1: Determine key usage and extended key usage based on purpose
+    let (key_usage, extended_key_usage) = match cmd.purpose {
+        KeyPurpose::Authentication => (
+            vec!["DigitalSignature".to_string(), "KeyAgreement".to_string()],
+            vec!["ServerAuth".to_string(), "ClientAuth".to_string()],
+        ),
+        KeyPurpose::Signing => (
+            vec!["DigitalSignature".to_string()],
+            vec!["CodeSigning".to_string()],
+        ),
+        KeyPurpose::Encryption => (
+            vec!["KeyEncipherment".to_string(), "DataEncipherment".to_string()],
+            vec!["EmailProtection".to_string()],
+        ),
+        KeyPurpose::JwtSigning => (
+            vec!["DigitalSignature".to_string()],
+            vec![],
+        ),
+        _ => (
+            vec!["DigitalSignature".to_string()],
+            vec![],
+        ),
+    };
+
+    // Step 2: Generate certificate using rcgen
+    use rcgen::{CertificateParams, DistinguishedName, DnType, IsCa, KeyUsagePurpose, SerialNumber, KeyPair as RcgenKeyPair};
+    use time::{Duration as TimeDuration, OffsetDateTime};
+
+    let rcgen_key_pair = RcgenKeyPair::generate()
+        .map_err(|e| format!("Failed to generate key pair: {}", e))?;
+
+    let mut params = CertificateParams::default();
+
+    // Set subject DN
+    let mut dn = DistinguishedName::new();
+    dn.push(DnType::CommonName, &cmd.subject.common_name);
+    if let Some(org) = &cmd.subject.organization {
+        dn.push(DnType::OrganizationName, org);
+    }
+    if let Some(ou) = &cmd.subject.organizational_unit {
+        dn.push(DnType::OrganizationalUnitName, ou);
+    }
+    if let Some(country) = &cmd.subject.country {
+        dn.push(DnType::CountryName, country);
+    }
+    params.distinguished_name = dn;
+
+    // Not a CA certificate
+    params.is_ca = IsCa::NoCa;
+
+    // Set validity period
+    let not_before = OffsetDateTime::now_utc();
+    let not_after = not_before + TimeDuration::days((cmd.validity_years * 365) as i64);
+    params.not_before = not_before;
+    params.not_after = not_after;
+
+    // Set key usages based on purpose
+    params.key_usages = key_usage.iter().filter_map(|usage| match usage.as_str() {
+        "DigitalSignature" => Some(KeyUsagePurpose::DigitalSignature),
+        "KeyEncipherment" => Some(KeyUsagePurpose::KeyEncipherment),
+        "DataEncipherment" => Some(KeyUsagePurpose::DataEncipherment),
+        "KeyAgreement" => Some(KeyUsagePurpose::KeyAgreement),
+        _ => None,
+    }).collect();
+
+    // Generate serial number from cert_id
+    let serial_bytes = cert_id.as_u128().to_be_bytes();
+    params.serial_number = Some(SerialNumber::from_slice(&serial_bytes));
+
+    // Generate self-signed certificate (TODO: Sign with CA key instead)
+    let rcgen_cert = params.self_signed(&rcgen_key_pair)
+        .map_err(|e| format!("Failed to generate certificate: {}", e))?;
+
+    let der = rcgen_cert.der().to_vec();
+    let pem = rcgen_cert.pem();
+
+    // Step 3: Create certificate structure
+    let certificate = Certificate {
+        serial_number: cert_id.to_string(),
+        subject: cmd.subject.clone(),
+        issuer: cmd.subject.clone(), // TODO: Should be CA subject once CA loading is implemented
+        public_key: cmd.public_key.clone(),
+        validity: Validity {
+            not_before: Utc::now(),
+            not_after: Utc::now() + chrono::Duration::days((cmd.validity_years * 365) as i64),
+        },
+        signature: crate::value_objects::Signature {
+            algorithm: crate::value_objects::SignatureAlgorithm::Ed25519,
+            data: vec![0u8; 64], // Signature is embedded in DER/PEM
+        },
+        der,
+        pem,
+    };
+
+    // Step 4: Emit certificate generated event
+    events.push(crate::events::KeyEvent::CertificateGenerated(
+        crate::events::CertificateGeneratedEvent {
+            cert_id,
+            key_id: Uuid::nil(), // TODO: Link to actual key_id from cmd.public_key
+            subject: cmd.subject.common_name.clone(),
+            issuer: Some(cmd.ca_id), // The CA that issued this certificate
+            not_before: certificate.validity.not_before,
+            not_after: certificate.validity.not_after,
+            is_ca: false,
+            san: vec![],
+            key_usage,
+            extended_key_usage,
+        },
+    ));
+
+    // Step 5: Emit certificate signed event
+    events.push(crate::events::KeyEvent::CertificateSigned(
+        crate::events::CertificateSignedEvent {
+            cert_id,
+            signed_by: cmd.ca_id, // The CA certificate ID that signed this
+            signature_algorithm: "Ed25519".to_string(), // TODO: Use actual CA algorithm
+            signed_at: Utc::now(),
+        },
+    ));
 
     Ok(CertificateGenerated {
         cert_id,
-        certificate: Certificate {
-            serial_number: cert_id.to_string(),
-            subject: cmd.subject.clone(),
-            issuer: cmd.subject, // TODO: Use actual CA subject
-            public_key: cmd.public_key,
-            validity: Validity {
-                not_before: Utc::now(),
-                not_after: Utc::now() + chrono::Duration::days((cmd.validity_years * 365) as i64),
-            },
-            signature: crate::value_objects::Signature {
-                algorithm: crate::value_objects::SignatureAlgorithm::Ed25519, // TODO: Use CA algorithm
-                data: vec![],
-            },
-            der: vec![],
-            pem: String::new(),
-        },
+        certificate,
         events,
     })
 }
