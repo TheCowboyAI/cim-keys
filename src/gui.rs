@@ -2175,6 +2175,74 @@ impl CimKeysApp {
                         }
                         // Redo handled in graph.handle_message
                     }
+                    // Canvas clicked - place new node if node type is selected
+                    GraphMessage::CanvasClicked(position) => {
+                        if let Some(ref node_type_str) = self.selected_node_type {
+                            use crate::domain::{Organization, OrganizationUnit, OrganizationUnitType, Location, Role, Policy, Person};
+                            use crate::gui::graph::NodeType;
+                            use crate::gui::graph_events::GraphEvent;
+                            use chrono::Utc;
+                            use std::collections::HashMap;
+
+                            let node_id = Uuid::now_v7();
+                            let dummy_org_id = self.organization_id.unwrap_or_else(|| Uuid::now_v7());
+
+                            // Create node based on selected type and current graph view
+                            let (graph_node_type, label, color) = match node_type_str.as_str() {
+                                // Organization graph nodes
+                                "Person" => {
+                                    let person = Person {
+                                        id: node_id,
+                                        name: "New Person".to_string(),
+                                        email: format!("person{}@example.com", node_id),
+                                        roles: vec![],
+                                        organization_id: dummy_org_id,
+                                        unit_ids: vec![],
+                                        created_at: Utc::now(),
+                                        active: true,
+                                    };
+                                    use crate::domain::KeyOwnerRole;
+                                    (NodeType::Person { person, role: KeyOwnerRole::RootAuthority }, "New Person".to_string(), self.view_model.colors.node_person)
+                                }
+                                "Unit" => {
+                                    let unit = OrganizationUnit {
+                                        id: node_id,
+                                        name: "New Unit".to_string(),
+                                        unit_type: OrganizationUnitType::Department,
+                                        parent_unit_id: None,
+                                        responsible_person_id: None,
+                                    };
+                                    (NodeType::OrganizationalUnit(unit), "New Unit".to_string(), self.view_model.colors.node_unit)
+                                }
+                                // TODO: Location, Role - complex types, implement later
+                                // TODO: Add NATS, PKI, and YubiKey node types
+                                _ => {
+                                    self.status_message = format!("Node type '{}' not yet implemented", node_type_str);
+                                    self.selected_node_type = None;
+                                    return Task::none();
+                                }
+                            };
+
+                            // Create NodeCreated event
+                            let event = GraphEvent::NodeCreated {
+                                node_id,
+                                node_type: graph_node_type,
+                                position: *position,
+                                color,
+                                label: label.clone(),
+                                timestamp: Utc::now(),
+                            };
+
+                            self.org_graph.event_stack.push(event.clone());
+                            self.org_graph.apply_event(&event);
+
+                            self.status_message = format!("Created '{}' at ({:.0}, {:.0})", label, position.x, position.y);
+                            self.selected_node_type = None;  // Clear selection after placing
+                        } else {
+                            // No node type selected - just a normal canvas click
+                            self.status_message = "Canvas clicked - select a node type from the dropdown to place a new node".to_string();
+                        }
+                    }
                     _ => {}
                 }
                 self.org_graph.handle_message(graph_msg);

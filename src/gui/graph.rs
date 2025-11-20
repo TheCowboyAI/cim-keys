@@ -231,6 +231,8 @@ pub enum GraphMessage {
     DeleteSelected,      // Delete key - delete selected node or edge
     Undo,                // Ctrl+Z - undo last action
     Redo,                // Ctrl+Y or Ctrl+Shift+Z - redo last undone action
+    // Canvas interaction
+    CanvasClicked(Point),  // Click on empty canvas (not on a node)
 }
 
 impl Default for OrganizationGraph {
@@ -1331,6 +1333,8 @@ impl OrganizationGraph {
                     self.edges[edge_index].edge_type = new_type;
                 }
             }
+            // Canvas clicked - handled in main GUI layer for node creation
+            GraphMessage::CanvasClicked(_) => {}
         }
     }
 
@@ -1997,12 +2001,14 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                 }
                 canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                     // Check if click is on a node
+                    let mut hit_node = false;
                     for (node_id, node) in &self.nodes {
                         let distance = ((adjusted_position.x - node.position.x).powi(2)
                             + (adjusted_position.y - node.position.y).powi(2))
                         .sqrt();
 
                         if distance <= 20.0 {
+                            hit_node = true;
                             // Check if click is on border (outer ring) vs center
                             // Border: 12-20 pixels from center → start edge creation
                             // Center: 0-12 pixels from center → start node drag
@@ -2032,6 +2038,14 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                                 );
                             }
                         }
+                    }
+
+                    // Click on empty canvas - emit CanvasClicked for node placement
+                    if !hit_node {
+                        return (
+                            canvas::event::Status::Captured,
+                            Some(GraphMessage::CanvasClicked(adjusted_position)),
+                        );
                     }
                 }
                 canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
