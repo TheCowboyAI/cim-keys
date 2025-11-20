@@ -25,7 +25,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use cim_graph::events::{GraphEvent, EventPayload};
+use cim_graph::events::EventPayload;
 
 /// Event envelope for NATS publishing
 #[derive(Debug, Clone, Serialize, Deserialize)]

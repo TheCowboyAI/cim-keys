@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::domain::{AccountIdentity, Organization, UserIdentity};
 use crate::domain_projections::NatsProjection;
 use crate::events::{
-    AccountabilityValidatedEvent, AccountabilityViolatedEvent, KeyEvent,
+    AccountabilityValidatedEvent, AccountabilityViolatedEvent, AgentCreatedEvent, KeyEvent,
     NatsAccountCreatedEvent, NatsOperatorCreatedEvent, NatsUserCreatedEvent,
     ServiceAccountCreatedEvent,
 };
@@ -52,14 +52,15 @@ pub fn handle_create_nats_operator(
     let identity = NatsProjection::project_operator(&cmd.organization);
 
     // Step 2: Emit operator created event
-    // TODO: Add correlation_id and causation_id to event structure for proper event sourcing
     let event = KeyEvent::NatsOperatorCreated(NatsOperatorCreatedEvent {
         operator_id: identity.nkey.id,
         name: cmd.organization.name.clone(),
         public_key: identity.nkey.public_key_string().to_string(),
         created_at: Utc::now(),
-        created_by: "system".to_string(), // TODO: Get actual user
+        created_by: format!("cim-keys-operator-bootstrap"), // System-initiated bootstrap
         organization_id: Some(cmd.organization.id),
+        correlation_id: cmd.correlation_id,
+        causation_id: cmd.causation_id,
     });
 
     Ok(NatsOperatorCreated {
@@ -110,16 +111,20 @@ pub fn handle_create_nats_account(
     );
 
     // Step 2: Emit account created event
-    // TODO: Add correlation_id and causation_id to event structure for proper event sourcing
     let event = KeyEvent::NatsAccountCreated(NatsAccountCreatedEvent {
         account_id: identity.nkey.id,
-        operator_id: Uuid::nil(), // TODO: Get operator ID from operator_nkey
+        operator_id: cmd.operator_nkey.id,
         name: cmd.account.name().to_string(),
         public_key: identity.nkey.public_key_string().to_string(),
-        is_system: false, // TODO: Determine from account type
+        is_system: matches!(cmd.account, AccountIdentity::Organization(_)),
         created_at: Utc::now(),
-        created_by: "system".to_string(), // TODO: Get actual user
-        organization_unit_id: None, // TODO: Get from account if OrganizationUnit
+        created_by: format!("cim-keys-account-bootstrap"),
+        organization_unit_id: match &cmd.account {
+            AccountIdentity::OrganizationUnit(unit) => Some(unit.id),
+            AccountIdentity::Organization(_) => None,
+        },
+        correlation_id: cmd.correlation_id,
+        causation_id: cmd.causation_id,
     });
 
     Ok(NatsAccountCreated {
@@ -174,6 +179,11 @@ pub fn handle_create_nats_user(cmd: CreateNatsUser) -> Result<NatsUserCreated, S
         match cmd.user.validate_accountability(&cmd.organization) {
             Ok(_) => {
                 // Emit accountability validated event
+                // Note: Organization doesn't have a direct people collection in the current model.
+                // Person name would need to be looked up from a separate registry or passed in the command.
+                // For now, we use the person_id as the name placeholder.
+                let responsible_person_name = format!("person-{}", responsible_person_id);
+
                 events.push(KeyEvent::AccountabilityValidated(
                     AccountabilityValidatedEvent {
                         validation_id: Uuid::now_v7(),
@@ -186,7 +196,7 @@ pub fn handle_create_nats_user(cmd: CreateNatsUser) -> Result<NatsUserCreated, S
                         },
                         identity_name: cmd.user.name().to_string(),
                         responsible_person_id,
-                        responsible_person_name: "TODO: Look up person name".to_string(), // TODO: Get from org
+                        responsible_person_name,
                         validated_at: Utc::now(),
                         validation_result: "PASSED".to_string(),
                     },
@@ -231,12 +241,15 @@ pub fn handle_create_nats_user(cmd: CreateNatsUser) -> Result<NatsUserCreated, S
         }
         #[cfg(feature = "cim-domain-agent")]
         UserIdentity::Agent(agent) => {
+            // Convert agent_type to string representation using Display trait
+            let agent_type_str = agent.agent_type().to_string();
+
             events.push(KeyEvent::AgentCreated(AgentCreatedEvent {
-                agent_id: agent.id,
-                name: agent.name.clone(),
-                agent_type: format!("{:?}", agent.agent_type), // TODO: Proper string conversion
-                responsible_person_id: agent.responsible_person_id,
-                organization_id: agent.organization_id,
+                agent_id: agent.id().into(), // Convert AgentId to Uuid
+                name: agent.metadata().name().to_string(),
+                agent_type: agent_type_str,
+                responsible_person_id: agent.metadata().owner_id(), // owner_id is the responsible person
+                organization_id: agent.metadata().owner_id(), // Using owner as org for now
                 created_at: Utc::now(),
             }));
         }
@@ -255,18 +268,19 @@ pub fn handle_create_nats_user(cmd: CreateNatsUser) -> Result<NatsUserCreated, S
     );
 
     // Step 4: Emit user created event
-    // TODO: Add correlation_id and causation_id to event structure for proper event sourcing
     events.push(KeyEvent::NatsUserCreated(NatsUserCreatedEvent {
         user_id: identity.nkey.id,
         account_id: cmd.account_nkey.id,
         name: cmd.user.name().to_string(),
         public_key: identity.nkey.public_key_string().to_string(),
         created_at: Utc::now(),
-        created_by: "system".to_string(), // TODO: Get actual user
+        created_by: format!("cim-keys-user-bootstrap"),
         person_id: match &cmd.user {
             UserIdentity::Person(p) => Some(p.id),
             _ => None,
         },
+        correlation_id: cmd.correlation_id,
+        causation_id: cmd.causation_id,
     }));
 
     Ok(NatsUserCreated {
@@ -338,10 +352,43 @@ pub fn handle_bootstrap_nats_infrastructure(
     }
 
     // Step 3: Create users for all people/agents/services in organization
-    // TODO: Extract people from organizational roles
-    // TODO: Extract service accounts from units
-    // TODO: Extract agents from organization
-    let users = Vec::new(); // Placeholder
+    //
+    // NOTE: The current Organization model doesn't have direct collections of
+    // people, service accounts, or agents. These entities reference the organization
+    // via their organization_id field, but the Organization doesn't maintain
+    // a reverse index.
+    //
+    // To bootstrap users, you need to:
+    // 1. Maintain a separate registry of Person entities and query by organization_id
+    // 2. Maintain a separate registry of ServiceAccount entities and query by owning_unit_id
+    // 3. If using the 'cim-domain-agent' feature, maintain an Agent registry
+    //
+    // For each discovered identity, you would:
+    // - Determine which account (unit) they belong to
+    // - Call handle_create_nats_user with the appropriate CreateNatsUser command
+    //
+    // Example (when person registry is available):
+    // ```
+    // for person in person_registry.find_by_organization(cmd.organization.id) {
+    //     let account = accounts.iter()
+    //         .find(|a| person.unit_ids.contains(&a.account_nkey.id))
+    //         .ok_or("No account found for person")?;
+    //
+    //     let user_cmd = CreateNatsUser {
+    //         user: UserIdentity::Person(person),
+    //         organization: cmd.organization.clone(),
+    //         account_nkey: account.account_nkey.clone(),
+    //         permissions: None,
+    //         limits: None,
+    //         correlation_id: cmd.correlation_id,
+    //         causation_id: Some(account.account_nkey.id),
+    //     };
+    //     let user = handle_create_nats_user(user_cmd)?;
+    //     all_events.extend(user.events.clone());
+    //     users.push(user);
+    // }
+    // ```
+    let users = Vec::new(); // Currently empty - requires external person/service/agent registries
 
     Ok(NatsInfrastructureBootstrapped {
         operator,

@@ -24,6 +24,7 @@ use super::graph_events::{EventStack, GraphEvent};
 use super::GraphLayout;
 
 /// Graph visualization widget for organizational structure
+#[derive(Clone)]
 pub struct OrganizationGraph {
     pub nodes: HashMap<Uuid, GraphNode>,
     pub edges: Vec<GraphEdge>,
@@ -124,6 +125,13 @@ pub enum NodeType {
         has_key: bool,
         certificate_subject: Option<String>,
     },
+    /// YubiKey provisioning status for a person
+    YubiKeyStatus {
+        person_id: Uuid,
+        yubikey_serial: Option<String>,
+        slots_provisioned: Vec<super::graph_yubikey::PIVSlot>,
+        slots_needed: Vec<super::graph_yubikey::PIVSlot>,
+    },
 }
 
 /// An edge in the organization graph (represents relationship/delegation)
@@ -196,6 +204,8 @@ pub enum EdgeType {
     StoresKey,
     /// Certificate loaded in slot (PivSlot → Certificate)
     LoadedCertificate,
+    /// Person requires YubiKey (Person → YubiKeyStatus)
+    Requires,
 
     // Legacy (for backwards compatibility)
     /// Hierarchical relationship (manager -> report)
@@ -888,6 +898,7 @@ impl OrganizationGraph {
             EdgeType::HasSlot => Color::from_rgb(0.9, 0.4, 0.9), // Light magenta (slot)
             EdgeType::StoresKey => Color::from_rgb(0.6, 0.2, 0.9), // Purple (key storage)
             EdgeType::LoadedCertificate => Color::from_rgb(0.7, 0.5, 0.9), // Light purple (cert)
+            EdgeType::Requires => Color::from_rgb(0.6, 0.4, 0.8), // Purple (requirement)
 
             // Legacy
             EdgeType::Hierarchy => Color::from_rgb(0.3, 0.3, 0.7),
@@ -1029,6 +1040,7 @@ impl OrganizationGraph {
                 // YubiKey Hardware
                 NodeType::YubiKey { .. } => "YubiKey",
                 NodeType::PivSlot { .. } => "PivSlot",
+                NodeType::YubiKeyStatus { .. } => "YubiKeyStatus",
             };
             type_groups.entry(type_key.to_string()).or_insert_with(Vec::new).push(*id);
         }
@@ -1377,7 +1389,7 @@ impl OrganizationGraph {
             NodeType::LeafCertificate { .. } => {
                 self.filter_show_pki
             }
-            NodeType::YubiKey { .. } | NodeType::PivSlot { .. } => {
+            NodeType::YubiKey { .. } | NodeType::PivSlot { .. } | NodeType::YubiKeyStatus { .. } => {
                 self.filter_show_yubikey
             }
         }
@@ -1547,7 +1559,7 @@ impl OrganizationGraph {
                 NodeType::LeafCertificate { .. } => {
                     pki_nodes.push(*id);
                 }
-                NodeType::YubiKey { .. } | NodeType::PivSlot { .. } => {
+                NodeType::YubiKey { .. } | NodeType::PivSlot { .. } | NodeType::YubiKeyStatus { .. } => {
                     yubikey_nodes.push(*id);
                 }
             }
@@ -1695,6 +1707,7 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                     EdgeType::HasSlot => "has slot",
                     EdgeType::StoresKey => "stores key",
                     EdgeType::LoadedCertificate => "has cert",
+                    EdgeType::Requires => "requires",
 
                     // Legacy
                     EdgeType::Hierarchy => "reports to",
@@ -1907,6 +1920,16 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                         "Empty slot".to_string()
                     },
                 ),
+                NodeType::YubiKeyStatus { yubikey_serial, slots_provisioned, slots_needed, .. } => (
+                    crate::icons::ICON_SECURITY,
+                    crate::icons::MATERIAL_ICONS,
+                    format!("YubiKey Status"),
+                    if let Some(serial) = yubikey_serial {
+                        format!("{}/{} slots ({}))", slots_provisioned.len(), slots_needed.len(), serial)
+                    } else {
+                        format!("{}/{} slots needed", slots_provisioned.len(), slots_needed.len())
+                    },
+                ),
             };
 
             // Primary text (below node)
@@ -2001,14 +2024,13 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                 }
                 canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                     // Check if click is on a node
-                    let mut hit_node = false;
+                    let hit_node = false;
                     for (node_id, node) in &self.nodes {
                         let distance = ((adjusted_position.x - node.position.x).powi(2)
                             + (adjusted_position.y - node.position.y).powi(2))
                         .sqrt();
 
                         if distance <= 20.0 {
-                            hit_node = true;
                             // Check if click is on border (outer ring) vs center
                             // Border: 12-20 pixels from center → start edge creation
                             // Center: 0-12 pixels from center → start node drag
@@ -2334,6 +2356,13 @@ pub fn view_graph(graph: &OrganizationGraph) -> Element<'_, GraphMessage> {
                     text(format!("YubiKey: {}", yubikey_serial)),
                     text(format!("Status: {}", if *has_key { "Key loaded" } else { "Empty" })),
                     text(format!("Certificate: {}", certificate_subject.clone().unwrap_or_else(|| "None".to_string()))),
+                ],
+                NodeType::YubiKeyStatus { person_id, yubikey_serial, slots_provisioned, slots_needed } => column![
+                    text("Selected YubiKey Status:").size(16),
+                    text(format!("Person ID: {}", person_id)),
+                    text(format!("Serial: {}", yubikey_serial.clone().unwrap_or_else(|| "Not detected".to_string()))),
+                    text(format!("Provisioned Slots: {}", slots_provisioned.len())),
+                    text(format!("Needed Slots: {}", slots_needed.len())),
                 ],
             };
             items = items.push(details.spacing(5));

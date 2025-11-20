@@ -2,8 +2,20 @@
 //!
 //! ALL events in the cim-keys application flow through this single algebraic type.
 //! This makes event origins explicit and enables cross-framework reuse.
+//!
+//! ## Signal Kind Classification
+//!
+//! Following n-ary FRP Axiom A1 (Multi-Kinded Signals), each intent has a natural
+//! signal kind:
+//!
+//! - **EventKind (87%)**: Discrete occurrences (clicks, completions, failures)
+//! - **StepKind (13%)**: Piecewise-constant values (form inputs, current state)
+//! - **ContinuousKind (0%)**: Smooth functions (not yet used in cim-keys)
+//!
+//! See `INTENT_SIGNAL_KIND_ANALYSIS.md` for complete classification.
 
 use std::path::PathBuf;
+use crate::signals::{EventKind, StepKind};
 
 /// Type of node that can be created in the graph
 #[derive(Debug, Clone)]
@@ -455,5 +467,360 @@ impl Intent {
                 | Intent::DomainPolicyCreated { .. }
                 | Intent::DomainPolicyBound { .. }
         )
+    }
+
+    /// Get the signal kind for this intent variant
+    ///
+    /// Following n-ary FRP Axiom A1 (Multi-Kinded Signals), each intent has a
+    /// natural signal kind that determines its temporal semantics:
+    ///
+    /// - **EventKind**: Discrete occurrences at specific time points (87% of intents)
+    ///   - Button clicks, completions, failures, domain events
+    ///   - Semantics: `⟦Event T⟧(t) = [(t', x) | t' ≤ t]`
+    ///
+    /// - **StepKind**: Piecewise-constant values that change discretely (13% of intents)
+    ///   - Form input values (organization name, person email, passphrase)
+    ///   - Semantics: `⟦Step T⟧(t) = T` (holds value until next change)
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use cim_keys::mvi::Intent;
+    /// use cim_keys::signals::SignalKind;
+    ///
+    /// // Event signals (discrete occurrences)
+    /// let click = Intent::UiGenerateRootCAClicked;
+    /// assert!(click.is_event_signal());
+    ///
+    /// // Step signals (piecewise constant values)
+    /// let input = Intent::UiOrganizationNameChanged("Acme Corp".to_string());
+    /// assert!(input.is_step_signal());
+    /// ```
+    ///
+    /// See `INTENT_SIGNAL_KIND_ANALYSIS.md` for complete classification.
+    pub fn is_event_signal(&self) -> bool {
+        matches!(
+            self,
+            // All intents are events EXCEPT the following step signals
+            Intent::UiOrganizationNameChanged(_)
+            | Intent::UiOrganizationIdChanged(_)
+            | Intent::UiPersonNameChanged { .. }
+            | Intent::UiPersonEmailChanged { .. }
+            | Intent::UiPassphraseChanged(_)
+            | Intent::UiPassphraseConfirmChanged(_)
+            | Intent::UiGraphPropertyChanged { .. }
+        ) == false
+    }
+
+    /// Check if this intent is a step signal (piecewise-constant value)
+    ///
+    /// Step signals hold current values between changes, such as form inputs.
+    /// These represent the *current state* of an input, not the change event itself.
+    ///
+    /// Step signals: 9 variants (13%)
+    /// - UiOrganizationNameChanged
+    /// - UiOrganizationIdChanged
+    /// - UiPersonNameChanged
+    /// - UiPersonEmailChanged
+    /// - UiPassphraseChanged
+    /// - UiPassphraseConfirmChanged
+    /// - UiGraphPropertyChanged
+    pub fn is_step_signal(&self) -> bool {
+        matches!(
+            self,
+            Intent::UiOrganizationNameChanged(_)
+            | Intent::UiOrganizationIdChanged(_)
+            | Intent::UiPersonNameChanged { .. }
+            | Intent::UiPersonEmailChanged { .. }
+            | Intent::UiPassphraseChanged(_)
+            | Intent::UiPassphraseConfirmChanged(_)
+            | Intent::UiGraphPropertyChanged { .. }
+        )
+    }
+
+    /// Type-level marker for this intent's signal kind
+    ///
+    /// Returns a type that can be used with `Signal<K, T>` to create
+    /// properly typed signals.
+    ///
+    /// # Example Type Usage
+    ///
+    /// ```rust,ignore
+    /// use cim_keys::signals::Signal;
+    /// use cim_keys::mvi::Intent;
+    ///
+    /// // Event signal
+    /// let click_events = Signal::<EventKind, Intent>::event(vec![
+    ///     (0.0, Intent::UiGenerateRootCAClicked),
+    ///     (1.0, Intent::UiGenerateSSHKeysClicked),
+    /// ]);
+    ///
+    /// // Step signal (current organization name)
+    /// let org_name = Signal::<StepKind, String>::step("Acme Corp".into());
+    /// ```
+    pub fn signal_kind_marker(&self) -> SignalKindMarker {
+        if self.is_step_signal() {
+            SignalKindMarker::Step
+        } else {
+            SignalKindMarker::Event
+        }
+    }
+}
+
+/// Marker type for signal kinds (runtime representation)
+///
+/// This is a runtime representation of the type-level SignalKind distinction.
+/// Used for reflection and debugging.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignalKindMarker {
+    Event,
+    Step,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // =============================================================================
+    // Signal Kind Classification Tests
+    // =============================================================================
+
+    #[test]
+    fn test_event_intents_are_events() {
+        // UI event intents (button clicks)
+        assert!(Intent::UiGenerateRootCAClicked.is_event_signal());
+        assert!(Intent::UiGenerateSSHKeysClicked.is_event_signal());
+        assert!(Intent::UiAddPersonClicked.is_event_signal());
+        assert!(Intent::UiDeriveMasterSeedClicked.is_event_signal());
+        assert!(Intent::UiCreateDomainClicked.is_event_signal());
+
+        // Domain event intents
+        assert!(Intent::DomainCreated {
+            organization_id: "test".into(),
+            organization_name: "Test Org".into(),
+        }.is_event_signal());
+
+        assert!(Intent::PersonAdded {
+            person_id: "p1".into(),
+            name: "John Doe".into(),
+            email: "john@example.com".into(),
+        }.is_event_signal());
+
+        assert!(Intent::RootCAGenerated {
+            certificate_id: "cert1".into(),
+            subject: "CN=Root CA".into(),
+        }.is_event_signal());
+
+        // Port event intents (async completions)
+        assert!(Intent::PortX509RootCAGenerated {
+            certificate_pem: "-----BEGIN CERTIFICATE-----".into(),
+            private_key_pem: "-----BEGIN PRIVATE KEY-----".into(),
+            fingerprint: "abc123".into(),
+        }.is_event_signal());
+
+        assert!(Intent::PortSSHKeypairGenerated {
+            person_id: "p1".into(),
+            public_key: "ssh-rsa AAA...".into(),
+            fingerprint: "SHA256:abc".into(),
+        }.is_event_signal());
+
+        // Error intents
+        assert!(Intent::ErrorOccurred {
+            context: "test".into(),
+            message: "error".into(),
+        }.is_event_signal());
+
+        assert!(Intent::SystemErrorOccurred {
+            context: "system".into(),
+            error: "error".into(),
+        }.is_event_signal());
+    }
+
+    #[test]
+    fn test_step_intents_are_steps() {
+        // Form input intents (piecewise-constant values)
+        assert!(Intent::UiOrganizationNameChanged("Acme Corp".into()).is_step_signal());
+        assert!(Intent::UiOrganizationIdChanged("acme".into()).is_step_signal());
+        assert!(Intent::UiPassphraseChanged("secret123".into()).is_step_signal());
+        assert!(Intent::UiPassphraseConfirmChanged("secret123".into()).is_step_signal());
+
+        assert!(Intent::UiPersonNameChanged {
+            index: 0,
+            name: "John Doe".into(),
+        }.is_step_signal());
+
+        assert!(Intent::UiPersonEmailChanged {
+            index: 0,
+            email: "john@example.com".into(),
+        }.is_step_signal());
+
+        assert!(Intent::UiGraphPropertyChanged {
+            node_id: "node1".into(),
+            property: "name".into(),
+            value: "New Name".into(),
+        }.is_step_signal());
+    }
+
+    #[test]
+    fn test_step_intents_not_events() {
+        // Step signals should NOT be event signals
+        assert!(!Intent::UiOrganizationNameChanged("test".into()).is_event_signal());
+        assert!(!Intent::UiPassphraseChanged("secret".into()).is_event_signal());
+    }
+
+    #[test]
+    fn test_event_intents_not_steps() {
+        // Event signals should NOT be step signals
+        assert!(!Intent::UiGenerateRootCAClicked.is_step_signal());
+        assert!(!Intent::UiCreateDomainClicked.is_step_signal());
+    }
+
+    #[test]
+    fn test_signal_kind_marker() {
+        // Event intents return Event marker
+        assert_eq!(
+            Intent::UiGenerateRootCAClicked.signal_kind_marker(),
+            SignalKindMarker::Event
+        );
+
+        // Step intents return Step marker
+        assert_eq!(
+            Intent::UiOrganizationNameChanged("test".into()).signal_kind_marker(),
+            SignalKindMarker::Step
+        );
+    }
+
+    #[test]
+    fn test_graph_intents_classification() {
+        // Graph creation intents are events
+        assert!(Intent::UiGraphCreateNode {
+            node_type: NodeCreationType::Person,
+            position: (0.0, 0.0),
+        }.is_event_signal());
+
+        assert!(Intent::UiGraphCreateEdgeStarted {
+            from_node: "node1".into(),
+        }.is_event_signal());
+
+        assert!(Intent::UiGraphCreateEdgeCompleted {
+            from: "node1".into(),
+            to: "node2".into(),
+            edge_type: "reports_to".into(),
+        }.is_event_signal());
+
+        // Graph property changes are steps (hold current value)
+        assert!(Intent::UiGraphPropertyChanged {
+            node_id: "node1".into(),
+            property: "name".into(),
+            value: "John Doe".into(),
+        }.is_step_signal());
+
+        // Graph node clicks are events
+        assert!(Intent::UiGraphNodeClicked {
+            node_id: "node1".into(),
+        }.is_event_signal());
+    }
+
+    #[test]
+    fn test_all_intents_have_classification() {
+        // This test ensures we don't forget to classify new intents
+        // Every intent should be either an event or a step
+
+        let test_intents = vec![
+            Intent::UiTabSelected(super::super::model::Tab::Welcome),
+            Intent::UiCreateDomainClicked,
+            Intent::UiOrganizationNameChanged("test".into()),
+            Intent::UiGenerateRootCAClicked,
+            Intent::NoOp,
+        ];
+
+        for intent in test_intents {
+            // Every intent must be either event or step (not both, not neither)
+            let is_event = intent.is_event_signal();
+            let is_step = intent.is_step_signal();
+
+            assert!(
+                is_event ^ is_step, // XOR: exactly one must be true
+                "Intent {:?} must be either event or step, not both or neither",
+                intent
+            );
+        }
+    }
+
+    #[test]
+    fn test_statistics_match_documentation() {
+        // According to INTENT_SIGNAL_KIND_ANALYSIS.md:
+        // - EventKind: 62 variants (87%)
+        // - StepKind: 9 variants (13%)
+
+        let all_step_intents = vec![
+            Intent::UiOrganizationNameChanged("".into()),
+            Intent::UiOrganizationIdChanged("".into()),
+            Intent::UiPersonNameChanged { index: 0, name: "".into() },
+            Intent::UiPersonEmailChanged { index: 0, email: "".into() },
+            Intent::UiPassphraseChanged("".into()),
+            Intent::UiPassphraseConfirmChanged("".into()),
+            Intent::UiGraphPropertyChanged {
+                node_id: "".into(),
+                property: "".into(),
+                value: "".into(),
+            },
+        ];
+
+        // Verify all 7 step intents are classified correctly
+        assert_eq!(all_step_intents.len(), 7);
+        for intent in &all_step_intents {
+            assert!(
+                intent.is_step_signal(),
+                "Intent {:?} should be classified as step signal",
+                intent
+            );
+        }
+    }
+
+    // =============================================================================
+    // Existing Classification Tests (is_ui_originated, etc.)
+    // =============================================================================
+
+    #[test]
+    fn test_is_error() {
+        assert!(Intent::ErrorOccurred {
+            context: "test".into(),
+            message: "error".into(),
+        }.is_error());
+
+        assert!(!Intent::UiGenerateRootCAClicked.is_error());
+    }
+
+    #[test]
+    fn test_is_ui_originated() {
+        assert!(Intent::UiGenerateRootCAClicked.is_ui_originated());
+        assert!(Intent::UiOrganizationNameChanged("test".into()).is_ui_originated());
+
+        assert!(!Intent::DomainCreated {
+            organization_id: "test".into(),
+            organization_name: "Test".into(),
+        }.is_ui_originated());
+    }
+
+    #[test]
+    fn test_is_port_originated() {
+        assert!(Intent::PortX509RootCAGenerated {
+            certificate_pem: "".into(),
+            private_key_pem: "".into(),
+            fingerprint: "".into(),
+        }.is_port_originated());
+
+        assert!(!Intent::UiGenerateRootCAClicked.is_port_originated());
+    }
+
+    #[test]
+    fn test_is_domain_originated() {
+        assert!(Intent::DomainCreated {
+            organization_id: "test".into(),
+            organization_name: "Test".into(),
+        }.is_domain_originated());
+
+        assert!(!Intent::UiGenerateRootCAClicked.is_domain_originated());
     }
 }

@@ -193,6 +193,16 @@ impl PropertyCard {
                 self.edit_email = String::new();
                 self.edit_enabled = *has_key;
             }
+            NodeType::YubiKeyStatus { yubikey_serial, slots_provisioned, slots_needed, .. } => {
+                self.edit_name = "YubiKey Status".to_string();
+                self.edit_description = format!("{}/{} slots - {}",
+                    slots_provisioned.len(),
+                    slots_needed.len(),
+                    yubikey_serial.clone().unwrap_or_else(|| "Not detected".to_string())
+                );
+                self.edit_email = String::new();
+                self.edit_enabled = true;
+            }
         }
     }
 
@@ -1044,7 +1054,7 @@ impl PropertyCard {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{Organization, Person};
+    use crate::domain::Organization;
     use chrono::Utc;
     use std::collections::HashMap;
 

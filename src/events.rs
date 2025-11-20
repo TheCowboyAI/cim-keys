@@ -36,6 +36,27 @@ pub enum KeyEvent {
     /// A YubiKey was provisioned
     YubiKeyProvisioned(YubiKeyProvisionedEvent),
 
+    /// YubiKey PIN was configured
+    PinConfigured(PinConfiguredEvent),
+
+    /// YubiKey PUK was configured
+    PukConfigured(PukConfiguredEvent),
+
+    /// YubiKey management key was rotated
+    ManagementKeyRotated(ManagementKeyRotatedEvent),
+
+    /// YubiKey was detected
+    YubiKeyDetected(YubiKeyDetectedEvent),
+
+    /// Key was generated in YubiKey slot
+    KeyGeneratedInSlot(KeyGeneratedInSlotEvent),
+
+    /// Certificate was imported to YubiKey slot
+    CertificateImportedToSlot(CertificateImportedToSlotEvent),
+
+    /// YubiKey slot allocation was planned
+    SlotAllocationPlanned(SlotAllocationPlannedEvent),
+
     /// SSH key was created
     SshKeyGenerated(SshKeyGeneratedEvent),
 
@@ -180,6 +201,90 @@ pub struct YubiKeyProvisionedEvent {
     pub provisioned_by: String,
 }
 
+/// YubiKey PIN was configured
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PinConfiguredEvent {
+    pub event_id: Uuid,
+    pub yubikey_serial: String,
+    pub pin_hash: String,
+    pub retry_count: u8,
+    pub configured_at: DateTime<Utc>,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// YubiKey PUK was configured
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PukConfiguredEvent {
+    pub event_id: Uuid,
+    pub yubikey_serial: String,
+    pub puk_hash: String,
+    pub retry_count: u8,
+    pub configured_at: DateTime<Utc>,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// YubiKey management key was rotated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManagementKeyRotatedEvent {
+    pub event_id: Uuid,
+    pub yubikey_serial: String,
+    pub algorithm: String,
+    pub rotated_at: DateTime<Utc>,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// YubiKey was detected
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct YubiKeyDetectedEvent {
+    pub event_id: Uuid,
+    pub yubikey_serial: String,
+    pub firmware_version: String,
+    pub detected_at: DateTime<Utc>,
+    pub correlation_id: Uuid,
+}
+
+/// Key was generated in YubiKey slot
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyGeneratedInSlotEvent {
+    pub event_id: Uuid,
+    pub yubikey_serial: String,
+    pub slot: String,
+    pub key_id: Uuid,
+    pub algorithm: KeyAlgorithm,
+    pub public_key: Vec<u8>,
+    pub generated_at: DateTime<Utc>,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Certificate was imported to YubiKey slot
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CertificateImportedToSlotEvent {
+    pub event_id: Uuid,
+    pub yubikey_serial: String,
+    pub slot: String,
+    pub cert_id: Uuid,
+    pub imported_at: DateTime<Utc>,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// YubiKey slot allocation was planned
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SlotAllocationPlannedEvent {
+    pub event_id: Uuid,
+    pub yubikey_serial: String,
+    pub slot: String,
+    pub purpose: KeyPurpose,
+    pub person_id: Uuid,
+    pub planned_at: DateTime<Utc>,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
 /// SSH key generated
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SshKeyGeneratedEvent {
@@ -236,6 +341,10 @@ pub struct NatsOperatorCreatedEvent {
     pub created_by: String,
     /// Links operator to organization
     pub organization_id: Option<Uuid>,
+    /// Event sourcing: correlation ID links related events
+    pub correlation_id: Uuid,
+    /// Event sourcing: causation ID points to event that caused this
+    pub causation_id: Option<Uuid>,
 }
 
 /// NATS account created
@@ -250,6 +359,10 @@ pub struct NatsAccountCreatedEvent {
     pub created_by: String,
     /// Links account to organizational unit
     pub organization_unit_id: Option<Uuid>,
+    /// Event sourcing: correlation ID links related events
+    pub correlation_id: Uuid,
+    /// Event sourcing: causation ID points to event that caused this
+    pub causation_id: Option<Uuid>,
 }
 
 /// NATS user created
@@ -263,6 +376,10 @@ pub struct NatsUserCreatedEvent {
     pub created_by: String,
     /// Links user to person in organization
     pub person_id: Option<Uuid>,
+    /// Event sourcing: correlation ID links related events
+    pub correlation_id: Uuid,
+    /// Event sourcing: causation ID points to event that caused this
+    pub causation_id: Option<Uuid>,
 }
 
 /// NATS signing key generated
@@ -578,6 +695,13 @@ impl DomainEvent for KeyEvent {
             KeyEvent::KeyExported(e) => e.key_id,
             KeyEvent::KeyStoredOffline(e) => e.key_id,
             KeyEvent::YubiKeyProvisioned(e) => e.event_id,
+            KeyEvent::PinConfigured(e) => e.event_id,
+            KeyEvent::PukConfigured(e) => e.event_id,
+            KeyEvent::ManagementKeyRotated(e) => e.event_id,
+            KeyEvent::YubiKeyDetected(e) => e.event_id,
+            KeyEvent::KeyGeneratedInSlot(e) => e.event_id,
+            KeyEvent::CertificateImportedToSlot(e) => e.event_id,
+            KeyEvent::SlotAllocationPlanned(e) => e.event_id,
             KeyEvent::SshKeyGenerated(e) => e.key_id,
             KeyEvent::GpgKeyGenerated(e) => e.key_id,
             KeyEvent::KeyRevoked(e) => e.key_id,
@@ -611,6 +735,13 @@ impl DomainEvent for KeyEvent {
             KeyEvent::KeyExported(_) => "KeyExported",
             KeyEvent::KeyStoredOffline(_) => "KeyStoredOffline",
             KeyEvent::YubiKeyProvisioned(_) => "YubiKeyProvisioned",
+            KeyEvent::PinConfigured(_) => "PinConfigured",
+            KeyEvent::PukConfigured(_) => "PukConfigured",
+            KeyEvent::ManagementKeyRotated(_) => "ManagementKeyRotated",
+            KeyEvent::YubiKeyDetected(_) => "YubiKeyDetected",
+            KeyEvent::KeyGeneratedInSlot(_) => "KeyGeneratedInSlot",
+            KeyEvent::CertificateImportedToSlot(_) => "CertificateImportedToSlot",
+            KeyEvent::SlotAllocationPlanned(_) => "SlotAllocationPlanned",
             KeyEvent::SshKeyGenerated(_) => "SshKeyGenerated",
             KeyEvent::GpgKeyGenerated(_) => "GpgKeyGenerated",
             KeyEvent::KeyRevoked(_) => "KeyRevoked",

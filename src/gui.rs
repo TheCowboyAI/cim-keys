@@ -35,6 +35,9 @@ use crate::{
 };
 
 pub mod graph;
+pub mod graph_pki;
+pub mod graph_nats;
+pub mod graph_yubikey;
 pub mod graph_events;
 pub mod event_emitter;
 pub mod cowboy_theme;
@@ -50,6 +53,9 @@ pub mod context_menu;
 pub mod property_card;
 pub mod view_model;
 pub mod edge_indicator;
+
+#[cfg(test)]
+mod graph_integration_tests;
 
 use graph::{OrganizationGraph, GraphMessage};
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
@@ -73,6 +79,7 @@ pub struct CimKeysApp {
     organization_name: String,
     organization_domain: String,
     organization_id: Option<Uuid>,  // Set when domain is created
+    admin_email: String,  // Admin contact email for the organization
 
     // Master passphrase for encryption
     master_passphrase: String,
@@ -81,6 +88,9 @@ pub struct CimKeysApp {
     bootstrap_config: Option<BootstrapConfig>,
     aggregate: Arc<RwLock<KeyManagementAggregate>>,
     projection: Arc<RwLock<OfflineKeyProjection>>,
+
+    // Application configuration (for NATS publishing, storage paths, etc.)
+    config: Option<crate::config::Config>,
 
     // Event-driven communication
     event_emitter: CimEventEmitter,
@@ -351,14 +361,20 @@ pub enum Message {
     GenerateNatsHierarchy,
     NatsHierarchyGenerated(Result<String, String>),
     NatsBootstrapCreated(Box<crate::domain_projections::OrganizationBootstrap>),
+    GenerateNatsFromGraph,  // Graph-first NATS generation
+    NatsFromGraphGenerated(Result<Vec<(graph::GraphNode, Option<Uuid>)>, String>),
     ExportToNsc,
     NscExported(Result<String, String>),
 
     // PKI operations
     PkiCertificatesLoaded(Vec<crate::projections::CertificateEntry>),
+    GeneratePkiFromGraph,  // Graph-first PKI generation
+    PkiGenerated(Result<Vec<(graph::GraphNode, Option<Uuid>)>, String>),
 
     // YubiKey operations
     YubiKeyDataLoaded(Vec<crate::projections::YubiKeyEntry>, Vec<crate::projections::PersonEntry>),
+    ProvisionYubiKeysFromGraph,  // Graph-first YubiKey provisioning
+    YubiKeysProvisioned(Result<Vec<(graph::GraphNode, Uuid)>, String>),
 
     // Root passphrase operations
     RootPassphraseChanged(String),
@@ -386,6 +402,7 @@ pub enum Message {
 
     // Graph interactions
     GraphMessage(GraphMessage),
+    CreateContextAwareNode,  // SPACE key: create most likely next node
 
     // Phase 4: Interactive UI Component Messages
     ContextMenuMessage(ContextMenuMessage),
@@ -506,7 +523,7 @@ pub struct GraphEdgeExport {
 }
 
 impl CimKeysApp {
-    fn new(output_dir: String) -> (Self, Task<Message>) {
+    fn new(output_dir: String, config: Option<crate::config::Config>) -> (Self, Task<Message>) {
         let aggregate = Arc::new(RwLock::new(KeyManagementAggregate::new(uuid::Uuid::now_v7())));
         let projection = Arc::new(RwLock::new(
             OfflineKeyProjection::new(&output_dir).expect("Failed to create projection")
@@ -552,11 +569,13 @@ impl CimKeysApp {
                 organization_name: String::new(),
                 organization_domain: String::new(),
                 organization_id: None,
+                admin_email: String::from("admin@example.com"),
                 master_passphrase: String::new(),
                 master_passphrase_confirm: String::new(),
                 bootstrap_config: None,
                 aggregate,
                 projection,
+                config,
                 event_emitter: CimEventEmitter::new(default_org),
                 _event_subscriber: GuiEventSubscriber::new(default_org),
                 org_graph: OrganizationGraph::new(),
@@ -771,14 +790,17 @@ impl CimKeysApp {
                 // Store the org_id for use in person creation
                 self.organization_id = Some(org_id);
 
+                let country = self.cert_country.clone();
+                let admin_email = self.admin_email.clone();
+
                 Task::perform(
                     async move {
                         let mut proj = projection.write().await;
                         proj.set_organization(
                             org_name.clone(),
                             org_domain.clone(),
-                            "US".to_string(),  // TODO: Make configurable
-                            "admin@example.com".to_string(),  // TODO: Make configurable
+                            country,
+                            admin_email,
                         )
                         .map(|_| format!("Created domain: {}", org_name))
                         .map_err(|e| format!("Failed to create domain: {}", e))
@@ -1232,14 +1254,11 @@ impl CimKeysApp {
                 let location_type = "Physical".to_string();
 
                 // Clone address values for the async task
-                let _street = self.new_location_street.clone();
-                let _city = self.new_location_city.clone();
-                let _region = self.new_location_region.clone();
-                let _country = self.new_location_country.clone();
-                let _postal = self.new_location_postal.clone();
-
-                // TODO: Once projection supports full Location objects, create proper Address
-                // and pass Location with all address details
+                let street = self.new_location_street.clone();
+                let city = self.new_location_city.clone();
+                let region = self.new_location_region.clone();
+                let country = self.new_location_country.clone();
+                let postal = self.new_location_postal.clone();
 
                 // Clear form fields immediately
                 self.new_location_name.clear();
@@ -1250,16 +1269,25 @@ impl CimKeysApp {
                 self.new_location_country.clear();
                 self.new_location_postal.clear();
 
-                // Persist to projection
+                // Persist to projection with full address details
                 let projection = self.projection.clone();
 
                 Task::perform(
                     async move {
                         let mut proj = projection.write().await;
-                        // TODO: Update projection to use new Location from cim-domain-location
-                        proj.add_location(location_id, location_name.clone(), location_type, org_id)
-                            .map(|_| format!("Added location: {}", location_name))
-                            .map_err(|e| format!("Failed to add location: {}", e))
+                        proj.add_location(
+                            location_id,
+                            location_name.clone(),
+                            location_type,
+                            org_id,
+                            Some(street),
+                            Some(city),
+                            Some(region),
+                            Some(country),
+                            Some(postal),
+                        )
+                        .map(|_| format!("Added location: {}", location_name))
+                        .map_err(|e| format!("Failed to add location: {}", e))
                     },
                     |result| match result {
                         Ok(msg) => Message::UpdateStatus(msg),
@@ -1439,6 +1467,131 @@ impl CimKeysApp {
                         Err(e) => Message::ShowError(format!("Root CA generation failed: {}", e)),
                     }
                 )
+            }
+
+            Message::GeneratePkiFromGraph => {
+                self.status_message = "Generating PKI hierarchy from organizational graph...".to_string();
+
+                // Clone the graph and passphrase for async task
+                let graph = self.org_graph.clone();
+                let passphrase = self.root_passphrase.clone();
+
+                Task::perform(
+                    async move {
+                        // Generate PKI from graph structure
+                        graph_pki::generate_pki_from_graph(&graph, &passphrase)
+                    },
+                    Message::PkiGenerated
+                )
+            }
+
+            Message::PkiGenerated(result) => {
+                match result {
+                    Ok(certificate_nodes) => {
+                        // Add certificate nodes to graph
+                        graph_pki::add_pki_to_graph(&mut self.org_graph, certificate_nodes);
+
+                        let count = self.org_graph.nodes.iter()
+                            .filter(|(_, node)| matches!(
+                                node.node_type,
+                                graph::NodeType::RootCertificate{..} |
+                                graph::NodeType::IntermediateCertificate{..} |
+                                graph::NodeType::LeafCertificate{..}
+                            ))
+                            .count();
+
+                        self.status_message = format!("✅ PKI hierarchy generated! {} certificates created from organizational structure", count);
+                        tracing::info!("Graph-first PKI generation complete: {} certificates", count);
+                    }
+                    Err(e) => {
+                        self.status_message = format!("❌ PKI generation failed: {}", e);
+                        self.error_message = Some(e);
+                        tracing::error!("Graph-first PKI generation failed");
+                    }
+                }
+                Task::none()
+            }
+
+            Message::GenerateNatsFromGraph => {
+                self.status_message = "Generating NATS infrastructure from organizational graph...".to_string();
+
+                // Clone the graph for async task
+                let graph = self.org_graph.clone();
+
+                Task::perform(
+                    async move {
+                        // Generate NATS from graph structure
+                        graph_nats::generate_nats_from_graph(&graph)
+                    },
+                    Message::NatsFromGraphGenerated
+                )
+            }
+
+            Message::NatsFromGraphGenerated(result) => {
+                match result {
+                    Ok(nats_nodes) => {
+                        // Add NATS nodes to graph
+                        graph_nats::add_nats_to_graph(&mut self.org_graph, nats_nodes);
+
+                        let count = self.org_graph.nodes.iter()
+                            .filter(|(_, node)| matches!(
+                                node.node_type,
+                                graph::NodeType::NatsOperator(_) |
+                                graph::NodeType::NatsAccount(_) |
+                                graph::NodeType::NatsUser(_)
+                            ))
+                            .count();
+
+                        self.status_message = format!("✅ NATS infrastructure generated! {} entities created from organizational structure", count);
+                        tracing::info!("Graph-first NATS generation complete: {} entities", count);
+                    }
+                    Err(e) => {
+                        self.status_message = format!("❌ NATS generation failed: {}", e);
+                        self.error_message = Some(e);
+                        tracing::error!("Graph-first NATS generation failed");
+                    }
+                }
+                Task::none()
+            }
+
+            Message::ProvisionYubiKeysFromGraph => {
+                self.status_message = "Analyzing YubiKey provisioning requirements from organizational graph...".to_string();
+
+                // Clone the graph for async task
+                let graph = self.org_graph.clone();
+
+                Task::perform(
+                    async move {
+                        // Generate YubiKey provision plan from graph structure
+                        graph_yubikey::generate_yubikey_provision_from_graph(&graph)
+                    },
+                    Message::YubiKeysProvisioned
+                )
+            }
+
+            Message::YubiKeysProvisioned(result) => {
+                match result {
+                    Ok(yubikey_nodes) => {
+                        // Add YubiKey status nodes to graph
+                        graph_yubikey::add_yubikey_status_to_graph(&mut self.org_graph, yubikey_nodes);
+
+                        let count = self.org_graph.nodes.iter()
+                            .filter(|(_, node)| matches!(
+                                node.node_type,
+                                graph::NodeType::YubiKeyStatus{..}
+                            ))
+                            .count();
+
+                        self.status_message = format!("✅ YubiKey provisioning analyzed! {} people require YubiKeys based on roles", count);
+                        tracing::info!("Graph-first YubiKey analysis complete: {} provision plans", count);
+                    }
+                    Err(e) => {
+                        self.status_message = format!("❌ YubiKey analysis failed: {}", e);
+                        self.error_message = Some(e);
+                        tracing::error!("Graph-first YubiKey analysis failed");
+                    }
+                }
+                Task::none()
             }
 
             Message::IntermediateCANameChanged(name) => {
@@ -2002,6 +2155,118 @@ impl CimKeysApp {
                 Task::none()
             }
 
+            // Context-aware node creation (SPACE key)
+            Message::CreateContextAwareNode => {
+                use crate::gui::graph::NodeType;
+                use crate::domain::{Organization, OrganizationUnit, OrganizationUnitType, Person, Location, LocationMarker, Address};
+                use cim_domain::EntityId;
+                use chrono::Utc;
+
+                // Determine what type of node to create based on current graph state
+                let has_org = self.org_graph.nodes.values().any(|n| matches!(n.node_type, NodeType::Organization(_)));
+                let has_units = self.org_graph.nodes.values().any(|n| matches!(n.node_type, NodeType::OrganizationalUnit(_)));
+                let has_people = self.org_graph.nodes.values().any(|n| matches!(n.node_type, NodeType::Person { .. }));
+
+                if !has_org {
+                    // No organization yet - create one
+                    let org = Organization {
+                        id: Uuid::now_v7(),
+                        name: "New Organization".to_string(),
+                        display_name: "New Organization".to_string(),
+                        description: Some("Created with SPACE key".to_string()),
+                        parent_id: None,
+                        units: Vec::new(),
+                        created_at: Utc::now(),
+                        metadata: std::collections::HashMap::new(),
+                    };
+                    self.org_graph.add_organization_node(org);
+                    self.status_message = "✨ Created new organization (SPACE)".to_string();
+                } else if !has_units {
+                    // Has org but no units - create a unit
+                    let unit = OrganizationUnit {
+                        id: Uuid::now_v7(),
+                        name: "New Unit".to_string(),
+                        unit_type: OrganizationUnitType::Department,
+                        parent_unit_id: None,
+                        responsible_person_id: None,
+                    };
+                    self.org_graph.add_org_unit_node(unit);
+                    self.status_message = "✨ Created new organizational unit (SPACE)".to_string();
+                } else if !has_people {
+                    // Has org and units but no people - create a person
+                    let org_id = self.org_graph.nodes.values()
+                        .find_map(|n| if let NodeType::Organization(org) = &n.node_type { Some(org.id) } else { None })
+                        .unwrap_or_else(Uuid::now_v7);
+
+                    let person = Person {
+                        id: Uuid::now_v7(),
+                        name: "New Person".to_string(),
+                        email: "person@example.com".to_string(),
+                        roles: Vec::new(),
+                        organization_id: org_id,
+                        unit_ids: Vec::new(),
+                        created_at: Utc::now(),
+                        active: true,
+                    };
+                    self.org_graph.add_node(person, KeyOwnerRole::Developer);
+                    self.status_message = "✨ Created new person (SPACE)".to_string();
+                } else {
+                    // Has everything - default to creating a location
+                    let node_id = Uuid::now_v7();
+                    let address = Address::new(
+                        "123 Main St".to_string(),
+                        "City".to_string(),
+                        "State".to_string(),
+                        "Country".to_string(),
+                        "12345".to_string(),
+                    );
+
+                    let location = Location::new_physical(
+                        EntityId::<LocationMarker>::from_uuid(node_id),
+                        "New Location".to_string(),
+                        address,
+                    ).expect("Failed to create location");
+
+                    self.org_graph.add_location_node(location);
+
+                    // Also add to projection so it shows up in Locations tab
+                    if let Some(org_id) = self.organization_id {
+                        let projection = self.projection.clone();
+                        let location_name = "New Location".to_string();
+                        let location_type = "Physical".to_string();
+
+                        self.status_message = "✨ Created new location (SPACE)".to_string();
+
+                        return Task::perform(
+                            async move {
+                                let mut proj = projection.write().await;
+                                proj.add_location(
+                                    node_id,
+                                    location_name.clone(),
+                                    location_type,
+                                    org_id,
+                                    Some("123 Main St".to_string()),
+                                    Some("City".to_string()),
+                                    Some("State".to_string()),
+                                    Some("Country".to_string()),
+                                    Some("12345".to_string()),
+                                )
+                                .map(|_| format!("✨ Location added to both graph and list"))
+                                .map_err(|e| format!("Location added to graph but failed to add to list: {}", e))
+                            },
+                            |result| match result {
+                                Ok(msg) => Message::UpdateStatus(msg),
+                                Err(e) => Message::ShowError(e),
+                            }
+                        );
+                    } else {
+                        self.status_message = "✨ Created new location (SPACE) - create organization to persist".to_string();
+                    }
+                }
+
+                Task::none()
+            }
+
             // Graph interactions
             Message::GraphMessage(graph_msg) => {
                 match &graph_msg {
@@ -2263,11 +2528,11 @@ impl CimKeysApp {
                     // Canvas clicked - place new node if node type is selected
                     GraphMessage::CanvasClicked(position) => {
                         if let Some(ref node_type_str) = self.selected_node_type {
-                            use crate::domain::{Organization, OrganizationUnit, OrganizationUnitType, Location, Role, Policy, Person};
+                            use crate::domain::{OrganizationUnit, OrganizationUnitType, Person};
                             use crate::gui::graph::NodeType;
                             use crate::gui::graph_events::GraphEvent;
                             use chrono::Utc;
-                            use std::collections::HashMap;
+                            
 
                             let node_id = Uuid::now_v7();
                             let dummy_org_id = self.organization_id.unwrap_or_else(|| Uuid::now_v7());
@@ -2535,6 +2800,18 @@ impl CimKeysApp {
                                                 for (i, evt) in graph_events.iter().enumerate() {
                                                     tracing::debug!("  Event {}: {:?}", i+1, evt);
                                                 }
+
+                                                // Check if NATS publishing is enabled via configuration
+                                                if let Some(ref cfg) = self.config {
+                                                    if cfg.nats.enabled {
+                                                        tracing::info!("📡 NATS publishing enabled - events would be published to {}", cfg.nats.url);
+                                                        // TODO (v0.9.0): Publish to NATS here
+                                                    } else {
+                                                        tracing::debug!("📴 NATS disabled - events logged locally only");
+                                                    }
+                                                } else {
+                                                    tracing::debug!("📴 No configuration loaded - events logged locally only");
+                                                }
                                             }
                                             Err(e) => {
                                                 tracing::warn!("Failed to project OrganizationCreated event: {:?}", e);
@@ -2558,6 +2835,18 @@ impl CimKeysApp {
                                                 tracing::debug!("✨ Generated {} cim-graph events for PersonCreated", graph_events.len());
                                                 for (i, evt) in graph_events.iter().enumerate() {
                                                     tracing::debug!("  Event {}: {:?}", i+1, evt);
+                                                }
+
+                                                // Check if NATS publishing is enabled via configuration
+                                                if let Some(ref cfg) = self.config {
+                                                    if cfg.nats.enabled {
+                                                        tracing::info!("📡 NATS publishing enabled - events would be published to {}", cfg.nats.url);
+                                                        // TODO (v0.9.0): Publish to NATS here
+                                                    } else {
+                                                        tracing::debug!("📴 NATS disabled - events logged locally only");
+                                                    }
+                                                } else {
+                                                    tracing::debug!("📴 No configuration loaded - events logged locally only");
                                                 }
                                             }
                                             Err(e) => {
@@ -2742,6 +3031,14 @@ impl CimKeysApp {
                                             yubikey_serial: yubikey_serial.clone(),
                                             has_key: *has_key,
                                             certificate_subject: certificate_subject.clone(),
+                                        }
+                                    }
+                                    graph::NodeType::YubiKeyStatus { person_id, yubikey_serial, slots_provisioned, slots_needed } => {
+                                        graph::NodeType::YubiKeyStatus {
+                                            person_id: *person_id,
+                                            yubikey_serial: yubikey_serial.clone(),
+                                            slots_provisioned: slots_provisioned.clone(),
+                                            slots_needed: slots_needed.clone(),
                                         }
                                     }
                                 };
@@ -2954,6 +3251,10 @@ impl CimKeysApp {
                         graph::NodeType::PivSlot { slot_name, .. } => {
                             "piv".contains(&query_lower) || "slot".contains(&query_lower) ||
                             slot_name.to_lowercase().contains(&query_lower)
+                        }
+                        graph::NodeType::YubiKeyStatus { yubikey_serial, .. } => {
+                            "yubikey".contains(&query_lower) || "status".contains(&query_lower) ||
+                            yubikey_serial.as_ref().map_or(false, |s| s.to_lowercase().contains(&query_lower))
                         }
                     };
 
@@ -3444,6 +3745,10 @@ impl CimKeysApp {
                                         crate::gui::graph::GraphMessage::DeleteSelected
                                     ))
                                 }
+                                Key::Named(keyboard::key::Named::Space) => {
+                                    // SPACE: Create context-aware node
+                                    Some(Message::CreateContextAwareNode)
+                                }
                                 _ => None,
                             }
                         }
@@ -3840,6 +4145,24 @@ impl CimKeysApp {
                         let mut location_list = column![].spacing(self.view_model.spacing_md);
 
                         for location in locations {
+                            // Build address string from optional fields
+                            let address_parts: Vec<String> = vec![
+                                location.street.clone(),
+                                location.city.clone(),
+                                location.region.clone(),
+                                location.country.clone(),
+                                location.postal_code.clone(),
+                            ]
+                            .into_iter()
+                            .flatten()
+                            .collect();
+
+                            let address_text = if address_parts.is_empty() {
+                                "No address specified".to_string()
+                            } else {
+                                address_parts.join(", ")
+                            };
+
                             location_list = location_list.push(
                                 container(
                                     row![
@@ -3849,6 +4172,9 @@ impl CimKeysApp {
                                                 .color(CowboyTheme::text_primary()),
                                             text(format!("Type: {}",
                                                 location.location_type))
+                                                .size(self.view_model.text_small)
+                                                .color(CowboyTheme::text_secondary()),
+                                            text(format!("Address: {}", address_text))
                                                 .size(self.view_model.text_small)
                                                 .color(CowboyTheme::text_secondary()),
                                             text(format!("Created: {}",
@@ -3950,6 +4276,68 @@ impl CimKeysApp {
                     text("PKI Hierarchy Generation")
                         .size(self.view_model.text_large)
                         .color(CowboyTheme::text_primary()),
+
+                    // Graph-First PKI Generation (NEW!)
+                    container(
+                        column![
+                            text("🎯 Graph-First PKI Generation")
+                                .size(self.view_model.text_large)
+                                .color(CowboyTheme::text_primary()),
+                            text("Generate complete PKI hierarchy from your organizational graph")
+                                .size(self.view_model.text_normal)
+                                .color(CowboyTheme::text_secondary()),
+                            text("• Organization → Root CA")
+                                .size(self.view_model.text_small)
+                                .color(CowboyTheme::text_muted()),
+                            text("• Organizational Units → Intermediate CAs")
+                                .size(self.view_model.text_small)
+                                .color(CowboyTheme::text_muted()),
+                            text("• People → Leaf Certificates")
+                                .size(self.view_model.text_small)
+                                .color(CowboyTheme::text_muted()),
+                            button(
+                                text("Generate PKI from Graph")
+                                    .size(self.view_model.text_large)
+                            )
+                                .on_press_maybe(
+                                    if !self.root_passphrase.is_empty() &&
+                                       self.root_passphrase == self.root_passphrase_confirm &&
+                                       self.org_graph.nodes.iter().any(|(_, n)| matches!(n.node_type, graph::NodeType::Organization(_))) {
+                                        Some(Message::GeneratePkiFromGraph)
+                                    } else {
+                                        None
+                                    }
+                                )
+                                .padding(self.view_model.padding_xl)
+                                .width(Length::Fill)
+                                .style(CowboyCustomTheme::primary_button()),
+                            if self.root_passphrase.is_empty() || self.root_passphrase != self.root_passphrase_confirm {
+                                text("⚠️  Enter and confirm root passphrase above")
+                                    .size(self.view_model.text_small)
+                                    .color(self.view_model.colors.warning)
+                            } else if !self.org_graph.nodes.iter().any(|(_, n)| matches!(n.node_type, graph::NodeType::Organization(_))) {
+                                text("⚠️  Create an organization in the Organization tab first")
+                                    .size(self.view_model.text_small)
+                                    .color(self.view_model.colors.warning)
+                            } else {
+                                text("✓ Ready to generate PKI from graph structure")
+                                    .size(self.view_model.text_small)
+                                    .color(self.view_model.colors.green_success)
+                            }
+                        ]
+                        .spacing(self.view_model.spacing_sm)
+                    )
+                    .padding(self.view_model.padding_xl)
+                    .style(CowboyCustomTheme::pastel_teal_card()),
+
+                    // Divider
+                    container(
+                        text("─ OR Generate Individual Components ─")
+                            .size(self.view_model.text_normal)
+                            .color(CowboyTheme::text_muted())
+                    )
+                    .width(Length::Fill)
+                    .center_x(Length::Fill),
 
                     // Root CA Section
                     text("1. Root CA (Trust Anchor)").size(self.view_model.text_medium),
@@ -4478,6 +4866,62 @@ impl CimKeysApp {
 
                             if !self.nats_section_collapsed {
                                 column![
+                                    // Graph-First NATS Generation (NEW!)
+                                    container(
+                                        column![
+                                            text("🎯 Graph-First NATS Generation")
+                                                .size(self.view_model.text_large)
+                                                .color(CowboyTheme::text_primary()),
+                                            text("Generate complete NATS hierarchy from your organizational graph")
+                                                .size(self.view_model.text_normal)
+                                                .color(CowboyTheme::text_secondary()),
+                                            text("• Organization → NATS Operator")
+                                                .size(self.view_model.text_small)
+                                                .color(CowboyTheme::text_muted()),
+                                            text("• Organizational Units → NATS Accounts")
+                                                .size(self.view_model.text_small)
+                                                .color(CowboyTheme::text_muted()),
+                                            text("• People → NATS Users")
+                                                .size(self.view_model.text_small)
+                                                .color(CowboyTheme::text_muted()),
+                                            button(
+                                                text("Generate NATS from Graph")
+                                                    .size(self.view_model.text_large)
+                                            )
+                                                .on_press_maybe(
+                                                    if self.org_graph.nodes.iter().any(|(_, n)| matches!(n.node_type, graph::NodeType::Organization(_))) {
+                                                        Some(Message::GenerateNatsFromGraph)
+                                                    } else {
+                                                        None
+                                                    }
+                                                )
+                                                .padding(self.view_model.padding_xl)
+                                                .width(Length::Fill)
+                                                .style(CowboyCustomTheme::primary_button()),
+                                            if !self.org_graph.nodes.iter().any(|(_, n)| matches!(n.node_type, graph::NodeType::Organization(_))) {
+                                                text("⚠️  Create an organization in the Organization tab first")
+                                                    .size(self.view_model.text_small)
+                                                    .color(self.view_model.colors.warning)
+                                            } else {
+                                                text("✓ Ready to generate NATS from graph structure")
+                                                    .size(self.view_model.text_small)
+                                                    .color(self.view_model.colors.green_success)
+                                            }
+                                        ]
+                                        .spacing(self.view_model.spacing_sm)
+                                    )
+                                    .padding(self.view_model.padding_xl)
+                                    .style(CowboyCustomTheme::pastel_coral_card()),
+
+                                    // Divider
+                                    container(
+                                        text("─ OR Generate Individual Components ─")
+                                            .size(self.view_model.text_normal)
+                                            .color(CowboyTheme::text_muted())
+                                    )
+                                    .width(Length::Fill)
+                                    .center_x(Length::Fill),
+
                                     row![
                                         button("Generate NATS Hierarchy")
                                             .on_press(Message::GenerateNatsHierarchy)
@@ -4523,11 +4967,67 @@ impl CimKeysApp {
 
                             if !self.keys_collapsed {
                                 column![
+                                    // Graph-First YubiKey Provisioning (NEW!)
+                                    container(
+                                        column![
+                                            text("🎯 Graph-First YubiKey Provisioning")
+                                                .size(self.view_model.text_large)
+                                                .color(CowboyTheme::text_primary()),
+                                            text("Analyze YubiKey requirements from your organizational graph")
+                                                .size(self.view_model.text_normal)
+                                                .color(CowboyTheme::text_secondary()),
+                                            text("• Root Authority → Signature slot (9C)")
+                                                .size(self.view_model.text_small)
+                                                .color(CowboyTheme::text_muted()),
+                                            text("• Security Admin → All slots (9A, 9C, 9D)")
+                                                .size(self.view_model.text_small)
+                                                .color(CowboyTheme::text_muted()),
+                                            text("• Developers → Authentication slot (9A)")
+                                                .size(self.view_model.text_small)
+                                                .color(CowboyTheme::text_muted()),
+                                            button(
+                                                text("Analyze YubiKey Requirements from Graph")
+                                                    .size(self.view_model.text_large)
+                                            )
+                                                .on_press_maybe(
+                                                    if self.org_graph.nodes.iter().any(|(_, n)| matches!(n.node_type, graph::NodeType::Person{..})) {
+                                                        Some(Message::ProvisionYubiKeysFromGraph)
+                                                    } else {
+                                                        None
+                                                    }
+                                                )
+                                                .padding(self.view_model.padding_xl)
+                                                .width(Length::Fill)
+                                                .style(CowboyCustomTheme::primary_button()),
+                                            if !self.org_graph.nodes.iter().any(|(_, n)| matches!(n.node_type, graph::NodeType::Person{..})) {
+                                                text("⚠️  Add people with roles in the Organization tab first")
+                                                    .size(self.view_model.text_small)
+                                                    .color(self.view_model.colors.warning)
+                                            } else {
+                                                text("✓ Ready to analyze YubiKey requirements")
+                                                    .size(self.view_model.text_small)
+                                                    .color(self.view_model.colors.green_success)
+                                            }
+                                        ]
+                                        .spacing(self.view_model.spacing_sm)
+                                    )
+                                    .padding(self.view_model.padding_xl)
+                                    .style(CowboyCustomTheme::pastel_mint_card()),
+
+                                    // Divider
+                                    container(
+                                        text("─ OR Generate Individual Keys ─")
+                                            .size(self.view_model.text_normal)
+                                            .color(CowboyTheme::text_muted())
+                                    )
+                                    .width(Length::Fill)
+                                    .center_x(Length::Fill),
+
                                     button("Generate SSH Keys for All")
                                         .on_press(Message::GenerateSSHKeys)
                                         .padding(self.view_model.padding_lg)
                                         .style(CowboyCustomTheme::primary_button()),
-                                    button("Provision YubiKeys")
+                                    button("Provision YubiKeys (Manual)")
                                         .on_press(Message::ProvisionYubiKey)
                                         .padding(self.view_model.padding_lg)
                                         .style(CowboyCustomTheme::glass_button()),
@@ -5043,10 +5543,10 @@ async fn export_domain(
 }
 
 /// Run the GUI application
-pub async fn run(output_dir: String) -> iced::Result {
+pub async fn run(output_dir: String, config: Option<crate::config::Config>) -> iced::Result {
     application("CIM Keys", CimKeysApp::update, CimKeysApp::view)
         .subscription(|app| app.subscription())
         .theme(|app| app.theme())
         .font(include_bytes!("../assets/fonts/MaterialIcons-Regular.ttf"))
-        .run_with(|| CimKeysApp::new(output_dir))
+        .run_with(|| CimKeysApp::new(output_dir, config))
 }

@@ -63,6 +63,15 @@ pub mod crypto;
 #[cfg(feature = "gui")]
 pub mod mvi;
 
+// N-ary FRP Signal System - Axioms A1 & A2
+pub mod signals;
+
+// Compositional Routing - Axiom A6
+pub mod routing;
+
+// Causality Enforcement - Axiom A4
+pub mod causality;
+
 // Master domain model - cim-keys owns the initial domain creation
 pub mod domain;
 

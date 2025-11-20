@@ -30,6 +30,40 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 16. **Port Dependency Injection**: Inject ports into update function, call through Commands only
 17. **Hex Field Access**: Use correct field names (`data` not `key_data`, `data` not `public_key`)
 
+## 🔴 MANDATORY: N-ARY FRP AXIOMS
+
+**See N_ARY_FRP_AXIOMS.md for complete specification. Summary of REQUIRED axioms:**
+
+### The 10 Axioms (Non-Negotiable)
+
+1. **A1: Multi-Kinded Signals** - Distinguish Event/Step/Continuous signals at type level
+2. **A2: Signal Vector Composition** - Operate on signal vectors, not single signals
+3. **A3: Decoupled Signal Functions** - Output at time t depends only on input before t
+4. **A4: Causality Guarantees** - Causality enforced by type system (compile-time proof)
+5. **A5: Totality and Well-Definedness** - All functions total (no panics, no undefined)
+6. **A6: Explicit Routing** - Use compositional primitives (>>>, ***, &&&), not pattern matching
+7. **A7: Change Prefixes as Event Logs** - Events stored as timestamped change prefixes
+8. **A8: Type-Safe Feedback Loops** - Feedback only for decoupled functions with proof
+9. **A9: Semantic Preservation** - Compositional laws must hold ((f >>> g) >>> h = f >>> (g >>> h))
+10. **A10: Continuous Time Semantics** - Time is continuous in semantics (discrete in implementation)
+
+### Current Compliance: 50% (5/10 axioms)
+
+**Working Well**: A3 (decoupling), A5 (totality), A7 (event logs)
+**Missing**: A1 (signal kinds), A2 (vectors), A6 (routing), A8 (feedback), A10 (continuous time)
+**Partial**: A4 (causality tracked at runtime, not type-level), A9 (no compositional laws)
+
+### When Developing:
+
+- [ ] Check N_ARY_FRP_AXIOMS.md before adding new event/signal types
+- [ ] Use signal vector operations when processing multiple independent signals
+- [ ] Prefer compositional routing over pattern matching
+- [ ] Prove causality: output at time t uses only input before t
+- [ ] Test compositional laws with property tests
+- [ ] Document temporal semantics (Event vs Step vs Continuous)
+
+**See N_ARY_FRP_COMPLIANCE_ANALYSIS.md for gap analysis and roadmap.**
+
 ## 🔴 CRITICAL DIRECTIVE: PROGRESS LOGGING
 
 **YOU MUST maintain a progress log at EVERY natural break point:**

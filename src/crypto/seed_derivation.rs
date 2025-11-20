@@ -231,7 +231,7 @@ mod tests {
 
     #[test]
     fn test_seed_zeroization() {
-        use std::ptr;
+        
 
         // Create a seed and get a pointer to its data
         let mut seed = derive_master_seed("test passphrase", "org-123").unwrap();

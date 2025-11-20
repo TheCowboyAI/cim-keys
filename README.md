@@ -331,6 +331,47 @@ Edges show relationships with labels:
 - "delegates to" - Permission delegation
 - "trusts" - Trust relationships
 
+## Documentation
+
+### Getting Started
+
+- **[Quick Start Guide](docs/QUICK_START.md)** - Get started in 5 minutes
+- **[End-to-End Usage Example](docs/END_TO_END_USAGE_EXAMPLE.md)** - Complete workflow walkthrough
+- **[CLI Reference](docs/CLI_REFERENCE.md)** - All command-line commands
+
+### Configuration & Architecture
+
+- **[Event Publishing Usage](docs/EVENT_PUBLISHING_USAGE.md)** - Configuration guide for NATS publishing
+- **[NATS Streaming Architecture](docs/NATS_STREAMING_ARCHITECTURE.md)** - Event-driven architecture design
+- **[Development Guidelines](CLAUDE.md)** - Architecture patterns and best practices
+
+### Operational Modes
+
+**Offline Mode** - Air-gapped key generation without network:
+```bash
+# config.toml
+mode = "Offline"
+[nats]
+enabled = false
+```
+
+**Online Mode** - Real-time event publishing to NATS:
+```bash
+# config.toml
+mode = "Online"
+[nats]
+enabled = true
+url = "nats://leaf-node-1.local:4222"
+```
+
+**Hybrid Mode** - Work offline, batch publish later:
+```bash
+# config.toml
+mode = "Hybrid"
+[nats]
+enabled = false  # Enable later for batch upload
+```
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.

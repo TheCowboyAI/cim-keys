@@ -32,7 +32,6 @@ pub use cim_domain_location::{
 pub use cim_domain_agent::{
     Agent,
     AgentType,
-    AgentCapability,
 };
 
 // We define our own complete domain models here since cim-keys
@@ -376,7 +375,7 @@ impl UserIdentity {
         match self {
             UserIdentity::Person(p) => p.id,
             #[cfg(feature = "cim-domain-agent")]
-            UserIdentity::Agent(a) => a.id,
+            UserIdentity::Agent(a) => a.id().into(), // Convert AgentId to Uuid
             UserIdentity::ServiceAccount(sa) => sa.id,
         }
     }
@@ -386,7 +385,7 @@ impl UserIdentity {
         match self {
             UserIdentity::Person(p) => &p.name,
             #[cfg(feature = "cim-domain-agent")]
-            UserIdentity::Agent(a) => &a.name,
+            UserIdentity::Agent(a) => a.metadata().name(),
             UserIdentity::ServiceAccount(sa) => &sa.name,
         }
     }
@@ -396,7 +395,7 @@ impl UserIdentity {
         match self {
             UserIdentity::Person(p) => p.organization_id,
             #[cfg(feature = "cim-domain-agent")]
-            UserIdentity::Agent(a) => a.organization_id,
+            UserIdentity::Agent(a) => a.metadata().owner_id(), // Using owner_id as org for now
             UserIdentity::ServiceAccount(sa) => sa.owning_unit_id, // TODO: Get org from unit
         }
     }
@@ -406,7 +405,7 @@ impl UserIdentity {
         match self {
             UserIdentity::Person(p) => p.active,
             #[cfg(feature = "cim-domain-agent")]
-            UserIdentity::Agent(a) => a.active,
+            UserIdentity::Agent(a) => a.status().can_execute(), // Active status means can execute
             UserIdentity::ServiceAccount(sa) => sa.active,
         }
     }
@@ -416,7 +415,7 @@ impl UserIdentity {
         match self {
             UserIdentity::Person(p) => format!("person-{}", p.email),
             #[cfg(feature = "cim-domain-agent")]
-            UserIdentity::Agent(a) => format!("agent-{}", a.name.to_lowercase().replace(' ', "-")),
+            UserIdentity::Agent(a) => format!("agent-{}", a.metadata().name().to_lowercase().replace(' ', "-")),
             UserIdentity::ServiceAccount(sa) => format!("service-{}", sa.name.to_lowercase().replace(' ', "-")),
         }
     }
@@ -433,7 +432,7 @@ impl UserIdentity {
         match self {
             UserIdentity::Person(_) => None, // Self-accountable
             #[cfg(feature = "cim-domain-agent")]
-            UserIdentity::Agent(a) => Some(a.responsible_person_id),
+            UserIdentity::Agent(a) => Some(a.metadata().owner_id()),
             UserIdentity::ServiceAccount(sa) => Some(sa.responsible_person_id),
         }
     }
@@ -452,14 +451,14 @@ impl UserIdentity {
             UserIdentity::Agent(agent) => {
                 // Verify responsible person exists
                 let person_exists = organization.units.iter().any(|_unit| {
-                    // TODO: Check if agent.responsible_person_id exists in org's people
+                    // TODO: Check if agent.metadata().owner_id() exists in org's people
                     true // Placeholder
                 });
 
                 if !person_exists {
                     return Err(format!(
                         "Agent {} responsible_person_id {} not found in organization",
-                        agent.name, agent.responsible_person_id
+                        agent.metadata().name(), agent.metadata().owner_id()
                     ));
                 }
 
@@ -477,7 +476,7 @@ impl UserIdentity {
             #[cfg(feature = "cim-domain-agent")]
             UserIdentity::Agent(a) => format!(
                 "Agent {} (responsible: person-{})",
-                a.name, a.responsible_person_id
+                a.metadata().name(), a.metadata().owner_id()
             ),
             UserIdentity::ServiceAccount(sa) => format!(
                 "ServiceAccount {} (responsible: person-{})",

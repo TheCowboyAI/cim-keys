@@ -166,6 +166,12 @@ pub struct LocationEntry {
     pub location_type: String,
     pub organization_id: Uuid,
     pub created_at: DateTime<Utc>,
+    // Address details
+    pub street: Option<String>,
+    pub city: Option<String>,
+    pub region: Option<String>,
+    pub country: Option<String>,
+    pub postal_code: Option<String>,
 }
 
 impl OfflineKeyProjection {
@@ -495,13 +501,29 @@ impl OfflineKeyProjection {
     }
 
     /// Add a location to the organization
-    pub fn add_location(&mut self, location_id: Uuid, name: String, location_type: String, organization_id: Uuid) -> Result<(), ProjectionError> {
+    pub fn add_location(
+        &mut self,
+        location_id: Uuid,
+        name: String,
+        location_type: String,
+        organization_id: Uuid,
+        street: Option<String>,
+        city: Option<String>,
+        region: Option<String>,
+        country: Option<String>,
+        postal_code: Option<String>,
+    ) -> Result<(), ProjectionError> {
         let location_entry = LocationEntry {
             location_id,
             name,
             location_type,
             organization_id,
             created_at: Utc::now(),
+            street,
+            city,
+            region,
+            country,
+            postal_code,
         };
 
         self.manifest.locations.push(location_entry);

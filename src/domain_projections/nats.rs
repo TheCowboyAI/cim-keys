@@ -125,8 +125,8 @@ impl NKeyProjection {
             #[cfg(feature = "cim-domain-agent")]
             UserIdentity::Agent(agent) => NKeyGenerationParams {
                 key_type: NKeyType::User,
-                name: format!("{} ({}) Agent", agent.name, organization.name),
-                description: Some(format!("Agent key for {} - {}", agent.name, agent.agent_type)),
+                name: format!("{} ({}) Agent", agent.metadata().name(), organization.name),
+                description: Some(format!("Agent key for {} - {}", agent.metadata().name(), agent.agent_type())),
                 expires_after_days: Some(180), // Agents rotate semi-annually
             },
 
