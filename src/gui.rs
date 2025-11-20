@@ -89,6 +89,7 @@ pub struct CimKeysApp {
     // Graph visualization
     org_graph: OrganizationGraph,
     selected_person: Option<Uuid>,
+    selected_node_type: Option<String>,  // Node type selected in "Add Node" dropdown
 
     // NATS infrastructure bootstrap (for graph visualization)
     nats_bootstrap: Option<crate::domain_projections::OrganizationBootstrap>,
@@ -285,6 +286,7 @@ pub enum Message {
     AddPerson,
     RemovePerson(Uuid),
     SelectPerson(Uuid),
+    NodeTypeSelected(String),  // Context-aware node type selection from dropdown
 
     // Location operations
     NewLocationNameChanged(String),
@@ -549,6 +551,7 @@ impl CimKeysApp {
                 _event_subscriber: GuiEventSubscriber::new(default_org),
                 org_graph: OrganizationGraph::new(),
                 selected_person: None,
+                selected_node_type: None,
                 nats_bootstrap: None,
                 new_person_name: String::new(),
                 new_person_email: String::new(),
@@ -980,6 +983,12 @@ impl CimKeysApp {
 
             Message::NewPersonRoleSelected(role) => {
                 self.new_person_role = Some(role);
+                Task::none()
+            }
+
+            Message::NodeTypeSelected(node_type) => {
+                self.selected_node_type = Some(node_type.clone());
+                self.status_message = format!("Click on canvas to place new {} node", node_type);
                 Task::none()
             }
 
@@ -3334,6 +3343,29 @@ impl CimKeysApp {
                         .style(CowboyCustomTheme::glass_button())
                 },
                 horizontal_space(),
+                // Context-aware "Add Node" dropdown - shows only valid nodes for current view
+                {
+                    let node_options = match self.graph_view {
+                        GraphView::Organization => vec!["Person", "Unit", "Location", "Role"],
+                        GraphView::NatsInfrastructure => vec!["Account", "User", "Service"],
+                        GraphView::PkiTrustChain => vec!["Root CA", "Inter CA", "Leaf Cert", "CSR"],
+                        GraphView::YubiKeyDetails => vec!["YubiKey", "PIV Slot"],
+                    };
+
+                    row![
+                        text("➕").size(14),
+                        pick_list(
+                            node_options,
+                            self.selected_node_type.as_ref().map(|s| s.as_str()),
+                            |selected| Message::NodeTypeSelected(selected.to_string()),
+                        )
+                        .placeholder("Add node...")
+                        .text_size(12)
+                        .style(CowboyCustomTheme::glass_pick_list())
+                    ]
+                    .spacing(4)
+                    .align_y(Alignment::Center)
+                },
                 // Reset view button
                 button(text("↻").size(14))
                     .on_press(Message::GraphMessage(graph::GraphMessage::ResetView))
