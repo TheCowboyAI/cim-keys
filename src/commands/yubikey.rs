@@ -227,7 +227,7 @@ pub fn handle_provision_complete_yubikey(
     all_events.extend(security_config.events.clone());
 
     // Step 2: Get provisioning plan from projection
-    let _plan = if cmd.is_administrator {
+    let plan = if cmd.is_administrator {
         YubiKeyProvisioningProjection::project_for_administrator(
             &cmd.person,
             &cmd.organization,
@@ -242,14 +242,50 @@ pub fn handle_provision_complete_yubikey(
     };
 
     // Step 3: Provision each slot in the plan
-    let provisioned_slots = Vec::new();
-    // TODO: Iterate through plan.slot_configurations and provision each
+    let mut provisioned_slots = Vec::new();
+    for (slot, slot_config) in &plan.slot_configurations {
+        // Map KeyPurpose to AuthKeyPurpose
+        let auth_purpose = match slot_config.purpose {
+            crate::events::KeyPurpose::Authentication => {
+                crate::value_objects::AuthKeyPurpose::SsoAuthentication
+            }
+            crate::events::KeyPurpose::Signing => {
+                crate::value_objects::AuthKeyPurpose::X509CodeSigning
+            }
+            crate::events::KeyPurpose::Encryption => {
+                crate::value_objects::AuthKeyPurpose::GpgEncryption
+            }
+            crate::events::KeyPurpose::JwtSigning => {
+                crate::value_objects::AuthKeyPurpose::SessionTokenSigning
+            }
+            crate::events::KeyPurpose::CertificateAuthority => {
+                crate::value_objects::AuthKeyPurpose::X509CodeSigning // Use code signing for CA
+            }
+            _ => crate::value_objects::AuthKeyPurpose::SsoAuthentication, // Default
+        };
+
+        let provision_cmd = ProvisionYubiKeySlot {
+            yubikey_serial: cmd.yubikey_serial.clone(),
+            slot: *slot,
+            person: cmd.person.clone(),
+            organization: cmd.organization.clone(),
+            purpose: auth_purpose,
+            correlation_id: cmd.correlation_id,
+            causation_id: Some(cmd.correlation_id), // Link to parent provisioning command
+        };
+
+        let slot_result = handle_provision_yubikey_slot(provision_cmd)?;
+        all_events.extend(slot_result.events.clone());
+        provisioned_slots.push(slot_result);
+    }
 
     // Step 4: Generate attestation
     // TODO: Attest that keys were generated on device
+    // This requires actual YubiKey hardware interaction via yubikey-manager
 
     // Step 5: Seal configuration
     // TODO: Mark YubiKey as sealed/immutable
+    // This would emit a YubiKeySealedEvent to indicate provisioning is complete
 
     Ok(YubiKeyCompletelyProvisioned {
         security_config,

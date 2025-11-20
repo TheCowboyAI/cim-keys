@@ -160,12 +160,15 @@ pub fn handle_export_to_encrypted_storage(
 
     // Step 5: Generate manifest if requested
     let manifest_path = if cmd.include_manifest {
-        let _manifest = generate_manifest(&cmd, &events)?;
+        let manifest = generate_manifest(&cmd, &events)?;
         let path = cmd.output_directory.join("manifest.json");
 
-        // TODO: Write manifest to file
-        // let manifest_bytes = write_manifest_stub(&path, &manifest)?;
-        let manifest_bytes = 1024u64; // Stub
+        // Write manifest to file
+        let manifest_json = serde_json::to_string_pretty(&manifest)
+            .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
+        std::fs::write(&path, &manifest_json)
+            .map_err(|e| format!("Failed to write manifest to {}: {}", path.display(), e))?;
+        let manifest_bytes = manifest_json.len() as u64;
         total_bytes += manifest_bytes;
 
         events.push(KeyEvent::ManifestCreated(
@@ -219,49 +222,119 @@ fn validate_export_directory(path: &PathBuf) -> Result<(), String> {
     Ok(())
 }
 
-/// Export key to file (stub implementation)
-fn export_key_stub(_key_item: &KeyExportItem) -> Result<u64, String> {
-    // TODO: Implement actual key export
-    // 1. Serialize public key based on export_format (PEM, DER, SSH, etc.)
-    // 2. Write to destination_path with proper permissions (0600)
-    // 3. Set filesystem attributes (immutable, encrypted)
-    // 4. Return bytes written
+/// Export key to file
+fn export_key_stub(key_item: &KeyExportItem) -> Result<u64, String> {
+    use std::fs;
 
-    Ok(512) // Stub: typical public key size
+    // Step 1: Serialize public key based on export_format
+    let key_data = match key_item.export_format {
+        ExportFormat::Pem => {
+            let pem = key_item.public_key.to_pem()
+                .map_err(|e| format!("Failed to convert key to PEM: {:?}", e))?;
+            pem.into_bytes()
+        }
+        ExportFormat::Der => {
+            key_item.public_key.to_der()
+                .map_err(|e| format!("Failed to convert key to DER: {:?}", e))?
+        }
+        _ => {
+            return Err(format!(
+                "Export format {:?} not yet supported for public keys",
+                key_item.export_format
+            ));
+        }
+    };
+
+    // Step 2: Write to destination_path with proper permissions (0600)
+    fs::write(&key_item.destination_path, &key_data)
+        .map_err(|e| format!("Failed to write key to {}: {}", key_item.destination_path.display(), e))?;
+
+    // Step 3: Set file permissions (Unix only)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = fs::Permissions::from_mode(0o600);
+        fs::set_permissions(&key_item.destination_path, perms)
+            .map_err(|e| format!("Failed to set permissions on {}: {}", key_item.destination_path.display(), e))?;
+    }
+
+    // Step 4: Return bytes written
+    Ok(key_data.len() as u64)
 }
 
-/// Export certificate to file (stub implementation)
-fn export_certificate_stub(_cert_item: &CertificateExportItem) -> Result<u64, String> {
-    // TODO: Implement actual certificate export
-    // 1. Serialize certificate based on export_format (PEM, DER)
-    // 2. Write to destination_path
-    // 3. Optionally include certificate chain
-    // 4. Return bytes written
+/// Export certificate to file
+fn export_certificate_stub(cert_item: &CertificateExportItem) -> Result<u64, String> {
+    use std::fs;
 
-    Ok(2048) // Stub: typical certificate size
+    // Step 1: Serialize certificate based on export_format
+    let cert_data = match cert_item.export_format {
+        ExportFormat::Pem => {
+            cert_item.certificate.pem.as_bytes().to_vec()
+        }
+        ExportFormat::Der => {
+            cert_item.certificate.der.clone()
+        }
+        _ => {
+            return Err(format!(
+                "Export format {:?} not yet supported for certificates",
+                cert_item.export_format
+            ));
+        }
+    };
+
+    // Step 2: Write to destination_path
+    fs::write(&cert_item.destination_path, &cert_data)
+        .map_err(|e| format!("Failed to write certificate to {}: {}", cert_item.destination_path.display(), e))?;
+
+    // Step 3: Set file permissions (Unix only) - certificates are public, so 0644
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = fs::Permissions::from_mode(0o644);
+        fs::set_permissions(&cert_item.destination_path, perms)
+            .map_err(|e| format!("Failed to set permissions on {}: {}", cert_item.destination_path.display(), e))?;
+    }
+
+    // Step 4: Return bytes written
+    Ok(cert_data.len() as u64)
 }
 
-/// Export NATS configuration to credentials file (stub implementation)
-fn export_nats_config_stub(_nats_item: &NatsIdentityExportItem) -> Result<u64, String> {
-    // TODO: Implement actual NATS credentials file export
-    // 1. Create credentials file format:
-    //    -----BEGIN NATS USER JWT-----
-    //    <JWT content>
-    //    ------END NATS USER JWT------
-    //
-    //    ************************* IMPORTANT *************************
-    //    NKEY Seed printed below can be used to sign and prove identity.
-    //    NKEYs are sensitive and should be treated as secrets.
-    //
-    //    -----BEGIN USER NKEY SEED-----
-    //    <Seed content>
-    //    ------END USER NKEY SEED------
-    //
-    //    *************************************************************
-    // 2. Write to destination_path with restricted permissions (0400)
-    // 3. Return bytes written
+/// Export NATS configuration to credentials file
+fn export_nats_config_stub(nats_item: &NatsIdentityExportItem) -> Result<u64, String> {
+    use std::fs;
 
-    Ok(1024) // Stub: typical credentials file size
+    // Step 1: Create credentials file format (NATS standard format)
+    let identity_type_upper = nats_item.identity_type.to_uppercase();
+    let credentials_content = format!(
+        "-----BEGIN NATS {} JWT-----\n{}\n------END NATS {} JWT------\n\n\
+         ************************* IMPORTANT *************************\n\
+         NKEY Seed printed below can be used to sign and prove identity.\n\
+         NKEYs are sensitive and should be treated as secrets.\n\n\
+         -----BEGIN {} NKEY SEED-----\n{}\n------END {} NKEY SEED------\n\n\
+         *************************************************************\n",
+        identity_type_upper,
+        nats_item.jwt.token(),
+        identity_type_upper,
+        identity_type_upper,
+        nats_item.nkey.seed_string(),
+        identity_type_upper
+    );
+
+    // Step 2: Write to destination_path with restricted permissions
+    fs::write(&nats_item.destination_path, &credentials_content)
+        .map_err(|e| format!("Failed to write NATS credentials to {}: {}", nats_item.destination_path.display(), e))?;
+
+    // Step 3: Set file permissions (Unix only) - credentials are VERY sensitive, so 0400 (read-only by owner)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = fs::Permissions::from_mode(0o400);
+        fs::set_permissions(&nats_item.destination_path, perms)
+            .map_err(|e| format!("Failed to set permissions on {}: {}", nats_item.destination_path.display(), e))?;
+    }
+
+    // Step 4: Return bytes written
+    Ok(credentials_content.len() as u64)
 }
 
 /// Generate export manifest
@@ -310,8 +383,7 @@ fn generate_manifest(
 }
 
 /// Export manifest structure
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct ExportManifest {
     manifest_id: Uuid,
     organization_id: Uuid,
@@ -324,8 +396,7 @@ struct ExportManifest {
     correlation_id: Uuid,
 }
 
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct ManifestKeyEntry {
     key_id: Uuid,
     purpose: String,
@@ -333,8 +404,7 @@ struct ManifestKeyEntry {
     format: String,
 }
 
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct ManifestCertEntry {
     cert_id: Uuid,
     subject: String,
@@ -342,8 +412,7 @@ struct ManifestCertEntry {
     format: String,
 }
 
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct ManifestNatsEntry {
     identity_id: Uuid,
     identity_type: String,
