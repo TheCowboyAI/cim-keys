@@ -21,6 +21,10 @@ struct Cli {
     #[arg(short, long)]
     verbose: bool,
 
+    /// Path to configuration file
+    #[arg(short, long, global = true)]
+    config: Option<PathBuf>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -69,6 +73,27 @@ enum Commands {
 
     /// Show version and build information
     Version,
+
+    /// Validate configuration file
+    ValidateConfig {
+        /// Path to configuration file (defaults to --config or config.toml)
+        #[arg(long)]
+        path: Option<PathBuf>,
+    },
+
+    /// Create example configuration file
+    CreateExampleConfig {
+        /// Output path for example config
+        #[arg(short, long, default_value = "config.example.toml")]
+        output: PathBuf,
+    },
+
+    /// Show current configuration
+    ShowConfig {
+        /// Path to configuration file (defaults to --config or config.toml)
+        #[arg(long)]
+        path: Option<PathBuf>,
+    },
 }
 
 #[tokio::main]
@@ -102,6 +127,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Version => {
             println!("cim-keys version {}", cim_keys::VERSION);
             println!("Event-sourced NATS infrastructure bootstrap tool");
+        }
+
+        Commands::ValidateConfig { path } => {
+            validate_config_command(path.or(cli.config)).await?;
+        }
+
+        Commands::CreateExampleConfig { output } => {
+            create_example_config_command(output).await?;
+        }
+
+        Commands::ShowConfig { path } => {
+            show_config_command(path.or(cli.config)).await?;
         }
     }
 
@@ -288,6 +325,102 @@ async fn validate_command(
 
     println!();
     println!("✅ Configuration is valid!");
+
+    Ok(())
+}
+
+/// Validate configuration file
+async fn validate_config_command(
+    config_path: Option<PathBuf>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use cim_keys::config::Config;
+
+    let path = config_path.unwrap_or_else(|| PathBuf::from("config.toml"));
+
+    println!("🔍 Validating configuration: {}", path.display());
+    println!();
+
+    if !path.exists() {
+        return Err(format!("Configuration file not found: {}", path.display()).into());
+    }
+
+    let config = Config::from_file(&path)?;
+
+    println!("✓ Configuration loaded successfully");
+    println!();
+
+    match config.validate() {
+        Ok(()) => {
+            println!("✅ Configuration is valid!");
+            println!();
+            println!("📋 Configuration Summary:");
+            println!("   • Mode: {:?}", config.mode);
+            println!("   • NATS enabled: {}", config.nats.enabled);
+            if config.nats.enabled {
+                println!("   • NATS URL: {}", config.nats.url);
+                println!("   • Stream: {}", config.nats.stream_name);
+                println!("   • Subject prefix: {}", config.nats.subject_prefix);
+            }
+            println!("   • Offline events dir: {}", config.storage.offline_events_dir.display());
+            println!("   • Keys output dir: {}", config.storage.keys_output_dir.display());
+            if config.storage.enable_backup {
+                if let Some(backup_dir) = &config.storage.backup_dir {
+                    println!("   • Backup dir: {}", backup_dir.display());
+                }
+            }
+        }
+        Err(e) => {
+            println!("❌ Configuration validation failed:");
+            println!("   {}", e);
+            return Err(e.into());
+        }
+    }
+
+    Ok(())
+}
+
+/// Create example configuration file
+async fn create_example_config_command(
+    output_path: PathBuf,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use cim_keys::config::Config;
+
+    println!("📝 Creating example configuration: {}", output_path.display());
+
+    if output_path.exists() {
+        return Err(format!("File already exists: {}", output_path.display()).into());
+    }
+
+    Config::create_example(&output_path)?;
+
+    println!("✅ Example configuration created!");
+    println!();
+    println!("📋 Next steps:");
+    println!("   1. Copy to config.toml: cp {} config.toml", output_path.display());
+    println!("   2. Edit config.toml to match your environment");
+    println!("   3. Validate: cim-keys validate-config");
+    println!();
+
+    Ok(())
+}
+
+/// Show current configuration
+async fn show_config_command(
+    config_path: Option<PathBuf>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use cim_keys::config::Config;
+
+    let path = config_path.unwrap_or_else(|| PathBuf::from("config.toml"));
+
+    if !path.exists() {
+        return Err(format!("Configuration file not found: {}", path.display()).into());
+    }
+
+    let config = Config::from_file(&path)?;
+
+    println!("📋 Configuration from: {}", path.display());
+    println!();
+    println!("{}", toml::to_string_pretty(&config)?);
 
     Ok(())
 }
