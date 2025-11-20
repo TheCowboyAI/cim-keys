@@ -18,6 +18,7 @@ use crate::domain::{
     Person, KeyDelegation, KeyOwnerRole, Organization, OrganizationUnit,
     Location, Policy, Role,
 };
+use crate::domain_projections::NatsIdentityProjection;
 use super::edge_indicator::EdgeCreationIndicator;
 use super::graph_events::{EventStack, GraphEvent};
 
@@ -37,6 +38,12 @@ pub struct OrganizationGraph {
     pub edge_indicator: EdgeCreationIndicator,
     // Phase 4: Event sourcing for undo/redo
     pub event_stack: EventStack,
+    // Phase 8: Node/edge type filtering
+    pub filter_show_people: bool,
+    pub filter_show_orgs: bool,
+    pub filter_show_nats: bool,
+    pub filter_show_pki: bool,
+    pub filter_show_yubikey: bool,
 }
 
 /// A node in the organization graph (represents any domain entity)
@@ -58,6 +65,64 @@ pub enum NodeType {
     Location(Location),
     Role(Role),
     Policy(Policy),
+
+    // NATS Infrastructure (Phase 1)
+    /// NATS Operator - root of NATS trust hierarchy
+    NatsOperator(NatsIdentityProjection),
+    /// NATS Account - corresponds to organizational unit
+    NatsAccount(NatsIdentityProjection),
+    /// NATS User - corresponds to person
+    NatsUser(NatsIdentityProjection),
+    /// NATS Service Account - for automated services
+    NatsServiceAccount(NatsIdentityProjection),
+
+    // PKI Trust Chain (Phase 2)
+    /// Root CA certificate - trust anchor
+    RootCertificate {
+        cert_id: Uuid,
+        subject: String,
+        issuer: String,
+        not_before: chrono::DateTime<chrono::Utc>,
+        not_after: chrono::DateTime<chrono::Utc>,
+        key_usage: Vec<String>,
+    },
+    /// Intermediate CA certificate - signs leaf certificates
+    IntermediateCertificate {
+        cert_id: Uuid,
+        subject: String,
+        issuer: String,
+        not_before: chrono::DateTime<chrono::Utc>,
+        not_after: chrono::DateTime<chrono::Utc>,
+        key_usage: Vec<String>,
+    },
+    /// Leaf certificate - end entity certificate
+    LeafCertificate {
+        cert_id: Uuid,
+        subject: String,
+        issuer: String,
+        not_before: chrono::DateTime<chrono::Utc>,
+        not_after: chrono::DateTime<chrono::Utc>,
+        key_usage: Vec<String>,
+        san: Vec<String>, // Subject Alternative Names
+    },
+
+    // YubiKey Hardware (Phase 3)
+    /// YubiKey hardware token
+    YubiKey {
+        device_id: Uuid,
+        serial: String,
+        version: String,
+        provisioned_at: Option<chrono::DateTime<chrono::Utc>>,
+        slots_used: Vec<String>,
+    },
+    /// PIV slot on a YubiKey
+    PivSlot {
+        slot_id: Uuid,
+        slot_name: String, // e.g., "9A - Authentication"
+        yubikey_serial: String,
+        has_key: bool,
+        certificate_subject: Option<String>,
+    },
 }
 
 /// An edge in the organization graph (represents relationship/delegation)
@@ -100,6 +165,36 @@ pub enum EdgeType {
     Trusts,
     /// Certificate authority (Key → Key)
     CertifiedBy,
+
+    // NATS Infrastructure (Phase 1)
+    /// JWT signing relationship (Operator → Account, Account → User)
+    Signs,
+    /// Account membership (User → Account)
+    BelongsToAccount,
+    /// Account mapped to organizational unit (Account → OrganizationalUnit)
+    MapsToOrgUnit,
+    /// User mapped to person (User → Person)
+    MapsToPerson,
+
+    // PKI Trust Chain (Phase 2)
+    /// Certificate signing relationship (CA cert → signed cert)
+    SignedBy,
+    /// Certificate certifies a key (Certificate → Key/Person)
+    CertifiesKey,
+    /// Certificate issued to an entity (Certificate → Person/Service/Organization)
+    IssuedTo,
+
+    // YubiKey Hardware (Phase 3)
+    /// YubiKey ownership (Person → YubiKey)
+    OwnsYubiKey,
+    /// YubiKey assigned to person (YubiKey → Person)
+    AssignedTo,
+    /// PIV slot on YubiKey (YubiKey → PivSlot)
+    HasSlot,
+    /// Key stored in slot (PivSlot → Key)
+    StoresKey,
+    /// Certificate loaded in slot (PivSlot → Certificate)
+    LoadedCertificate,
 
     // Legacy (for backwards compatibility)
     /// Hierarchical relationship (manager -> report)
@@ -187,6 +282,12 @@ impl OrganizationGraph {
             pan_offset: Vector::new(0.0, 0.0),
             edge_indicator: EdgeCreationIndicator::new(),
             event_stack: EventStack::default(),
+            // Phase 8: Node/edge type filtering - all enabled by default
+            filter_show_people: true,
+            filter_show_orgs: true,
+            filter_show_nats: true,
+            filter_show_pki: true,
+            filter_show_yubikey: true,
         }
     }
 
@@ -291,6 +392,461 @@ impl OrganizationGraph {
         self.nodes.insert(node_id, node);
     }
 
+    // ===== NATS Infrastructure Nodes (Phase 1) =====
+
+    /// Add a NATS operator node to the graph
+    pub fn add_nats_operator_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, label: String) {
+        let node = GraphNode {
+            id: node_id,
+            node_type: NodeType::NatsOperator(nats_identity),
+            position: self.calculate_node_position(node_id),
+            color: Color::from_rgb(1.0, 0.2, 0.0), // Bright red (root of trust)
+            label,
+        };
+
+        self.nodes.insert(node_id, node);
+    }
+
+    /// Add a NATS account node to the graph
+    pub fn add_nats_account_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, label: String) {
+        let node = GraphNode {
+            id: node_id,
+            node_type: NodeType::NatsAccount(nats_identity),
+            position: self.calculate_node_position(node_id),
+            color: Color::from_rgb(1.0, 0.5, 0.0), // Orange (intermediate trust)
+            label,
+        };
+
+        self.nodes.insert(node_id, node);
+    }
+
+    /// Add a NATS user node to the graph
+    pub fn add_nats_user_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, label: String) {
+        let node = GraphNode {
+            id: node_id,
+            node_type: NodeType::NatsUser(nats_identity),
+            position: self.calculate_node_position(node_id),
+            color: Color::from_rgb(0.2, 0.8, 1.0), // Cyan (leaf user)
+            label,
+        };
+
+        self.nodes.insert(node_id, node);
+    }
+
+    /// Add a NATS service account node to the graph
+    pub fn add_nats_service_account_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, label: String) {
+        let node = GraphNode {
+            id: node_id,
+            node_type: NodeType::NatsServiceAccount(nats_identity),
+            position: self.calculate_node_position(node_id),
+            color: Color::from_rgb(0.8, 0.2, 0.8), // Magenta (service account)
+            label,
+        };
+
+        self.nodes.insert(node_id, node);
+    }
+
+    // ===== PKI Trust Chain Nodes (Phase 2) =====
+
+    /// Add a root CA certificate node to the graph
+    pub fn add_root_certificate_node(
+        &mut self,
+        cert_id: Uuid,
+        subject: String,
+        issuer: String,
+        not_before: chrono::DateTime<chrono::Utc>,
+        not_after: chrono::DateTime<chrono::Utc>,
+        key_usage: Vec<String>,
+    ) {
+        let node = GraphNode {
+            id: cert_id,
+            node_type: NodeType::RootCertificate {
+                cert_id,
+                subject: subject.clone(),
+                issuer,
+                not_before,
+                not_after,
+                key_usage,
+            },
+            position: self.calculate_node_position(cert_id),
+            color: Color::from_rgb(0.0, 0.6, 0.4), // Dark teal (root trust)
+            label: format!("Root CA: {}", subject),
+        };
+
+        self.nodes.insert(cert_id, node);
+    }
+
+    /// Add an intermediate CA certificate node to the graph
+    pub fn add_intermediate_certificate_node(
+        &mut self,
+        cert_id: Uuid,
+        subject: String,
+        issuer: String,
+        not_before: chrono::DateTime<chrono::Utc>,
+        not_after: chrono::DateTime<chrono::Utc>,
+        key_usage: Vec<String>,
+    ) {
+        let node = GraphNode {
+            id: cert_id,
+            node_type: NodeType::IntermediateCertificate {
+                cert_id,
+                subject: subject.clone(),
+                issuer,
+                not_before,
+                not_after,
+                key_usage,
+            },
+            position: self.calculate_node_position(cert_id),
+            color: Color::from_rgb(0.2, 0.8, 0.6), // Medium teal (intermediate trust)
+            label: format!("Intermediate CA: {}", subject),
+        };
+
+        self.nodes.insert(cert_id, node);
+    }
+
+    /// Add a leaf certificate node to the graph
+    pub fn add_leaf_certificate_node(
+        &mut self,
+        cert_id: Uuid,
+        subject: String,
+        issuer: String,
+        not_before: chrono::DateTime<chrono::Utc>,
+        not_after: chrono::DateTime<chrono::Utc>,
+        key_usage: Vec<String>,
+        san: Vec<String>,
+    ) {
+        let node = GraphNode {
+            id: cert_id,
+            node_type: NodeType::LeafCertificate {
+                cert_id,
+                subject: subject.clone(),
+                issuer,
+                not_before,
+                not_after,
+                key_usage,
+                san,
+            },
+            position: self.calculate_node_position(cert_id),
+            color: Color::from_rgb(0.4, 1.0, 0.8), // Light teal (leaf certificate)
+            label: format!("Certificate: {}", subject),
+        };
+
+        self.nodes.insert(cert_id, node);
+    }
+
+    // ===== NATS Infrastructure Graph Population (Phase 1) =====
+
+    /// Populate the graph from NATS OrganizationBootstrap
+    ///
+    /// Creates nodes for operator, accounts, users, and service accounts,
+    /// and edges showing the JWT signing hierarchy.
+    pub fn populate_nats_infrastructure(&mut self, bootstrap: &crate::domain_projections::OrganizationBootstrap) {
+        // 1. Create operator node
+        let operator_id = bootstrap.operator.nkey.id;
+        self.add_nats_operator_node(
+            operator_id,
+            bootstrap.operator.clone(),
+            format!("{} Operator", bootstrap.organization.name),
+        );
+
+        // 2. Create account nodes and operator→account edges
+        for (unit_id, (unit, account_identity)) in &bootstrap.accounts {
+            let account_id = account_identity.nkey.id;
+
+            // Add account node
+            self.add_nats_account_node(
+                account_id,
+                account_identity.clone(),
+                format!("{} Account", unit.name),
+            );
+
+            // Add operator→account "signs" edge
+            self.add_edge(operator_id, account_id, EdgeType::Signs);
+
+            // Add account→orgunit "maps to" edge (if orgunit node exists in graph)
+            self.add_edge(account_id, *unit_id, EdgeType::MapsToOrgUnit);
+        }
+
+        // 3. Create user nodes and account→user edges
+        for (person_id, (person, user_identity)) in &bootstrap.users {
+            let user_id = user_identity.nkey.id;
+
+            // Add user node
+            self.add_nats_user_node(
+                user_id,
+                user_identity.clone(),
+                person.name.clone(),
+            );
+
+            // Find which account this user belongs to (based on organizational unit)
+            // For now, we'll connect to the first account as a simplified version
+            // TODO: In the future, connect based on person's organizational unit membership
+            if let Some((_unit_id, (_unit, account_identity))) = bootstrap.accounts.iter().next() {
+                let account_id = account_identity.nkey.id;
+                self.add_edge(account_id, user_id, EdgeType::Signs);
+                self.add_edge(user_id, account_id, EdgeType::BelongsToAccount);
+            }
+
+            // Add user→person "maps to" edge (if person node exists in graph)
+            self.add_edge(user_id, *person_id, EdgeType::MapsToPerson);
+        }
+
+        // 4. Create service account nodes
+        for (_service_id, (service, service_identity)) in &bootstrap.service_accounts {
+            let service_account_id = service_identity.nkey.id;
+
+            // Add service account node
+            self.add_nats_service_account_node(
+                service_account_id,
+                service_identity.clone(),
+                service.name.clone(),
+            );
+
+            // Find which account this service belongs to
+            // For now, connect to the first account
+            // TODO: In the future, connect based on service's organizational unit
+            if let Some((_unit_id, (_unit, account_identity))) = bootstrap.accounts.iter().next() {
+                let account_id = account_identity.nkey.id;
+                self.add_edge(account_id, service_account_id, EdgeType::Signs);
+                self.add_edge(service_account_id, account_id, EdgeType::BelongsToAccount);
+            }
+        }
+    }
+
+    // ===== YubiKey Hardware Nodes (Phase 3) =====
+
+    /// Add a YubiKey hardware token node to the graph
+    pub fn add_yubikey_node(
+        &mut self,
+        device_id: Uuid,
+        serial: String,
+        version: String,
+        provisioned_at: Option<chrono::DateTime<chrono::Utc>>,
+        slots_used: Vec<String>,
+    ) {
+        let node = GraphNode {
+            id: device_id,
+            node_type: NodeType::YubiKey {
+                device_id,
+                serial: serial.clone(),
+                version: version.clone(),
+                provisioned_at,
+                slots_used: slots_used.clone(),
+            },
+            position: self.calculate_node_position(device_id),
+            color: Color::from_rgb(0.8, 0.3, 0.8), // Magenta (hardware)
+            label: format!("YubiKey {}", serial),
+        };
+
+        self.nodes.insert(device_id, node);
+    }
+
+    /// Add a PIV slot node to the graph
+    pub fn add_piv_slot_node(
+        &mut self,
+        slot_id: Uuid,
+        slot_name: String,
+        yubikey_serial: String,
+        has_key: bool,
+        certificate_subject: Option<String>,
+    ) {
+        let node = GraphNode {
+            id: slot_id,
+            node_type: NodeType::PivSlot {
+                slot_id,
+                slot_name: slot_name.clone(),
+                yubikey_serial,
+                has_key,
+                certificate_subject,
+            },
+            position: self.calculate_node_position(slot_id),
+            color: Color::from_rgb(0.9, 0.5, 0.9), // Light magenta (slot)
+            label: slot_name,
+        };
+
+        self.nodes.insert(slot_id, node);
+    }
+
+    // ===== PKI Trust Chain Graph Population (Phase 2) =====
+
+    /// Populate the graph from PKI certificate hierarchy
+    ///
+    /// Creates nodes for root CAs, intermediate CAs, and leaf certificates,
+    /// and edges showing the signing chain.
+    ///
+    /// # Arguments
+    /// * `certificates` - Slice of certificate entries from the projection
+    pub fn populate_pki_trust_chain(&mut self, certificates: &[crate::projections::CertificateEntry]) {
+        use std::collections::HashMap;
+
+        // Group certificates by type (root CA, intermediate CA, leaf)
+        let mut root_cas: Vec<&crate::projections::CertificateEntry> = Vec::new();
+        let mut intermediate_cas: Vec<&crate::projections::CertificateEntry> = Vec::new();
+        let mut leaf_certs: Vec<&crate::projections::CertificateEntry> = Vec::new();
+
+        // Separate certificates by type based on is_ca flag and issuer
+        for cert in certificates {
+            if cert.is_ca {
+                // CA certificate
+                if cert.issuer.is_none() || cert.issuer.as_ref() == Some(&cert.subject) {
+                    // Self-signed = root CA
+                    root_cas.push(cert);
+                } else {
+                    // Signed by another CA = intermediate CA
+                    intermediate_cas.push(cert);
+                }
+            } else {
+                // Not a CA = leaf certificate
+                leaf_certs.push(cert);
+            }
+        }
+
+        // Create mapping from subject to cert_id for edge creation
+        let mut subject_to_id: HashMap<String, Uuid> = HashMap::new();
+        for cert in certificates {
+            subject_to_id.insert(cert.subject.clone(), cert.cert_id);
+        }
+
+        // 1. Create root CA nodes
+        for cert in &root_cas {
+            self.add_root_certificate_node(
+                cert.cert_id,
+                cert.subject.clone(),
+                cert.issuer.clone().unwrap_or_else(|| cert.subject.clone()),
+                cert.not_before,
+                cert.not_after,
+                vec!["KeyCertSign".to_string(), "CRLSign".to_string()], // Default CA key usage
+            );
+        }
+
+        // 2. Create intermediate CA nodes and edges to their signing CAs
+        for cert in &intermediate_cas {
+            self.add_intermediate_certificate_node(
+                cert.cert_id,
+                cert.subject.clone(),
+                cert.issuer.clone().unwrap_or_else(|| "Unknown".to_string()),
+                cert.not_before,
+                cert.not_after,
+                vec!["KeyCertSign".to_string(), "CRLSign".to_string()],
+            );
+
+            // Add SignedBy edge from intermediate to signing CA
+            if let Some(issuer) = &cert.issuer {
+                if let Some(&signing_ca_id) = subject_to_id.get(issuer) {
+                    self.add_edge(cert.cert_id, signing_ca_id, EdgeType::SignedBy);
+                }
+            }
+        }
+
+        // 3. Create leaf certificate nodes and edges to their signing CAs
+        for cert in &leaf_certs {
+            // Extract SANs if available (would need to be added to CertificateEntry in the future)
+            let san = Vec::new(); // TODO: Add SAN extraction from certificate extensions
+
+            self.add_leaf_certificate_node(
+                cert.cert_id,
+                cert.subject.clone(),
+                cert.issuer.clone().unwrap_or_else(|| "Unknown".to_string()),
+                cert.not_before,
+                cert.not_after,
+                vec!["DigitalSignature".to_string()], // Default leaf key usage
+                san,
+            );
+
+            // Add SignedBy edge from leaf to signing CA
+            if let Some(issuer) = &cert.issuer {
+                if let Some(&signing_ca_id) = subject_to_id.get(issuer) {
+                    self.add_edge(cert.cert_id, signing_ca_id, EdgeType::SignedBy);
+                }
+            }
+
+            // Add IssuedTo edge from certificate to key owner (if key_id matches a person node)
+            // This would require person nodes to already be in the graph
+            self.add_edge(cert.cert_id, cert.key_id, EdgeType::CertifiesKey);
+        }
+    }
+
+    // ===== YubiKey Hardware Graph Population (Phase 3) =====
+
+    /// Populate the graph from YubiKey hardware data
+    ///
+    /// Creates nodes for YubiKeys and their PIV slots,
+    /// and edges showing ownership and key storage.
+    ///
+    /// # Arguments
+    /// * `yubikeys` - Slice of YubiKey entries from the projection
+    /// * `people` - Slice of person entries to show ownership
+    pub fn populate_yubikey_graph(
+        &mut self,
+        yubikeys: &[crate::projections::YubiKeyEntry],
+        people: &[crate::projections::PersonEntry],
+    ) {
+        use std::collections::HashMap;
+
+        // Create mapping from person_id to person for ownership edges
+        let person_map: HashMap<Uuid, &crate::projections::PersonEntry> =
+            people.iter().map(|p| (p.person_id, p)).collect();
+
+        // Common PIV slot names
+        let piv_slots = vec![
+            ("9A", "Authentication"),
+            ("9C", "Digital Signature"),
+            ("9D", "Key Management"),
+            ("9E", "Card Authentication"),
+        ];
+
+        for yubikey in yubikeys {
+            // Create YubiKey device node
+            let yubikey_id = Uuid::now_v7(); // Generate ID for YubiKey device
+            self.add_yubikey_node(
+                yubikey_id,
+                yubikey.serial.clone(),
+                "5.x".to_string(), // Default version (would need to be added to YubiKeyEntry)
+                Some(yubikey.provisioned_at),
+                yubikey.slots_used.clone(),
+            );
+
+            // Create PIV slot nodes and edges
+            for (slot_num, slot_desc) in &piv_slots {
+                let slot_id = Uuid::now_v7();
+                let slot_name = format!("{} - {}", slot_num, slot_desc);
+                let has_key = yubikey.slots_used.contains(&slot_num.to_string());
+
+                self.add_piv_slot_node(
+                    slot_id,
+                    slot_name,
+                    yubikey.serial.clone(),
+                    has_key,
+                    None, // Certificate subject would need to be added to projection
+                );
+
+                // Add YubiKey → PivSlot edge
+                self.add_edge(yubikey_id, slot_id, EdgeType::HasSlot);
+
+                // If slot has a key, add edge to indicate storage
+                if has_key {
+                    // In a real implementation, we'd link to the actual key node
+                    // For now, just show that the slot stores a key
+                    // self.add_edge(slot_id, key_id, EdgeType::StoresKey);
+                }
+            }
+
+            // Find person who owns this YubiKey (based on naming convention in serial or config)
+            // In a real implementation, there should be a direct mapping in the projection
+            // For now, we'll create ownership edges if we can determine ownership
+
+            // Example: If we have a way to determine ownership, create the edge
+            // This would typically be stored in the YubiKeyEntry
+            // For demonstration, we'll just show the pattern:
+            // if let Some(owner_id) = yubikey.owner_person_id {
+            //     if person_map.contains_key(&owner_id) {
+            //         self.add_edge(owner_id, yubikey_id, EdgeType::OwnsYubiKey);
+            //         self.add_edge(yubikey_id, owner_id, EdgeType::AssignedTo);
+            //     }
+            // }
+        }
+    }
+
     pub fn add_edge(&mut self, from: Uuid, to: Uuid, edge_type: EdgeType) {
         let color = match &edge_type {
             // Organizational hierarchy - blues
@@ -311,6 +867,24 @@ impl OrganizationGraph {
             // Trust relationships
             EdgeType::Trusts => Color::from_rgb(0.7, 0.5, 0.3),
             EdgeType::CertifiedBy => Color::from_rgb(0.7, 0.5, 0.3),
+
+            // NATS Infrastructure - orange/red (JWT signing chains)
+            EdgeType::Signs => Color::from_rgb(1.0, 0.4, 0.0), // Bright orange
+            EdgeType::BelongsToAccount => Color::from_rgb(0.8, 0.5, 0.2), // Brown-orange
+            EdgeType::MapsToOrgUnit => Color::from_rgb(0.6, 0.6, 0.8), // Light purple
+            EdgeType::MapsToPerson => Color::from_rgb(0.5, 0.7, 0.9), // Light blue
+
+            // PKI Trust Chain - green/teal (certificate chains)
+            EdgeType::SignedBy => Color::from_rgb(0.2, 0.8, 0.6), // Teal (trust chain)
+            EdgeType::CertifiesKey => Color::from_rgb(0.3, 0.9, 0.3), // Bright green (certification)
+            EdgeType::IssuedTo => Color::from_rgb(0.4, 0.7, 0.9), // Sky blue (issuance)
+
+            // YubiKey Hardware - purple/magenta (physical hardware)
+            EdgeType::OwnsYubiKey => Color::from_rgb(0.8, 0.3, 0.8), // Magenta (ownership)
+            EdgeType::AssignedTo => Color::from_rgb(0.7, 0.2, 0.7), // Dark magenta (assignment)
+            EdgeType::HasSlot => Color::from_rgb(0.9, 0.4, 0.9), // Light magenta (slot)
+            EdgeType::StoresKey => Color::from_rgb(0.6, 0.2, 0.9), // Purple (key storage)
+            EdgeType::LoadedCertificate => Color::from_rgb(0.7, 0.5, 0.9), // Light purple (cert)
 
             // Legacy
             EdgeType::Hierarchy => Color::from_rgb(0.3, 0.3, 0.7),
@@ -440,6 +1014,18 @@ impl OrganizationGraph {
                 NodeType::Location(_) => "Location",
                 NodeType::Role(_) => "Role",
                 NodeType::Policy(_) => "Policy",
+                // NATS Infrastructure
+                NodeType::NatsOperator(_) => "NatsOperator",
+                NodeType::NatsAccount(_) => "NatsAccount",
+                NodeType::NatsUser(_) => "NatsUser",
+                NodeType::NatsServiceAccount(_) => "NatsServiceAccount",
+                // PKI Trust Chain
+                NodeType::RootCertificate { .. } => "RootCertificate",
+                NodeType::IntermediateCertificate { .. } => "IntermediateCertificate",
+                NodeType::LeafCertificate { .. } => "LeafCertificate",
+                // YubiKey Hardware
+                NodeType::YubiKey { .. } => "YubiKey",
+                NodeType::PivSlot { .. } => "PivSlot",
             };
             type_groups.entry(type_key.to_string()).or_insert_with(Vec::new).push(*id);
         }
@@ -769,6 +1355,28 @@ impl OrganizationGraph {
             KeyOwnerRole::Auditor => Color::from_rgb(0.8, 0.8, 0.2),
         }
     }
+
+    /// Check if a node should be visible based on current filter settings
+    pub fn should_show_node(&self, node: &GraphNode) -> bool {
+        match &node.node_type {
+            NodeType::Person { .. } => self.filter_show_people,
+            NodeType::Organization(_) | NodeType::OrganizationalUnit(_) |
+            NodeType::Location(_) | NodeType::Role(_) | NodeType::Policy(_) => {
+                self.filter_show_orgs
+            }
+            NodeType::NatsOperator(_) | NodeType::NatsAccount(_) |
+            NodeType::NatsUser(_) | NodeType::NatsServiceAccount(_) => {
+                self.filter_show_nats
+            }
+            NodeType::RootCertificate { .. } | NodeType::IntermediateCertificate { .. } |
+            NodeType::LeafCertificate { .. } => {
+                self.filter_show_pki
+            }
+            NodeType::YubiKey { .. } | NodeType::PivSlot { .. } => {
+                self.filter_show_yubikey
+            }
+        }
+    }
 }
 
 /// Implementation of canvas::Program for graph rendering
@@ -802,6 +1410,10 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                 self.nodes.get(&edge.from),
                 self.nodes.get(&edge.to),
             ) {
+                // Only draw edge if both nodes are visible
+                if !self.should_show_node(from_node) || !self.should_show_node(to_node) {
+                    continue;
+                }
                 let edge_path = canvas::Path::line(
                     from_node.position,
                     to_node.position,
@@ -858,6 +1470,24 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                     EdgeType::Trusts => "trusts",
                     EdgeType::CertifiedBy => "certified by",
 
+                    // NATS Infrastructure
+                    EdgeType::Signs => "signs",
+                    EdgeType::BelongsToAccount => "belongs to",
+                    EdgeType::MapsToOrgUnit => "maps to",
+                    EdgeType::MapsToPerson => "maps to",
+
+                    // PKI Trust Chain
+                    EdgeType::SignedBy => "signed by",
+                    EdgeType::CertifiesKey => "certifies",
+                    EdgeType::IssuedTo => "issued to",
+
+                    // YubiKey Hardware
+                    EdgeType::OwnsYubiKey => "owns",
+                    EdgeType::AssignedTo => "assigned to",
+                    EdgeType::HasSlot => "has slot",
+                    EdgeType::StoresKey => "stores key",
+                    EdgeType::LoadedCertificate => "has cert",
+
                     // Legacy
                     EdgeType::Hierarchy => "reports to",
                     EdgeType::Trust => "trusts",
@@ -880,7 +1510,7 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                     Point::new(label_position.x - 40.0, label_position.y - 8.0),
                     iced::Size::new(80.0, 16.0),
                 );
-                frame.fill(&label_bg, Color::from_rgba(1.0, 1.0, 1.0, 0.9));
+                frame.fill(&label_bg, Color::from_rgba(0.15, 0.15, 0.15, 0.8));  // Dark semi-transparent for black bg
                 frame.stroke(&label_bg, canvas::Stroke::default()
                     .with_color(edge.color)
                     .with_width(1.0));
@@ -889,7 +1519,7 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                 frame.fill_text(canvas::Text {
                     content: edge_label.to_string(),
                     position: label_position,
-                    color: Color::from_rgb(0.2, 0.2, 0.2),
+                    color: Color::from_rgb(0.9, 0.9, 0.9),  // Light text for visibility
                     size: iced::Pixels(10.0),
                     font: iced::Font::DEFAULT,
                     horizontal_alignment: iced::alignment::Horizontal::Center,
@@ -902,6 +1532,11 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
 
         // Draw nodes with 3D disc effect (tiddlywinks/necco wafer style)
         for (node_id, node) in &self.nodes {
+            // Only draw node if it matches current filter settings
+            if !self.should_show_node(node) {
+                continue;
+            }
+
             let is_selected = self.selected_node == Some(*node_id);
             let radius = if is_selected { 25.0 } else { 20.0 };
 
@@ -957,50 +1592,112 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                 frame.stroke(&selection_ring, stroke);
             }
 
-            // 5. Border (defines the disc edge)
+            // 5. Border (defines the disc edge) - bright for visibility on black
             let circle = canvas::Path::circle(node.position, radius);
             let border_stroke = canvas::Stroke::default()
-                .with_color(Color::from_rgba(0.0, 0.0, 0.0, 0.4))
-                .with_width(if is_selected { 2.0 } else { 1.5 });
+                .with_color(Color::from_rgba(0.8, 0.8, 0.9, 0.7))  // Light border for black bg
+                .with_width(if is_selected { 2.5 } else { 2.0 });  // Slightly thicker
             frame.stroke(&circle, border_stroke);
 
             // Draw node properties as multi-line text based on node type
-            let (type_label, primary_text, secondary_text) = match &node.node_type {
+            let (type_icon, type_font, primary_text, secondary_text) = match &node.node_type {
                 NodeType::Organization(org) => (
-                    "Organization",
+                    crate::icons::ICON_BUSINESS,
+                    crate::icons::MATERIAL_ICONS,
                     org.name.clone(),
                     org.display_name.clone(),
                 ),
                 NodeType::OrganizationalUnit(unit) => (
-                    "Unit",
+                    crate::icons::ICON_GROUP,
+                    crate::icons::MATERIAL_ICONS,
                     unit.name.clone(),
                     format!("{:?}", unit.unit_type),
                 ),
-                NodeType::Person { person, role } => {
-                    let role_str = match role {
-                        KeyOwnerRole::RootAuthority => "Root CA",
-                        KeyOwnerRole::SecurityAdmin => "Security Admin",
-                        KeyOwnerRole::Developer => "Developer",
-                        KeyOwnerRole::ServiceAccount => "Service",
-                        KeyOwnerRole::BackupHolder => "Backup",
-                        KeyOwnerRole::Auditor => "Auditor",
-                    };
-                    (role_str, person.name.clone(), person.email.clone())
+                NodeType::Person { person, role: _ } => {
+                    (crate::icons::ICON_PERSON, crate::icons::MATERIAL_ICONS, person.name.clone(), person.email.clone())
                 },
                 NodeType::Location(loc) => (
-                    "Location",
+                    crate::icons::ICON_LOCATION,
+                    crate::icons::MATERIAL_ICONS,
                     loc.name.clone(),
                     format!("{:?}", loc.location_type),
                 ),
                 NodeType::Role(role) => (
-                    "Role",
+                    crate::icons::ICON_SECURITY,
+                    crate::icons::MATERIAL_ICONS,
                     role.name.clone(),
                     role.description.clone(),
                 ),
                 NodeType::Policy(policy) => (
-                    "Policy",
+                    crate::icons::ICON_VERIFIED,
+                    crate::icons::MATERIAL_ICONS,
                     policy.name.clone(),
                     format!("{} claims", policy.claims.len()),
+                ),
+                // NATS Infrastructure
+                NodeType::NatsOperator(identity) => (
+                    crate::icons::ICON_CLOUD,
+                    crate::icons::MATERIAL_ICONS,
+                    "NATS Operator".to_string(),
+                    identity.nkey.public_key.public_key()[..8].to_string(), // First 8 chars of NKey
+                ),
+                NodeType::NatsAccount(identity) => (
+                    crate::icons::ICON_ACCOUNT_CIRCLE,
+                    crate::icons::MATERIAL_ICONS,
+                    "NATS Account".to_string(),
+                    identity.nkey.public_key.public_key()[..8].to_string(),
+                ),
+                NodeType::NatsUser(identity) => (
+                    crate::icons::ICON_PERSON,
+                    crate::icons::MATERIAL_ICONS,
+                    "NATS User".to_string(),
+                    identity.nkey.public_key.public_key()[..8].to_string(),
+                ),
+                NodeType::NatsServiceAccount(identity) => (
+                    crate::icons::ICON_SETTINGS,
+                    crate::icons::MATERIAL_ICONS,
+                    "Service Account".to_string(),
+                    identity.nkey.public_key.public_key()[..8].to_string(),
+                ),
+                // PKI Trust Chain
+                NodeType::RootCertificate { subject, not_after, .. } => (
+                    crate::icons::ICON_VERIFIED,
+                    crate::icons::MATERIAL_ICONS,
+                    "Root CA".to_string(),
+                    format!("{} (expires {})", subject, not_after.format("%Y-%m-%d")),
+                ),
+                NodeType::IntermediateCertificate { subject, not_after, .. } => (
+                    crate::icons::ICON_VERIFIED,
+                    crate::icons::MATERIAL_ICONS,
+                    "Intermediate CA".to_string(),
+                    format!("{} (expires {})", subject, not_after.format("%Y-%m-%d")),
+                ),
+                NodeType::LeafCertificate { subject, not_after, san, .. } => (
+                    crate::icons::ICON_LOCK,
+                    crate::icons::MATERIAL_ICONS,
+                    format!("Certificate: {}", subject),
+                    if !san.is_empty() {
+                        format!("SAN: {} (expires {})", san[0], not_after.format("%Y-%m-%d"))
+                    } else {
+                        format!("expires {}", not_after.format("%Y-%m-%d"))
+                    },
+                ),
+                // YubiKey Hardware
+                NodeType::YubiKey { serial, version, slots_used, .. } => (
+                    crate::icons::ICON_SECURITY,
+                    crate::icons::MATERIAL_ICONS,
+                    format!("YubiKey {}", serial),
+                    format!("v{} ({} slots used)", version, slots_used.len()),
+                ),
+                NodeType::PivSlot { slot_name, has_key, certificate_subject, .. } => (
+                    crate::icons::ICON_LOCK,
+                    crate::icons::MATERIAL_ICONS,
+                    slot_name.clone(),
+                    if *has_key {
+                        certificate_subject.clone().unwrap_or_else(|| "Key loaded".to_string())
+                    } else {
+                        "Empty slot".to_string()
+                    },
                 ),
             };
 
@@ -1012,7 +1709,7 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
             frame.fill_text(canvas::Text {
                 content: primary_text,
                 position: name_position,
-                color: Color::BLACK,
+                color: Color::from_rgb(1.0, 1.0, 1.0),  // White for black bg
                 size: iced::Pixels(13.0),
                 font: iced::Font::DEFAULT,
                 horizontal_alignment: iced::alignment::Horizontal::Center,
@@ -1029,7 +1726,7 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
             frame.fill_text(canvas::Text {
                 content: secondary_text,
                 position: email_position,
-                color: Color::from_rgb(0.4, 0.4, 0.4),
+                color: Color::from_rgb(0.7, 0.7, 0.8),  // Light gray for black bg
                 size: iced::Pixels(10.0),
                 font: iced::Font::DEFAULT,
                 horizontal_alignment: iced::alignment::Horizontal::Center,
@@ -1038,17 +1735,17 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                 shaping: Shaping::Advanced,
             });
 
-            // Type label (above node)
-            let role_position = Point::new(
+            // Type icon (above node)
+            let icon_position = Point::new(
                 node.position.x,
                 node.position.y - radius - 8.0,
             );
             frame.fill_text(canvas::Text {
-                content: type_label.to_string(),
-                position: role_position,
+                content: type_icon.to_string(),
+                position: icon_position,
                 color: node.color,
-                size: iced::Pixels(11.0),
-                font: iced::Font::DEFAULT,
+                size: iced::Pixels(18.0),
+                font: type_font,
                 horizontal_alignment: iced::alignment::Horizontal::Center,
                 vertical_alignment: iced::alignment::Vertical::Bottom,
                 line_height: LineHeight::default(),
@@ -1327,6 +2024,72 @@ pub fn view_graph(graph: &OrganizationGraph) -> Element<'_, GraphMessage> {
                     text(format!("Conditions: {}", policy.conditions.len())),
                     text(format!("Priority: {}", policy.priority)),
                     text(format!("Enabled: {}", policy.enabled)),
+                ],
+                // NATS Infrastructure
+                NodeType::NatsOperator(identity) => column![
+                    text("Selected NATS Operator:").size(16),
+                    text(format!("Public Key: {}", identity.nkey.public_key.public_key())),
+                    text(format!("JWT Token: {}...", &identity.jwt.token()[..20])),
+                    text(format!("Has Credential: {}", identity.credential.is_some())),
+                ],
+                NodeType::NatsAccount(identity) => column![
+                    text("Selected NATS Account:").size(16),
+                    text(format!("Public Key: {}", identity.nkey.public_key.public_key())),
+                    text(format!("JWT Token: {}...", &identity.jwt.token()[..20])),
+                    text(format!("Has Credential: {}", identity.credential.is_some())),
+                ],
+                NodeType::NatsUser(identity) => column![
+                    text("Selected NATS User:").size(16),
+                    text(format!("Public Key: {}", identity.nkey.public_key.public_key())),
+                    text(format!("JWT Token: {}...", &identity.jwt.token()[..20])),
+                    text(format!("Has Credential: {}", identity.credential.is_some())),
+                ],
+                NodeType::NatsServiceAccount(identity) => column![
+                    text("Selected Service Account:").size(16),
+                    text(format!("Public Key: {}", identity.nkey.public_key.public_key())),
+                    text(format!("JWT Token: {}...", &identity.jwt.token()[..20])),
+                    text(format!("Has Credential: {}", identity.credential.is_some())),
+                ],
+                // PKI Trust Chain
+                NodeType::RootCertificate { subject, issuer, not_before, not_after, key_usage, .. } => column![
+                    text("Selected Root CA Certificate:").size(16),
+                    text(format!("Subject: {}", subject)),
+                    text(format!("Issuer: {}", issuer)),
+                    text(format!("Valid From: {}", not_before.format("%Y-%m-%d %H:%M:%S UTC"))),
+                    text(format!("Valid Until: {}", not_after.format("%Y-%m-%d %H:%M:%S UTC"))),
+                    text(format!("Key Usage: {}", key_usage.join(", "))),
+                ],
+                NodeType::IntermediateCertificate { subject, issuer, not_before, not_after, key_usage, .. } => column![
+                    text("Selected Intermediate CA Certificate:").size(16),
+                    text(format!("Subject: {}", subject)),
+                    text(format!("Issuer: {}", issuer)),
+                    text(format!("Valid From: {}", not_before.format("%Y-%m-%d %H:%M:%S UTC"))),
+                    text(format!("Valid Until: {}", not_after.format("%Y-%m-%d %H:%M:%S UTC"))),
+                    text(format!("Key Usage: {}", key_usage.join(", "))),
+                ],
+                NodeType::LeafCertificate { subject, issuer, not_before, not_after, key_usage, san, .. } => column![
+                    text("Selected Leaf Certificate:").size(16),
+                    text(format!("Subject: {}", subject)),
+                    text(format!("Issuer: {}", issuer)),
+                    text(format!("Valid From: {}", not_before.format("%Y-%m-%d %H:%M:%S UTC"))),
+                    text(format!("Valid Until: {}", not_after.format("%Y-%m-%d %H:%M:%S UTC"))),
+                    text(format!("Key Usage: {}", key_usage.join(", "))),
+                    text(format!("Subject Alt Names: {}", if san.is_empty() { "none".to_string() } else { san.join(", ") })),
+                ],
+                // YubiKey Hardware
+                NodeType::YubiKey { serial, version, provisioned_at, slots_used, .. } => column![
+                    text("Selected YubiKey:").size(16),
+                    text(format!("Serial: {}", serial)),
+                    text(format!("Version: {}", version)),
+                    text(format!("Provisioned: {}", provisioned_at.map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string()).unwrap_or_else(|| "Not provisioned".to_string()))),
+                    text(format!("Slots Used: {}", slots_used.join(", "))),
+                ],
+                NodeType::PivSlot { slot_name, yubikey_serial, has_key, certificate_subject, .. } => column![
+                    text("Selected PIV Slot:").size(16),
+                    text(format!("Slot: {}", slot_name)),
+                    text(format!("YubiKey: {}", yubikey_serial)),
+                    text(format!("Status: {}", if *has_key { "Key loaded" } else { "Empty" })),
+                    text(format!("Certificate: {}", certificate_subject.clone().unwrap_or_else(|| "None".to_string()))),
                 ],
             };
             items = items.push(details.spacing(5));

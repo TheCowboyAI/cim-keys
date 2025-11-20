@@ -60,6 +60,15 @@ pub mod mvi;
 // Master domain model - cim-keys owns the initial domain creation
 pub mod domain;
 
+// State machines for workflow control
+pub mod state_machines;
+
+// Value objects for cryptographic artifacts
+pub mod value_objects;
+
+// Domain projections - functors mapping domain to library formats
+pub mod domain_projections;
+
 // Secrets loader for importing configuration from JSON
 pub mod secrets_loader;
 
@@ -70,19 +79,25 @@ pub mod certificate_service;
 #[cfg(feature = "gui")]
 pub mod gui;
 
+// Material Icons for GUI
+// TODO: Re-enable full implementation after GUI refactoring
+// Using stub module for now to allow compilation
+pub mod icons;
+
 // Policy integration for PKI operations
 #[cfg(feature = "policy")]
 pub mod policy;
 
 // Re-export core types
-pub use events::{KeyEvent, KeyAlgorithm, KeyPurpose, KeyMetadata};
-pub use commands::{KeyCommand, GenerateKeyCommand, GenerateCertificateCommand};
+pub use events::{KeyEvent, KeyMetadata};
+// TODO: Re-export command types when modular structure is stabilized
+// pub use commands::{...};
 pub use aggregate::{KeyManagementAggregate, KeyManagementError};
 pub use projections::{OfflineKeyProjection, KeyManifest, ProjectionError};
 pub use domain::{
     Organization, OrganizationUnit, Person, PersonRole, Location,
     KeyOwnership, KeyContext, NatsIdentity,
-    OrganizationalPKI, ServiceAccount,
+    OrganizationalPKI, ServiceAccount, KeyOwnerRole,
     // Re-export Location types from cim-domain-location
     LocationMarker, Address, GeoCoordinates, LocationType, VirtualLocation,
 };
@@ -104,7 +119,8 @@ pub use policy::{
 /// Prelude module for convenient imports
 pub mod prelude {
     pub use crate::events::*;
-    pub use crate::commands::*;
+    // TODO: Re-add command exports when modular structure is stabilized
+    // pub use crate::commands::*;
     pub use crate::aggregate::*;
     pub use crate::projections::*;
 

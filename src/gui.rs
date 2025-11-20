@@ -204,6 +204,13 @@ pub struct CimKeysApp {
     loading_export: bool,
     loading_import: bool,
     loading_graph_data: bool,
+
+    // Phase 8: Node/edge type filtering
+    filter_show_people: bool,
+    filter_show_orgs: bool,
+    filter_show_nats: bool,
+    filter_show_pki: bool,
+    filter_show_yubikey: bool,
 }
 
 /// Different tabs in the application
@@ -384,6 +391,13 @@ pub enum Message {
 
     // Help and tooltips
     ToggleHelp,
+
+    // Node/edge type filtering
+    ToggleFilterPeople,
+    ToggleFilterOrgs,
+    ToggleFilterNats,
+    ToggleFilterPki,
+    ToggleFilterYubiKey,
 }
 
 /// Bootstrap configuration
@@ -600,6 +614,12 @@ impl CimKeysApp {
                 loading_export: false,
                 loading_import: false,
                 loading_graph_data: false,
+                // Phase 8: Node/edge type filtering
+                filter_show_people: true,
+                filter_show_orgs: true,
+                filter_show_nats: true,
+                filter_show_pki: true,
+                filter_show_yubikey: true,
             },
             load_task,
         )
@@ -2801,6 +2821,38 @@ impl CimKeysApp {
                 };
                 Task::none()
             }
+
+            // Node/edge type filtering
+            Message::ToggleFilterPeople => {
+                self.filter_show_people = !self.filter_show_people;
+                self.org_graph.filter_show_people = self.filter_show_people;
+                self.status_message = format!("People nodes {}", if self.filter_show_people { "shown" } else { "hidden" });
+                Task::none()
+            }
+            Message::ToggleFilterOrgs => {
+                self.filter_show_orgs = !self.filter_show_orgs;
+                self.org_graph.filter_show_orgs = self.filter_show_orgs;
+                self.status_message = format!("Organization nodes {}", if self.filter_show_orgs { "shown" } else { "hidden" });
+                Task::none()
+            }
+            Message::ToggleFilterNats => {
+                self.filter_show_nats = !self.filter_show_nats;
+                self.org_graph.filter_show_nats = self.filter_show_nats;
+                self.status_message = format!("NATS nodes {}", if self.filter_show_nats { "shown" } else { "hidden" });
+                Task::none()
+            }
+            Message::ToggleFilterPki => {
+                self.filter_show_pki = !self.filter_show_pki;
+                self.org_graph.filter_show_pki = self.filter_show_pki;
+                self.status_message = format!("PKI nodes {}", if self.filter_show_pki { "shown" } else { "hidden" });
+                Task::none()
+            }
+            Message::ToggleFilterYubiKey => {
+                self.filter_show_yubikey = !self.filter_show_yubikey;
+                self.org_graph.filter_show_yubikey = self.filter_show_yubikey;
+                self.status_message = format!("YubiKey nodes {}", if self.filter_show_yubikey { "shown" } else { "hidden" });
+                Task::none()
+            }
         }
     }
 
@@ -3559,6 +3611,33 @@ impl CimKeysApp {
             )
             .padding(self.view_model.padding_md)
             .style(CowboyCustomTheme::pastel_coral_card()),
+
+            // Node/edge type filters
+            container(
+                row![
+                    text("Filter by Type:").size(self.view_model.text_small).color(self.view_model.colors.text_disabled),
+                    horizontal_space(),
+                    checkbox("People", self.filter_show_people)
+                        .on_toggle(|_| Message::ToggleFilterPeople)
+                        .size(self.view_model.text_small),
+                    checkbox("Organizations", self.filter_show_orgs)
+                        .on_toggle(|_| Message::ToggleFilterOrgs)
+                        .size(self.view_model.text_small),
+                    checkbox("NATS", self.filter_show_nats)
+                        .on_toggle(|_| Message::ToggleFilterNats)
+                        .size(self.view_model.text_small),
+                    checkbox("PKI/Certs", self.filter_show_pki)
+                        .on_toggle(|_| Message::ToggleFilterPki)
+                        .size(self.view_model.text_small),
+                    checkbox("YubiKeys", self.filter_show_yubikey)
+                        .on_toggle(|_| Message::ToggleFilterYubiKey)
+                        .size(self.view_model.text_small),
+                ]
+                .spacing(self.view_model.spacing_md)
+                .align_y(Alignment::Center)
+            )
+            .padding(self.view_model.padding_md)
+            .style(CowboyCustomTheme::pastel_teal_card()),
 
             // Graph visualization with overlays (using stack for absolute positioning)
             {

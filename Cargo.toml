@@ -1,6 +1,6 @@
 [package]
 name = "cim-keys"
-version = "0.7.8"
+version = "0.8.0"
 edition = "2021"
 authors = ["The Cowboy AI Team"]
 description = "Cryptographic key management and PKI support for CIM, including YubiKey integration"
@@ -11,11 +11,14 @@ categories = ["cryptography", "authentication"]
 
 [dependencies]
 # CIM Foundation - Event-Driven FRP Architecture
-cim-domain = { git = "https://github.com/TheCowboyAI/cim-domain.git", tag = "v0.8.1" }
-cim-domain-location = { git = "https://github.com/TheCowboyAI/cim-domain-location.git", tag = "v0.8.1" }
-cim-domain-person = { git = "https://github.com/TheCowboyAI/cim-domain-person.git", tag = "v0.8.1", optional = true }
-cim-domain-organization = { git = "https://github.com/TheCowboyAI/cim-domain-organization.git", tag = "v0.8.1", optional = true }
-cim-domain-policy = { git = "https://github.com/TheCowboyAI/cim-domain-policy.git", tag = "v0.8.1", optional = true }
+# NOTE: Temporarily using path dependencies due to GitHub access issues
+# TODO: Switch back to git dependencies when GitHub is stable for Nix builds
+cim-domain = { path = "../cim-domain" }
+cim-domain-location = { path = "../cim-domain-location" }
+cim-domain-person = { path = "../cim-domain-person", optional = true }
+cim-domain-organization = { path = "../cim-domain-organization", optional = true }
+cim-domain-policy = { path = "../cim-domain-policy", optional = true }
+cim-domain-agent = { path = "../cim-domain-agent", optional = true }
 
 # Core dependencies
 thiserror = "2.0"

@@ -6,7 +6,7 @@
 use iced::{
     Background, Border, Color, Shadow,
     gradient::{Gradient, Linear},
-    widget::{button, container, text_input},
+    widget::{button, container, text_input, pick_list, checkbox},
 };
 
 /// The Cowboy AI theme colors and gradients
@@ -200,7 +200,7 @@ impl CowboyAppTheme {
                 border: Border {
                     color: border_color,
                     width: 1.0,
-                    radius: 10.0.into(),
+                    radius: 20.0.into(),  // More rounded buttons
                 },
                 shadow,
             }
@@ -239,7 +239,7 @@ impl CowboyAppTheme {
                 border: Border {
                     color: border_color,
                     width: 1.0,
-                    radius: 10.0.into(),
+                    radius: 20.0.into(),  // More rounded buttons
                 },
                 shadow,
             }
@@ -278,10 +278,24 @@ impl CowboyAppTheme {
                 border: Border {
                     color: Color::TRANSPARENT,
                     width: 0.0,
-                    radius: 12.0.into(),
+                    radius: 20.0.into(),  // More rounded buttons
                 },
                 shadow,
             }
+        }
+    }
+
+    /// Light checkbox style for dark backgrounds
+    pub fn light_checkbox() -> impl Fn(&iced::Theme, checkbox::Status) -> checkbox::Style {
+        |_theme, _status| checkbox::Style {
+            background: Background::Color(Color::from_rgba(0.2, 0.2, 0.3, 0.5)),
+            icon_color: Color::from_rgb(0.3, 0.6, 1.0),  // Blue checkmark
+            border: Border {
+                color: Color::from_rgba(0.5, 0.5, 0.6, 0.7),
+                width: 2.0,
+                radius: 4.0.into(),
+            },
+            text_color: Some(Color::from_rgb(0.9, 0.9, 0.9)),  // Light text
         }
     }
 
@@ -454,6 +468,40 @@ impl CowboyAppTheme {
                 placeholder: CowboyTheme::text_muted(),
                 value: CowboyTheme::text_primary(),
                 selection: Color::from_rgba(0.165, 0.322, 0.596, 0.3),
+            }
+        }
+    }
+
+    /// Pick list (dropdown) style with rounded corners
+    pub fn glass_pick_list() -> impl Fn(&iced::Theme, pick_list::Status) -> pick_list::Style {
+        |theme, status| {
+            let _base_style = pick_list::default(theme, status);  // Reserved for style extension
+
+            let (background, border_color) = match status {
+                pick_list::Status::Active => (
+                    Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.08)),
+                    CowboyTheme::border_color(),
+                ),
+                pick_list::Status::Hovered => (
+                    Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.12)),
+                    CowboyTheme::border_hover_color(),
+                ),
+                pick_list::Status::Opened => (
+                    Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.15)),
+                    Color::from_rgba(1.0, 1.0, 1.0, 0.5),
+                ),
+            };
+
+            pick_list::Style {
+                background,
+                text_color: CowboyTheme::text_primary(),
+                placeholder_color: CowboyTheme::text_muted(),
+                handle_color: CowboyTheme::text_secondary(),
+                border: Border {
+                    color: border_color,
+                    width: 1.0,
+                    radius: 10.0.into(),
+                },
             }
         }
     }

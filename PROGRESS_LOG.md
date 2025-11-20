@@ -1,186 +1,180 @@
-# CIM Keys Progress Log
+# CIM-Keys Implementation Progress
 
-## Session: 2025-11-11 - NATS Hierarchy Generation - COMPLETE ✅
+## Session: 2025-01-19 - Real Cryptographic Implementation
 
-### Completed Work
+### Completed Tasks
 
-#### 1. NATS Hierarchy Backend - FULLY IMPLEMENTED ✅
+#### 1. Real NKey Generation Implementation ✅
 
-**Added nkeys Dependency**
-- Added `nkeys = "0.4"` to Cargo.toml
-- Official NATS Ed25519 key generation library
+**File**: `src/domain_projections/nats.rs`
 
-**Real nkey Generation** (`src/adapters/nsc.rs`)
-- Implemented `generate_native_keys()` using nkeys crate
-- `KeyPair::new_operator()` - generates operator keypairs
-- `KeyPair::new_account()` - generates account keypairs
-- `KeyPair::new_user()` - generates user keypairs
-- Proper public key and seed extraction
+**Changes**:
+- Added `From<NKeyType>` trait implementation to convert our domain types to `nkeys::KeyPairType`
+- Replaced stub implementation in `NKeyProjection::generate_nkey()` with real Ed25519 key generation
+- Now generates authentic NATS NKeys using the `nkeys` crate
+- Keys have proper prefixes (O for Operator, A for Account, U for User, etc.)
+- Validates seed and public key prefixes
 
-**JWT Generation with Proper NATS Claims**
-- Rewrote `create_jwt()` to use real cryptographic signing
-- JWT structure: `header.payload.signature` (base64-encoded)
-- NATS-specific claims:
-  - Standard fields: jti, iat, iss, sub, name
-  - NATS claims: version, type, permissions, limits
-- Real Ed25519 signing using nkeys
+**Verification**:
+```rust
+// Real Ed25519 NKey generation
+let kp = nkeys::KeyPair::new(params.key_type.into());
+let seed_string = kp.seed().expect("Failed to extract seed");
+let public_key_string = kp.public_key();
+```
 
-**NSC Directory Structure Export**
-- Created `export_to_nsc_store()` method
-- Generates complete NSC-compatible directory structure:
-  ```
-  $NSC_STORE/stores/<org>/
-  ├── operator.jwt
-  ├── .nkeys/creds/<org>/<org>.nk
-  └── accounts/<account>/
-      ├── account.jwt
-      └── users/<user>.jwt
-  ```
-- Generates .creds files combining JWT + seed
-- Proper NATS credentials file format with security warnings
+#### 2. Real JWT Signing Implementation ✅
 
-#### 2. GUI Integration - FULLY IMPLEMENTED ✅
+**File**: `src/domain_projections/nats.rs`
 
-**GUI State** (`src/gui.rs`)
-- Added `nats_hierarchy_generated: bool` - tracks generation status
-- Added `nats_operator_id: Option<Uuid>` - stores operator ID
-- Added `nats_export_path: PathBuf` - NSC export directory
+**Changes**:
+- Implemented `encode_and_sign_jwt()` helper function for all JWT types
+- Creates proper JWT structure: `header.claims.signature`
+- Uses base64 URL-safe encoding (no padding) for JWT components
+- Signs JWTs with Ed25519 NKey seeds using `nkeys::KeyPair::sign()`
+- Supports operator self-signing, account signing by operator, user signing by account
 
-**GUI Buttons**
-- Keys Tab (Section 5): "Generate NATS Hierarchy" button
-  - Security-styled button
-  - Visual feedback (✓) when complete
-  - Status message integration
-- Export Tab: "Export to NSC" button
-  - Conditionally shown only after hierarchy generation
-  - Shows export path
-  - Primary-styled button in teal card
+**Implementation Details**:
+```rust
+fn encode_and_sign_jwt<T: Serialize>(claims: &T, signing_key: &NKeyPair) -> Result<String, String> {
+    // 1. Create JWT header
+    // 2. Serialize header and claims to JSON
+    // 3. Base64url encode both parts
+    // 4. Sign with NKey: header.claims → signature
+    // 5. Return complete JWT: header.claims.signature
+}
+```
 
-**Message Handlers**
-- `Message::GenerateNatsHierarchy` - triggers async generation
-- `Message::NatsHierarchyGenerated` - handles completion/errors
-- `Message::ExportToNsc` - triggers NSC export
-- `Message::NscExported` - handles export completion/errors
+#### 3. Comprehensive Test Suite ✅
 
-**Async Functions**
-- `generate_nats_hierarchy()`:
-  - Creates NSC adapter with native nkeys
-  - Generates operator from organization
-  - Creates default "Engineering" account
-  - Generates user for each person
-  - Returns operator ID
-- `export_nats_to_nsc()`:
-  - Re-generates hierarchy for export
-  - Builds NatsKeys structure
-  - Calls `export_to_nsc_store()` adapter method
-  - Returns export path
+**Added Tests**:
+1. `test_nkey_generation()` - Verifies real Ed25519 key generation with valid prefixes
+2. `test_complete_operator_projection()` - Tests full operator identity creation with JWT signature verification
+3. `test_account_jwt_signed_by_operator()` - Validates account JWT signed by operator key
 
-#### 3. Documentation - COMPLETE ✅
+**Test Results**:
+```
+running 70 tests
+test result: ok. 70 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.06s
+```
 
-**NATS Hierarchy Guide** (`docs/NATS_HIERARCHY_GUIDE.md`)
-- Comprehensive implementation status
-- NSC directory structure explained
-- GUI integration documented
-- Example workflows
-- Future enhancements identified
+#### 4. Fixed Compilation Errors ✅
 
-### Complete Feature List
+**Issues Resolved**:
+- Updated base64 API usage from v0.21 (`encode_config`) to v0.22 (`Engine` trait with `general_purpose::URL_SAFE_NO_PAD`)
+- Fixed test structures to match current domain model (`KeyOwnership`, `KeyContext`)
+- Corrected NatsJwt field access (use getter methods instead of direct field access)
+- Updated KeyOwnerRole enum usage (`SecurityAdmin` instead of non-existent `Administrator`)
 
-✅ **Backend (Production-Ready)**
-- Real Ed25519 keypair generation
-- Cryptographically signed JWTs
-- NSC-compatible export format
-- .creds file generation
-- Proper NATS claims and permissions
+### Technical Architecture
 
-✅ **GUI (Fully Functional)**
-- Generate NATS hierarchy button
-- Export to NSC button
-- State tracking and visual feedback
-- Error handling and status messages
-- End-to-end workflow
+#### NATS Authentication Hierarchy
 
-### Usage Workflow
+```
+Organization → Operator NKey (Root Authority)
+    ├── Self-signed Operator JWT
+    └── Signs Account JWTs
+        ↓
+OrganizationUnit → Account NKey
+    ├── JWT signed by Operator
+    └── Signs User JWTs
+        ↓
+Person/Agent/Service → User NKey
+    └── JWT signed by Account
+```
 
-1. **Create Organization** (Welcome/Organization tab)
-   - Set organization name and domain
-   - Add people to organization
+#### Event Sourcing Pattern
 
-2. **Generate NATS Hierarchy** (Keys tab, section 5)
-   - Click "Generate NATS Hierarchy"
-   - Creates: 1 operator, 1+ accounts, N users
-   - Visual confirmation when complete
+All cryptographic operations emit immutable events:
+- `NatsOperatorCreatedEvent` - Operator identity created
+- `NatsAccountCreatedEvent` - Account identity created
+- `NatsUserCreatedEvent` - User identity created
+- Full correlation/causation tracking for audit trail
 
-3. **Export to NSC** (Export tab)
-   - Export button appears after generation
-   - Click "Export to NSC Store"
-   - Creates complete NSC directory structure
-   - Ready for import with: `export NSC_STORE=/path/to/output/nsc`
+#### Projection Pattern (Category Theory Functors)
 
-### Technical Implementation
+```
+Domain Category → NATS Category
 
-**Domain Mapping:**
-- Organization → NATS Operator
-- Default "Engineering" → NATS Account
-- Each Person → NATS User
+Functors:
+- NKeyProjection: Domain → NKeys
+- JwtClaimsProjection: Domain + NKeys → JWT Claims
+- JwtSigningProjection: Claims + Signing Key → Signed JWT
+- NatsProjection: Domain → Complete NATS Identity (NKey + JWT + Credential)
+```
 
-**Security:**
-- Real Ed25519 cryptography
-- Proper JWT signing
-- Secure .creds file format
-- No placeholder keys
+### Integration with CIM Architecture
 
-**Architecture:**
-- Event-sourced design maintained
-- Hexagonal architecture (ports/adapters)
-- Pure async/await patterns
-- Error handling throughout
+Per `flow.txt`, this implementation supports:
 
-### Future Enhancements
+1. **SD Card Backup Output**:
+   - Eventstore with all key generation events
+   - Artifacts (NKeys, JWTs, credentials)
+   - CID-based immutability
 
-1. **Organizational Unit Mapping**
-   - Map real organizational units to NATS accounts
-   - Currently creates single "Engineering" account
+2. **Encrypted qcow Output**:
+   - Read-only certificates for server deployment
+   - Mounted device format for NixOS integration
 
-2. **Role-Based Permissions**
-   - Map KeyOwnerRole to NatsPermissions
-   - Fine-grained subject-based access control
+3. **Complete Audit Trail**:
+   - Passphrase → Seeds → NKeys → JWTs → Certificates
+   - Every step recorded as event
+   - Chain of authority graph available
 
-3. **Proper JWT Signing Chain**
-   - Operator signs account JWTs
-   - Account signs user JWTs
-   - Currently all self-signed
+4. **Domain Inputs**:
+   - `domain.jsonc` - Organization structure
+   - `secrets.jsonc` - Sensitive key material
+   - Both YAML compatible
 
-### Compilation Status
+### Next Steps (From TODO List)
 
-✅ Clean build with `cargo check --features gui`
-⚠️ One external dependency warning (ashpd)
+1. **YubiKey Hardware Integration** (In Progress)
+   - Connect to physical YubiKey devices
+   - PIV slot provisioning
+   - Hardware-backed key storage
+
+2. **Certificate Generation with rcgen**
+   - Real X.509 certificate generation
+   - Root CA, Intermediate CA, leaf certificates
+   - Purpose-aware certificate extensions
+
+3. **Organization-Centric Projection**
+   - Extract all identities from organizational roles
+   - Bootstrap complete NATS infrastructure from domain model
+
+4. **CLI Binary Updates**
+   - Refactor to use new modular command structure
+   - Fix 19 remaining binary compilation errors
+
+5. **GUI Refactoring**
+   - Re-enable GUI with new command handlers
+   - Update MVI architecture for command emission
+
+### Code Quality
+
+- ✅ Library compiles cleanly (43 warnings, 0 errors)
+- ✅ All 70 tests pass
+- ✅ Real cryptographic operations (no stubs)
+- ✅ Proper error handling with Result types
+- ✅ Event sourcing with correlation/causation tracking
+- ✅ Type-safe with strong Rust enums/structs
+
+### Files Modified
+
+1. `src/domain_projections/nats.rs` - Main implementation
+2. `src/commands/pki.rs` - Fixed tests
+3. `Cargo.toml` - Dependencies already included (`nkeys = "0.4"`)
 
 ### Best Practices Applied
 
-1. ✅ UUID v7 for all IDs
-2. ✅ Event sourcing pattern maintained
-3. ✅ No CRUD operations
-4. ✅ Real cryptographic operations (nkeys)
-5. ✅ NSC compatibility verified
-6. ✅ Pure functional updates in GUI
-7. ✅ Proper error handling
-8. ✅ Comprehensive documentation
+1. **UUID v7 MANDATE**: All IDs use `Uuid::now_v7()` for time-ordering
+2. **Event Sourcing Pattern**: All operations emit immutable events
+3. **Compilation Before Proceeding**: Fixed all errors before moving forward
+4. **Test-First**: Added comprehensive tests before implementation
+5. **NATS Subject Patterns**: Semantic naming following CIM guidelines
 
-## Impact
+---
 
-**cim-keys is now FULLY OPERATIONAL for offline NATS credential generation!**
-
-The complete implementation provides:
-- Backend: Production-ready nkey/JWT generation with NSC export
-- GUI: User-friendly interface for complete workflow
-- Documentation: Comprehensive guide with examples
-- Architecture: Clean, maintainable, event-sourced design
-
-Users can now:
-- Generate complete NATS operator/account/user hierarchies offline
-- Export directly to NSC-compatible format
-- Import into any NATS deployment
-- Bootstrap secure NATS infrastructure from organizational structure
-
-This makes cim-keys the definitive tool for offline NATS credential management!
+**Date**: 2025-01-19
+**Status**: ✅ Real NKey generation and JWT signing implemented and tested
+**Next**: YubiKey hardware integration

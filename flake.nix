@@ -119,8 +119,8 @@
           # PKG_CONFIG paths
           export PKG_CONFIG_PATH="${pkgs.openssl.dev}/lib/pkgconfig:${pkgs.pcsclite}/lib/pkgconfig:${pkgs.gpgme}/lib/pkgconfig:${pkgs.nettle}/lib/pkgconfig:$PKG_CONFIG_PATH"
 
-          # Library paths
-          export LD_LIBRARY_PATH="${pkgs.openssl.out}/lib:${pkgs.pcsclite}/lib:${pkgs.gpgme}/lib:${pkgs.nettle}/lib:$LD_LIBRARY_PATH"
+          # Library paths (including GUI libraries for Wayland/X11)
+          export LD_LIBRARY_PATH="${pkgs.openssl.out}/lib:${pkgs.pcsclite}/lib:${pkgs.gpgme}/lib:${pkgs.nettle}/lib:${pkgs.wayland}/lib:${pkgs.libxkbcommon}/lib:${pkgs.xorg.libX11}/lib:${pkgs.xorg.libXcursor}/lib:${pkgs.xorg.libXrandr}/lib:${pkgs.xorg.libXi}/lib:${pkgs.vulkan-loader}/lib:${pkgs.libGL}/lib:$LD_LIBRARY_PATH"
 
           # PCSC configuration
           export PCSCLITE_LIB_DIR="${pkgs.pcsclite}/lib"
@@ -216,7 +216,7 @@
         # Build package (CLI)
         packages.default = pkgs.rustPlatform.buildRustPackage {
           pname = "cim-keys";
-          version = "0.7.8";
+          version = "0.8.0";
 
           src = ./.;
 
@@ -245,7 +245,7 @@
         # Build GUI package
         packages.cim-keys-gui = pkgs.rustPlatform.buildRustPackage {
           pname = "cim-keys-gui";
-          version = "0.7.8";
+          version = "0.8.0";
 
           src = ./.;
 
@@ -320,16 +320,10 @@
 
             echo "🔐 CIM Keys GUI"
             echo "📁 Output directory: $OUTPUT_DIR"
+            echo "Starting GUI..."
 
-            # Run from the current directory (not from nix store)
-            if [ -f ./target/debug/cim-keys-gui ]; then
-              echo "Starting GUI..."
-              exec ./target/debug/cim-keys-gui "$OUTPUT_DIR"
-            else
-              echo "GUI binary not found! Please build first with:"
-              echo "  nix develop -c cargo build --bin cim-keys-gui --features gui"
-              exit 1
-            fi
+            # Run the nix-built GUI binary
+            exec ${self.packages.${system}.cim-keys-gui}/bin/cim-keys-gui "$OUTPUT_DIR"
           '';
         };
       });

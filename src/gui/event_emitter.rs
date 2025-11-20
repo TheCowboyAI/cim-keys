@@ -105,7 +105,7 @@ impl CimEventEmitter {
         interaction: InteractionType,
     ) -> DomainCommand {
         // Build the NATS subject based on command type
-        let subject = self.build_subject(&command);
+        let subject = self.build_subject("key.command");
 
         let correlation_id = *self.correlation_id.lock().unwrap();
         let causation_id = *self.last_event_id.lock().unwrap();
@@ -130,31 +130,11 @@ impl CimEventEmitter {
     }
 
     /// Build NATS subject for a command
-    fn build_subject(&self, command: &KeyCommand) -> String {
-        use crate::commands::KeyCommand::*;
-
-        let operation = match command {
-            GenerateKey(_) => "key.generate",
-            ImportKey(_) => "key.import",
-            GenerateCertificate(_) => "certificate.generate",
-            SignCertificate(_) => "certificate.sign",
-            ExportKey(_) => "key.export",
-            StoreKeyOffline(_) => "key.store.offline",
-            ProvisionYubiKey(_) => "yubikey.provision",
-            GenerateSshKey(_) => "ssh.generate",
-            GenerateGpgKey(_) => "gpg.generate",
-            RevokeKey(_) => "key.revoke",
-            EstablishTrust(_) => "trust.establish",
-            CreatePkiHierarchy(_) => "pki.create",
-            CreateNatsOperator(_) => "nats.create.operator",
-            CreateNatsAccount(_) => "nats.create.account",
-            CreateNatsUser(_) => "nats.create.user",
-            GenerateNatsSigningKey(_) => "nats.generate.signing",
-            SetNatsPermissions(_) => "nats.set.permissions",
-            ExportNatsConfig(_) => "nats.export.config",
-        };
-
-        format!("{}.{}", self.subject_prefix, operation)
+    /// TODO: Update this to work with new modular command structure
+    /// For now, commands are handled directly by their handlers
+    fn build_subject(&self, _operation: &str) -> String {
+        // TODO: Implement proper subject building for new command structure
+        format!("{}.command", self.subject_prefix)
     }
 
     /// Process an event that was received
@@ -297,6 +277,12 @@ impl KeyEvent {
             KeyEvent::KeyRotationInitiated(e) => e.rotation_id,
             KeyEvent::KeyRotationCompleted(e) => e.rotation_id,
             KeyEvent::TotpSecretGenerated(e) => e.secret_id,
+            KeyEvent::ServiceAccountCreated(e) => e.service_account_id,
+            KeyEvent::AgentCreated(e) => e.agent_id,
+            KeyEvent::AccountabilityValidated(e) => e.validation_id,
+            KeyEvent::AccountabilityViolated(e) => e.violation_id,
+            KeyEvent::CertificateExported(e) => e.export_id,
+            KeyEvent::ManifestCreated(e) => e.manifest_id,
         }
     }
 
@@ -324,6 +310,12 @@ impl KeyEvent {
             KeyEvent::KeyRotationInitiated(_) => "KeyRotationInitiated",
             KeyEvent::KeyRotationCompleted(_) => "KeyRotationCompleted",
             KeyEvent::TotpSecretGenerated(_) => "TotpSecretGenerated",
+            KeyEvent::ServiceAccountCreated(_) => "ServiceAccountCreated",
+            KeyEvent::AgentCreated(_) => "AgentCreated",
+            KeyEvent::AccountabilityValidated(_) => "AccountabilityValidated",
+            KeyEvent::AccountabilityViolated(_) => "AccountabilityViolated",
+            KeyEvent::CertificateExported(_) => "CertificateExported",
+            KeyEvent::ManifestCreated(_) => "ManifestCreated",
         }
     }
 }

@@ -1,0 +1,9 @@
+cim-keys has two destinations, a key backup that goes to an SD card and includes our eventstore and artifacts, this is intended for safe storge.
+And an encrypted qcow (or other suitable format) that we will transfer to our servers and use as a shared, mounted device that holds our read-only certificates.
+Quite literally, cim-keys is the mechanism used to get from a Passphrase to a full PKI with these two projections.
+Additionally, these two outputs also have a CID, made from each value it contains, providing both immutability, and identity.
+We have several other projections, a certificate is actually a projection because we provide inputs to a function the outputs our projection (a certificate) as files.
+we provide a complete audit trail from passphrase to key set.
+we also have 2 optional inputs, some.domain.jsonc, which can include the domain but no secrets
+And secrets.jsonc which can provide just secrets for known values. both these will need to be heavily adjusted from their current form.
+these can also be yaml. another output is a complete graph of ALL the keys and how they are linked as a chain of authority.

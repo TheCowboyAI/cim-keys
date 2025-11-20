@@ -1,0 +1,417 @@
+// Export Commands
+//
+// Command handlers for exporting keys and certificates to encrypted storage.
+//
+// User Stories: US-021, US-022
+
+use chrono::Utc;
+use std::path::PathBuf;
+use uuid::Uuid;
+
+use crate::domain::{KeyContext, Organization};
+use crate::events::{KeyEvent, KeyExportedEvent, KeyStoredOfflineEvent, NatsConfigExportedEvent};
+use crate::value_objects::{Certificate, ExportFormat, NKeyPair, NatsJwt, PublicKey};
+
+// ============================================================================
+// Command: Export to Encrypted Storage (US-021, US-022)
+// ============================================================================
+
+/// Command to export keys and certificates to encrypted storage
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ExportToEncryptedStorage {
+    pub output_directory: PathBuf,
+    pub organization: Organization,
+    pub keys: Vec<KeyExportItem>,
+    pub certificates: Vec<CertificateExportItem>,
+    pub nats_identities: Vec<NatsIdentityExportItem>,
+    pub include_manifest: bool,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Key export item
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct KeyExportItem {
+    pub key_id: Uuid,
+    pub purpose: String,
+    pub public_key: PublicKey,
+    pub owner_context: KeyContext,
+    pub export_format: ExportFormat,
+    pub destination_path: PathBuf,
+}
+
+/// Certificate export item
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CertificateExportItem {
+    pub cert_id: Uuid,
+    pub certificate: Certificate,
+    pub export_format: ExportFormat,
+    pub destination_path: PathBuf,
+}
+
+/// NATS identity export item
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct NatsIdentityExportItem {
+    pub identity_id: Uuid,
+    pub identity_type: String, // "Operator", "Account", "User"
+    pub identity_name: String,
+    pub nkey: NKeyPair,
+    pub jwt: NatsJwt,
+    pub destination_path: PathBuf,
+}
+
+/// Result of export operation
+#[derive(Debug, Clone)]
+pub struct ExportCompleted {
+    pub manifest_path: Option<PathBuf>,
+    pub keys_exported: usize,
+    pub certificates_exported: usize,
+    pub nats_configs_exported: usize,
+    pub total_bytes_written: u64,
+    pub events: Vec<KeyEvent>,
+}
+
+/// Handle ExportToEncryptedStorage command
+///
+/// Exports all cryptographic material to encrypted storage with proper
+/// access controls and audit trail.
+///
+/// Emits:
+/// - KeyExportedEvent (for each key)
+/// - CertificateExportedEvent (for each certificate)
+/// - NatsConfigExportedEvent (for each NATS identity)
+/// - KeyStoredOfflineEvent (for offline storage confirmation)
+/// - ManifestCreatedEvent (if manifest requested)
+///
+/// User Story: US-021, US-022
+pub fn handle_export_to_encrypted_storage(
+    cmd: ExportToEncryptedStorage,
+) -> Result<ExportCompleted, String> {
+    let mut events = Vec::new();
+    let mut total_bytes = 0u64;
+
+    // Step 1: Validate output directory
+    validate_export_directory(&cmd.output_directory)?;
+
+    // Step 2: Export keys
+    for key_item in &cmd.keys {
+        // TODO: Implement actual key export to file
+        // For now, emit event with stub data
+        let bytes_written = export_key_stub(key_item)?;
+        total_bytes += bytes_written;
+
+        // TODO: Add correlation_id and causation_id to event for proper event sourcing
+        events.push(KeyEvent::KeyExported(KeyExportedEvent {
+            key_id: key_item.key_id,
+            format: crate::events::KeyFormat::Pem, // TODO: Map from ExportFormat
+            include_private: false, // Only exporting public keys
+            exported_at: Utc::now(),
+            exported_by: cmd.organization.name.clone(),
+            destination: crate::events::ExportDestination::File {
+                path: key_item.destination_path.to_string_lossy().to_string(),
+            },
+        }));
+
+        // Emit offline storage event
+        events.push(KeyEvent::KeyStoredOffline(KeyStoredOfflineEvent {
+            key_id: key_item.key_id,
+            partition_id: Uuid::now_v7(), // ID of the encrypted partition
+            encrypted: true,
+            stored_at: Utc::now(),
+            checksum: "TODO: Calculate checksum".to_string(),
+        }));
+    }
+
+    // Step 3: Export certificates
+    for cert_item in &cmd.certificates {
+        // TODO: Implement actual certificate export
+        let bytes_written = export_certificate_stub(cert_item)?;
+        total_bytes += bytes_written;
+
+        events.push(KeyEvent::CertificateExported(
+            crate::events::CertificateExportedEvent {
+                export_id: Uuid::now_v7(),
+                cert_id: cert_item.cert_id,
+                export_format: format!("{:?}", cert_item.export_format),
+                destination_path: cert_item.destination_path.to_string_lossy().to_string(),
+                exported_at: Utc::now(),
+                correlation_id: cmd.correlation_id,
+                causation_id: cmd.causation_id,
+            },
+        ));
+    }
+
+    // Step 4: Export NATS configurations
+    for nats_item in &cmd.nats_identities {
+        // TODO: Implement actual NATS config export (credentials file format)
+        let bytes_written = export_nats_config_stub(nats_item)?;
+        total_bytes += bytes_written;
+
+        // TODO: Update NatsConfigExportedEvent to use proper fields
+        // For now, use placeholder values that match existing event structure
+        events.push(KeyEvent::NatsConfigExported(NatsConfigExportedEvent {
+            export_id: Uuid::now_v7(),
+            operator_id: cmd.organization.id, // Use org ID as placeholder
+            format: crate::events::NatsExportFormat::Credentials,
+            exported_at: Utc::now(),
+            exported_by: cmd.organization.name.clone(),
+        }));
+    }
+
+    // Step 5: Generate manifest if requested
+    let manifest_path = if cmd.include_manifest {
+        let manifest = generate_manifest(&cmd, &events)?;
+        let path = cmd.output_directory.join("manifest.json");
+
+        // TODO: Write manifest to file
+        // let manifest_bytes = write_manifest_stub(&path, &manifest)?;
+        let manifest_bytes = 1024u64; // Stub
+        total_bytes += manifest_bytes;
+
+        events.push(KeyEvent::ManifestCreated(
+            crate::events::ManifestCreatedEvent {
+                manifest_id: Uuid::now_v7(),
+                manifest_path: path.to_string_lossy().to_string(),
+                organization_id: cmd.organization.id,
+                organization_name: cmd.organization.name.clone(),
+                keys_count: cmd.keys.len(),
+                certificates_count: cmd.certificates.len(),
+                nats_configs_count: cmd.nats_identities.len(),
+                created_at: Utc::now(),
+                correlation_id: cmd.correlation_id,
+            },
+        ));
+
+        Some(path)
+    } else {
+        None
+    };
+
+    Ok(ExportCompleted {
+        manifest_path,
+        keys_exported: cmd.keys.len(),
+        certificates_exported: cmd.certificates.len(),
+        nats_configs_exported: cmd.nats_identities.len(),
+        total_bytes_written: total_bytes,
+        events,
+    })
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/// Validate export directory exists and is writable
+fn validate_export_directory(path: &PathBuf) -> Result<(), String> {
+    // TODO: Implement actual directory validation
+    // - Check directory exists
+    // - Check write permissions
+    // - Check available disk space
+    // - Verify encryption if required
+
+    if !path.to_string_lossy().starts_with("/mnt/encrypted") {
+        eprintln!(
+            "WARNING: Export directory {} is not on encrypted partition",
+            path.display()
+        );
+    }
+
+    Ok(())
+}
+
+/// Export key to file (stub implementation)
+fn export_key_stub(key_item: &KeyExportItem) -> Result<u64, String> {
+    // TODO: Implement actual key export
+    // 1. Serialize public key based on export_format (PEM, DER, SSH, etc.)
+    // 2. Write to destination_path with proper permissions (0600)
+    // 3. Set filesystem attributes (immutable, encrypted)
+    // 4. Return bytes written
+
+    Ok(512) // Stub: typical public key size
+}
+
+/// Export certificate to file (stub implementation)
+fn export_certificate_stub(cert_item: &CertificateExportItem) -> Result<u64, String> {
+    // TODO: Implement actual certificate export
+    // 1. Serialize certificate based on export_format (PEM, DER)
+    // 2. Write to destination_path
+    // 3. Optionally include certificate chain
+    // 4. Return bytes written
+
+    Ok(2048) // Stub: typical certificate size
+}
+
+/// Export NATS configuration to credentials file (stub implementation)
+fn export_nats_config_stub(nats_item: &NatsIdentityExportItem) -> Result<u64, String> {
+    // TODO: Implement actual NATS credentials file export
+    // 1. Create credentials file format:
+    //    -----BEGIN NATS USER JWT-----
+    //    <JWT content>
+    //    ------END NATS USER JWT------
+    //
+    //    ************************* IMPORTANT *************************
+    //    NKEY Seed printed below can be used to sign and prove identity.
+    //    NKEYs are sensitive and should be treated as secrets.
+    //
+    //    -----BEGIN USER NKEY SEED-----
+    //    <Seed content>
+    //    ------END USER NKEY SEED------
+    //
+    //    *************************************************************
+    // 2. Write to destination_path with restricted permissions (0400)
+    // 3. Return bytes written
+
+    Ok(1024) // Stub: typical credentials file size
+}
+
+/// Generate export manifest
+fn generate_manifest(
+    cmd: &ExportToEncryptedStorage,
+    events: &[KeyEvent],
+) -> Result<ExportManifest, String> {
+    Ok(ExportManifest {
+        manifest_id: Uuid::now_v7(),
+        organization_id: cmd.organization.id,
+        organization_name: cmd.organization.name.clone(),
+        export_timestamp: Utc::now(),
+        keys: cmd
+            .keys
+            .iter()
+            .map(|k| ManifestKeyEntry {
+                key_id: k.key_id,
+                purpose: k.purpose.clone(),
+                path: k.destination_path.to_string_lossy().to_string(),
+                format: format!("{:?}", k.export_format),
+            })
+            .collect(),
+        certificates: cmd
+            .certificates
+            .iter()
+            .map(|c| ManifestCertEntry {
+                cert_id: c.cert_id,
+                subject: c.certificate.subject.common_name.clone(),
+                path: c.destination_path.to_string_lossy().to_string(),
+                format: format!("{:?}", c.export_format),
+            })
+            .collect(),
+        nats_configs: cmd
+            .nats_identities
+            .iter()
+            .map(|n| ManifestNatsEntry {
+                identity_id: n.identity_id,
+                identity_type: n.identity_type.clone(),
+                identity_name: n.identity_name.clone(),
+                path: n.destination_path.to_string_lossy().to_string(),
+            })
+            .collect(),
+        events_count: events.len(),
+        correlation_id: cmd.correlation_id,
+    })
+}
+
+/// Export manifest structure
+#[derive(Debug, Clone)]
+struct ExportManifest {
+    manifest_id: Uuid,
+    organization_id: Uuid,
+    organization_name: String,
+    export_timestamp: chrono::DateTime<Utc>,
+    keys: Vec<ManifestKeyEntry>,
+    certificates: Vec<ManifestCertEntry>,
+    nats_configs: Vec<ManifestNatsEntry>,
+    events_count: usize,
+    correlation_id: Uuid,
+}
+
+#[derive(Debug, Clone)]
+struct ManifestKeyEntry {
+    key_id: Uuid,
+    purpose: String,
+    path: String,
+    format: String,
+}
+
+#[derive(Debug, Clone)]
+struct ManifestCertEntry {
+    cert_id: Uuid,
+    subject: String,
+    path: String,
+    format: String,
+}
+
+#[derive(Debug, Clone)]
+struct ManifestNatsEntry {
+    identity_id: Uuid,
+    identity_type: String,
+    identity_name: String,
+    path: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::Organization;
+
+    #[test]
+    fn test_export_emits_events_for_all_artifacts() {
+        let org = Organization {
+            id: Uuid::now_v7(),
+            name: "Test Org".to_string(),
+            display_name: "Test Organization".to_string(),
+            description: None,
+            parent_id: None,
+            units: vec![],
+            created_at: Utc::now(),
+            metadata: Default::default(),
+        };
+
+        let cmd = ExportToEncryptedStorage {
+            output_directory: PathBuf::from("/mnt/encrypted/test"),
+            organization: org,
+            keys: vec![],
+            certificates: vec![],
+            nats_identities: vec![],
+            include_manifest: true,
+            correlation_id: Uuid::now_v7(),
+            causation_id: None,
+        };
+
+        let result = handle_export_to_encrypted_storage(cmd).unwrap();
+
+        // Should emit manifest creation event
+        assert!(result
+            .events
+            .iter()
+            .any(|e| matches!(e, KeyEvent::ManifestCreated(_))));
+        assert!(result.manifest_path.is_some());
+    }
+
+    #[test]
+    fn test_export_validates_directory() {
+        let org = Organization {
+            id: Uuid::now_v7(),
+            name: "Test Org".to_string(),
+            display_name: "Test Organization".to_string(),
+            description: None,
+            parent_id: None,
+            units: vec![],
+            created_at: Utc::now(),
+            metadata: Default::default(),
+        };
+
+        // Test with non-encrypted path (should warn but succeed)
+        let cmd = ExportToEncryptedStorage {
+            output_directory: PathBuf::from("/tmp/test"),
+            organization: org,
+            keys: vec![],
+            certificates: vec![],
+            nats_identities: vec![],
+            include_manifest: false,
+            correlation_id: Uuid::now_v7(),
+            causation_id: None,
+        };
+
+        let result = handle_export_to_encrypted_storage(cmd);
+        assert!(result.is_ok()); // Should succeed but warn
+    }
+}

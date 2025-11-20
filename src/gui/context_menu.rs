@@ -151,7 +151,7 @@ mod tests {
     fn test_context_menu_show_hide() {
         let mut menu = ContextMenu::new();
 
-        menu.show(Point::new(100.0, 200.0));
+        menu.show(Point::new(100.0, 200.0), 1.0);
         assert!(menu.is_visible());
         assert_eq!(menu.position(), Point::new(100.0, 200.0));
 

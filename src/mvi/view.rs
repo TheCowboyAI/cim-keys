@@ -11,6 +11,7 @@ use iced::{
     widget::{button, column, container, row, text, text_input, progress_bar, scrollable, Column},
     Element, Length, Color, Border, Font, Theme, Background, Alignment,
 };
+use crate::icons::{self, ICON_LOCK, ICON_WARNING, ICON_CHECK};
 
 /// Pure view function for MVI layer
 ///
@@ -182,7 +183,10 @@ fn view_footer(model: &Model) -> Element<'_, Intent> {
 /// Welcome tab view
 fn view_welcome(model: &Model) -> Element<'_, Intent> {
     let welcome_text = column![
-        text("🔐 CIM Keys - Offline Domain Bootstrap").size(28),
+        row![
+            icons::icon_sized(ICON_LOCK, 28),
+            text(" CIM Keys - Offline Domain Bootstrap").size(28),
+        ].spacing(10),
         text("Secure cryptographic key management for CIM infrastructure").size(16),
         text("").size(10),
         text("This tool generates:").size(14),
@@ -192,8 +196,11 @@ fn view_welcome(model: &Model) -> Element<'_, Intent> {
         text("  • YubiKey provisioning").size(12),
         text("  • NATS operator/account/user credentials").size(12),
         text("").size(10),
-        text("⚠️  Ensure this computer is air-gapped!").size(14)
-            .color(Color::from_rgb(0.9, 0.5, 0.0)),
+        row![
+            icons::icon_colored(ICON_WARNING, 14, Color::from_rgb(0.9, 0.5, 0.0)),
+            text(" Ensure this computer is air-gapped!").size(14)
+                .color(Color::from_rgb(0.9, 0.5, 0.0)),
+        ].spacing(5),
     ]
     .spacing(10)
     .padding(20);
@@ -319,7 +326,10 @@ fn view_keys(model: &Model) -> Element<'_, Intent> {
 
         let seed_status = if model.master_seed_derived {
             column![
-                text("✓ Master Seed Derived").size(14).color(Color::from_rgb(0.3, 0.8, 0.3)),
+                row![
+                    icons::icon_colored(ICON_CHECK, 14, Color::from_rgb(0.3, 0.8, 0.3)),
+                    text(" Master Seed Derived").size(14).color(Color::from_rgb(0.3, 0.8, 0.3)),
+                ].spacing(5),
                 text("All keys will be deterministically generated from this seed").size(11),
             ]
             .spacing(5)
@@ -331,14 +341,17 @@ fn view_keys(model: &Model) -> Element<'_, Intent> {
             .spacing(5)
         };
 
-        let passphrase_match = if !model.passphrase.is_empty() && !model.passphrase_confirmed.is_empty() {
+        let passphrase_match: Element<Intent> = if !model.passphrase.is_empty() && !model.passphrase_confirmed.is_empty() {
             if model.passphrase == model.passphrase_confirmed {
-                text("✓ Passphrases match").size(11).color(Color::from_rgb(0.3, 0.8, 0.3))
+                row![
+                    icons::icon_colored(ICON_CHECK, 11, Color::from_rgb(0.3, 0.8, 0.3)),
+                    text(" Passphrases match").size(11).color(Color::from_rgb(0.3, 0.8, 0.3)),
+                ].spacing(3).into()
             } else {
-                text("✗ Passphrases do not match").size(11).color(Color::from_rgb(0.8, 0.2, 0.2))
+                text("✗ Passphrases do not match").size(11).color(Color::from_rgb(0.8, 0.2, 0.2)).into()
             }
         } else {
-            text("").size(11)
+            text("").size(11).into()
         };
 
         let derive_button = if model.master_seed_derived {
@@ -378,7 +391,7 @@ fn view_keys(model: &Model) -> Element<'_, Intent> {
         text("Key Generation Status").size(18).into(),
         text(format!(
             "Root CA: {}",
-            if model.key_generation_status.root_ca_generated { "✓ Generated" } else { "Not generated" }
+            if model.key_generation_status.root_ca_generated { "Generated ✓" } else { "Not generated" }
         )).size(14).into(),
     ];
 
@@ -438,9 +451,12 @@ fn view_keys(model: &Model) -> Element<'_, Intent> {
             ca_list_items.push(text("Generated Intermediate CAs:").size(14).into());
             for ca in &model.key_generation_status.intermediate_cas {
                 ca_list_items.push(
-                    text(format!("  ✓ {} - {}", ca.name, &ca.fingerprint[..16]))
-                        .size(12)
-                        .color(Color::from_rgb(0.3, 0.8, 0.3))
+                    row![
+                        icons::icon_colored(ICON_CHECK, 12, Color::from_rgb(0.3, 0.8, 0.3)),
+                        text(format!(" {} - {}", ca.name, &ca.fingerprint[..16]))
+                            .size(12)
+                            .color(Color::from_rgb(0.3, 0.8, 0.3)),
+                    ].spacing(3)
                         .into()
                 );
             }
@@ -474,9 +490,12 @@ fn view_keys(model: &Model) -> Element<'_, Intent> {
             cert_list_items.push(text("Generated Server Certificates:").size(14).into());
             for cert in &model.key_generation_status.server_certificates {
                 cert_list_items.push(
-                    text(format!("  ✓ {} (signed by: {})", cert.common_name, cert.signed_by))
-                        .size(12)
-                        .color(Color::from_rgb(0.3, 0.8, 0.3))
+                    row![
+                        icons::icon_colored(ICON_CHECK, 12, Color::from_rgb(0.3, 0.8, 0.3)),
+                        text(format!(" {} (signed by: {})", cert.common_name, cert.signed_by))
+                            .size(12)
+                            .color(Color::from_rgb(0.3, 0.8, 0.3)),
+                    ].spacing(3)
                         .into()
                 );
                 cert_list_items.push(
@@ -522,11 +541,18 @@ fn view_keys(model: &Model) -> Element<'_, Intent> {
     for (index, person) in model.people.iter().enumerate() {
         let is_provisioned = model.key_generation_status.yubikeys_provisioned.contains(&person.id);
 
+        let provision_status = if is_provisioned {
+            row![
+                icons::icon_sized(ICON_CHECK, 12),
+                text(" Provisioned"),
+            ].spacing(3)
+        } else {
+            row![text("Not provisioned")]
+        };
+
         let person_row = row![
             text(&person.name).width(Length::FillPortion(2)),
-            text(if is_provisioned { "✓ Provisioned" } else { "Not provisioned" })
-                .size(12)
-                .width(Length::FillPortion(1)),
+            provision_status.width(Length::FillPortion(1)),
             button(text("Provision YubiKey").size(12))
                 .on_press(Intent::UiProvisionYubiKeyClicked { person_index: index }),
         ]
@@ -558,7 +584,7 @@ fn view_export(model: &Model) -> Element<'_, Intent> {
         ExportStatus::NotStarted => "Ready to export".to_string(),
         ExportStatus::InProgress => "Exporting...".to_string(),
         ExportStatus::Completed { path, bytes_written } => {
-            format!("✓ Exported {} bytes to {}", bytes_written, path.display())
+            format!("Exported {} bytes to {} ✓", bytes_written, path.display())
         }
         ExportStatus::Failed { error } => {
             format!("✗ Export failed: {}", error)

@@ -1,0 +1,13 @@
+{
+  "cert_id": "019a9909-4570-74c0-a4fe-dab42ffded88",
+  "fingerprint": "d09befee5d6b85d6fb7dc4cd007fff44495aa26a2fd4fc1cc6acd1920264cdb9",
+  "is_ca": true,
+  "issuer": null,
+  "key_usage": [
+    "keyCertSign",
+    "cRLSign"
+  ],
+  "not_after": "2035-11-16T22:15:13.008097551Z",
+  "not_before": "2025-11-18T22:15:13.008097291Z",
+  "subject": "CIM Root CA"
+}

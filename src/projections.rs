@@ -525,6 +525,11 @@ impl OfflineKeyProjection {
         &self.manifest.keys
     }
 
+    /// Get all YubiKeys
+    pub fn get_yubikeys(&self) -> &[YubiKeyEntry] {
+        &self.manifest.yubikeys
+    }
+
     /// Remove a location from the organization
     pub fn remove_location(&mut self, location_id: Uuid) -> Result<(), ProjectionError> {
         let initial_len = self.manifest.locations.len();

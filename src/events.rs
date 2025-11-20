@@ -80,6 +80,24 @@ pub enum KeyEvent {
 
     /// TOTP secret generated
     TotpSecretGenerated(TotpSecretGeneratedEvent),
+
+    /// Service account created with accountability
+    ServiceAccountCreated(ServiceAccountCreatedEvent),
+
+    /// Agent created with accountability
+    AgentCreated(AgentCreatedEvent),
+
+    /// Accountability validated for automated identity
+    AccountabilityValidated(AccountabilityValidatedEvent),
+
+    /// Accountability violation detected
+    AccountabilityViolated(AccountabilityViolatedEvent),
+
+    /// Certificate exported to storage
+    CertificateExported(CertificateExportedEvent),
+
+    /// Export manifest created
+    ManifestCreated(ManifestCreatedEvent),
 }
 
 /// Key was generated
@@ -303,7 +321,7 @@ pub enum NatsExportFormat {
 }
 
 // Supporting types
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KeyAlgorithm {
     Rsa { bits: u32 },
     Ecdsa { curve: String },
@@ -311,7 +329,7 @@ pub enum KeyAlgorithm {
     Secp256k1,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KeyPurpose {
     Signing,
     Encryption,
@@ -464,6 +482,92 @@ pub struct TotpSecretGeneratedEvent {
     pub oath_slot: Option<u8>,
 }
 
+/// Service account created with required accountability
+///
+/// CRITICAL: ServiceAccounts MUST have a responsible_person_id
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceAccountCreatedEvent {
+    pub service_account_id: Uuid,
+    pub name: String,
+    pub purpose: String,
+    pub owning_unit_id: Uuid,
+    /// REQUIRED: Person responsible for this service account
+    pub responsible_person_id: Uuid,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Agent created with required accountability
+///
+/// CRITICAL: Agents MUST have a responsible_person_id
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentCreatedEvent {
+    pub agent_id: Uuid,
+    pub name: String,
+    pub agent_type: String,
+    /// REQUIRED: Person responsible for this agent
+    pub responsible_person_id: Uuid,
+    pub organization_id: Uuid,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Accountability validated for an automated identity
+///
+/// Confirms that an Agent or ServiceAccount has proper human accountability
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccountabilityValidatedEvent {
+    pub validation_id: Uuid,
+    pub identity_id: Uuid,
+    pub identity_type: String,  // "Agent" or "ServiceAccount"
+    pub identity_name: String,
+    pub responsible_person_id: Uuid,
+    pub responsible_person_name: String,
+    pub validated_at: DateTime<Utc>,
+    pub validation_result: String,  // "PASSED" or details
+}
+
+/// Accountability violation detected
+///
+/// An Agent or ServiceAccount was found without proper human accountability
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccountabilityViolatedEvent {
+    pub violation_id: Uuid,
+    pub identity_id: Uuid,
+    pub identity_type: String,  // "Agent" or "ServiceAccount"
+    pub identity_name: String,
+    pub violation_reason: String,
+    pub detected_at: DateTime<Utc>,
+    /// Required action to remediate
+    pub required_action: String,
+    /// Severity: "CRITICAL", "HIGH", "MEDIUM"
+    pub severity: String,
+}
+
+/// Certificate exported to storage
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CertificateExportedEvent {
+    pub export_id: Uuid,
+    pub cert_id: Uuid,
+    pub export_format: String,
+    pub destination_path: String,
+    pub exported_at: DateTime<Utc>,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Export manifest created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManifestCreatedEvent {
+    pub manifest_id: Uuid,
+    pub manifest_path: String,
+    pub organization_id: Uuid,
+    pub organization_name: String,
+    pub keys_count: usize,
+    pub certificates_count: usize,
+    pub nats_configs_count: usize,
+    pub created_at: DateTime<Utc>,
+    pub correlation_id: Uuid,
+}
+
 impl DomainEvent for KeyEvent {
     fn aggregate_id(&self) -> Uuid {
         match self {
@@ -489,6 +593,12 @@ impl DomainEvent for KeyEvent {
             KeyEvent::KeyRotationInitiated(e) => e.rotation_id,
             KeyEvent::KeyRotationCompleted(e) => e.rotation_id,
             KeyEvent::TotpSecretGenerated(e) => e.secret_id,
+            KeyEvent::ServiceAccountCreated(e) => e.service_account_id,
+            KeyEvent::AgentCreated(e) => e.agent_id,
+            KeyEvent::AccountabilityValidated(e) => e.validation_id,
+            KeyEvent::AccountabilityViolated(e) => e.violation_id,
+            KeyEvent::CertificateExported(e) => e.export_id,
+            KeyEvent::ManifestCreated(e) => e.manifest_id,
         }
     }
 
@@ -516,6 +626,12 @@ impl DomainEvent for KeyEvent {
             KeyEvent::KeyRotationInitiated(_) => "KeyRotationInitiated",
             KeyEvent::KeyRotationCompleted(_) => "KeyRotationCompleted",
             KeyEvent::TotpSecretGenerated(_) => "TotpSecretGenerated",
+            KeyEvent::ServiceAccountCreated(_) => "ServiceAccountCreated",
+            KeyEvent::AgentCreated(_) => "AgentCreated",
+            KeyEvent::AccountabilityValidated(_) => "AccountabilityValidated",
+            KeyEvent::AccountabilityViolated(_) => "AccountabilityViolated",
+            KeyEvent::CertificateExported(_) => "CertificateExported",
+            KeyEvent::ManifestCreated(_) => "ManifestCreated",
         }
     }
 }

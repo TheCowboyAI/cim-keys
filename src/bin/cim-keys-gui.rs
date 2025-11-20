@@ -16,9 +16,9 @@ fn main() -> iced::Result {
     // Create output directory if it doesn't exist
     std::fs::create_dir_all(&output_dir).expect("Failed to create output directory");
 
-    println!("🔐 CIM Keys - Offline Domain Bootstrap");
-    println!("📁 Output directory: {}", output_dir);
-    println!("⚠️  Ensure this computer is air-gapped!");
+    println!("[CIM Keys] - Offline Domain Bootstrap");
+    println!("[Output] Directory: {}", output_dir);
+    println!("[WARNING] Ensure this computer is air-gapped!");
     println!();
 
     // Run the GUI

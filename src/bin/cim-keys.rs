@@ -1,22 +1,22 @@
-//! CIM Keys CLI - Offline key management tool
+//! CIM Keys CLI - Offline NATS infrastructure bootstrap tool
 //!
-//! This CLI tool manages cryptographic keys using event sourcing,
-//! designed for air-gapped operation with encrypted SD card storage.
+//! This CLI generates complete NATS infrastructure (Operator, Accounts, Users)
+//! from organizational domain data, designed for air-gapped operation.
 
 use clap::{Parser, Subcommand};
-use cim_keys::prelude::*;
-use cim_domain::CommandId;
+use cim_keys::{
+    Organization, Person, OrganizationUnit,
+    domain_projections::{NatsProjection, OrganizationBootstrap},
+};
+use std::fs;
 use std::path::PathBuf;
+use serde_json;
 
 #[derive(Parser)]
 #[command(name = "cim-keys")]
-#[command(about = "CIM offline key management tool")]
+#[command(about = "CIM offline NATS infrastructure bootstrap tool", long_about = None)]
 #[command(version)]
 struct Cli {
-    /// Path to encrypted partition (default: /mnt/cim-keys)
-    #[arg(short, long, default_value = "/mnt/cim-keys")]
-    partition: PathBuf,
-
     /// Enable verbose output
     #[arg(short, long)]
     verbose: bool,
@@ -27,116 +27,48 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Initialize a new key storage partition
-    Init {
-        /// Organization name
+    /// Bootstrap complete NATS infrastructure from domain configuration
+    ///
+    /// Reads organization and people data, generates all NATS identities
+    /// (Operator, Accounts, Users), and writes credentials to output directory.
+    Bootstrap {
+        /// Path to domain configuration JSON (organization + units)
+        #[arg(long, default_value = "secrets/domain-bootstrap.json")]
+        domain: PathBuf,
+
+        /// Path to people configuration JSON
         #[arg(long)]
-        org: String,
+        people: Option<PathBuf>,
 
-        /// Organization domain
-        #[arg(long)]
-        domain: String,
-
-        /// Country code
-        #[arg(long)]
-        country: String,
-
-        /// Admin email
-        #[arg(long)]
-        email: String,
-    },
-
-    /// Generate a new key
-    Generate {
-        /// Key algorithm (rsa2048, rsa4096, ed25519, ecdsa-p256)
-        #[arg(long)]
-        algorithm: String,
-
-        /// Key purpose (signing, encryption, authentication, ca)
-        #[arg(long)]
-        purpose: String,
-
-        /// Key label
-        #[arg(long)]
-        label: String,
-
-        /// Use hardware token (YubiKey)
-        #[arg(long)]
-        hardware: bool,
-    },
-
-    /// Create PKI hierarchy
-    CreatePki {
-        /// Hierarchy name
-        #[arg(long)]
-        name: String,
-
-        /// Root CA common name
-        #[arg(long)]
-        root_cn: String,
-
-        /// Root CA validity in years
-        #[arg(long, default_value = "10")]
-        root_years: u32,
-
-        /// Intermediate CA common names (comma-separated)
-        #[arg(long)]
-        intermediate_cns: Option<String>,
-    },
-
-    /// Provision a YubiKey
-    ProvisionYubikey {
-        /// YubiKey serial number
-        #[arg(long)]
-        serial: String,
-
-        /// Slots to configure (comma-separated)
-        #[arg(long)]
-        slots: String,
-    },
-
-    /// Generate SSH key
-    GenerateSsh {
-        /// Key type (rsa, ed25519, ecdsa)
-        #[arg(long)]
-        key_type: String,
-
-        /// Comment for the key
-        #[arg(long)]
-        comment: String,
-    },
-
-    /// List all keys
-    List {
-        /// Filter by type (key, cert, yubikey)
-        #[arg(long)]
-        filter: Option<String>,
-    },
-
-    /// Show manifest
-    Manifest,
-
-    /// Rebuild from events
-    Rebuild,
-
-    /// Export keys for import to leaf nodes
-    Export {
-        /// Output directory
-        #[arg(long)]
+        /// Output directory for NATS credentials
+        #[arg(short, long, default_value = "./nats-credentials")]
         output: PathBuf,
 
-        /// Include private keys
+        /// Format credentials for import to NATS server
         #[arg(long)]
-        include_private: bool,
+        nats_format: bool,
     },
 
-    /// Launch the graphical user interface
-    #[cfg(feature = "gui")]
-    Gui {
-        /// Output directory for key operations
-        #[arg(default_value = "./output")]
-        output_dir: String,
+    /// List available organizations in domain configuration
+    List {
+        /// Path to domain configuration JSON
+        #[arg(long, default_value = "secrets/domain-bootstrap.json")]
+        domain: PathBuf,
     },
+
+    /// Validate domain configuration without generating keys
+    Validate {
+        /// Path to domain configuration JSON
+        #[arg(long, default_value = "secrets/domain-bootstrap.json")]
+        domain: PathBuf,
+
+        /// Path to people configuration JSON
+        #[arg(long)]
+        people: Option<PathBuf>,
+    },
+
+    /// Show version and build information
+    Version,
 }
 
 #[tokio::main]
@@ -154,254 +86,208 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .init();
     }
 
-    // Handle GUI command separately to avoid projection creation
-    #[cfg(feature = "gui")]
-    if let Commands::Gui { output_dir } = &cli.command {
-        println!("🔐 Starting GUI with output directory: {}", output_dir);
-        return cim_keys::gui::run(output_dir.clone()).await.map_err(|e| e.into());
-    }
-
-    // Create or load projection for non-GUI commands
-    let mut projection = OfflineKeyProjection::new(&cli.partition)?;
-
-    // Create aggregate
-    let aggregate = KeyManagementAggregate::new();
-
     match cli.command {
-        Commands::Init { org, domain, country, email } => {
-            println!("Initializing key storage partition at {:?}", cli.partition);
-
-            // Update organization info in manifest
-            // This would be done via events in a full implementation
-            println!("Organization: {}", org);
-            println!("Domain: {}", domain);
-            println!("Country: {}", country);
-            println!("Admin Email: {}", email);
-
-            println!("✓ Partition initialized successfully");
+        Commands::Bootstrap { domain, people, output, nats_format } => {
+            bootstrap_command(domain, people, output, nats_format).await?;
         }
 
-        Commands::Generate { algorithm, purpose, label, hardware } => {
-            println!("Generating {} key: {}", algorithm, label);
-
-            let key_algorithm = parse_algorithm(&algorithm)?;
-            let key_purpose = parse_purpose(&purpose)?;
-
-            let command = KeyCommand::GenerateKey(GenerateKeyCommand {
-                command_id: CommandId::new(),
-                algorithm: key_algorithm,
-                purpose: key_purpose,
-                label,
-                hardware_backed: hardware,
-                requestor: "cli".to_string(),
-                context: None,
-            });
-
-            // Process command through aggregate
-            let events = aggregate.handle_command(
-                command,
-                &projection,
-                None,
-                #[cfg(feature = "policy")]
-                None
-            ).await?;
-
-            // Apply events to projection
-            for event in events {
-                projection.apply(&event)?;
-                println!("✓ Event applied: {}", event.event_type());
-            }
-
-            println!("✓ Key generated successfully");
+        Commands::List { domain } => {
+            list_command(domain).await?;
         }
 
-        Commands::CreatePki { name, root_cn, root_years, intermediate_cns } => {
-            println!("Creating PKI hierarchy: {}", name);
-
-            let command = KeyCommand::CreatePkiHierarchy(CreatePkiHierarchyCommand {
-                command_id: CommandId::new(),
-                hierarchy_name: name.clone(),
-                root_ca_config: CaConfig {
-                    name: root_cn.clone(),
-                    subject: CertificateSubject {
-                        common_name: root_cn,
-                        organization: None,
-                        organizational_unit: None,
-                        country: None,
-                        state_or_province: None,
-                        locality: None,
-                    },
-                    validity_years: root_years,
-                    key_algorithm: KeyAlgorithm::Rsa { bits: 4096 },
-                    path_len_constraint: None,
-                },
-                intermediate_ca_configs: intermediate_cns
-                    .map(|cns| {
-                        cns.split(',')
-                            .map(|cn| CaConfig {
-                                name: cn.trim().to_string(),
-                                subject: CertificateSubject {
-                                    common_name: cn.trim().to_string(),
-                                    organization: None,
-                                    organizational_unit: None,
-                                    country: None,
-                                    state_or_province: None,
-                                    locality: None,
-                                },
-                                validity_years: 5,
-                                key_algorithm: KeyAlgorithm::Rsa { bits: 4096 },
-                                path_len_constraint: Some(0),
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-                requestor: "cli".to_string(),
-            });
-
-            let events = aggregate.handle_command(
-                command,
-                &projection,
-                None,
-                #[cfg(feature = "policy")]
-                None
-            ).await?;
-            for event in events {
-                projection.apply(&event)?;
-            }
-
-            println!("✓ PKI hierarchy created successfully");
+        Commands::Validate { domain, people } => {
+            validate_command(domain, people).await?;
         }
 
-        Commands::ProvisionYubikey { serial, slots } => {
-            println!("Provisioning YubiKey: {}", serial);
-
-            let slot_configs: Vec<_> = slots
-                .split(',')
-                .map(|slot| YubiKeySlotConfig {
-                    slot_id: slot.trim().to_string(),
-                    key_algorithm: KeyAlgorithm::Rsa { bits: 2048 },
-                    purpose: KeyPurpose::Authentication,
-                    pin_policy: "once".to_string(),
-                    touch_policy: "always".to_string(),
-                })
-                .collect();
-
-            let command = KeyCommand::ProvisionYubiKey(ProvisionYubiKeyCommand {
-                command_id: CommandId::new(),
-                yubikey_serial: serial,
-                slots: slot_configs,
-                management_key: None,
-                requestor: "cli".to_string(),
-                context: None,
-            });
-
-            let events = aggregate.handle_command(
-                command,
-                &projection,
-                None,
-                #[cfg(feature = "policy")]
-                None
-            ).await?;
-            for event in events {
-                projection.apply(&event)?;
-            }
-
-            println!("✓ YubiKey provisioned successfully");
-        }
-
-        Commands::GenerateSsh { key_type, comment } => {
-            println!("Generating SSH key: {}", comment);
-
-            let command = KeyCommand::GenerateSshKey(GenerateSshKeyCommand {
-                command_id: CommandId::new(),
-                key_type,
-                comment,
-                requestor: "cli".to_string(),
-            });
-
-            let events = aggregate.handle_command(
-                command,
-                &projection,
-                None,
-                #[cfg(feature = "policy")]
-                None
-            ).await?;
-            for event in events {
-                projection.apply(&event)?;
-            }
-
-            println!("✓ SSH key generated successfully");
-        }
-
-        Commands::List { filter } => {
-            println!("Keys and certificates:");
-            println!();
-
-            // In real implementation, read from manifest and apply filter
-            if let Some(filter_value) = filter {
-                println!("Filtering by type: {}", filter_value);
-            }
-            println!("Use 'cim-keys manifest' to see full details");
-        }
-
-        Commands::Manifest => {
-            let manifest_path = cli.partition.join("manifest.json");
-            if manifest_path.exists() {
-                let content = std::fs::read_to_string(&manifest_path)?;
-                println!("{}", content);
-            } else {
-                println!("No manifest found. Run 'cim-keys init' first.");
-            }
-        }
-
-        Commands::Rebuild => {
-            println!("Rebuilding projection from event log...");
-            projection.rebuild_from_events()?;
-            println!("✓ Projection rebuilt successfully");
-        }
-
-        Commands::Export { output, include_private } => {
-            println!("Exporting keys to {:?}", output);
-            if include_private {
-                println!("⚠️  Including private keys (use secure transport!)");
-            } else {
-                println!("Exporting public keys only");
-            }
-
-            // Create export directory
-            std::fs::create_dir_all(&output)?;
-
-            // Copy relevant files (in real implementation)
-            println!("✓ Keys exported successfully");
-            println!("  Import to leaf nodes using: cim-leaf import-keys {:?}", output);
-        }
-
-        #[cfg(feature = "gui")]
-        Commands::Gui { .. } => {
-            // Already handled above, this should never be reached
-            unreachable!("GUI command should have been handled earlier");
+        Commands::Version => {
+            println!("cim-keys version {}", cim_keys::VERSION);
+            println!("Event-sourced NATS infrastructure bootstrap tool");
         }
     }
 
     Ok(())
 }
 
-fn parse_algorithm(alg: &str) -> Result<KeyAlgorithm, String> {
-    match alg.to_lowercase().as_str() {
-        "rsa2048" => Ok(KeyAlgorithm::Rsa { bits: 2048 }),
-        "rsa4096" => Ok(KeyAlgorithm::Rsa { bits: 4096 }),
-        "ed25519" => Ok(KeyAlgorithm::Ed25519),
-        "ecdsa-p256" => Ok(KeyAlgorithm::Ecdsa { curve: "P256".to_string() }),
-        _ => Err(format!("Unknown algorithm: {}", alg)),
+/// Bootstrap complete NATS infrastructure from domain configuration
+async fn bootstrap_command(
+    domain_path: PathBuf,
+    people_path: Option<PathBuf>,
+    output_dir: PathBuf,
+    nats_format: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!("🔐 CIM Keys - NATS Infrastructure Bootstrap");
+    println!();
+
+    // Load organization from domain configuration
+    println!("📖 Loading domain configuration from: {}", domain_path.display());
+    let domain_json = fs::read_to_string(&domain_path)?;
+
+    // Parse the domain configuration
+    // For now, expect a simple Organization JSON structure
+    let organization: Organization = serde_json::from_str(&domain_json)
+        .map_err(|e| format!("Failed to parse organization: {}. \n\nThe domain file should contain an Organization JSON object.", e))?;
+
+    println!("   Organization: {}", organization.name);
+    println!("   Units: {}", organization.units.len());
+
+    // Load people (from separate file or embedded in domain config)
+    let people: Vec<Person> = if let Some(people_path) = people_path {
+        println!("📖 Loading people from: {}", people_path.display());
+        let people_json = fs::read_to_string(&people_path)?;
+        serde_json::from_str(&people_json)?
+    } else {
+        // Try to extract from metadata or use empty list
+        println!("   No people file specified - using empty list");
+        vec![]
+    };
+
+    println!("   People: {}", people.len());
+    println!();
+
+    // Generate complete NATS infrastructure
+    println!("🔑 Generating NATS identities...");
+    let bootstrap = NatsProjection::bootstrap_organization(&organization, &people);
+
+    println!("   ✓ Operator: {}", organization.name);
+    println!("   ✓ Accounts: {}", bootstrap.accounts.len());
+    println!("   ✓ Users: {}", bootstrap.users.len());
+    println!("   ✓ Total identities: {}", bootstrap.total_identities());
+    println!();
+
+    // Create output directory
+    fs::create_dir_all(&output_dir)?;
+    println!("📁 Writing credentials to: {}", output_dir.display());
+
+    // Write operator JWT
+    let operator_path = output_dir.join("operator.jwt");
+    fs::write(&operator_path, bootstrap.operator.jwt.token())?;
+    println!("   ✓ Operator JWT: {}", operator_path.display());
+
+    // Write operator seed (for backup)
+    let operator_seed_path = output_dir.join("operator.nk");
+    fs::write(&operator_seed_path, bootstrap.operator.nkey.seed_string())?;
+    println!("   ✓ Operator seed: {}", operator_seed_path.display());
+
+    // Create accounts directory
+    let accounts_dir = output_dir.join("accounts");
+    fs::create_dir_all(&accounts_dir)?;
+
+    // Write account JWTs
+    for (_unit_id, (unit, account)) in &bootstrap.accounts {
+        let safe_name = unit.name.replace(' ', "_").to_lowercase();
+        let account_jwt_path = accounts_dir.join(format!("{}.jwt", safe_name));
+        fs::write(&account_jwt_path, account.jwt.token())?;
+
+        let account_seed_path = accounts_dir.join(format!("{}.nk", safe_name));
+        fs::write(&account_seed_path, account.nkey.seed_string())?;
+
+        println!("   ✓ Account '{}': {}", unit.name, account_jwt_path.display());
     }
+
+    // Create users directory
+    let users_dir = output_dir.join("users");
+    fs::create_dir_all(&users_dir)?;
+
+    // Write user credentials
+    for (_person_id, (person, user)) in &bootstrap.users {
+        if let Some(cred) = &user.credential {
+            let safe_name = person.name.replace(' ', "_").to_lowercase();
+            let user_creds_path = users_dir.join(format!("{}.creds", safe_name));
+            fs::write(&user_creds_path, cred.to_credential_file())?;
+
+            println!("   ✓ User '{}': {}", person.name, user_creds_path.display());
+        }
+    }
+
+    println!();
+    println!("✅ Bootstrap complete!");
+    println!();
+    println!("📋 Summary:");
+    println!("   • {} operator identity", 1);
+    println!("   • {} account identities", bootstrap.accounts.len());
+    println!("   • {} user identities", bootstrap.users.len());
+    println!("   • {} total files written", 2 + (bootstrap.accounts.len() * 2) + bootstrap.users.len());
+    println!();
+    println!("🔒 Security Notes:");
+    println!("   • Store operator.nk and account *.nk files securely (they contain private keys)");
+    println!("   • Distribute user *.creds files to respective users via secure channels");
+    println!("   • Consider encrypting the entire output directory");
+    println!();
+
+    if nats_format {
+        println!("📦 Formatting for NATS server import...");
+        // TODO: Create NATS server-compatible directory structure
+        println!("   (NATS format not yet implemented - use raw credentials)");
+    }
+
+    Ok(())
 }
 
-fn parse_purpose(purpose: &str) -> Result<KeyPurpose, String> {
-    match purpose.to_lowercase().as_str() {
-        "signing" => Ok(KeyPurpose::Signing),
-        "encryption" => Ok(KeyPurpose::Encryption),
-        "authentication" => Ok(KeyPurpose::Authentication),
-        "ca" => Ok(KeyPurpose::CertificateAuthority),
-        _ => Err(format!("Unknown purpose: {}", purpose)),
+/// List organizations in domain configuration
+async fn list_command(domain_path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    println!("📋 Organizations in: {}", domain_path.display());
+    println!();
+
+    let domain_json = fs::read_to_string(&domain_path)?;
+    let organization: Organization = serde_json::from_str(&domain_json)?;
+
+    println!("Organization: {}", organization.name);
+    println!("  ID: {}", organization.id);
+    println!("  Display Name: {}", organization.display_name);
+
+    if let Some(desc) = &organization.description {
+        println!("  Description: {}", desc);
     }
+
+    println!();
+    println!("Organizational Units ({}):", organization.units.len());
+    for unit in &organization.units {
+        println!("  • {} ({})", unit.name, unit.id);
+        println!("    Type: {:?}", unit.unit_type);
+    }
+
+    Ok(())
+}
+
+/// Validate domain configuration
+async fn validate_command(
+    domain_path: PathBuf,
+    people_path: Option<PathBuf>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!("✓ Validating domain configuration...");
+    println!();
+
+    // Load and parse organization
+    let domain_json = fs::read_to_string(&domain_path)?;
+    let organization: Organization = serde_json::from_str(&domain_json)
+        .map_err(|e| format!("Invalid organization JSON: {}", e))?;
+
+    println!("✓ Organization valid: {}", organization.name);
+    println!("  • {} units", organization.units.len());
+
+    // Load and validate people if provided
+    if let Some(people_path) = people_path {
+        let people_json = fs::read_to_string(&people_path)?;
+        let people: Vec<Person> = serde_json::from_str(&people_json)
+            .map_err(|e| format!("Invalid people JSON: {}", e))?;
+
+        println!("✓ People valid: {} persons", people.len());
+
+        // Check that people reference valid organization
+        let mut org_mismatches = 0;
+        for person in &people {
+            if person.organization_id != organization.id {
+                org_mismatches += 1;
+            }
+        }
+
+        if org_mismatches > 0 {
+            println!("⚠  Warning: {} people reference different organization IDs", org_mismatches);
+        }
+    }
+
+    println!();
+    println!("✅ Configuration is valid!");
+
+    Ok(())
 }

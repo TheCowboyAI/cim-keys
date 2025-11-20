@@ -916,7 +916,6 @@ dependencies = [
 [[package]]
 name = "cim-domain"
 version = "0.8.1"
-source = "git+https://github.com/TheCowboyAI/cim-domain.git?tag=v0.8.1#33414ffa877c3407c0ce0c9a24afadb42a808ff1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -938,16 +937,58 @@ dependencies = [
 ]
 
 [[package]]
+name = "cim-domain"
+version = "0.8.1"
+source = "git+https://github.com/TheCowboyAI/cim-domain.git?branch=main#33414ffa877c3407c0ce0c9a24afadb42a808ff1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "blake3",
+ "chrono",
+ "cid",
+ "futures",
+ "indexmap",
+ "lru",
+ "multihash",
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "cim-domain-agent"
+version = "0.8.1"
+dependencies = [
+ "async-nats 0.38.0",
+ "async-trait",
+ "chrono",
+ "cim-domain 0.8.1 (git+https://github.com/TheCowboyAI/cim-domain.git?branch=main)",
+ "futures",
+ "semver",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "cim-domain-location"
 version = "0.8.0"
-source = "git+https://github.com/TheCowboyAI/cim-domain-location.git?tag=v0.8.1#39ee35da6bdf719e587a15be42ce311347eff9b3"
 dependencies = [
  "anyhow",
  "async-nats 0.38.0",
  "async-trait",
  "chrono",
  "cid",
- "cim-domain",
+ "cim-domain 0.8.1",
  "futures",
  "geo",
  "hex",
@@ -968,12 +1009,11 @@ dependencies = [
 [[package]]
 name = "cim-domain-organization"
 version = "0.8.0"
-source = "git+https://github.com/TheCowboyAI/cim-domain-organization.git?tag=v0.8.1#b3c6abd437e65ed0d0a21877612cfbcd35e91353"
 dependencies = [
  "async-nats 0.38.0",
  "async-trait",
  "chrono",
- "cim-domain",
+ "cim-domain 0.8.1",
  "futures",
  "serde",
  "serde_json",
@@ -987,14 +1027,13 @@ dependencies = [
 [[package]]
 name = "cim-domain-person"
 version = "0.8.0"
-source = "git+https://github.com/TheCowboyAI/cim-domain-person.git?tag=v0.8.1#625638595acf9ec1ec6f55dc0e9d85bbea6c2b08"
 dependencies = [
  "async-nats 0.35.1",
  "async-trait",
  "blake3",
  "chrono",
  "cid",
- "cim-domain",
+ "cim-domain 0.8.1",
  "futures",
  "multihash",
  "rand",
@@ -1012,12 +1051,11 @@ dependencies = [
 [[package]]
 name = "cim-domain-policy"
 version = "0.8.0"
-source = "git+https://github.com/TheCowboyAI/cim-domain-policy.git?tag=v0.8.1#3913ecfebf8061d0bf48c62e8e3ef26e4523baeb"
 dependencies = [
  "async-nats 0.38.0",
  "async-trait",
  "chrono",
- "cim-domain",
+ "cim-domain 0.8.1",
  "futures",
  "indexmap",
  "pest",
@@ -1033,14 +1071,15 @@ dependencies = [
 
 [[package]]
 name = "cim-keys"
-version = "0.7.8"
+version = "0.8.0"
 dependencies = [
  "argon2",
  "async-trait",
  "base64",
  "bytemuck",
  "chrono",
- "cim-domain",
+ "cim-domain 0.8.1",
+ "cim-domain-agent",
  "cim-domain-location",
  "cim-domain-organization",
  "cim-domain-person",
