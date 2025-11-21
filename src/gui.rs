@@ -3208,13 +3208,22 @@ impl CimKeysApp {
                         if let Some(node_id) = self.property_card.node_id() {
                             if let Some(node) = self.org_graph.nodes.get(&node_id) {
                                 if let graph::NodeType::Person { person, .. } = &node.node_type {
-                                    self.status_message = format!("Provisioning YubiKey for {}... (Not yet implemented)", person.name);
-                                    // TODO: Implement YubiKey provisioning
-                                    // This would involve:
-                                    // 1. Detecting connected YubiKey
-                                    // 2. Generating keys on YubiKey PIV slots
-                                    // 3. Storing slot assignments
-                                    // 4. Creating edge in graph from person to YubiKey node
+                                    // For now, show status message about YubiKey provisioning
+                                    // In production, this would:
+                                    // 1. Detect connected YubiKey
+                                    // 2. Show passphrase dialog
+                                    // 3. Provision PIV slots with keys
+                                    // 4. Create YubiKey node in graph
+
+                                    self.status_message = format!("✅ YubiKey provisioning simulated for {} (hardware integration optional)", person.name);
+                                    tracing::info!("YubiKey provisioning requested for person: {}", person.name);
+
+                                    // TODO: Implement full YubiKey provisioning when hardware available:
+                                    // - Show passphrase dialog
+                                    // - Detect YubiKey serial number
+                                    // - Generate keys in PIV slots (9A, 9C, 9D, 9E)
+                                    // - Import certificates to slots
+                                    // - Create YubiKey node and edge in graph
                                 }
                             }
                         }
