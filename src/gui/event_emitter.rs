@@ -278,6 +278,10 @@ impl KeyEvent {
             KeyEvent::NatsAccountCreated(e) => e.account_id,
             KeyEvent::NatsUserCreated(e) => e.user_id,
             KeyEvent::NatsSigningKeyGenerated(_e) => Uuid::now_v7(), // Generate ID from event
+            KeyEvent::NKeyGenerated(e) => e.nkey_id,
+            KeyEvent::JwtClaimsCreated(e) => e.claims_id,
+            KeyEvent::JwtSigned(e) => e.jwt_id,
+            KeyEvent::ProjectionApplied(e) => e.projection_id,
             KeyEvent::NatsPermissionsSet(_e) => Uuid::now_v7(), // Generate ID from event
             KeyEvent::NatsConfigExported(_e) => Uuid::now_v7(), // Generate ID from event
             KeyEvent::JwksExported(e) => e.export_id,
@@ -318,6 +322,10 @@ impl KeyEvent {
             KeyEvent::NatsAccountCreated(_) => "NatsAccountCreated",
             KeyEvent::NatsUserCreated(_) => "NatsUserCreated",
             KeyEvent::NatsSigningKeyGenerated(_) => "NatsSigningKeyGenerated",
+            KeyEvent::NKeyGenerated(_) => "NKeyGenerated",
+            KeyEvent::JwtClaimsCreated(_) => "JwtClaimsCreated",
+            KeyEvent::JwtSigned(_) => "JwtSigned",
+            KeyEvent::ProjectionApplied(_) => "ProjectionApplied",
             KeyEvent::NatsPermissionsSet(_) => "NatsPermissionsSet",
             KeyEvent::NatsConfigExported(_) => "NatsConfigExported",
             KeyEvent::JwksExported(_) => "JwksExported",

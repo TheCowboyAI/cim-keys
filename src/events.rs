@@ -84,6 +84,18 @@ pub enum KeyEvent {
     /// NATS signing key generated
     NatsSigningKeyGenerated(NatsSigningKeyGeneratedEvent),
 
+    /// NKey generated (US-021: projection step event)
+    NKeyGenerated(NKeyGeneratedEvent),
+
+    /// JWT claims created (US-021: projection step event)
+    JwtClaimsCreated(JwtClaimsCreatedEvent),
+
+    /// JWT signed (US-021: projection step event)
+    JwtSigned(JwtSignedEvent),
+
+    /// Projection applied (US-021: projection step event)
+    ProjectionApplied(ProjectionAppliedEvent),
+
     /// NATS permissions set
     NatsPermissionsSet(NatsPermissionsSetEvent),
 
@@ -685,6 +697,71 @@ pub struct ManifestCreatedEvent {
     pub correlation_id: Uuid,
 }
 
+// ============================================================================
+// US-021: Projection Step Events (Audit Trail)
+// ============================================================================
+
+/// NKey generated (US-021: projection step event)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NKeyGeneratedEvent {
+    pub nkey_id: Uuid,
+    pub key_type: String, // Operator, Account, User
+    pub public_key: String,
+    pub purpose: String,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub generated_at: DateTime<Utc>,
+    /// Event sourcing: correlation ID links related events
+    pub correlation_id: Uuid,
+    /// Event sourcing: causation ID points to event that caused this
+    pub causation_id: Option<Uuid>,
+}
+
+/// JWT claims created (US-021: projection step event)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JwtClaimsCreatedEvent {
+    pub claims_id: Uuid,
+    pub issuer: String,
+    pub subject: String,
+    pub audience: Option<Vec<String>>,
+    pub permissions: String, // JSON string of permissions
+    pub not_before: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    /// Event sourcing: correlation ID links related events
+    pub correlation_id: Uuid,
+    /// Event sourcing: causation ID points to event that caused this
+    pub causation_id: Option<Uuid>,
+}
+
+/// JWT signed (US-021: projection step event)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JwtSignedEvent {
+    pub jwt_id: Uuid,
+    pub signer_public_key: String,
+    pub signature_algorithm: String,
+    pub jwt_token: String,
+    pub signature_verification_data: String, // Hex-encoded signature for verification
+    pub signed_at: DateTime<Utc>,
+    /// Event sourcing: correlation ID links related events
+    pub correlation_id: Uuid,
+    /// Event sourcing: causation ID points to event that caused this
+    pub causation_id: Option<Uuid>,
+}
+
+/// Projection applied (US-021: projection step event)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectionAppliedEvent {
+    pub projection_id: Uuid,
+    pub projection_type: String, // e.g., "NatsOperatorProjection", "NatsAccountProjection"
+    pub input_checksum: String, // SHA-256 of input data
+    pub output_checksum: String, // SHA-256 of output data
+    pub applied_at: DateTime<Utc>,
+    /// Event sourcing: correlation ID links related events
+    pub correlation_id: Uuid,
+    /// Event sourcing: causation ID points to event that caused this
+    pub causation_id: Option<Uuid>,
+}
+
 impl DomainEvent for KeyEvent {
     fn aggregate_id(&self) -> Uuid {
         match self {
@@ -711,6 +788,10 @@ impl DomainEvent for KeyEvent {
             KeyEvent::NatsAccountCreated(e) => e.account_id,
             KeyEvent::NatsUserCreated(e) => e.user_id,
             KeyEvent::NatsSigningKeyGenerated(e) => e.key_id,
+            KeyEvent::NKeyGenerated(e) => e.nkey_id,
+            KeyEvent::JwtClaimsCreated(e) => e.claims_id,
+            KeyEvent::JwtSigned(e) => e.jwt_id,
+            KeyEvent::ProjectionApplied(e) => e.projection_id,
             KeyEvent::NatsPermissionsSet(e) => e.entity_id,
             KeyEvent::NatsConfigExported(e) => e.export_id,
             KeyEvent::JwksExported(e) => e.export_id,
@@ -751,6 +832,10 @@ impl DomainEvent for KeyEvent {
             KeyEvent::NatsAccountCreated(_) => "NatsAccountCreated",
             KeyEvent::NatsUserCreated(_) => "NatsUserCreated",
             KeyEvent::NatsSigningKeyGenerated(_) => "NatsSigningKeyGenerated",
+            KeyEvent::NKeyGenerated(_) => "NKeyGenerated",
+            KeyEvent::JwtClaimsCreated(_) => "JwtClaimsCreated",
+            KeyEvent::JwtSigned(_) => "JwtSigned",
+            KeyEvent::ProjectionApplied(_) => "ProjectionApplied",
             KeyEvent::NatsPermissionsSet(_) => "NatsPermissionsSet",
             KeyEvent::NatsConfigExported(_) => "NatsConfigExported",
             KeyEvent::JwksExported(_) => "JwksExported",
