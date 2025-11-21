@@ -3274,8 +3274,10 @@ impl CimKeysApp {
                                                 validity_years: 20,
                                             };
 
-                                            // Generate Root CA certificate
-                                            generate_root_ca(&seed, params)
+                                            // Generate Root CA certificate (US-021: with event emission)
+                                            let correlation_id = uuid::Uuid::now_v7();
+                                            generate_root_ca(&seed, params, correlation_id, None)
+                                                .map(|(cert, _event)| cert) // Extract cert, discard event for now
                                         },
                                         Message::RootCAGenerated
                                     );
@@ -3315,7 +3317,9 @@ impl CimKeysApp {
                                                 locality: None,
                                                 validity_years: 1,
                                             };
-                                            let cert = generate_root_ca(&seed, temp_cert_params)?;
+                                            // US-021: Generate with event emission, extract cert
+                                            let correlation_id = uuid::Uuid::now_v7();
+                                            let (cert, _event) = generate_root_ca(&seed, temp_cert_params, correlation_id, None)?;
 
                                             // TODO: Generate NATS keys (Operator, Account, User)
                                             // For now, return placeholder keys
