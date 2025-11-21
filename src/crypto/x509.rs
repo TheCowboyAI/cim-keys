@@ -562,7 +562,9 @@ mod tests {
             ..Default::default()
         };
 
-        let root_ca = generate_root_ca(&root_ca_seed, params).unwrap();
+        // US-021: generate_root_ca now returns (X509Certificate, CertificateGeneratedEvent)
+        let correlation_id = uuid::Uuid::now_v7();
+        let (root_ca, _event) = generate_root_ca(&root_ca_seed, params, correlation_id, None).unwrap();
 
         assert!(root_ca.certificate_pem.contains("BEGIN CERTIFICATE"));
         assert!(root_ca.private_key_pem.contains("BEGIN PRIVATE KEY"));
@@ -576,8 +578,11 @@ mod tests {
 
         let params = RootCAParams::default();
 
-        let root_ca_1 = generate_root_ca(&root_ca_seed, params.clone()).unwrap();
-        let root_ca_2 = generate_root_ca(&root_ca_seed, params).unwrap();
+        // US-021: Extract certificates from tuple returns
+        let correlation_id_1 = uuid::Uuid::now_v7();
+        let (root_ca_1, _event_1) = generate_root_ca(&root_ca_seed, params.clone(), correlation_id_1, None).unwrap();
+        let correlation_id_2 = uuid::Uuid::now_v7();
+        let (root_ca_2, _event_2) = generate_root_ca(&root_ca_seed, params, correlation_id_2, None).unwrap();
 
         // Same seed should produce same public key
         assert_eq!(root_ca_1.public_key_bytes, root_ca_2.public_key_bytes);
@@ -589,21 +594,27 @@ mod tests {
         let root_ca_seed = master_seed.derive_child("root-ca");
         let intermediate_seed = root_ca_seed.derive_child("intermediate-test");
 
-        // Generate root CA
+        // US-021: Generate root CA with event emission
         let root_params = RootCAParams::default();
-        let root_ca = generate_root_ca(&root_ca_seed, root_params).unwrap();
+        let root_correlation_id = uuid::Uuid::now_v7();
+        let (root_ca, _root_event) = generate_root_ca(&root_ca_seed, root_params, root_correlation_id, None).unwrap();
 
-        // Generate intermediate CA signed by root
+        // US-021: Generate intermediate CA signed by root with event emission
         let intermediate_params = IntermediateCAParams {
             organizational_unit: "Test Unit".to_string(),
             ..Default::default()
         };
 
-        let intermediate_ca = generate_intermediate_ca(
+        let intermediate_correlation_id = uuid::Uuid::now_v7();
+        let root_ca_id = uuid::Uuid::now_v7(); // Would be tracked from root_event in production
+        let (intermediate_ca, _gen_event, _sign_event) = generate_intermediate_ca(
             &intermediate_seed,
             intermediate_params,
             &root_ca.certificate_pem,
             &root_ca.private_key_pem,
+            root_ca_id,
+            intermediate_correlation_id,
+            Some(root_correlation_id),
         ).unwrap();
 
         assert!(intermediate_ca.certificate_pem.contains("BEGIN CERTIFICATE"));
@@ -617,7 +628,10 @@ mod tests {
         let master_seed = derive_master_seed("test passphrase", "test-org").unwrap();
         let root_ca_seed = master_seed.derive_child("root-ca");
         let params = RootCAParams::default();
-        let root_ca = generate_root_ca(&root_ca_seed, params).unwrap();
+
+        // US-021: Extract certificate from tuple
+        let correlation_id = uuid::Uuid::now_v7();
+        let (root_ca, _event) = generate_root_ca(&root_ca_seed, params, correlation_id, None).unwrap();
 
         // Parse certificate from PEM
         let (_, pem) = parse_x509_pem(root_ca.certificate_pem.as_bytes()).unwrap();
@@ -649,16 +663,22 @@ mod tests {
         let root_ca_seed = master_seed.derive_child("root-ca");
         let intermediate_seed = root_ca_seed.derive_child("intermediate-test");
 
-        // Generate certificates
+        // US-021: Generate certificates with event emission
         let root_params = RootCAParams::default();
-        let root_ca = generate_root_ca(&root_ca_seed, root_params).unwrap();
+        let root_correlation_id = uuid::Uuid::now_v7();
+        let (root_ca, _root_event) = generate_root_ca(&root_ca_seed, root_params, root_correlation_id, None).unwrap();
 
         let intermediate_params = IntermediateCAParams::default();
-        let intermediate_ca = generate_intermediate_ca(
+        let intermediate_correlation_id = uuid::Uuid::now_v7();
+        let root_ca_id = uuid::Uuid::now_v7();
+        let (intermediate_ca, _gen_event, _sign_event) = generate_intermediate_ca(
             &intermediate_seed,
             intermediate_params,
             &root_ca.certificate_pem,
             &root_ca.private_key_pem,
+            root_ca_id,
+            intermediate_correlation_id,
+            Some(root_correlation_id),
         ).unwrap();
 
         // Parse intermediate certificate
@@ -690,7 +710,10 @@ mod tests {
         let master_seed = derive_master_seed("test passphrase", "test-org").unwrap();
         let root_ca_seed = master_seed.derive_child("root-ca");
         let params = RootCAParams::default();
-        let root_ca = generate_root_ca(&root_ca_seed, params).unwrap();
+
+        // US-021: Extract certificate from tuple
+        let correlation_id = uuid::Uuid::now_v7();
+        let (root_ca, _event) = generate_root_ca(&root_ca_seed, params, correlation_id, None).unwrap();
 
         // Parse certificate
         let (_, pem) = parse_x509_pem(root_ca.certificate_pem.as_bytes()).unwrap();
@@ -715,7 +738,7 @@ mod tests {
         let intermediate_seed = root_ca_seed.derive_child("intermediate-engineering");
         let server_seed = intermediate_seed.derive_child("server-api");
 
-        // Generate complete chain: Root → Intermediate → Server
+        // US-021: Generate complete chain: Root → Intermediate → Server with event emission
         let root_params = RootCAParams {
             organization: "Test Organization".to_string(),
             common_name: "Test Root CA".to_string(),
@@ -723,7 +746,8 @@ mod tests {
             validity_years: 20,
             ..Default::default()
         };
-        let root_ca = generate_root_ca(&root_ca_seed, root_params).unwrap();
+        let root_correlation_id = uuid::Uuid::now_v7();
+        let (root_ca, _root_event) = generate_root_ca(&root_ca_seed, root_params, root_correlation_id, None).unwrap();
 
         let intermediate_params = IntermediateCAParams {
             organization: "Test Organization".to_string(),
@@ -732,11 +756,16 @@ mod tests {
             country: Some("US".to_string()),
             validity_years: 10,
         };
-        let intermediate_ca = generate_intermediate_ca(
+        let intermediate_correlation_id = uuid::Uuid::now_v7();
+        let root_ca_id = uuid::Uuid::now_v7();
+        let (intermediate_ca, _int_gen_event, _int_sign_event) = generate_intermediate_ca(
             &intermediate_seed,
             intermediate_params,
             &root_ca.certificate_pem,
             &root_ca.private_key_pem,
+            root_ca_id,
+            intermediate_correlation_id,
+            Some(root_correlation_id),
         ).unwrap();
 
         let server_params = ServerCertParams {
@@ -746,11 +775,16 @@ mod tests {
             organizational_unit: Some("Engineering".to_string()),
             validity_days: 90,
         };
-        let server_cert = generate_server_certificate(
+        let server_correlation_id = uuid::Uuid::now_v7();
+        let intermediate_ca_id = uuid::Uuid::now_v7();
+        let (server_cert, _srv_gen_event, _srv_sign_event) = generate_server_certificate(
             &server_seed,
             server_params,
             &intermediate_ca.certificate_pem,
             &intermediate_ca.private_key_pem,
+            intermediate_ca_id,
+            server_correlation_id,
+            Some(intermediate_correlation_id),
         ).unwrap();
 
         // Verify all certificates were generated
@@ -775,7 +809,10 @@ mod tests {
             validity_years: 10,
             ..Default::default()
         };
-        let root_ca = generate_root_ca(&root_ca_seed, params).unwrap();
+
+        // US-021: Extract certificate from tuple
+        let correlation_id = uuid::Uuid::now_v7();
+        let (root_ca, _event) = generate_root_ca(&root_ca_seed, params, correlation_id, None).unwrap();
 
         // Parse certificate
         let (_, pem) = parse_x509_pem(root_ca.certificate_pem.as_bytes()).unwrap();

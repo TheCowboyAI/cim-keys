@@ -444,9 +444,22 @@ mod tests {
 
         let result = handle_create_nats_operator(cmd).unwrap();
 
-        assert_eq!(result.events.len(), 1);
+        // US-021: Now emits 4 events (NKeyGenerated, JwtClaimsCreated, JwtSigned, NatsOperatorCreated)
+        assert_eq!(result.events.len(), 4);
         assert!(matches!(
             result.events[0],
+            KeyEvent::NKeyGenerated(_)
+        ));
+        assert!(matches!(
+            result.events[1],
+            KeyEvent::JwtClaimsCreated(_)
+        ));
+        assert!(matches!(
+            result.events[2],
+            KeyEvent::JwtSigned(_)
+        ));
+        assert!(matches!(
+            result.events[3],
             KeyEvent::NatsOperatorCreated(_)
         ));
         assert_eq!(result.operator_nkey.key_type, NKeyType::Operator);
@@ -492,9 +505,22 @@ mod tests {
 
         let result = handle_create_nats_account(cmd).unwrap();
 
-        assert_eq!(result.events.len(), 1);
+        // US-021: Now emits 4 events (NKeyGenerated, JwtClaimsCreated, JwtSigned, NatsAccountCreated)
+        assert_eq!(result.events.len(), 4);
         assert!(matches!(
             result.events[0],
+            KeyEvent::NKeyGenerated(_)
+        ));
+        assert!(matches!(
+            result.events[1],
+            KeyEvent::JwtClaimsCreated(_)
+        ));
+        assert!(matches!(
+            result.events[2],
+            KeyEvent::JwtSigned(_)
+        ));
+        assert!(matches!(
+            result.events[3],
             KeyEvent::NatsAccountCreated(_)
         ));
         assert_eq!(result.account_nkey.key_type, NKeyType::Account);

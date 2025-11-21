@@ -1272,7 +1272,9 @@ mod tests {
             expires_after_days: Some(90),
         };
 
-        let nkey = NKeyProjection::generate_nkey(&params);
+        // US-021: generate_nkey now returns (NKeyPair, NKeyGeneratedEvent)
+        let correlation_id = Uuid::now_v7();
+        let (nkey, _event) = NKeyProjection::generate_nkey(&params, correlation_id, None);
         assert_eq!(nkey.key_type, NKeyType::User);
         assert!(nkey.expires_at.is_some());
 
@@ -1301,8 +1303,9 @@ mod tests {
             metadata: Default::default(),
         };
 
-        // Project organization to complete operator identity
-        let identity = NatsProjection::project_operator(&org);
+        // US-021: project_operator emits events internally
+        let correlation_id = Uuid::now_v7();
+        let identity = NatsProjection::project_operator(&org, correlation_id, None);
 
         // Verify NKey
         assert_eq!(identity.nkey.key_type, NKeyType::Operator);
@@ -1345,11 +1348,13 @@ mod tests {
             responsible_person_id: None,
         };
 
-        // Create operator
-        let operator = NatsProjection::project_operator(&org);
+        // US-021: Create operator (events emitted internally)
+        let correlation_id = Uuid::now_v7();
+        let operator = NatsProjection::project_operator(&org, correlation_id, None);
 
-        // Create account signed by operator
-        let account = NatsProjection::project_account(&org, &unit, &operator.nkey, None);
+        // US-021: Create account signed by operator (events emitted internally)
+        let account_correlation_id = Uuid::now_v7();
+        let account = NatsProjection::project_account(&org, &unit, &operator.nkey, None, account_correlation_id, Some(correlation_id));
 
         // Verify account JWT is signed by operator
         assert_eq!(account.jwt.issuer.public_key(), operator.nkey.public_key_string());
