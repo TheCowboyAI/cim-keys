@@ -72,6 +72,9 @@ pub mod routing;
 // Causality Enforcement - Axiom A4
 pub mod causality;
 
+// Feedback Combinators - Axiom A8
+pub mod combinators;
+
 // Master domain model - cim-keys owns the initial domain creation
 pub mod domain;
 
