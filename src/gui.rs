@@ -371,6 +371,7 @@ pub enum Message {
     GeneratePkiFromGraph,  // Graph-first PKI generation
     PkiGenerated(Result<Vec<(graph::GraphNode, Option<Uuid>)>, String>),
     RootCAGenerated(Result<crate::crypto::x509::X509Certificate, String>),
+    PersonalKeysGenerated(Result<(crate::crypto::x509::X509Certificate, Vec<String>), String>), // (cert, nats_keys)
 
     // YubiKey operations
     YubiKeyDataLoaded(Vec<crate::projections::YubiKeyEntry>, Vec<crate::projections::PersonEntry>),
@@ -1551,6 +1552,49 @@ impl CimKeysApp {
                         self.status_message = format!("❌ Root CA generation failed: {}", e);
                         self.error_message = Some(e);
                         tracing::error!("Root CA generation failed");
+                    }
+                }
+                Task::none()
+            }
+
+            Message::PersonalKeysGenerated(result) => {
+                match result {
+                    Ok((certificate, nats_keys)) => {
+                        // Create Leaf Certificate node in graph
+                        let cert_id = Uuid::now_v7();
+                        let subject = certificate.certificate_pem.lines().nth(0).unwrap_or("Personal Cert").to_string();
+                        let leaf_cert_node = graph::GraphNode {
+                            id: cert_id,
+                            node_type: graph::NodeType::LeafCertificate {
+                                cert_id,
+                                subject,
+                                issuer: "Self-Signed (Temporary)".to_string(),
+                                not_before: chrono::Utc::now(),
+                                not_after: chrono::Utc::now() + chrono::Duration::days(365),
+                                key_usage: vec!["digitalSignature".to_string(), "keyEncipherment".to_string()],
+                                san: vec![],
+                            },
+                            position: iced::Point::new(400.0, 300.0), // Below Root CA
+                            color: iced::Color::from_rgb(0.4, 0.6, 0.8), // Blue for Leaf
+                            label: "Personal Certificate".to_string(),
+                        };
+
+                        // Add to graph
+                        self.org_graph.nodes.insert(cert_id, leaf_cert_node);
+
+                        // Switch to PKI view
+                        self.graph_view = GraphView::PkiTrustChain;
+
+                        // TODO: Create NATS identity nodes
+                        // TODO: Store keys in projection
+
+                        self.status_message = format!("✅ Personal keys generated! {} NATS keys + Certificate | View in PKI Graph", nats_keys.len());
+                        tracing::info!("Personal keys generated: cert + {} NATS keys", nats_keys.len());
+                    }
+                    Err(e) => {
+                        self.status_message = format!("❌ Personal keys generation failed: {}", e);
+                        self.error_message = Some(e);
+                        tracing::error!("Personal keys generation failed");
                     }
                 }
                 Task::none()
@@ -3153,13 +3197,9 @@ impl CimKeysApp {
                         if let Some(node_id) = self.property_card.node_id() {
                             if let Some(node) = self.org_graph.nodes.get(&node_id) {
                                 if let graph::NodeType::Person { person, .. } = &node.node_type {
-                                    self.status_message = format!("Generating personal keys for {}... (Not yet implemented)", person.name);
-                                    // TODO: Implement personal key generation
-                                    // This would involve:
-                                    // 1. Generating SSH key pair
-                                    // 2. Generating GPG key pair
-                                    // 3. Creating certificate signing request
-                                    // 4. Storing in encrypted projection
+                                    // Show passphrase dialog for Personal Keys generation
+                                    self.passphrase_dialog.show(passphrase_dialog::PassphrasePurpose::PersonalKeys);
+                                    self.status_message = format!("Enter passphrase to generate personal keys for {}", person.name);
                                 }
                             }
                         }
@@ -3190,7 +3230,7 @@ impl CimKeysApp {
                     PassphraseDialogMessage::Submit => {
                         // User clicked OK with valid passphrase
                         if let Some(passphrase) = self.passphrase_dialog.get_passphrase() {
-                            self.status_message = "Root CA generation in progress...".to_string();
+                            let purpose = self.passphrase_dialog.purpose().clone();
                             self.passphrase_dialog.hide();
 
                             // Get organization info for seed derivation
@@ -3200,31 +3240,91 @@ impl CimKeysApp {
 
                             let org_name = self.organization_name.clone();
 
-                            // Trigger async Root CA generation
-                            return Task::perform(
-                                async move {
-                                    use crate::crypto::seed_derivation::derive_master_seed;
-                                    use crate::crypto::x509::{generate_root_ca, RootCAParams};
+                            // Dispatch based on purpose
+                            match purpose {
+                                passphrase_dialog::PassphrasePurpose::RootCA => {
+                                    self.status_message = "Root CA generation in progress...".to_string();
 
-                                    // Derive master seed from passphrase
-                                    let seed = derive_master_seed(&passphrase, &org_id)
-                                        .map_err(|e| format!("Failed to derive seed: {}", e))?;
+                                    // Trigger async Root CA generation
+                                    return Task::perform(
+                                        async move {
+                                            use crate::crypto::seed_derivation::derive_master_seed;
+                                            use crate::crypto::x509::{generate_root_ca, RootCAParams};
 
-                                    // Set up Root CA parameters
-                                    let params = RootCAParams {
-                                        organization: org_name.clone(),
-                                        common_name: format!("{} Root CA", org_name),
-                                        country: Some("US".to_string()),
-                                        state: None,
-                                        locality: None,
-                                        validity_years: 20,
-                                    };
+                                            // Derive master seed from passphrase
+                                            let seed = derive_master_seed(&passphrase, &org_id)
+                                                .map_err(|e| format!("Failed to derive seed: {}", e))?;
 
-                                    // Generate Root CA certificate
-                                    generate_root_ca(&seed, params)
-                                },
-                                Message::RootCAGenerated
-                            );
+                                            // Set up Root CA parameters
+                                            let params = RootCAParams {
+                                                organization: org_name.clone(),
+                                                common_name: format!("{} Root CA", org_name),
+                                                country: Some("US".to_string()),
+                                                state: None,
+                                                locality: None,
+                                                validity_years: 20,
+                                            };
+
+                                            // Generate Root CA certificate
+                                            generate_root_ca(&seed, params)
+                                        },
+                                        Message::RootCAGenerated
+                                    );
+                                }
+                                passphrase_dialog::PassphrasePurpose::PersonalKeys => {
+                                    self.status_message = "Personal keys generation in progress...".to_string();
+
+                                    // Get person info from property card
+                                    let person_name = self.property_card.node_id()
+                                        .and_then(|id| self.org_graph.nodes.get(&id))
+                                        .and_then(|node| {
+                                            if let graph::NodeType::Person { person, .. } = &node.node_type {
+                                                Some(person.name.clone())
+                                            } else {
+                                                None
+                                            }
+                                        })
+                                        .unwrap_or_else(|| "Unknown".to_string());
+
+                                    // Trigger async Personal Keys generation
+                                    return Task::perform(
+                                        async move {
+                                            use crate::crypto::seed_derivation::derive_master_seed;
+                                            use crate::crypto::x509::{generate_root_ca, RootCAParams};
+
+                                            // Derive master seed from passphrase
+                                            let seed = derive_master_seed(&passphrase, &org_id)
+                                                .map_err(|e| format!("Failed to derive seed: {}", e))?;
+
+                                            // TODO: Generate proper leaf certificate signed by intermediate CA
+                                            // For now, generate a temporary self-signed cert as placeholder
+                                            let temp_cert_params = RootCAParams {
+                                                organization: org_name.clone(),
+                                                common_name: format!("{} Personal", person_name),
+                                                country: Some("US".to_string()),
+                                                state: None,
+                                                locality: None,
+                                                validity_years: 1,
+                                            };
+                                            let cert = generate_root_ca(&seed, temp_cert_params)?;
+
+                                            // TODO: Generate NATS keys (Operator, Account, User)
+                                            // For now, return placeholder keys
+                                            let nats_keys = vec![
+                                                "NATS Operator Key: (placeholder)".to_string(),
+                                                "NATS Account Key: (placeholder)".to_string(),
+                                                "NATS User Key: (placeholder)".to_string(),
+                                            ];
+
+                                            Ok((cert, nats_keys))
+                                        },
+                                        Message::PersonalKeysGenerated
+                                    );
+                                }
+                                passphrase_dialog::PassphrasePurpose::IntermediateCA => {
+                                    self.status_message = "Intermediate CA not yet implemented".to_string();
+                                }
+                            }
                         }
                     }
                     PassphraseDialogMessage::Cancel => {

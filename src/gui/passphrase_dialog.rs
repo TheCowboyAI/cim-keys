@@ -104,6 +104,11 @@ impl PassphraseDialog {
         self.visible
     }
 
+    /// Get the current purpose
+    pub fn purpose(&self) -> &PassphrasePurpose {
+        &self.purpose
+    }
+
     /// Get the entered passphrase (if valid)
     pub fn get_passphrase(&self) -> Option<Zeroizing<String>> {
         if self.is_valid() {
