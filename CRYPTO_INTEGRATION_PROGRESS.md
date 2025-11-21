@@ -353,15 +353,16 @@ This document tracks the implementation of full cryptographic integration (Epic 
 
 **What Needs To Be Done:**
 1. ✅ Create passphrase dialog component (COMPLETE)
-2. Wire "Generate Root CA" button to `crypto::x509::generate_root_ca()`
-3. Wire "Generate Personal Keys" to NATS + X.509 functions
-4. Wire "Provision YubiKey" to YubiKey commands
-5. Create certificate nodes in PKI graph view
-6. Create key nodes and edges in graph
-7. Add progress indicators for long operations
-8. ✅ Implement secure passphrase zeroization (COMPLETE - in dialog)
-9. Add comprehensive error handling
-10. End-to-end testing
+2. ✅ Wire "Generate Root CA" button to `crypto::x509::generate_root_ca()` (COMPLETE - async task working)
+3. Store Root CA in encrypted projection (IN PROGRESS)
+4. Create Root CA node in PKI graph view (IN PROGRESS)
+5. Wire "Generate Personal Keys" to NATS + X.509 functions
+6. Wire "Provision YubiKey" to YubiKey commands
+7. Create key nodes and edges in graph
+8. Add progress indicators for long operations
+9. ✅ Implement secure passphrase zeroization (COMPLETE - in dialog)
+10. Add comprehensive error handling
+11. End-to-end testing
 
 **Phase 4.1 Complete (2025-01-20)**:
 ✅ Passphrase dialog component created at `src/gui/passphrase_dialog.rs` (438 lines)
@@ -376,6 +377,30 @@ This document tracks the implementation of full cryptographic integration (Epic 
 **Challenges Encountered**:
 - zeroize import issue: resolved by using `der::zeroize` re-export path
 - Iced 0.13 API changes: `.password()` → `.secure(true)`
+
+**Phase 4.2 Major Milestone Complete (2025-01-20)**:
+✅ Root CA generation fully wired to crypto::x509::generate_root_ca()
+- GenerateRootCA button → passphrase dialog → async crypto task
+- Master seed derivation from passphrase (Argon2id KDF)
+- Root CA certificate generation (Ed25519, 20-year validity)
+- Success/error handling with user feedback
+- Non-blocking async execution
+
+**Implementation Flow**:
+1. User clicks "Generate Root CA" on Person property card
+2. Passphrase dialog appears with validation
+3. User enters passphrase → Argon2id derives master seed
+4. crypto::x509::generate_root_ca(&seed, params) executes async
+5. Success shows certificate fingerprint, error shows message
+
+**Challenges Encountered**:
+- X509Certificate needed Debug trait for Iced message compatibility
+- Async task required proper organization ID for deterministic seed
+
+**Remaining for Phase 4.2**:
+- Store certificate in encrypted projection
+- Create Root CA node in PKI graph view
+- Emit proper domain events
 
 **Blockers:**
 - None! All crypto libraries integrated
