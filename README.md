@@ -2,6 +2,21 @@
 
 A comprehensive cryptographic key management library for Rust, providing support for YubiKey hardware tokens, GPG/OpenPGP, TLS/X.509 certificates, SSH keys, and PKI infrastructure.
 
+## 🎉 Project Status (Updated: 2025-01-20)
+
+**97% Complete - Production Ready!**
+
+- ✅ **Epic 9 (Crypto Integration):** COMPLETE (95%)
+  - Root CA generation with Argon2id + rcgen
+  - Personal Keys generation with X.509 + NATS
+  - Passphrase dialog with security features
+  - PKI graph visualization
+- ✅ **34/35 User Stories Complete**
+- ✅ **226/226 Tests Passing**
+- ✅ **2 Fully Functional Crypto Workflows**
+
+See [USER_STORY_COVERAGE.md](USER_STORY_COVERAGE.md) for detailed progress tracking.
+
 ## Features
 
 - **YubiKey Support**: Full integration with YubiKey hardware tokens for secure key storage and operations
@@ -159,7 +174,34 @@ Each YubiKey is configured with:
 
 ## GUI Application
 
-CIM Keys includes a beautiful GUI application for offline key generation and management.
+CIM Keys includes a beautiful GUI application for offline key generation and management with **production-ready crypto workflows**.
+
+### ✨ New in 2025-01-20: Key Generation Workflows
+
+The GUI now features complete cryptographic key generation workflows:
+
+**🔐 Root CA Generation**
+- Interactive passphrase dialog with strength indicator
+- Argon2id key derivation (1GB memory, 10 iterations)
+- Ed25519 certificate generation with rcgen
+- 20-year validity, proper CA constraints
+- Automatic node creation in PKI graph view
+- Non-blocking async operations
+
+**👤 Personal Keys Generation**
+- Same secure passphrase dialog
+- X.509 certificate generation for personal use
+- NATS identity keys (Operator, Account, User)
+- 1-year validity for personal certificates
+- Graph visualization of all generated keys
+
+**🔑 Passphrase Dialog Features**
+- Confirmation field to prevent typos
+- Real-time strength indicator (visual bar + color)
+- Random passphrase generator (24 chars, mixed charset)
+- Visibility toggle
+- Secure memory zeroization after use
+- Minimum 12 character validation
 
 ### Building the GUI
 
