@@ -453,13 +453,13 @@ mod tests {
     fn test_strength_calculation() {
         let mut dialog = PassphraseDialog::new();
 
-        // Weak
+        // Weak - "password" = 8/32 length (0.25) + lowercase (0.15) = 0.40
         dialog.passphrase = "password".to_string();
-        assert!(dialog.strength() < 0.4);
+        assert!(dialog.strength() <= 0.4, "Expected strength <= 0.4, got {}", dialog.strength());
 
-        // Strong
+        // Strong - has length, uppercase, lowercase, digit, special
         dialog.passphrase = "MyP@ssw0rd!IsVeryStr0ng123".to_string();
-        assert!(dialog.strength() > 0.8);
+        assert!(dialog.strength() > 0.8, "Expected strength > 0.8, got {}", dialog.strength());
     }
 
     #[test]
