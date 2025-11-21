@@ -17,6 +17,7 @@ use uuid::Uuid;
 use crate::domain::{
     AccountIdentity, Organization, OrganizationUnit, Person, ServiceAccount, UserIdentity,
 };
+use crate::events::{NKeyGeneratedEvent, JwtClaimsCreatedEvent, JwtSignedEvent, ProjectionAppliedEvent};
 use crate::value_objects::{
     AccountClaims, AccountData, AccountLimits, NatsCredential, NatsJwt, NKeyPair, NKeyPublic,
     NKeySeed, NKeyType, OperatorClaims, OperatorData, Permissions, UserClaims, UserData,
@@ -177,10 +178,21 @@ impl NKeyProjection {
     ///
     /// Uses the nkeys crate to generate real Ed25519 key pairs with proper NATS encoding.
     ///
+    /// # Returns
+    ///
+    /// Returns tuple of (NKeyPair, NKeyGeneratedEvent) for audit trail (US-021)
+    ///
     /// # Panics
     ///
     /// Panics if key generation fails (should never happen in practice)
-    pub fn generate_nkey(params: &NKeyGenerationParams) -> NKeyPair {
+    pub fn generate_nkey(
+        params: &NKeyGenerationParams,
+        correlation_id: Uuid,
+        causation_id: Option<Uuid>,
+    ) -> (NKeyPair, NKeyGeneratedEvent) {
+        let nkey_id = Uuid::now_v7();
+        let generated_at = Utc::now();
+
         // Generate real Ed25519 key pair using nkeys crate
         let kp = nkeys::KeyPair::new(params.key_type.into());
 
@@ -192,12 +204,12 @@ impl NKeyProjection {
         let seed = NKeySeed::new(
             params.key_type,
             seed_string,
-            Utc::now(),
+            generated_at,
         );
 
         let public_key = NKeyPublic::new(
             params.key_type,
-            public_key_string,
+            public_key_string.clone(),
         );
 
         // Create NKeyPair with optional expiration
@@ -208,12 +220,27 @@ impl NKeyProjection {
             Some(params.name.clone())
         );
 
-        if let Some(days) = params.expires_after_days {
-            let expiration = Utc::now() + Duration::days(days);
+        let expires_at = if let Some(days) = params.expires_after_days {
+            let expiration = generated_at + Duration::days(days);
             nkey = nkey.with_expiration(expiration);
-        }
+            Some(expiration)
+        } else {
+            None
+        };
 
-        nkey
+        // US-021: Emit NKey generation event for audit trail
+        let event = NKeyGeneratedEvent {
+            nkey_id,
+            key_type: format!("{:?}", params.key_type),
+            public_key: public_key_string,
+            purpose: params.description.clone().unwrap_or_else(|| params.name.clone()),
+            expires_at,
+            generated_at,
+            correlation_id,
+            causation_id,
+        };
+
+        (nkey, event)
     }
 }
 
@@ -379,72 +406,90 @@ impl JwtSigningProjection {
     ///
     /// The operator signs its own JWT (self-signed).
     ///
-    /// Emits: OperatorJwtSignedEvent
+    /// # Returns
+    ///
+    /// Returns tuple of (NatsJwt, JwtSignedEvent) for audit trail (US-021)
     pub fn sign_operator_jwt(
         claims: OperatorClaims,
         operator_nkey: &NKeyPair,
-    ) -> NatsJwt {
-        let jwt_token = Self::encode_and_sign_jwt(&claims, operator_nkey)
+        correlation_id: Uuid,
+        causation_id: Option<Uuid>,
+    ) -> (NatsJwt, JwtSignedEvent) {
+        let (jwt_token, event) = Self::encode_and_sign_jwt(&claims, operator_nkey, correlation_id, causation_id)
             .expect("Failed to sign operator JWT");
 
-        NatsJwt::new(
+        let jwt = NatsJwt::new(
             NKeyType::Operator,
             jwt_token,
             operator_nkey.public_key.clone(),
             operator_nkey.public_key.clone(), // Self-signed
             Utc::now(),
             None, // Operators don't expire
-        )
+        );
+
+        (jwt, event)
     }
 
     /// Sign account claims to create Account JWT
     ///
     /// The operator signs the account JWT.
     ///
-    /// Emits: AccountJwtSignedEvent
+    /// # Returns
+    ///
+    /// Returns tuple of (NatsJwt, JwtSignedEvent) for audit trail (US-021)
     pub fn sign_account_jwt(
         claims: AccountClaims,
         operator_nkey: &NKeyPair,
         account_public_key: &NKeyPublic,
-    ) -> NatsJwt {
+        correlation_id: Uuid,
+        causation_id: Option<Uuid>,
+    ) -> (NatsJwt, JwtSignedEvent) {
         let expiration = claims.exp.map(|ts| DateTime::from_timestamp(ts, 0).unwrap());
 
-        let jwt_token = Self::encode_and_sign_jwt(&claims, operator_nkey)
+        let (jwt_token, event) = Self::encode_and_sign_jwt(&claims, operator_nkey, correlation_id, causation_id)
             .expect("Failed to sign account JWT");
 
-        NatsJwt::new(
+        let jwt = NatsJwt::new(
             NKeyType::Account,
             jwt_token,
             operator_nkey.public_key.clone(),
             account_public_key.clone(),
             Utc::now(),
             expiration,
-        )
+        );
+
+        (jwt, event)
     }
 
     /// Sign user claims to create User JWT
     ///
     /// The account signs the user JWT.
     ///
-    /// Emits: UserJwtSignedEvent
+    /// # Returns
+    ///
+    /// Returns tuple of (NatsJwt, JwtSignedEvent) for audit trail (US-021)
     pub fn sign_user_jwt(
         claims: UserClaims,
         account_nkey: &NKeyPair,
         user_public_key: &NKeyPublic,
-    ) -> NatsJwt {
+        correlation_id: Uuid,
+        causation_id: Option<Uuid>,
+    ) -> (NatsJwt, JwtSignedEvent) {
         let expiration = claims.exp.map(|ts| DateTime::from_timestamp(ts, 0).unwrap());
 
-        let jwt_token = Self::encode_and_sign_jwt(&claims, account_nkey)
+        let (jwt_token, event) = Self::encode_and_sign_jwt(&claims, account_nkey, correlation_id, causation_id)
             .expect("Failed to sign user JWT");
 
-        NatsJwt::new(
+        let jwt = NatsJwt::new(
             NKeyType::User,
             jwt_token,
             account_nkey.public_key.clone(),
             user_public_key.clone(),
             Utc::now(),
             expiration,
-        )
+        );
+
+        (jwt, event)
     }
 
     /// Encode claims and sign with NKey to create complete JWT
@@ -454,11 +499,19 @@ impl JwtSigningProjection {
     /// 2. Base64url encode header and claims
     /// 3. Sign with NKey seed
     /// 4. Create JWT as header.claims.signature
+    ///
+    /// # Returns
+    ///
+    /// Returns tuple of (JWT token, JwtSignedEvent) for audit trail (US-021)
     fn encode_and_sign_jwt<T: Serialize>(
         claims: &T,
         signing_key: &NKeyPair,
-    ) -> Result<String, String> {
+        correlation_id: Uuid,
+        causation_id: Option<Uuid>,
+    ) -> Result<(String, JwtSignedEvent), String> {
         use base64::{Engine as _, engine::general_purpose};
+
+        let signed_at = Utc::now();
 
         // Create JWT header
         let header = serde_json::json!({
@@ -490,7 +543,21 @@ impl JwtSigningProjection {
         let signature_b64 = general_purpose::URL_SAFE_NO_PAD.encode(&signature);
 
         // Create complete JWT: header.claims.signature
-        Ok(format!("{}.{}.{}", header_b64, claims_b64, signature_b64))
+        let jwt_token = format!("{}.{}.{}", header_b64, claims_b64, signature_b64);
+
+        // US-021: Emit JWT signing event for audit trail
+        let event = JwtSignedEvent {
+            jwt_id: Uuid::now_v7(),
+            signer_public_key: signing_key.public_key_string(),
+            signature_algorithm: "ed25519".to_string(),
+            jwt_token: jwt_token.clone(),
+            signature_verification_data: signature_b64,
+            signed_at,
+            correlation_id,
+            causation_id,
+        };
+
+        Ok((jwt_token, event))
     }
 }
 
