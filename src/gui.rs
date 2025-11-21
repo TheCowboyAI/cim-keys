@@ -264,6 +264,14 @@ pub enum GraphView {
     PkiTrustChain,
     /// YubiKey provisioning and PIV slots
     YubiKeyDetails,
+    /// Timeline view - Event sourcing audit trail (temporal visualization)
+    Timeline,
+    /// Aggregate state machines - State diagrams for each aggregate type
+    Aggregates,
+    /// Command history - CQRS write audit trail
+    CommandHistory,
+    /// Causality chains - Correlation/causation tracking for distributed tracing
+    CausalityChains,
 }
 
 impl Default for GraphView {
@@ -749,6 +757,34 @@ impl CimKeysApp {
                             },
                             |(yubikeys, people)| Message::YubiKeyDataLoaded(yubikeys, people)
                         );
+                    }
+                    GraphView::Timeline => {
+                        // Timeline shows event sourcing audit trail
+                        self.org_graph.nodes.clear();
+                        self.org_graph.edges.clear();
+                        // TODO: Populate from event store
+                        self.status_message = "Timeline View - Event sourcing audit trail (coming soon)".to_string();
+                    }
+                    GraphView::Aggregates => {
+                        // Aggregates show state machine diagrams
+                        self.org_graph.nodes.clear();
+                        self.org_graph.edges.clear();
+                        // TODO: Populate with state machine nodes
+                        self.status_message = "Aggregates View - State machine diagrams (coming soon)".to_string();
+                    }
+                    GraphView::CommandHistory => {
+                        // Command history shows CQRS write operations
+                        self.org_graph.nodes.clear();
+                        self.org_graph.edges.clear();
+                        // TODO: Populate from command log
+                        self.status_message = "Command History - CQRS write audit trail (coming soon)".to_string();
+                    }
+                    GraphView::CausalityChains => {
+                        // Causality shows correlation/causation chains
+                        self.org_graph.nodes.clear();
+                        self.org_graph.edges.clear();
+                        // TODO: Populate from event correlations
+                        self.status_message = "Causality Chains - Distributed tracing (coming soon)".to_string();
                     }
                 }
                 Task::none()
@@ -4197,6 +4233,42 @@ impl CimKeysApp {
                         .on_press(Message::GraphViewSelected(GraphView::YubiKeyDetails))
                         .style(CowboyCustomTheme::glass_button())
                 },
+                if self.graph_view == GraphView::Timeline {
+                    button(text("⏱️").size(14))
+                        .on_press(Message::GraphViewSelected(GraphView::Timeline))
+                        .style(CowboyCustomTheme::primary_button())
+                } else {
+                    button(text("⏱️").size(14))
+                        .on_press(Message::GraphViewSelected(GraphView::Timeline))
+                        .style(CowboyCustomTheme::glass_button())
+                },
+                if self.graph_view == GraphView::Aggregates {
+                    button(text("🔄").size(14))
+                        .on_press(Message::GraphViewSelected(GraphView::Aggregates))
+                        .style(CowboyCustomTheme::primary_button())
+                } else {
+                    button(text("🔄").size(14))
+                        .on_press(Message::GraphViewSelected(GraphView::Aggregates))
+                        .style(CowboyCustomTheme::glass_button())
+                },
+                if self.graph_view == GraphView::CommandHistory {
+                    button(text("📋").size(14))
+                        .on_press(Message::GraphViewSelected(GraphView::CommandHistory))
+                        .style(CowboyCustomTheme::primary_button())
+                } else {
+                    button(text("📋").size(14))
+                        .on_press(Message::GraphViewSelected(GraphView::CommandHistory))
+                        .style(CowboyCustomTheme::glass_button())
+                },
+                if self.graph_view == GraphView::CausalityChains {
+                    button(text("🔗").size(14))
+                        .on_press(Message::GraphViewSelected(GraphView::CausalityChains))
+                        .style(CowboyCustomTheme::primary_button())
+                } else {
+                    button(text("🔗").size(14))
+                        .on_press(Message::GraphViewSelected(GraphView::CausalityChains))
+                        .style(CowboyCustomTheme::glass_button())
+                },
                 horizontal_space(),
                 // Context-aware "Add Node" dropdown - shows only valid nodes for current view
                 {
@@ -4205,6 +4277,10 @@ impl CimKeysApp {
                         GraphView::NatsInfrastructure => vec!["Account", "User", "Service"],
                         GraphView::PkiTrustChain => vec!["Root CA", "Inter CA", "Leaf Cert", "CSR"],
                         GraphView::YubiKeyDetails => vec!["YubiKey", "PIV Slot"],
+                        GraphView::Timeline => vec![], // Timeline is read-only (events from event store)
+                        GraphView::Aggregates => vec![], // Aggregates are read-only (state machines)
+                        GraphView::CommandHistory => vec![], // Command history is read-only
+                        GraphView::CausalityChains => vec![], // Causality is read-only (derived from events)
                     };
 
                     row![
