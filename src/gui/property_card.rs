@@ -52,6 +52,13 @@ pub enum PropertyCardMessage {
     ClaimToggled(PolicyClaim, bool),
     /// User toggled a role
     RoleToggled(RoleType, bool),
+    // Key generation messages (for Person nodes)
+    /// User clicked generate root CA button
+    GenerateRootCA,
+    /// User clicked generate personal keys button
+    GeneratePersonalKeys,
+    /// User clicked provision YubiKey button
+    ProvisionYubiKey,
     // Edge editing messages
     /// User changed edge type
     EdgeTypeChanged(EdgeType),
@@ -341,6 +348,15 @@ impl PropertyCard {
                 self.edit_edge_type = edge_type;
                 self.dirty = true;
             }
+            PropertyCardMessage::GenerateRootCA => {
+                // Handled by parent
+            }
+            PropertyCardMessage::GeneratePersonalKeys => {
+                // Handled by parent
+            }
+            PropertyCardMessage::ProvisionYubiKey => {
+                // Handled by parent
+            }
             PropertyCardMessage::DeleteEdge => {
                 // Handled by parent
             }
@@ -493,6 +509,47 @@ impl PropertyCard {
                 scrollable(roles_column)
                     .height(Length::Fixed(150.0))
             );
+
+            // Key Operations section for Person nodes
+            fields = fields.push(
+                column![
+                    text("Key Operations:").size(12),
+                    button(text("Generate Root CA").size(11))
+                        .on_press(PropertyCardMessage::GenerateRootCA)
+                        .width(Length::Fill)
+                        .style(|theme: &Theme, _status| {
+                            button::Style {
+                                background: Some(iced::Background::Color(Color::from_rgb(0.2, 0.4, 0.8))),
+                                text_color: iced::Color::WHITE,
+                                border: iced::Border::default(),
+                                shadow: iced::Shadow::default(),
+                            }
+                        }),
+                    button(text("Generate Personal Keys").size(11))
+                        .on_press(PropertyCardMessage::GeneratePersonalKeys)
+                        .width(Length::Fill)
+                        .style(|theme: &Theme, _status| {
+                            button::Style {
+                                background: Some(iced::Background::Color(Color::from_rgb(0.3, 0.6, 0.3))),
+                                text_color: iced::Color::WHITE,
+                                border: iced::Border::default(),
+                                shadow: iced::Shadow::default(),
+                            }
+                        }),
+                    button(text("Provision YubiKey").size(11))
+                        .on_press(PropertyCardMessage::ProvisionYubiKey)
+                        .width(Length::Fill)
+                        .style(|theme: &Theme, _status| {
+                            button::Style {
+                                background: Some(iced::Background::Color(Color::from_rgb(0.6, 0.3, 0.6))),
+                                text_color: iced::Color::WHITE,
+                                border: iced::Border::default(),
+                                shadow: iced::Shadow::default(),
+                            }
+                        }),
+                ]
+                .spacing(4)
+            );
         }
 
         // Enabled checkbox (Person, Role, Policy)
@@ -595,32 +652,19 @@ impl PropertyCard {
         ]
         .spacing(10);
 
+        use crate::gui::cowboy_theme::CowboyAppTheme as CowboyCustomTheme;
+
         let content: Column<'_, PropertyCardMessage> = column![
             header,
             fields,
             buttons,
         ]
-        .spacing(15)
-        .padding(20);
+        .spacing(12)
+        .padding(16);
 
         container(content)
             .width(Length::Fixed(300.0))
-            .style(|theme: &Theme| {
-                container::Style {
-                    background: Some(iced::Background::Color(theme.palette().background)),
-                    border: iced::Border {
-                        color: theme.palette().text,
-                        width: 1.0,
-                        radius: 8.0.into(),
-                    },
-                    text_color: Some(theme.palette().text),
-                    shadow: iced::Shadow {
-                        color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.4),
-                        offset: iced::Vector::new(4.0, 4.0),
-                        blur_radius: 8.0,
-                    },
-                }
-            })
+            .style(CowboyCustomTheme::pastel_teal_card())
             .into()
     }
 
@@ -743,32 +787,19 @@ impl PropertyCard {
         ]
         .spacing(10);
 
+        use crate::gui::cowboy_theme::CowboyAppTheme as CowboyCustomTheme;
+
         let content: Column<'_, PropertyCardMessage> = column![
             header,
             fields,
             buttons,
         ]
-        .spacing(8)
-        .padding(12);
+        .spacing(12)
+        .padding(16);
 
         container(content)
             .width(Length::Fixed(300.0))
-            .style(|theme: &Theme| {
-                container::Style {
-                    background: Some(iced::Background::Color(theme.palette().background)),
-                    border: iced::Border {
-                        color: theme.palette().text,
-                        width: 1.0,
-                        radius: 8.0.into(),
-                    },
-                    text_color: Some(theme.palette().text),
-                    shadow: iced::Shadow {
-                        color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.4),
-                        offset: iced::Vector::new(4.0, 4.0),
-                        blur_radius: 8.0,
-                    },
-                }
-            })
+            .style(CowboyCustomTheme::pastel_teal_card())
             .into()
     }
 

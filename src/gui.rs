@@ -51,6 +51,7 @@ pub mod firefly_math;
 pub mod firefly_renderer;
 pub mod context_menu;
 pub mod property_card;
+pub mod passphrase_dialog;
 pub mod view_model;
 pub mod edge_indicator;
 
@@ -206,6 +207,7 @@ pub struct CimKeysApp {
     // Phase 4: Interactive UI Components
     context_menu: ContextMenu,
     property_card: PropertyCard,
+    passphrase_dialog: passphrase_dialog::PassphraseDialog,
     context_menu_node: Option<Uuid>,  // Node that context menu was opened on (if any)
 
     // Phase 5: Search and filtering
@@ -246,8 +248,6 @@ pub enum GraphLayout {
 pub enum Tab {
     Welcome,
     Organization,
-    Locations,
-    Keys,
     Export,
 }
 
@@ -407,6 +407,7 @@ pub enum Message {
     // Phase 4: Interactive UI Component Messages
     ContextMenuMessage(ContextMenuMessage),
     PropertyCardMessage(PropertyCardMessage),
+    PassphraseDialogMessage(passphrase_dialog::PassphraseDialogMessage),
 
     // MVI Integration
     MviIntent(Intent),
@@ -654,6 +655,7 @@ impl CimKeysApp {
                 // Phase 4: Interactive UI Components
                 context_menu: ContextMenu::new(),
                 property_card: PropertyCard::new(),
+                passphrase_dialog: passphrase_dialog::PassphraseDialog::new(),
                 context_menu_node: None,
                 // Phase 5: Search and filtering
                 search_query: String::new(),
@@ -688,10 +690,8 @@ impl CimKeysApp {
                 self.active_tab = tab;
                 self.status_message = match tab {
                     Tab::Welcome => "Welcome to CIM Keys".to_string(),
-                    Tab::Organization => format!("Organization Structure and Key Ownership (Graph: {} nodes, {} edges)",
+                    Tab::Organization => format!("Organization Graph - Primary Interface ({} nodes, {} edges)",
                         self.org_graph.nodes.len(), self.org_graph.edges.len()),
-                    Tab::Locations => "Manage Corporate Locations".to_string(),
-                    Tab::Keys => "Generate Cryptographic Keys".to_string(),
                     Tab::Export => "Export Domain Configuration".to_string(),
                 };
                 Task::none()
@@ -2564,7 +2564,25 @@ impl CimKeysApp {
                                     };
                                     (NodeType::OrganizationalUnit(unit), "New Unit".to_string(), self.view_model.colors.node_unit)
                                 }
-                                // TODO: Location, Role - complex types, implement later
+                                "Location" => {
+                                    use cim_domain::EntityId;
+                                    use crate::domain::{Address, Location, LocationMarker};
+
+                                    // Create a simple physical location with placeholder address
+                                    let location = Location::new_physical(
+                                        EntityId::<LocationMarker>::from_uuid(node_id),
+                                        "New Location".to_string(),
+                                        Address::new(
+                                            "123 Main St".to_string(),
+                                            "City".to_string(),
+                                            "State".to_string(),
+                                            "Country".to_string(),
+                                            "12345".to_string(),
+                                        ),
+                                    ).expect("Failed to create location");
+                                    (NodeType::Location(location), "New Location".to_string(), self.view_model.colors.node_location)
+                                }
+                                // TODO: Role - complex type, implement later
                                 // TODO: Add NATS, PKI, and YubiKey node types
                                 _ => {
                                     self.status_message = format!("Node type '{}' not yet implemented", node_type_str);
@@ -2701,7 +2719,7 @@ impl CimKeysApp {
                                 use crate::domain::{Address, LocationMarker};
 
                                 // Create a placeholder physical location
-                                // Note: Use the "Locations" tab to create locations with full address details
+                                // Click the node to edit details via property card
                                 let address = Address::new(
                                     "123 Main St".to_string(),
                                     "City".to_string(),
@@ -3076,7 +3094,74 @@ impl CimKeysApp {
                             self.status_message = "Edge deleted".to_string();
                         }
                     }
+                    PropertyCardMessage::GenerateRootCA => {
+                        if let Some(node_id) = self.property_card.node_id() {
+                            if let Some(node) = self.org_graph.nodes.get(&node_id) {
+                                if let graph::NodeType::Person { person, .. } = &node.node_type {
+                                    // Show passphrase dialog for Root CA generation
+                                    self.passphrase_dialog.show(passphrase_dialog::PassphrasePurpose::RootCA);
+                                    self.status_message = format!("Enter passphrase to generate Root CA for {}", person.name);
+                                }
+                            }
+                        }
+                    }
+                    PropertyCardMessage::GeneratePersonalKeys => {
+                        if let Some(node_id) = self.property_card.node_id() {
+                            if let Some(node) = self.org_graph.nodes.get(&node_id) {
+                                if let graph::NodeType::Person { person, .. } = &node.node_type {
+                                    self.status_message = format!("Generating personal keys for {}... (Not yet implemented)", person.name);
+                                    // TODO: Implement personal key generation
+                                    // This would involve:
+                                    // 1. Generating SSH key pair
+                                    // 2. Generating GPG key pair
+                                    // 3. Creating certificate signing request
+                                    // 4. Storing in encrypted projection
+                                }
+                            }
+                        }
+                    }
+                    PropertyCardMessage::ProvisionYubiKey => {
+                        if let Some(node_id) = self.property_card.node_id() {
+                            if let Some(node) = self.org_graph.nodes.get(&node_id) {
+                                if let graph::NodeType::Person { person, .. } = &node.node_type {
+                                    self.status_message = format!("Provisioning YubiKey for {}... (Not yet implemented)", person.name);
+                                    // TODO: Implement YubiKey provisioning
+                                    // This would involve:
+                                    // 1. Detecting connected YubiKey
+                                    // 2. Generating keys on YubiKey PIV slots
+                                    // 3. Storing slot assignments
+                                    // 4. Creating edge in graph from person to YubiKey node
+                                }
+                            }
+                        }
+                    }
                     _ => {}
+                }
+                Task::none()
+            }
+
+            Message::PassphraseDialogMessage(dialog_msg) => {
+                use passphrase_dialog::PassphraseDialogMessage;
+                match dialog_msg {
+                    PassphraseDialogMessage::Submit => {
+                        // User clicked OK with valid passphrase
+                        if let Some(passphrase) = self.passphrase_dialog.get_passphrase() {
+                            // TODO: Call actual crypto function with passphrase
+                            // For now, just show success message
+                            self.status_message = "Root CA generation in progress...".to_string();
+                            self.passphrase_dialog.hide();
+                            // TODO: Trigger actual Root CA generation task
+                        }
+                    }
+                    PassphraseDialogMessage::Cancel => {
+                        // User clicked Cancel
+                        self.passphrase_dialog.hide();
+                        self.status_message = "Root CA generation cancelled".to_string();
+                    }
+                    _ => {
+                        // Pass other messages to the dialog for internal state updates
+                        self.passphrase_dialog.update(dialog_msg);
+                    }
                 }
                 Task::none()
             }
@@ -3513,32 +3598,24 @@ impl CimKeysApp {
             }
         });
 
-        // Tab bar
+        // Tab bar - Graph is the primary interface
         let tab_bar = row![
             button(text("Welcome").size(self.view_model.text_normal))
                 .on_press(Message::TabSelected(Tab::Welcome))
                 .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Welcome)),
-            button(text("Organization").size(self.view_model.text_normal))
+            button(text("Organization Graph").size(self.view_model.text_normal))
                 .on_press(Message::TabSelected(Tab::Organization))
                 .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Organization)),
-            button(text("Locations").size(self.view_model.text_normal))
-                .on_press(Message::TabSelected(Tab::Locations))
-                .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Locations)),
-            button(text("Keys").size(self.view_model.text_normal))
-                .on_press(Message::TabSelected(Tab::Keys))
-                .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Keys)),
             button(text("Export").size(self.view_model.text_normal))
                 .on_press(Message::TabSelected(Tab::Export))
                 .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Export)),
         ]
-        .spacing(self.view_model.spacing_sm);
+        .spacing(self.view_model.spacing_md);
 
         // Tab content
         let content = match self.active_tab {
             Tab::Welcome => self.view_welcome(),
             Tab::Organization => self.view_organization(),
-            Tab::Locations => self.view_locations(),
-            Tab::Keys => self.view_keys(),
             Tab::Export => self.view_export(),
         };
 
@@ -3646,7 +3723,7 @@ impl CimKeysApp {
             .padding(20);
 
         // Stack the background gradient, firefly shader, and main content
-        stack![
+        let base_view = stack![
             // Background gradient matching www-egui
             container(Space::new(Length::Fill, Length::Fill))
                 .width(Length::Fill)
@@ -3663,8 +3740,20 @@ impl CimKeysApp {
             main_content
         ]
         .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+        .height(Length::Fill);
+
+        // Add passphrase dialog overlay if visible
+        if self.passphrase_dialog.is_visible() {
+            stack![
+                base_view,
+                self.passphrase_dialog.view().map(Message::PassphraseDialogMessage)
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+        } else {
+            base_view.into()
+        }
     }
 
     fn subscription(&self) -> Subscription<Message> {

@@ -54,5 +54,8 @@
 pub mod primitives;
 pub mod builder;
 
+#[cfg(test)]
+mod laws;  // Property tests for compositional laws (Axiom A9)
+
 pub use primitives::{Route, id, compose, parallel, fanout};
 pub use builder::RouteBuilder;
