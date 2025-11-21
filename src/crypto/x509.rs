@@ -146,9 +146,15 @@ impl Default for ServerCertParams {
 pub fn generate_root_ca(
     seed: &MasterSeed,
     params: RootCAParams,
-) -> Result<X509Certificate, String> {
+    correlation_id: uuid::Uuid,
+    causation_id: Option<uuid::Uuid>,
+) -> Result<(X509Certificate, crate::events::CertificateGeneratedEvent), String> {
     // Generate our deterministic Ed25519 keypair from seed (for reference/storage)
     let ed25519_keypair = KeyPair::from_seed(seed);
+
+    // Save params for event emission before they're moved
+    let common_name = params.common_name.clone();
+    let organization = params.organization.clone();
 
     // Build distinguished name
     let mut dn = DistinguishedName::new();
@@ -199,13 +205,37 @@ pub fn generate_root_ca(
     let cert_der = cert.der();
     let fingerprint = calculate_fingerprint(cert_der);
 
-    Ok(X509Certificate {
+    let x509_cert = X509Certificate {
         certificate_pem,
         private_key_pem,
         public_key_bytes: ed25519_keypair.public_key_bytes().to_vec(),
         fingerprint,
         seed_path: "root-ca".to_string(),
-    })
+    };
+
+    // US-021: Emit certificate generation event for audit trail
+    let cert_id = uuid::Uuid::now_v7();
+    let key_id = uuid::Uuid::now_v7();
+
+    let event = crate::events::CertificateGeneratedEvent {
+        cert_id,
+        key_id,
+        subject: format!("CN={},O={}",
+            common_name,
+            organization
+        ),
+        issuer: None, // Self-signed root CA
+        not_before: chrono::DateTime::from_timestamp(not_before.unix_timestamp(), 0).unwrap(),
+        not_after: chrono::DateTime::from_timestamp(not_after.unix_timestamp(), 0).unwrap(),
+        is_ca: true,
+        san: vec![], // Root CAs typically don't have SANs
+        key_usage: vec!["keyCertSign".to_string(), "cRLSign".to_string()],
+        extended_key_usage: vec![],
+        correlation_id,
+        causation_id,
+    };
+
+    Ok((x509_cert, event))
 }
 
 /// Generate an Intermediate CA certificate (SIGNING ONLY)
@@ -237,7 +267,10 @@ pub fn generate_intermediate_ca(
     params: IntermediateCAParams,
     root_ca_cert_pem: &str,
     root_ca_key_pem: &str,
-) -> Result<X509Certificate, String> {
+    root_ca_id: uuid::Uuid,
+    correlation_id: uuid::Uuid,
+    causation_id: Option<uuid::Uuid>,
+) -> Result<(X509Certificate, crate::events::CertificateGeneratedEvent, crate::events::CertificateSignedEvent), String> {
     // Generate our deterministic Ed25519 keypair from seed (for reference/storage)
     let ed25519_keypair = KeyPair::from_seed(seed);
 
@@ -307,13 +340,48 @@ pub fn generate_intermediate_ca(
     let cert_der = cert.der();
     let fingerprint = calculate_fingerprint(cert_der);
 
-    Ok(X509Certificate {
+    let x509_cert = X509Certificate {
         certificate_pem,
         private_key_pem,
         public_key_bytes: ed25519_keypair.public_key_bytes().to_vec(),
         fingerprint,
         seed_path: format!("intermediate-{}", params.organizational_unit),
-    })
+    };
+
+    // US-021: Emit certificate generation and signing events for audit trail
+    let cert_id = uuid::Uuid::now_v7();
+    let key_id = uuid::Uuid::now_v7();
+    let signed_at = chrono::Utc::now();
+
+    let generation_event = crate::events::CertificateGeneratedEvent {
+        cert_id,
+        key_id,
+        subject: format!("CN={},OU={},O={}",
+            params.common_name,
+            params.organizational_unit,
+            params.organization
+        ),
+        issuer: Some(root_ca_id),
+        not_before: chrono::DateTime::from_timestamp(not_before.unix_timestamp(), 0).unwrap(),
+        not_after: chrono::DateTime::from_timestamp(not_after.unix_timestamp(), 0).unwrap(),
+        is_ca: true,
+        san: vec![],
+        key_usage: vec!["keyCertSign".to_string(), "cRLSign".to_string()],
+        extended_key_usage: vec![],
+        correlation_id,
+        causation_id,
+    };
+
+    let signing_event = crate::events::CertificateSignedEvent {
+        cert_id,
+        signed_by: root_ca_id,
+        signature_algorithm: "Ed25519".to_string(),
+        signed_at,
+        correlation_id,
+        causation_id: Some(cert_id), // Signing caused by certificate generation
+    };
+
+    Ok((x509_cert, generation_event, signing_event))
 }
 
 /// Generate a Server/Leaf certificate
@@ -349,7 +417,10 @@ pub fn generate_server_certificate(
     params: ServerCertParams,
     intermediate_ca_cert_pem: &str,
     intermediate_ca_key_pem: &str,
-) -> Result<X509Certificate, String> {
+    intermediate_ca_id: uuid::Uuid,
+    correlation_id: uuid::Uuid,
+    causation_id: Option<uuid::Uuid>,
+) -> Result<(X509Certificate, crate::events::CertificateGeneratedEvent, crate::events::CertificateSignedEvent), String> {
     // Generate our deterministic Ed25519 keypair from seed (for reference/storage)
     let ed25519_keypair = KeyPair::from_seed(seed);
 
@@ -423,13 +494,47 @@ pub fn generate_server_certificate(
     let cert_der = cert.der();
     let fingerprint = calculate_fingerprint(cert_der);
 
-    Ok(X509Certificate {
+    let x509_cert = X509Certificate {
         certificate_pem,
         private_key_pem,
         public_key_bytes: ed25519_keypair.public_key_bytes().to_vec(),
         fingerprint,
         seed_path: format!("server-{}", params.common_name),
-    })
+    };
+
+    // US-021: Emit certificate generation and signing events for audit trail
+    let cert_id = uuid::Uuid::now_v7();
+    let key_id = uuid::Uuid::now_v7();
+    let signed_at = chrono::Utc::now();
+
+    let generation_event = crate::events::CertificateGeneratedEvent {
+        cert_id,
+        key_id,
+        subject: format!("CN={},O={}",
+            params.common_name,
+            params.organization
+        ),
+        issuer: Some(intermediate_ca_id),
+        not_before: chrono::DateTime::from_timestamp(not_before.unix_timestamp(), 0).unwrap(),
+        not_after: chrono::DateTime::from_timestamp(not_after.unix_timestamp(), 0).unwrap(),
+        is_ca: false,
+        san: params.san_entries.clone(),
+        key_usage: vec!["digitalSignature".to_string(), "keyEncipherment".to_string()],
+        extended_key_usage: vec!["serverAuth".to_string(), "clientAuth".to_string()],
+        correlation_id,
+        causation_id,
+    };
+
+    let signing_event = crate::events::CertificateSignedEvent {
+        cert_id,
+        signed_by: intermediate_ca_id,
+        signature_algorithm: "Ed25519".to_string(),
+        signed_at,
+        correlation_id,
+        causation_id: Some(cert_id), // Signing caused by certificate generation
+    };
+
+    Ok((x509_cert, generation_event, signing_event))
 }
 
 /// Calculate SHA-256 fingerprint of DER-encoded certificate

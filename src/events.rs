@@ -160,6 +160,8 @@ pub struct CertificateGeneratedEvent {
     pub san: Vec<String>,
     pub key_usage: Vec<String>,
     pub extended_key_usage: Vec<String>,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
 }
 
 /// Certificate was signed
@@ -169,6 +171,8 @@ pub struct CertificateSignedEvent {
     pub signed_by: Uuid, // CA cert ID
     pub signature_algorithm: String,
     pub signed_at: DateTime<Utc>,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
 }
 
 /// Key was imported

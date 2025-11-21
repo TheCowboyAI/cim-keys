@@ -277,6 +277,8 @@ pub fn handle_provision_yubikey_slot(
             }
             _ => vec!["clientAuth".to_string()],
         },
+        correlation_id: cmd.correlation_id,
+        causation_id: Some(key_id), // Certificate caused by key generation
     }));
 
     // Step 4: Import certificate to slot

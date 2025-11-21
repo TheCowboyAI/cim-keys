@@ -279,6 +279,8 @@ pub fn handle_generate_root_ca(cmd: GenerateRootCA) -> Result<RootCAGenerated, S
                 "DigitalSignature".to_string(),
             ],
             extended_key_usage: vec![],
+            correlation_id: cmd.correlation_id,
+            causation_id: Some(key_pair.key_id), // Certificate caused by key generation
         },
     ));
 
@@ -457,6 +459,8 @@ pub fn handle_generate_certificate(cmd: GenerateCertificate) -> Result<Certifica
             san: vec![],
             key_usage,
             extended_key_usage,
+            correlation_id: cmd.correlation_id,
+            causation_id: cmd.causation_id,
         },
     ));
 
@@ -467,6 +471,8 @@ pub fn handle_generate_certificate(cmd: GenerateCertificate) -> Result<Certifica
             signed_by: cmd.ca_id, // The CA certificate ID that signed this
             signature_algorithm: signature_algorithm_name, // Use actual CA algorithm
             signed_at: Utc::now(),
+            correlation_id: cmd.correlation_id,
+            causation_id: Some(cert_id), // Signing caused by certificate generation
         },
     ));
 

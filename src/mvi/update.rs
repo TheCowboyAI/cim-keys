@@ -255,8 +255,10 @@ pub fn update(
                         validity_years: 20,
                     };
 
-                    match generate_root_ca(&root_ca_seed, params) {
-                        Ok(cert) => Intent::PortX509RootCAGenerated {
+                    // US-021: Generate correlation ID for this operation
+                    let correlation_id = uuid::Uuid::now_v7();
+                    match generate_root_ca(&root_ca_seed, params, correlation_id, None) {
+                        Ok((cert, _event)) => Intent::PortX509RootCAGenerated {
                             certificate_pem: cert.certificate_pem,
                             private_key_pem: cert.private_key_pem,
                             fingerprint: cert.fingerprint,
@@ -329,8 +331,11 @@ pub fn update(
                         validity_years: 10,
                     };
 
-                    match generate_intermediate_ca(&intermediate_seed, params, &root_ca_cert, &root_ca_key) {
-                        Ok(cert) => Intent::PortX509IntermediateCAGenerated {
+                    // US-021: Generate correlation ID and root CA ID for this operation
+                    let correlation_id = uuid::Uuid::now_v7();
+                    let root_ca_id = uuid::Uuid::now_v7(); // TODO: Use actual root CA ID from model
+                    match generate_intermediate_ca(&intermediate_seed, params, &root_ca_cert, &root_ca_key, root_ca_id, correlation_id, None) {
+                        Ok((cert, _gen_event, _sign_event)) => Intent::PortX509IntermediateCAGenerated {
                             name: name_clone,
                             certificate_pem: cert.certificate_pem,
                             private_key_pem: cert.private_key_pem,
@@ -407,8 +412,11 @@ pub fn update(
                         validity_days: 365, // 1 year
                     };
 
-                    match generate_server_certificate(&server_seed, params, &intermediate_cert_pem, &intermediate_key_pem) {
-                        Ok(cert) => Intent::PortX509ServerCertGenerated {
+                    // US-021: Generate correlation ID and intermediate CA ID for this operation
+                    let correlation_id = uuid::Uuid::now_v7();
+                    let intermediate_ca_id = uuid::Uuid::now_v7(); // TODO: Use actual intermediate CA ID from model
+                    match generate_server_certificate(&server_seed, params, &intermediate_cert_pem, &intermediate_key_pem, intermediate_ca_id, correlation_id, None) {
+                        Ok((cert, _gen_event, _sign_event)) => Intent::PortX509ServerCertGenerated {
                             common_name: common_name_clone,
                             certificate_pem: cert.certificate_pem,
                             private_key_pem: cert.private_key_pem,
