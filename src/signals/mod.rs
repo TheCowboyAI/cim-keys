@@ -38,9 +38,11 @@
 
 pub mod kinds;
 pub mod vector;
+pub mod continuous;
 
 pub use kinds::{SignalKind, EventKind, StepKind, ContinuousKind};
 pub use vector::{SignalVector, SignalVec2, SignalVec3, SignalVec4};
+pub use continuous::{ContinuousSignal};
 
 use std::marker::PhantomData;
 
