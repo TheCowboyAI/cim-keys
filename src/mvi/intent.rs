@@ -15,7 +15,6 @@
 //! See `INTENT_SIGNAL_KIND_ANALYSIS.md` for complete classification.
 
 use std::path::PathBuf;
-use crate::signals::{EventKind, StepKind};
 
 /// Type of node that can be created in the graph
 #[derive(Debug, Clone)]

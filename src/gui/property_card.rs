@@ -518,9 +518,10 @@ impl PropertyCard {
                         .on_press(PropertyCardMessage::GenerateRootCA)
                         .width(Length::Fill)
                         .style(|theme: &Theme, _status| {
+                            let palette = theme.extended_palette();
                             button::Style {
-                                background: Some(iced::Background::Color(Color::from_rgb(0.2, 0.4, 0.8))),
-                                text_color: iced::Color::WHITE,
+                                background: Some(iced::Background::Color(palette.primary.strong.color)),
+                                text_color: palette.primary.strong.text,
                                 border: iced::Border::default(),
                                 shadow: iced::Shadow::default(),
                             }
@@ -529,9 +530,10 @@ impl PropertyCard {
                         .on_press(PropertyCardMessage::GeneratePersonalKeys)
                         .width(Length::Fill)
                         .style(|theme: &Theme, _status| {
+                            let palette = theme.extended_palette();
                             button::Style {
-                                background: Some(iced::Background::Color(Color::from_rgb(0.3, 0.6, 0.3))),
-                                text_color: iced::Color::WHITE,
+                                background: Some(iced::Background::Color(palette.success.strong.color)),
+                                text_color: palette.success.strong.text,
                                 border: iced::Border::default(),
                                 shadow: iced::Shadow::default(),
                             }
@@ -540,9 +542,10 @@ impl PropertyCard {
                         .on_press(PropertyCardMessage::ProvisionYubiKey)
                         .width(Length::Fill)
                         .style(|theme: &Theme, _status| {
+                            let palette = theme.extended_palette();
                             button::Style {
-                                background: Some(iced::Background::Color(Color::from_rgb(0.6, 0.3, 0.6))),
-                                text_color: iced::Color::WHITE,
+                                background: Some(iced::Background::Color(palette.secondary.strong.color)),
+                                text_color: palette.secondary.strong.text,
                                 border: iced::Border::default(),
                                 shadow: iced::Shadow::default(),
                             }

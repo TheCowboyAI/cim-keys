@@ -3,7 +3,6 @@
 //! Core types for tracking causal relationships between events.
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Monotonic causal time
 ///

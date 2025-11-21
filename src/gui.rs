@@ -248,6 +248,8 @@ pub enum GraphLayout {
 pub enum Tab {
     Welcome,
     Organization,
+    Locations,
+    Keys,
     Export,
 }
 
@@ -694,6 +696,8 @@ impl CimKeysApp {
                     Tab::Welcome => "Welcome to CIM Keys".to_string(),
                     Tab::Organization => format!("Organization Graph - Primary Interface ({} nodes, {} edges)",
                         self.org_graph.nodes.len(), self.org_graph.edges.len()),
+                    Tab::Locations => format!("Manage Locations ({} loaded)", self.loaded_locations.len()),
+                    Tab::Keys => "Generate and Manage Cryptographic Keys".to_string(),
                     Tab::Export => "Export Domain Configuration".to_string(),
                 };
                 Task::none()
@@ -3793,6 +3797,12 @@ impl CimKeysApp {
             button(text("Organization Graph").size(self.view_model.text_normal))
                 .on_press(Message::TabSelected(Tab::Organization))
                 .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Organization)),
+            button(text("Locations").size(self.view_model.text_normal))
+                .on_press(Message::TabSelected(Tab::Locations))
+                .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Locations)),
+            button(text("Keys").size(self.view_model.text_normal))
+                .on_press(Message::TabSelected(Tab::Keys))
+                .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Keys)),
             button(text("Export").size(self.view_model.text_normal))
                 .on_press(Message::TabSelected(Tab::Export))
                 .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Export)),
@@ -3803,6 +3813,8 @@ impl CimKeysApp {
         let content = match self.active_tab {
             Tab::Welcome => self.view_welcome(),
             Tab::Organization => self.view_organization(),
+            Tab::Locations => self.view_locations(),
+            Tab::Keys => self.view_keys(),
             Tab::Export => self.view_export(),
         };
 

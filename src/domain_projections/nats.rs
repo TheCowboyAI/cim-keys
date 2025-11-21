@@ -17,7 +17,7 @@ use uuid::Uuid;
 use crate::domain::{
     AccountIdentity, Organization, OrganizationUnit, Person, ServiceAccount, UserIdentity,
 };
-use crate::events::{NKeyGeneratedEvent, JwtClaimsCreatedEvent, JwtSignedEvent, ProjectionAppliedEvent};
+use crate::events::{NKeyGeneratedEvent, JwtClaimsCreatedEvent, JwtSignedEvent};
 use crate::value_objects::{
     AccountClaims, AccountData, AccountLimits, NatsCredential, NatsJwt, NKeyPair, NKeyPublic,
     NKeySeed, NKeyType, OperatorClaims, OperatorData, Permissions, UserClaims, UserData,

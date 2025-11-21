@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::domain::{AccountIdentity, Organization, UserIdentity};
 use crate::domain_projections::NatsProjection;
 use crate::events::{
-    AccountabilityValidatedEvent, AccountabilityViolatedEvent, AgentCreatedEvent, KeyEvent,
+    AccountabilityValidatedEvent, AccountabilityViolatedEvent, KeyEvent,
     NatsAccountCreatedEvent, NatsOperatorCreatedEvent, NatsUserCreatedEvent,
     ServiceAccountCreatedEvent,
 };
