@@ -370,6 +370,7 @@ pub enum Message {
     PkiCertificatesLoaded(Vec<crate::projections::CertificateEntry>),
     GeneratePkiFromGraph,  // Graph-first PKI generation
     PkiGenerated(Result<Vec<(graph::GraphNode, Option<Uuid>)>, String>),
+    RootCAGenerated(Result<crate::crypto::x509::X509Certificate, String>),
 
     // YubiKey operations
     YubiKeyDataLoaded(Vec<crate::projections::YubiKeyEntry>, Vec<crate::projections::PersonEntry>),
@@ -1507,6 +1508,23 @@ impl CimKeysApp {
                         self.status_message = format!("❌ PKI generation failed: {}", e);
                         self.error_message = Some(e);
                         tracing::error!("Graph-first PKI generation failed");
+                    }
+                }
+                Task::none()
+            }
+
+            Message::RootCAGenerated(result) => {
+                match result {
+                    Ok(certificate) => {
+                        // TODO: Store certificate in projection
+                        // TODO: Create certificate node in PKI graph
+                        self.status_message = format!("✅ Root CA generated successfully! Fingerprint: {}", &certificate.fingerprint[..16]);
+                        tracing::info!("Root CA generated: {}", certificate.fingerprint);
+                    }
+                    Err(e) => {
+                        self.status_message = format!("❌ Root CA generation failed: {}", e);
+                        self.error_message = Some(e);
+                        tracing::error!("Root CA generation failed");
                     }
                 }
                 Task::none()
@@ -3146,11 +3164,41 @@ impl CimKeysApp {
                     PassphraseDialogMessage::Submit => {
                         // User clicked OK with valid passphrase
                         if let Some(passphrase) = self.passphrase_dialog.get_passphrase() {
-                            // TODO: Call actual crypto function with passphrase
-                            // For now, just show success message
                             self.status_message = "Root CA generation in progress...".to_string();
                             self.passphrase_dialog.hide();
-                            // TODO: Trigger actual Root CA generation task
+
+                            // Get organization info for seed derivation
+                            let org_id = self.organization_id
+                                .map(|id| id.to_string())
+                                .unwrap_or_else(|| self.organization_domain.clone());
+
+                            let org_name = self.organization_name.clone();
+
+                            // Trigger async Root CA generation
+                            return Task::perform(
+                                async move {
+                                    use crate::crypto::seed_derivation::derive_master_seed;
+                                    use crate::crypto::x509::{generate_root_ca, RootCAParams};
+
+                                    // Derive master seed from passphrase
+                                    let seed = derive_master_seed(&passphrase, &org_id)
+                                        .map_err(|e| format!("Failed to derive seed: {}", e))?;
+
+                                    // Set up Root CA parameters
+                                    let params = RootCAParams {
+                                        organization: org_name.clone(),
+                                        common_name: format!("{} Root CA", org_name),
+                                        country: Some("US".to_string()),
+                                        state: None,
+                                        locality: None,
+                                        validity_years: 20,
+                                    };
+
+                                    // Generate Root CA certificate
+                                    generate_root_ca(&seed, params)
+                                },
+                                Message::RootCAGenerated
+                            );
                         }
                     }
                     PassphraseDialogMessage::Cancel => {

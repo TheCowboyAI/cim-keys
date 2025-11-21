@@ -28,7 +28,7 @@ use rcgen::{
 use time::{Duration, OffsetDateTime};
 
 /// X.509 certificate with associated keypair
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct X509Certificate {
     /// The certificate in PEM format
     pub certificate_pem: String,
