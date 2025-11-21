@@ -41,6 +41,7 @@
 pub mod types;
 pub mod validation;
 pub mod chain;
+pub mod helpers;
 
 pub use types::{CausalTime, CausalEvent, CausalId, CausalDependency};
 pub use validation::{CausalityValidator, CausalityError};
