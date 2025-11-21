@@ -277,6 +277,7 @@ fn create_nats_operator_node(nats_id: Uuid, org: &Organization) -> Result<GraphN
         nkey,
         jwt,
         credential: None,
+        events: Vec::new(), // US-021: GUI placeholder (events collected during projection)
     };
 
     Ok(GraphNode {
@@ -330,6 +331,7 @@ fn create_nats_account_node(
         nkey,
         jwt,
         credential: None,
+        events: Vec::new(), // US-021: GUI placeholder (events collected during projection)
     };
 
     Ok(GraphNode {
@@ -393,6 +395,7 @@ fn create_nats_user_node(
         nkey,
         jwt,
         credential: Some(credential),
+        events: Vec::new(), // US-021: GUI placeholder (events collected during projection)
     };
 
     Ok(GraphNode {

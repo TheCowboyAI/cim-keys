@@ -257,23 +257,32 @@ impl JwtClaimsProjection {
     /// Creates self-signed operator claims.
     /// The operator key signs its own JWT.
     ///
-    /// Emits: OperatorJwtClaimsCreatedEvent
+    /// Project organization + operator NKey to Operator JWT claims
+    ///
+    /// Creates operator claims (self-signed).
+    ///
+    /// # Returns
+    ///
+    /// Returns tuple of (OperatorClaims, JwtClaimsCreatedEvent) for audit trail (US-021)
     pub fn project_operator_claims(
         organization: &Organization,
         operator_nkey: &NKeyPair,
         signing_keys: Vec<String>,
-    ) -> OperatorClaims {
+        correlation_id: Uuid,
+        causation_id: Option<Uuid>,
+    ) -> (OperatorClaims, JwtClaimsCreatedEvent) {
         let now = Utc::now().timestamp();
+        let created_at = Utc::now();
         let public_key = operator_nkey.public_key_string();
 
-        OperatorClaims {
+        let claims = OperatorClaims {
             jti: Uuid::now_v7().to_string(),
             iat: now,
             iss: public_key.to_string(), // Self-signed
             sub: public_key.to_string(),
             nats: OperatorData {
                 name: organization.name.clone(),
-                signing_keys,
+                signing_keys: signing_keys.clone(),
                 version: 2,
                 account_server_url: organization.metadata.get("nats_account_server").cloned(),
                 operator_service_urls: organization
@@ -281,14 +290,32 @@ impl JwtClaimsProjection {
                     .get("nats_service_urls")
                     .and_then(|urls| serde_json::from_str(urls).ok()),
             },
-        }
+        };
+
+        // US-021: Emit JWT claims creation event for audit trail
+        let event = JwtClaimsCreatedEvent {
+            claims_id: Uuid::now_v7(),
+            issuer: public_key.to_string(),
+            subject: public_key.to_string(),
+            audience: None,
+            permissions: format!("Operator: signing_keys={}", signing_keys.len()),
+            not_before: created_at,
+            expires_at: None, // Operators don't expire
+            created_at,
+            correlation_id,
+            causation_id,
+        };
+
+        (claims, event)
     }
 
     /// Project org unit + account NKey to Account JWT claims
     ///
     /// Creates account claims signed by operator.
     ///
-    /// Emits: AccountJwtClaimsCreatedEvent
+    /// # Returns
+    ///
+    /// Returns tuple of (AccountClaims, JwtClaimsCreatedEvent) for audit trail (US-021)
     pub fn project_account_claims(
         organization: &Organization,
         unit: &OrganizationUnit,
@@ -296,52 +323,102 @@ impl JwtClaimsProjection {
         operator_nkey: &NKeyPair,
         signing_keys: Vec<String>,
         limits: Option<AccountLimits>,
-    ) -> AccountClaims {
+        correlation_id: Uuid,
+        causation_id: Option<Uuid>,
+    ) -> (AccountClaims, JwtClaimsCreatedEvent) {
         let now = Utc::now().timestamp();
+        let created_at = Utc::now();
+        let issuer = operator_nkey.public_key_string().to_string();
+        let subject = account_nkey.public_key_string().to_string();
 
-        AccountClaims {
+        let claims = AccountClaims {
             jti: Uuid::now_v7().to_string(),
             iat: now,
-            iss: operator_nkey.public_key_string().to_string(), // Signed by operator
-            sub: account_nkey.public_key_string().to_string(),
+            iss: issuer.clone(), // Signed by operator
+            sub: subject.clone(),
             exp: account_nkey.expires_at.map(|dt| dt.timestamp()),
             nats: AccountData {
                 name: format!("{} - {}", organization.name, unit.name),
-                signing_keys,
+                signing_keys: signing_keys.clone(),
                 version: 2,
-                limits,
+                limits: limits.clone(),
                 default_permissions: Some(Self::default_account_permissions()),
             },
-        }
+        };
+
+        let permissions_json = serde_json::to_string(&Self::default_account_permissions())
+            .unwrap_or_else(|_| "default_account_permissions".to_string());
+
+        // US-021: Emit JWT claims creation event for audit trail
+        let event = JwtClaimsCreatedEvent {
+            claims_id: Uuid::now_v7(),
+            issuer,
+            subject,
+            audience: None,
+            permissions: format!("Account: {} | signing_keys={} | limits={:?}", permissions_json, signing_keys.len(), limits),
+            not_before: created_at,
+            expires_at: account_nkey.expires_at,
+            created_at,
+            correlation_id,
+            causation_id,
+        };
+
+        (claims, event)
     }
 
     /// Project person + user NKey to User JWT claims
     ///
     /// Creates user claims signed by account.
     ///
-    /// Emits: UserJwtClaimsCreatedEvent
+    /// # Returns
+    ///
+    /// Returns tuple of (UserClaims, JwtClaimsCreatedEvent) for audit trail (US-021)
     pub fn project_user_claims(
         person: &Person,
         user_nkey: &NKeyPair,
         account_nkey: &NKeyPair,
         permissions: Option<Permissions>,
         limits: Option<UserLimits>,
-    ) -> UserClaims {
+        correlation_id: Uuid,
+        causation_id: Option<Uuid>,
+    ) -> (UserClaims, JwtClaimsCreatedEvent) {
         let now = Utc::now().timestamp();
+        let created_at = Utc::now();
+        let issuer = account_nkey.public_key_string().to_string();
+        let subject = user_nkey.public_key_string().to_string();
 
-        UserClaims {
+        let claims = UserClaims {
             jti: Uuid::now_v7().to_string(),
             iat: now,
-            iss: account_nkey.public_key_string().to_string(), // Signed by account
-            sub: user_nkey.public_key_string().to_string(),
+            iss: issuer.clone(), // Signed by account
+            sub: subject.clone(),
             exp: user_nkey.expires_at.map(|dt| dt.timestamp()),
             nats: UserData {
                 name: person.name.clone(),
                 version: 2,
-                permissions,
-                limits,
+                permissions: permissions.clone(),
+                limits: limits.clone(),
             },
-        }
+        };
+
+        let permissions_json = serde_json::to_string(&permissions)
+            .unwrap_or_else(|_| "no_permissions".to_string());
+
+        // US-021: Emit JWT claims creation event for audit trail
+        let event = JwtClaimsCreatedEvent {
+            claims_id: Uuid::now_v7(),
+            issuer,
+            subject,
+            audience: None,
+            permissions: format!("User: {} | {} | limits={:?}", person.name, permissions_json, limits),
+            not_before: created_at,
+            expires_at: user_nkey.expires_at,
+            created_at,
+            correlation_id,
+            causation_id,
+        };
+
+        (claims, event)
     }
 
     /// Project UserIdentity + user NKey to User JWT claims
@@ -355,23 +432,46 @@ impl JwtClaimsProjection {
         account_nkey: &NKeyPair,
         permissions: Option<Permissions>,
         limits: Option<UserLimits>,
-    ) -> UserClaims {
+        correlation_id: Uuid,
+        causation_id: Option<Uuid>,
+    ) -> (UserClaims, JwtClaimsCreatedEvent) {
         let now = Utc::now().timestamp();
+        let created_at = Utc::now();
         let user_name = user.name().to_string();
 
-        UserClaims {
+        let issuer = account_nkey.public_key_string().to_string();
+        let subject = user_nkey.public_key_string().to_string();
+
+        let claims = UserClaims {
             jti: Uuid::now_v7().to_string(),
             iat: now,
-            iss: account_nkey.public_key_string().to_string(), // Signed by account
-            sub: user_nkey.public_key_string().to_string(),
+            iss: issuer.clone(),
+            sub: subject.clone(),
             exp: user_nkey.expires_at.map(|dt| dt.timestamp()),
             nats: UserData {
-                name: user_name,
+                name: user_name.clone(),
                 version: 2,
-                permissions,
-                limits,
+                permissions: permissions.clone(),
+                limits: limits.clone(),
             },
-        }
+        };
+
+        // US-021: Emit JWT claims creation event for audit trail
+        let permissions_json = serde_json::to_string(&permissions).unwrap_or_else(|_| "{}".to_string());
+        let event = JwtClaimsCreatedEvent {
+            claims_id: Uuid::now_v7(),
+            issuer,
+            subject,
+            audience: None,
+            permissions: format!("User: {} | {} | limits={:?}", user_name, permissions_json, limits),
+            not_before: created_at,
+            expires_at: user_nkey.expires_at,
+            created_at,
+            correlation_id,
+            causation_id,
+        };
+
+        (claims, event)
     }
 
     /// Default account permissions (allow all, deny nothing)
@@ -548,7 +648,7 @@ impl JwtSigningProjection {
         // US-021: Emit JWT signing event for audit trail
         let event = JwtSignedEvent {
             jwt_id: Uuid::now_v7(),
-            signer_public_key: signing_key.public_key_string(),
+            signer_public_key: signing_key.public_key_string().to_string(),
             signature_algorithm: "ed25519".to_string(),
             jwt_token: jwt_token.clone(),
             signature_verification_data: signature_b64,
@@ -574,6 +674,8 @@ pub struct NatsIdentityProjection {
     pub jwt: NatsJwt,
     /// Combined credential (for user credentials)
     pub credential: Option<NatsCredential>,
+    /// Events emitted during projection (US-021: audit trail)
+    pub events: Vec<crate::events::KeyEvent>,
 }
 
 /// High-level projection functions
@@ -588,22 +690,43 @@ impl NatsProjection {
     /// - OperatorNKeyGeneratedEvent
     /// - OperatorJwtClaimsCreatedEvent
     /// - OperatorJwtSignedEvent
-    pub fn project_operator(organization: &Organization) -> NatsIdentityProjection {
+    pub fn project_operator(
+        organization: &Organization,
+        correlation_id: Uuid,
+        causation_id: Option<Uuid>,
+    ) -> NatsIdentityProjection {
+        let mut events = Vec::new();
+
         // Generate NKey
         let params = NKeyProjection::project_operator_nkey(organization);
-        let nkey = NKeyProjection::generate_nkey(&params);
+        let (nkey, nkey_event) = NKeyProjection::generate_nkey(&params, correlation_id, causation_id);
+        events.push(crate::events::KeyEvent::NKeyGenerated(nkey_event));
 
         // Create claims
         let signing_keys = vec![]; // TODO: Load from org metadata
-        let claims = JwtClaimsProjection::project_operator_claims(organization, &nkey, signing_keys);
+        let (claims, claims_event) = JwtClaimsProjection::project_operator_claims(
+            organization,
+            &nkey,
+            signing_keys,
+            correlation_id,
+            Some(correlation_id),
+        );
+        events.push(crate::events::KeyEvent::JwtClaimsCreated(claims_event));
 
         // Sign JWT
-        let jwt = JwtSigningProjection::sign_operator_jwt(claims, &nkey);
+        let (jwt, jwt_event) = JwtSigningProjection::sign_operator_jwt(
+            claims,
+            &nkey,
+            correlation_id,
+            Some(correlation_id),
+        );
+        events.push(crate::events::KeyEvent::JwtSigned(jwt_event));
 
         NatsIdentityProjection {
             nkey,
             jwt,
             credential: None, // Operators don't need credential files
+            events,
         }
     }
 
@@ -620,29 +743,45 @@ impl NatsProjection {
         unit: &OrganizationUnit,
         operator_nkey: &NKeyPair,
         limits: Option<AccountLimits>,
+        correlation_id: Uuid,
+        causation_id: Option<Uuid>,
     ) -> NatsIdentityProjection {
+        let mut events = Vec::new();
+
         // Generate NKey
         let params = NKeyProjection::project_account_nkey(organization, unit);
-        let nkey = NKeyProjection::generate_nkey(&params);
+        let (nkey, nkey_event) = NKeyProjection::generate_nkey(&params, correlation_id, causation_id);
+        events.push(crate::events::KeyEvent::NKeyGenerated(nkey_event));
 
         // Create claims
         let signing_keys = vec![]; // TODO: Load from unit metadata
-        let claims = JwtClaimsProjection::project_account_claims(
+        let (claims, claims_event) = JwtClaimsProjection::project_account_claims(
             organization,
             unit,
             &nkey,
             operator_nkey,
             signing_keys,
             limits,
+            correlation_id,
+            Some(correlation_id),
         );
+        events.push(crate::events::KeyEvent::JwtClaimsCreated(claims_event));
 
         // Sign JWT (operator signs account)
-        let jwt = JwtSigningProjection::sign_account_jwt(claims, operator_nkey, &nkey.public_key);
+        let (jwt, jwt_event) = JwtSigningProjection::sign_account_jwt(
+            claims,
+            operator_nkey,
+            &nkey.public_key,
+            correlation_id,
+            Some(correlation_id),
+        );
+        events.push(crate::events::KeyEvent::JwtSigned(jwt_event));
 
         NatsIdentityProjection {
             nkey,
             jwt,
             credential: None, // Accounts don't need credential files
+            events,
         }
     }
 
@@ -661,22 +800,37 @@ impl NatsProjection {
         account_nkey: &NKeyPair,
         permissions: Option<Permissions>,
         limits: Option<UserLimits>,
+        correlation_id: Uuid,
+        causation_id: Option<Uuid>,
     ) -> NatsIdentityProjection {
+        let mut events = Vec::new();
+
         // Generate NKey
         let params = NKeyProjection::project_user_nkey(person, organization);
-        let nkey = NKeyProjection::generate_nkey(&params);
+        let (nkey, nkey_event) = NKeyProjection::generate_nkey(&params, correlation_id, causation_id);
+        events.push(crate::events::KeyEvent::NKeyGenerated(nkey_event));
 
         // Create claims
-        let claims = JwtClaimsProjection::project_user_claims(
+        let (claims, claims_event) = JwtClaimsProjection::project_user_claims(
             person,
             &nkey,
             account_nkey,
             permissions,
             limits,
+            correlation_id,
+            Some(correlation_id),
         );
+        events.push(crate::events::KeyEvent::JwtClaimsCreated(claims_event));
 
         // Sign JWT (account signs user)
-        let jwt = JwtSigningProjection::sign_user_jwt(claims, account_nkey, &nkey.public_key);
+        let (jwt, jwt_event) = JwtSigningProjection::sign_user_jwt(
+            claims,
+            account_nkey,
+            &nkey.public_key,
+            correlation_id,
+            Some(correlation_id),
+        );
+        events.push(crate::events::KeyEvent::JwtSigned(jwt_event));
 
         // Create credential file (JWT + seed combined)
         let credential = NatsCredential::new(
@@ -689,6 +843,7 @@ impl NatsProjection {
             nkey,
             jwt,
             credential: Some(credential),
+            events,
         }
     }
 
@@ -709,22 +864,37 @@ impl NatsProjection {
         account_nkey: &NKeyPair,
         permissions: Option<Permissions>,
         limits: Option<UserLimits>,
+        correlation_id: Uuid,
+        causation_id: Option<Uuid>,
     ) -> NatsIdentityProjection {
+        let mut events = Vec::new();
+
         // Generate NKey
         let params = NKeyProjection::project_user_identity_nkey(user, organization);
-        let nkey = NKeyProjection::generate_nkey(&params);
+        let (nkey, nkey_event) = NKeyProjection::generate_nkey(&params, correlation_id, causation_id);
+        events.push(crate::events::KeyEvent::NKeyGenerated(nkey_event));
 
         // Create claims
-        let claims = JwtClaimsProjection::project_user_identity_claims(
+        let (claims, claims_event) = JwtClaimsProjection::project_user_identity_claims(
             user,
             &nkey,
             account_nkey,
             permissions,
             limits,
+            correlation_id,
+            Some(correlation_id),
         );
+        events.push(crate::events::KeyEvent::JwtClaimsCreated(claims_event));
 
         // Sign JWT (account signs user)
-        let jwt = JwtSigningProjection::sign_user_jwt(claims, account_nkey, &nkey.public_key);
+        let (jwt, jwt_event) = JwtSigningProjection::sign_user_jwt(
+            claims,
+            account_nkey,
+            &nkey.public_key,
+            correlation_id,
+            Some(correlation_id),
+        );
+        events.push(crate::events::KeyEvent::JwtSigned(jwt_event));
 
         // Create credential file (JWT + seed combined)
         let credential = NatsCredential::new(
@@ -737,6 +907,7 @@ impl NatsProjection {
             nkey,
             jwt,
             credential: Some(credential),
+            events,
         }
     }
 
@@ -755,10 +926,15 @@ impl NatsProjection {
         parent_org: Option<&Organization>,
         operator_nkey: &NKeyPair,
         limits: Option<AccountLimits>,
+        correlation_id: Uuid,
+        causation_id: Option<Uuid>,
     ) -> NatsIdentityProjection {
+        let mut events = Vec::new();
+
         // Generate NKey
         let params = NKeyProjection::project_account_identity_nkey(account, parent_org);
-        let nkey = NKeyProjection::generate_nkey(&params);
+        let (nkey, nkey_event) = NKeyProjection::generate_nkey(&params, correlation_id, causation_id);
+        events.push(crate::events::KeyEvent::NKeyGenerated(nkey_event));
 
         // Extract organization details
         let (org, unit) = match account {
@@ -770,7 +946,7 @@ impl NatsProjection {
 
         // Create claims
         let signing_keys = vec![]; // TODO: Load from metadata
-        let claims = if let Some(unit) = unit {
+        let (claims, claims_event) = if let Some(unit) = unit {
             JwtClaimsProjection::project_account_claims(
                 org,
                 unit,
@@ -778,6 +954,8 @@ impl NatsProjection {
                 operator_nkey,
                 signing_keys,
                 limits,
+                correlation_id,
+                Some(correlation_id),
             )
         } else {
             // Organization as account - create synthetic unit
@@ -795,16 +973,27 @@ impl NatsProjection {
                 operator_nkey,
                 signing_keys,
                 limits,
+                correlation_id,
+                Some(correlation_id),
             )
         };
+        events.push(crate::events::KeyEvent::JwtClaimsCreated(claims_event));
 
         // Sign JWT (operator signs account)
-        let jwt = JwtSigningProjection::sign_account_jwt(claims, operator_nkey, &nkey.public_key);
+        let (jwt, jwt_event) = JwtSigningProjection::sign_account_jwt(
+            claims,
+            operator_nkey,
+            &nkey.public_key,
+            correlation_id,
+            Some(correlation_id),
+        );
+        events.push(crate::events::KeyEvent::JwtSigned(jwt_event));
 
         NatsIdentityProjection {
             nkey,
             jwt,
             credential: None, // Accounts don't need credential files
+            events,
         }
     }
 
@@ -855,13 +1044,23 @@ impl NatsProjection {
         organization: &Organization,
         people: &[Person],
     ) -> OrganizationBootstrap {
+        // US-021: Generate correlation ID for this bootstrap operation
+        let correlation_id = Uuid::now_v7();
+
         // Step 1: Create Operator identity (root of trust)
-        let operator = Self::project_operator(organization);
+        let operator = Self::project_operator(organization, correlation_id, None);
 
         // Step 2: Create Account identities for each OrganizationUnit
         let mut accounts = std::collections::HashMap::new();
         for unit in &organization.units {
-            let account = Self::project_account(organization, unit, &operator.nkey, None);
+            let account = Self::project_account(
+                organization,
+                unit,
+                &operator.nkey,
+                None,
+                correlation_id,
+                Some(correlation_id), // Caused by operator creation
+            );
             accounts.insert(unit.id, (unit.clone(), account));
         }
 
@@ -878,7 +1077,9 @@ impl NatsProjection {
                 organization,
                 &default_unit,
                 &operator.nkey,
-                None
+                None,
+                correlation_id,
+                Some(correlation_id), // Caused by operator creation
             );
             accounts.insert(default_unit.id, (default_unit, default_account));
         }
@@ -912,6 +1113,8 @@ impl NatsProjection {
                 account_nkey,
                 None, // Default permissions
                 None, // Default limits
+                correlation_id,
+                Some(correlation_id), // Caused by operator/account creation
             );
 
             users.insert(person.id, (person.clone(), user));

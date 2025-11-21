@@ -48,8 +48,12 @@ pub struct NatsOperatorCreated {
 pub fn handle_create_nats_operator(
     cmd: CreateNatsOperator,
 ) -> Result<NatsOperatorCreated, String> {
-    // Step 1: Project organization to operator identity
-    let identity = NatsProjection::project_operator(&cmd.organization);
+    // Step 1: Project organization to operator identity (US-021: collects projection events)
+    let identity = NatsProjection::project_operator(
+        &cmd.organization,
+        cmd.correlation_id,
+        cmd.causation_id,
+    );
 
     // Step 2: Emit operator created event
     let event = KeyEvent::NatsOperatorCreated(NatsOperatorCreatedEvent {
@@ -63,10 +67,14 @@ pub fn handle_create_nats_operator(
         causation_id: cmd.causation_id,
     });
 
+    // US-021: Combine projection events with high-level event
+    let mut all_events = identity.events;
+    all_events.push(event);
+
     Ok(NatsOperatorCreated {
         operator_nkey: identity.nkey,
         operator_jwt: identity.jwt,
-        events: vec![event],
+        events: all_events,
     })
 }
 
@@ -102,12 +110,14 @@ pub struct NatsAccountCreated {
 pub fn handle_create_nats_account(
     cmd: CreateNatsAccount,
 ) -> Result<NatsAccountCreated, String> {
-    // Step 1: Project account identity to NATS account
+    // Step 1: Project account identity to NATS account (US-021: collects projection events)
     let identity = NatsProjection::project_account_identity(
         &cmd.account,
         cmd.parent_org.as_ref(),
         &cmd.operator_nkey,
         cmd.limits,
+        cmd.correlation_id,
+        cmd.causation_id,
     );
 
     // Step 2: Emit account created event
@@ -127,10 +137,14 @@ pub fn handle_create_nats_account(
         causation_id: cmd.causation_id,
     });
 
+    // US-021: Combine projection events with high-level event
+    let mut all_events = identity.events;
+    all_events.push(event);
+
     Ok(NatsAccountCreated {
         account_nkey: identity.nkey,
         account_jwt: identity.jwt,
-        events: vec![event],
+        events: all_events,
     })
 }
 
@@ -258,14 +272,19 @@ pub fn handle_create_nats_user(cmd: CreateNatsUser) -> Result<NatsUserCreated, S
         }
     }
 
-    // Step 3: Project user identity to NATS user
+    // Step 3: Project user identity to NATS user (US-021: collects projection events)
     let identity = NatsProjection::project_user_identity(
         &cmd.user,
         &cmd.organization,
         &cmd.account_nkey,
         cmd.permissions,
         cmd.limits,
+        cmd.correlation_id,
+        cmd.causation_id,
     );
+
+    // US-021: Extend events with projection events
+    events.extend(identity.events);
 
     // Step 4: Emit user created event
     events.push(KeyEvent::NatsUserCreated(NatsUserCreatedEvent {
