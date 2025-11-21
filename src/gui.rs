@@ -1516,10 +1516,36 @@ impl CimKeysApp {
             Message::RootCAGenerated(result) => {
                 match result {
                     Ok(certificate) => {
-                        // TODO: Store certificate in projection
-                        // TODO: Create certificate node in PKI graph
-                        self.status_message = format!("✅ Root CA generated successfully! Fingerprint: {}", &certificate.fingerprint[..16]);
-                        tracing::info!("Root CA generated: {}", certificate.fingerprint);
+                        // Create Root CA node in graph
+                        let cert_id = Uuid::now_v7();
+                        let subject = format!("CN={} Root CA, O={}", self.organization_name, self.organization_name);
+                        let root_ca_node = graph::GraphNode {
+                            id: cert_id,
+                            node_type: graph::NodeType::RootCertificate {
+                                cert_id,
+                                subject: subject.clone(),
+                                issuer: subject.clone(), // Self-signed
+                                not_before: chrono::Utc::now(),
+                                not_after: chrono::Utc::now() + chrono::Duration::days(365 * 20), // 20 years
+                                key_usage: vec!["keyCertSign".to_string(), "cRLSign".to_string()],
+                            },
+                            position: iced::Point::new(400.0, 100.0), // Center top of graph
+                            color: iced::Color::from_rgb(0.2, 0.8, 0.2), // Green for Root CA
+                            label: format!("{} Root CA", self.organization_name),
+                        };
+
+                        // Add to graph
+                        self.org_graph.nodes.insert(cert_id, root_ca_node);
+
+                        // Switch to PKI view to show the new certificate
+                        self.graph_view = GraphView::PkiTrustChain;
+
+                        // TODO: Store certificate PEM data in projection
+                        // TODO: Store private key securely
+                        // TODO: Emit CertificateGeneratedEvent
+
+                        self.status_message = format!("✅ Root CA generated! Fingerprint: {} | View in PKI Graph", &certificate.fingerprint[..16]);
+                        tracing::info!("Root CA generated and added to graph: {}", certificate.fingerprint);
                     }
                     Err(e) => {
                         self.status_message = format!("❌ Root CA generation failed: {}", e);
