@@ -27,6 +27,19 @@ pub enum PersonEvents {
     /// Person was deactivated
     PersonDeactivated(PersonDeactivatedEvent),
 
+    // Lifecycle State Transitions (Phase 12)
+    /// Person activated
+    PersonActivated(PersonActivatedEvent),
+
+    /// Person suspended
+    PersonSuspended(PersonSuspendedEvent),
+
+    /// Person reactivated
+    PersonReactivated(PersonReactivatedEvent),
+
+    /// Person archived (terminal)
+    PersonArchived(PersonArchivedEvent),
+
     /// SSH key was generated for this person
     SshKeyGenerated(SshKeyGeneratedEvent),
 
@@ -94,6 +107,53 @@ pub struct PersonDeactivatedEvent {
     pub causation_id: Option<Uuid>,
 }
 
+// ============================================================================
+// Person Lifecycle State Transitions (Phase 12)
+// ============================================================================
+
+/// Person activated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersonActivatedEvent {
+    pub person_id: Uuid,
+    pub activated_at: DateTime<Utc>,
+    pub activated_by: Uuid,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Person suspended
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersonSuspendedEvent {
+    pub person_id: Uuid,
+    pub reason: String,
+    pub suspended_at: DateTime<Utc>,
+    pub suspended_by: Uuid,
+    pub expected_return: Option<DateTime<Utc>>,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Person reactivated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersonReactivatedEvent {
+    pub person_id: Uuid,
+    pub reactivated_at: DateTime<Utc>,
+    pub reactivated_by: Uuid,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Person archived (terminal state)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersonArchivedEvent {
+    pub person_id: Uuid,
+    pub reason: String,
+    pub archived_at: DateTime<Utc>,
+    pub archived_by: Uuid,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
 /// SSH key generated for person
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SshKeyGeneratedEvent {
@@ -126,6 +186,10 @@ impl DomainEvent for PersonEvents {
             PersonEvents::RoleAssigned(e) => e.person_id,
             PersonEvents::RoleRemoved(e) => e.person_id,
             PersonEvents::PersonDeactivated(e) => e.person_id,
+            PersonEvents::PersonActivated(e) => e.person_id,
+            PersonEvents::PersonSuspended(e) => e.person_id,
+            PersonEvents::PersonReactivated(e) => e.person_id,
+            PersonEvents::PersonArchived(e) => e.person_id,
             PersonEvents::SshKeyGenerated(e) => e.person_id,
             PersonEvents::GpgKeyGenerated(e) => e.person_id,
         }
@@ -138,6 +202,10 @@ impl DomainEvent for PersonEvents {
             PersonEvents::RoleAssigned(_) => "RoleAssigned",
             PersonEvents::RoleRemoved(_) => "RoleRemoved",
             PersonEvents::PersonDeactivated(_) => "PersonDeactivated",
+            PersonEvents::PersonActivated(_) => "PersonActivated",
+            PersonEvents::PersonSuspended(_) => "PersonSuspended",
+            PersonEvents::PersonReactivated(_) => "PersonReactivated",
+            PersonEvents::PersonArchived(_) => "PersonArchived",
             PersonEvents::SshKeyGenerated(_) => "SshKeyGenerated",
             PersonEvents::GpgKeyGenerated(_) => "GpgKeyGenerated",
         }

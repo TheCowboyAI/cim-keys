@@ -46,6 +46,26 @@ pub enum OrganizationEvents {
 
     /// A policy was revoked
     PolicyRevoked(PolicyRevokedEvent),
+
+    // Organization Lifecycle State Transitions (Phase 13)
+    /// Organization activated
+    OrganizationActivated(OrganizationActivatedEvent),
+
+    /// Organization suspended
+    OrganizationSuspended(OrganizationSuspendedEvent),
+
+    /// Organization dissolved (terminal)
+    OrganizationDissolved(OrganizationDissolvedEvent),
+
+    // Policy Lifecycle State Transitions (Phase 13)
+    /// Policy activated
+    PolicyActivated(PolicyActivatedEvent),
+
+    /// Policy amended
+    PolicyAmended(PolicyAmendedEvent),
+
+    /// Policy suspended
+    PolicySuspended(PolicySuspendedEvent),
 }
 
 /// A new organization was created
@@ -185,6 +205,78 @@ pub struct PolicyRevokedEvent {
     pub causation_id: Option<Uuid>,
 }
 
+// ============================================================================
+// Organization Lifecycle State Transitions (Phase 13)
+// ============================================================================
+
+/// Organization activated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrganizationActivatedEvent {
+    pub organization_id: Uuid,
+    pub activated_at: DateTime<Utc>,
+    pub activated_by: Uuid,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Organization suspended
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrganizationSuspendedEvent {
+    pub organization_id: Uuid,
+    pub reason: String,
+    pub suspended_at: DateTime<Utc>,
+    pub suspended_by: Uuid,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Organization dissolved (terminal state)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrganizationDissolvedEvent {
+    pub organization_id: Uuid,
+    pub reason: String,
+    pub dissolved_at: DateTime<Utc>,
+    pub dissolved_by: Uuid,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+// ============================================================================
+// Policy Lifecycle State Transitions (Phase 13)
+// ============================================================================
+
+/// Policy activated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PolicyActivatedEvent {
+    pub policy_id: Uuid,
+    pub activated_at: DateTime<Utc>,
+    pub activated_by: Uuid,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Policy amended
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PolicyAmendedEvent {
+    pub policy_id: Uuid,
+    pub amendment_description: String,
+    pub amended_at: DateTime<Utc>,
+    pub amended_by: Uuid,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Policy suspended
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PolicySuspendedEvent {
+    pub policy_id: Uuid,
+    pub reason: String,
+    pub suspended_at: DateTime<Utc>,
+    pub suspended_by: Uuid,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
 impl DomainEvent for OrganizationEvents {
     fn aggregate_id(&self) -> Uuid {
         match self {
@@ -199,6 +291,12 @@ impl DomainEvent for OrganizationEvents {
             OrganizationEvents::PolicyCreated(e) => e.policy_id,
             OrganizationEvents::PolicyUpdated(e) => e.policy_id,
             OrganizationEvents::PolicyRevoked(e) => e.policy_id,
+            OrganizationEvents::OrganizationActivated(e) => e.organization_id,
+            OrganizationEvents::OrganizationSuspended(e) => e.organization_id,
+            OrganizationEvents::OrganizationDissolved(e) => e.organization_id,
+            OrganizationEvents::PolicyActivated(e) => e.policy_id,
+            OrganizationEvents::PolicyAmended(e) => e.policy_id,
+            OrganizationEvents::PolicySuspended(e) => e.policy_id,
         }
     }
 
@@ -215,6 +313,12 @@ impl DomainEvent for OrganizationEvents {
             OrganizationEvents::PolicyCreated(_) => "PolicyCreated",
             OrganizationEvents::PolicyUpdated(_) => "PolicyUpdated",
             OrganizationEvents::PolicyRevoked(_) => "PolicyRevoked",
+            OrganizationEvents::OrganizationActivated(_) => "OrganizationActivated",
+            OrganizationEvents::OrganizationSuspended(_) => "OrganizationSuspended",
+            OrganizationEvents::OrganizationDissolved(_) => "OrganizationDissolved",
+            OrganizationEvents::PolicyActivated(_) => "PolicyActivated",
+            OrganizationEvents::PolicyAmended(_) => "PolicyAmended",
+            OrganizationEvents::PolicySuspended(_) => "PolicySuspended",
         }
     }
 }
