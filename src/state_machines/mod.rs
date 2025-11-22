@@ -20,12 +20,12 @@
 //! - LocationState - Physical/virtual location lifecycle (4 states) ✅
 //! - RelationshipState - Graph relationship lifecycle (6 states) ✅
 //!
-//! ### Phase 3: Infrastructure & Export (PENDING)
-//! - ManifestState - Export manifest lifecycle (6 states)
-//! - NatsOperatorState - NATS operator lifecycle (5 states)
-//! - NatsAccountState - NATS account lifecycle (5 states)
-//! - NatsUserState - NATS user lifecycle (5 states)
-//! - YubiKeyState - Hardware security module lifecycle (6 states)
+//! ### Phase 3: Infrastructure & Export (IMPLEMENTED)
+//! - ManifestState - Export manifest lifecycle (6 states) ✅
+//! - NatsOperatorState - NATS operator lifecycle (5 states) ✅
+//! - NatsAccountState - NATS account lifecycle (5 states) ✅
+//! - NatsUserState - NATS user lifecycle (5 states) ✅
+//! - YubiKeyState - Hardware security module lifecycle (6 states) ✅
 //!
 //! All state machines follow a common pattern:
 //! - States are enums with data
@@ -45,6 +45,11 @@ pub mod person;
 pub mod organization;
 pub mod location;
 pub mod relationship;
+pub mod manifest;
+pub mod nats_operator;
+pub mod nats_account;
+pub mod nats_user;
+pub mod yubikey;
 
 // Re-export workflow state machines
 pub use workflows::{
@@ -59,5 +64,12 @@ pub use key::KeyState;
 pub use policy::PolicyState;
 pub use person::PersonState;
 pub use organization::OrganizationState;
-pub use location::{LocationState, LocationType, AccessGrant, AccessLevel};
-pub use relationship::{RelationshipState, RelationshipMetadata, RelationshipStrength, RelationshipChange};
+pub use location::{AccessGrant, AccessLevel, LocationState, LocationType};
+pub use relationship::{
+    RelationshipChange, RelationshipMetadata, RelationshipState, RelationshipStrength,
+};
+pub use manifest::{ManifestState, FailedStage};
+pub use nats_operator::NatsOperatorState;
+pub use nats_account::{NatsAccountState, NatsPermissions};
+pub use nats_user::{NatsUserState, NatsUserPermissions};
+pub use yubikey::{YubiKeyState, RetirementReason};
