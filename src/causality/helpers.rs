@@ -3,19 +3,19 @@
 //! Convenience functions for integrating causality with cim-keys domain events.
 
 use super::types::{CausalEvent, CausalId};
-use crate::events::KeyEvent;
+use crate::events::DomainEvent;
 
-/// Wrap a KeyEvent in a CausalEvent with no dependencies
+/// Wrap a DomainEvent in a CausalEvent with no dependencies
 ///
 /// Use this for root events that don't depend on anything.
 ///
 /// # Example
 ///
 /// ```rust
-/// use cim_keys::events::{KeyEvent, KeyGeneratedEvent};
+/// use cim_keys::events::{DomainEvent, KeyGeneratedEvent};
 /// use cim_keys::causality::helpers::wrap_event;
 ///
-/// let key_event = KeyEvent::KeyGenerated(KeyGeneratedEvent {
+/// let key_event = DomainEvent::KeyGenerated(KeyGeneratedEvent {
 ///     key_id: uuid::Uuid::new_v4(),
 ///     public_key: vec![1, 2, 3],
 ///     algorithm: "RSA-4096".to_string(),
@@ -25,21 +25,21 @@ use crate::events::KeyEvent;
 /// let causal_event = wrap_event(key_event);
 /// assert!(causal_event.dependencies().is_empty());
 /// ```
-pub fn wrap_event(event: KeyEvent) -> CausalEvent<KeyEvent> {
+pub fn wrap_event(event: DomainEvent) -> CausalEvent<DomainEvent> {
     CausalEvent::new(event)
 }
 
-/// Wrap a KeyEvent in a CausalEvent with explicit dependencies
+/// Wrap a DomainEvent in a CausalEvent with explicit dependencies
 ///
 /// Use this for events that depend on previous events.
 ///
 /// # Example
 ///
 /// ```rust
-/// use cim_keys::events::{KeyEvent, KeyGeneratedEvent, KeyExportedEvent};
+/// use cim_keys::events::{DomainEvent, KeyGeneratedEvent, KeyExportedEvent};
 /// use cim_keys::causality::helpers::{wrap_event, wrap_dependent_event};
 ///
-/// let root_event = wrap_event(KeyEvent::KeyGenerated(KeyGeneratedEvent {
+/// let root_event = wrap_event(DomainEvent::KeyGenerated(KeyGeneratedEvent {
 ///     key_id: uuid::Uuid::new_v4(),
 ///     public_key: vec![1, 2, 3],
 ///     algorithm: "RSA-4096".to_string(),
@@ -47,7 +47,7 @@ pub fn wrap_event(event: KeyEvent) -> CausalEvent<KeyEvent> {
 /// }));
 ///
 /// let dependent = wrap_dependent_event(
-///     KeyEvent::KeyExported(KeyExportedEvent {
+///     DomainEvent::KeyExported(KeyExportedEvent {
 ///         key_id: uuid::Uuid::new_v4(),
 ///         export_path: "/mnt/encrypted/key.pem".to_string(),
 ///         format: "PEM".to_string(),
@@ -58,19 +58,19 @@ pub fn wrap_event(event: KeyEvent) -> CausalEvent<KeyEvent> {
 ///
 /// assert_eq!(dependent.dependencies().len(), 1);
 /// ```
-pub fn wrap_dependent_event(event: KeyEvent, dependencies: Vec<CausalId>) -> CausalEvent<KeyEvent> {
+pub fn wrap_dependent_event(event: DomainEvent, dependencies: Vec<CausalId>) -> CausalEvent<DomainEvent> {
     CausalEvent::caused_by(event, dependencies)
 }
 
-/// Extract the KeyEvent from a CausalEvent
+/// Extract the DomainEvent from a CausalEvent
 ///
 /// # Example
 ///
 /// ```rust
-/// use cim_keys::events::{KeyEvent, KeyGeneratedEvent};
+/// use cim_keys::events::{DomainEvent, KeyGeneratedEvent};
 /// use cim_keys::causality::helpers::{wrap_event, unwrap_event};
 ///
-/// let original = KeyEvent::KeyGenerated(KeyGeneratedEvent {
+/// let original = DomainEvent::KeyGenerated(KeyGeneratedEvent {
 ///     key_id: uuid::Uuid::new_v4(),
 ///     public_key: vec![1, 2, 3],
 ///     algorithm: "RSA-4096".to_string(),
@@ -82,19 +82,19 @@ pub fn wrap_dependent_event(event: KeyEvent, dependencies: Vec<CausalId>) -> Cau
 ///
 /// assert_eq!(extracted, original);
 /// ```
-pub fn unwrap_event(causal_event: CausalEvent<KeyEvent>) -> KeyEvent {
+pub fn unwrap_event(causal_event: CausalEvent<DomainEvent>) -> DomainEvent {
     causal_event.into_data()
 }
 
-/// Extract a reference to the KeyEvent from a CausalEvent
+/// Extract a reference to the DomainEvent from a CausalEvent
 ///
 /// # Example
 ///
 /// ```rust
-/// use cim_keys::events::{KeyEvent, KeyGeneratedEvent};
+/// use cim_keys::events::{DomainEvent, KeyGeneratedEvent};
 /// use cim_keys::causality::helpers::{wrap_event, peek_event};
 ///
-/// let original = KeyEvent::KeyGenerated(KeyGeneratedEvent {
+/// let original = DomainEvent::KeyGenerated(KeyGeneratedEvent {
 ///     key_id: uuid::Uuid::new_v4(),
 ///     public_key: vec![1, 2, 3],
 ///     algorithm: "RSA-4096".to_string(),
@@ -106,9 +106,9 @@ pub fn unwrap_event(causal_event: CausalEvent<KeyEvent>) -> KeyEvent {
 ///
 /// assert_eq!(peeked, &original);
 /// ```
-pub fn peek_event(causal_event: &CausalEvent<KeyEvent>) -> &KeyEvent {
+pub fn peek_event(causal_event: &CausalEvent<DomainEvent>) -> &DomainEvent {
     causal_event.data()
 }
 
 // Note: Tests for these helpers are in examples/causality_integration.rs
-// which demonstrates real-world usage with actual KeyEvent types.
+// which demonstrates real-world usage with actual DomainEvent types.

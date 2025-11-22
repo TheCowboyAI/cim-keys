@@ -5662,7 +5662,7 @@ async fn generate_all_keys(
     projection: Arc<RwLock<OfflineKeyProjection>>,
 ) -> Result<usize, String> {
     use crate::commands::{KeyCommand, GenerateSshKeyCommand};
-    use crate::events::KeyEvent;
+    use crate::events::DomainEvent;
 
     let mut total_keys = 0;
     let mut events_to_apply = Vec::new();
@@ -5701,7 +5701,7 @@ async fn generate_all_keys(
         let projection_write = projection.write().await;
         for event in events_to_apply {
             match event {
-                KeyEvent::SshKeyGenerated(e) => {
+                DomainEvent::Key(crate::events::KeyEvents::SshKeyGenerated(e)) => {
                     // Save metadata about the SSH key generation
                     // Actual key generation would happen in a dedicated service
                     let key_dir = projection_write.root_path.join("keys").join("ssh");
@@ -5739,7 +5739,7 @@ async fn generate_root_ca(
     projection: Arc<RwLock<OfflineKeyProjection>>,
 ) -> Result<Uuid, String> {
     use crate::commands::{KeyCommand, GenerateCertificateCommand, CertificateSubject};
-    use crate::events::KeyEvent;
+    use crate::events::DomainEvent;
     use crate::certificate_service;
 
     // Create Root CA command
@@ -5786,7 +5786,7 @@ async fn generate_root_ca(
         let projection_write = projection.write().await;
 
         for event in events {
-            if let KeyEvent::CertificateGenerated(e) = event {
+            if let DomainEvent::Certificate(crate::events::CertificateEvents::CertificateGenerated(e)) = event {
                 cert_id = e.cert_id;
 
                 // Generate actual certificate using the service

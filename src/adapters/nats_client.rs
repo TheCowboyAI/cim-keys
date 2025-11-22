@@ -19,9 +19,8 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
-use cim_domain::DomainEvent;
 use crate::config::{NatsConfig, NATS_URL};
-use crate::events::KeyEvent;
+use crate::events::DomainEvent;
 
 #[cfg(feature = "ipld")]
 use crate::ipld_support::ContentAddressedEvent;
@@ -113,7 +112,7 @@ impl NatsClientAdapter {
     }
 
     /// Publish an event to NATS
-    pub async fn publish_event(&self, event: &KeyEvent) -> Result<(), NatsClientError> {
+    pub async fn publish_event(&self, event: &DomainEvent) -> Result<(), NatsClientError> {
         let subject = self.build_subject(event);
 
         // Serialize event
@@ -286,7 +285,7 @@ impl NatsClientAdapter {
     }
 
     /// Build NATS subject from event type
-    fn build_subject(&self, event: &KeyEvent) -> String {
+    fn build_subject(&self, event: &DomainEvent) -> String {
         let event_type = event.event_type();
         let aggregate_type = Self::aggregate_type_from_event(event);
 
@@ -299,36 +298,19 @@ impl NatsClientAdapter {
     }
 
     /// Extract aggregate type from event
-    fn aggregate_type_from_event(event: &KeyEvent) -> &'static str {
-        use crate::events::KeyEvent;
-
+    fn aggregate_type_from_event(event: &DomainEvent) -> &'static str {
         match event {
-            KeyEvent::KeyGenerated(_) | KeyEvent::KeyImported(_) |
-            KeyEvent::KeyExported(_) | KeyEvent::KeyRevoked(_) => "key",
-
-            KeyEvent::CertificateGenerated(_) | KeyEvent::CertificateSigned(_) |
-            KeyEvent::CertificateExported(_) => "certificate",
-
-            KeyEvent::YubiKeyProvisioned(_) | KeyEvent::PinConfigured(_) |
-            KeyEvent::PukConfigured(_) | KeyEvent::ManagementKeyRotated(_) |
-            KeyEvent::YubiKeyDetected(_) | KeyEvent::KeyGeneratedInSlot(_) |
-            KeyEvent::CertificateImportedToSlot(_) => "yubikey",
-
-            KeyEvent::NatsOperatorCreated(_) => "nats.operator",
-            KeyEvent::NatsAccountCreated(_) => "nats.account",
-            KeyEvent::NatsUserCreated(_) => "nats.user",
-            KeyEvent::NatsSigningKeyGenerated(_) | KeyEvent::NKeyGenerated(_) => "nats.key",
-            KeyEvent::JwtClaimsCreated(_) | KeyEvent::JwtSigned(_) => "nats.jwt",
-
-            KeyEvent::PersonCreated(_) => "person",
-            KeyEvent::OrganizationCreated(_) => "organization",
-            KeyEvent::OrganizationalUnitCreated(_) => "organizational_unit",
-            KeyEvent::LocationCreated(_) => "location",
-            KeyEvent::RoleCreated(_) => "role",
-            KeyEvent::PolicyCreated(_) => "policy",
-            KeyEvent::RelationshipEstablished(_) => "relationship",
-
-            _ => "event",
+            DomainEvent::Key(_) => "key",
+            DomainEvent::Certificate(_) => "certificate",
+            DomainEvent::YubiKey(_) => "yubikey",
+            DomainEvent::NatsOperator(_) => "nats.operator",
+            DomainEvent::NatsAccount(_) => "nats.account",
+            DomainEvent::NatsUser(_) => "nats.user",
+            DomainEvent::Person(_) => "person",
+            DomainEvent::Organization(_) => "organization",
+            DomainEvent::Location(_) => "location",
+            DomainEvent::Relationship(_) => "relationship",
+            DomainEvent::Manifest(_) => "manifest",
         }
     }
 
@@ -390,14 +372,14 @@ mod tests {
         let config = NatsConfig::default();
         let adapter = NatsClientAdapter::new(config, PathBuf::from("/tmp/queue.json"));
 
-        let event = KeyEvent::KeyGenerated(KeyGeneratedEvent {
+        let event = DomainEvent::Key(crate::events::KeyEvents::KeyGenerated(crate::events::key::KeyGeneratedEvent {
             key_id: Uuid::now_v7(),
-            algorithm: KeyAlgorithm::Ed25519,
-            purpose: KeyPurpose::Signing,
+            algorithm: crate::types::KeyAlgorithm::Ed25519,
+            purpose: crate::types::KeyPurpose::Signing,
             generated_at: chrono::Utc::now(),
             generated_by: "test".to_string(),
             hardware_backed: false,
-            metadata: KeyMetadata {
+            metadata: crate::types::KeyMetadata {
                 label: "test".to_string(),
                 description: None,
                 tags: vec![],
@@ -406,8 +388,10 @@ mod tests {
                 jwt_alg: None,
                 jwt_use: None,
             },
-            owner: None,
-        });
+            ownership: None,
+            correlation_id: Uuid::now_v7(),
+            causation_id: None,
+        }));
 
         let subject = adapter.build_subject(&event);
         assert_eq!(subject, "cim.keys.key.keygenerated");
