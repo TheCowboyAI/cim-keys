@@ -357,7 +357,7 @@ async fn validate_config_command(
             println!("   • Mode: {:?}", config.mode);
             println!("   • NATS enabled: {}", config.nats.enabled);
             if config.nats.enabled {
-                println!("   • NATS URL: {}", config.nats.url);
+                println!("   • NATS URL: {}", cim_keys::config::NATS_URL);
                 println!("   • Stream: {}", config.nats.stream_name);
                 println!("   • Subject prefix: {}", config.nats.subject_prefix);
             }

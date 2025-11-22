@@ -2960,7 +2960,7 @@ impl CimKeysApp {
                                                 // Check if NATS publishing is enabled via configuration
                                                 if let Some(ref cfg) = self.config {
                                                     if cfg.nats.enabled {
-                                                        tracing::info!("📡 NATS publishing enabled - events would be published to {}", cfg.nats.url);
+                                                        tracing::info!("📡 NATS publishing enabled - events would be published to {}", crate::config::NATS_URL);
                                                         // TODO (v0.9.0): Publish to NATS here
                                                     } else {
                                                         tracing::debug!("📴 NATS disabled - events logged locally only");
@@ -2996,7 +2996,7 @@ impl CimKeysApp {
                                                 // Check if NATS publishing is enabled via configuration
                                                 if let Some(ref cfg) = self.config {
                                                     if cfg.nats.enabled {
-                                                        tracing::info!("📡 NATS publishing enabled - events would be published to {}", cfg.nats.url);
+                                                        tracing::info!("📡 NATS publishing enabled - events would be published to {}", crate::config::NATS_URL);
                                                         // TODO (v0.9.0): Publish to NATS here
                                                     } else {
                                                         tracing::debug!("📴 NATS disabled - events logged locally only");

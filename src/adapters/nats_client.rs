@@ -6,6 +6,12 @@
 //! - Offline-first design with local queueing
 //! - Automatic retry and reconnection
 //! - Subject-based routing for different event types
+//!
+//! ## Air-Gapped Offline Architecture
+//!
+//! **CRITICAL**: This adapter ONLY connects to localhost:4222. This system is
+//! designed for air-gapped offline operation with NATS running locally on the
+//! same machine. There is no configuration for remote NATS servers.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -14,7 +20,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
 use cim_domain::DomainEvent;
-use crate::config::NatsConfig;
+use crate::config::{NatsConfig, NATS_URL};
 use crate::events::KeyEvent;
 
 #[cfg(feature = "ipld")]
@@ -58,7 +64,7 @@ impl NatsClientAdapter {
         }
     }
 
-    /// Connect to NATS server
+    /// Connect to NATS server (localhost:4222 only)
     #[cfg(feature = "nats-client")]
     pub async fn connect(&self) -> Result<(), NatsClientError> {
         if !self.config.enabled {
@@ -66,7 +72,7 @@ impl NatsClientAdapter {
             return Ok(());
         }
 
-        info!("Connecting to NATS at {}", self.config.url);
+        info!("Connecting to NATS at {} (air-gapped localhost only)", NATS_URL);
 
         let mut connect_opts = ConnectOptions::new();
 
@@ -75,7 +81,7 @@ impl NatsClientAdapter {
             std::time::Duration::from_secs(self.config.connection_timeout_secs)
         );
 
-        // Add credentials if provided
+        // Add credentials if provided (typically not needed for localhost)
         if let Some(creds_path) = &self.config.credentials_file {
             connect_opts = connect_opts
                 .credentials_file(creds_path.to_str().ok_or_else(|| {
@@ -85,9 +91,9 @@ impl NatsClientAdapter {
                 .map_err(|e| NatsClientError::ConnectionError(e.to_string()))?;
         }
 
-        // Connect to NATS
+        // Connect to NATS (localhost:4222 only - hardcoded for air-gapped operation)
         let client = connect_opts
-            .connect(&self.config.url)
+            .connect(NATS_URL)
             .await
             .map_err(|e| NatsClientError::ConnectionError(e.to_string()))?;
 

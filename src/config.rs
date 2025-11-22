@@ -2,9 +2,23 @@
 //!
 //! Centralized configuration for cim-keys, including NATS streaming,
 //! storage paths, and operational modes.
+//!
+//! ## Air-Gapped Offline System Architecture
+//!
+//! **CRITICAL**: This is an offline, air-gapped PKI system. NATS MUST run locally
+//! on the same machine at `localhost:4222`. There is NO configuration for remote
+//! NATS servers - the system is designed to operate completely offline with local
+//! NATS for event streaming.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+
+/// NATS server URL - HARDCODED for air-gapped offline operation
+///
+/// This system is designed to run completely offline with NATS running locally
+/// on the same machine. The URL is intentionally not configurable to enforce
+/// the air-gapped architecture.
+pub const NATS_URL: &str = "nats://localhost:4222";
 
 /// Application configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,13 +44,13 @@ impl Default for Config {
 }
 
 /// NATS streaming configuration
+///
+/// NOTE: NATS URL is hardcoded to localhost:4222 (see NATS_URL constant)
+/// This system is designed for air-gapped offline operation only.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NatsConfig {
     /// Enable NATS event publishing
     pub enabled: bool,
-
-    /// NATS server URL
-    pub url: String,
 
     /// JetStream stream name for events
     pub stream_name: String,
@@ -50,10 +64,22 @@ pub struct NatsConfig {
     /// Subject prefix for events
     pub subject_prefix: String,
 
-    /// TLS configuration (optional)
+    /// Connection timeout in seconds
+    pub connection_timeout_secs: u64,
+
+    /// Enable JetStream (durable event streaming)
+    pub enable_jetstream: bool,
+
+    /// Enable IPLD content-addressed events
+    pub enable_ipld: bool,
+
+    /// Maximum retry attempts for failed publishes
+    pub max_retries: u32,
+
+    /// TLS configuration (optional - for localhost can be None)
     pub tls: Option<TlsConfig>,
 
-    /// Credentials file path (optional)
+    /// Credentials file path (optional - for localhost can be None)
     pub credentials_file: Option<PathBuf>,
 }
 
@@ -61,11 +87,14 @@ impl Default for NatsConfig {
     fn default() -> Self {
         Self {
             enabled: false, // Default to offline mode
-            url: "nats://localhost:4222".to_string(),
             stream_name: "CIM_GRAPH_EVENTS".to_string(),
             object_store_bucket: "cim-graph-payloads".to_string(),
             source_id: format!("cim-keys-v{}", env!("CARGO_PKG_VERSION")),
             subject_prefix: "cim.graph".to_string(),
+            connection_timeout_secs: 5,
+            enable_jetstream: true,
+            enable_ipld: true,
+            max_retries: 3,
             tls: None,
             credentials_file: None,
         }
@@ -152,12 +181,6 @@ impl Config {
     pub fn validate(&self) -> Result<(), ConfigError> {
         // Validate NATS configuration
         if self.nats.enabled {
-            if self.nats.url.is_empty() {
-                return Err(ConfigError::InvalidConfig(
-                    "NATS URL cannot be empty when enabled".to_string(),
-                ));
-            }
-
             if self.nats.stream_name.is_empty() {
                 return Err(ConfigError::InvalidConfig(
                     "Stream name cannot be empty".to_string(),
@@ -200,17 +223,16 @@ impl Config {
         let example = Config {
             nats: NatsConfig {
                 enabled: false,
-                url: "nats://leaf-node-1.local:4222".to_string(),
                 stream_name: "CIM_GRAPH_EVENTS".to_string(),
                 object_store_bucket: "cim-graph-payloads".to_string(),
                 source_id: "cim-keys-v0.8.0".to_string(),
                 subject_prefix: "cim.graph".to_string(),
-                tls: Some(TlsConfig {
-                    ca_cert: PathBuf::from("/path/to/ca-cert.pem"),
-                    client_cert: Some(PathBuf::from("/path/to/client-cert.pem")),
-                    client_key: Some(PathBuf::from("/path/to/client-key.pem")),
-                }),
-                credentials_file: Some(PathBuf::from("/path/to/nats.creds")),
+                connection_timeout_secs: 5,
+                enable_jetstream: true,
+                enable_ipld: true,
+                max_retries: 3,
+                tls: None, // Not needed for localhost
+                credentials_file: None, // Not needed for localhost
             },
             storage: StorageConfig {
                 offline_events_dir: PathBuf::from("/mnt/encrypted/cim-keys/events"),
@@ -260,13 +282,13 @@ mod tests {
         // Default offline config should validate
         assert!(config.validate().is_ok());
 
-        // Enabled NATS with empty URL should fail
+        // Enabled NATS with empty stream name should fail
         config.nats.enabled = true;
-        config.nats.url = String::new();
+        config.nats.stream_name = String::new();
         assert!(config.validate().is_err());
 
-        // Fix URL
-        config.nats.url = "nats://localhost:4222".to_string();
+        // Fix stream name
+        config.nats.stream_name = "CIM_GRAPH_EVENTS".to_string();
         assert!(config.validate().is_ok());
     }
 

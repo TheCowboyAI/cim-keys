@@ -1,7 +1,7 @@
 //! CIM Keys GUI - Native/WASM application for offline key generation
 
 #[cfg(feature = "gui")]
-use cim_keys::{gui, config::Config};
+use cim_keys::{gui, config::{Config, NATS_URL}};
 
 #[cfg(not(target_arch = "wasm32"))]
 use clap::Parser;
@@ -95,7 +95,7 @@ fn main() -> iced::Result {
     if let Some(ref cfg) = config {
         println!("⚙️  [Mode] {:?}", cfg.mode);
         if cfg.nats.enabled {
-            println!("📡 [NATS] Enabled - events will be published to {}", cfg.nats.url);
+            println!("📡 [NATS] Enabled - events will be published to {}", NATS_URL);
         } else {
             println!("📴 [NATS] Disabled - offline mode");
         }
