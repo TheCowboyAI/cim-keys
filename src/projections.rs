@@ -270,6 +270,7 @@ impl OfflineKeyProjection {
         match event {
             KeyEvent::KeyGenerated(e) => self.project_key_generated(e)?,
             KeyEvent::CertificateGenerated(e) => self.project_certificate_generated(e)?,
+            KeyEvent::CertificateSigned(e) => self.project_certificate_signed(e)?,
             KeyEvent::YubiKeyProvisioned(e) => self.project_yubikey_provisioned(e)?,
             KeyEvent::PkiHierarchyCreated(e) => self.project_pki_hierarchy_created(e)?,
             KeyEvent::KeyStoredOffline(e) => self.project_key_stored_offline(e)?,
@@ -405,6 +406,50 @@ impl OfflineKeyProjection {
         Ok(())
     }
 
+    /// Project certificate signing (transition from Pending to Active)
+    fn project_certificate_signed(&mut self, event: &crate::events::CertificateSignedEvent) -> Result<(), ProjectionError> {
+        // Find the certificate and transition its state
+        if let Some(cert) = self.manifest.certificates.iter_mut().find(|c| c.cert_id == event.cert_id) {
+            // Transition state from Pending to Active
+            if let Some(current_state) = &cert.state {
+                match current_state {
+                    CertificateState::Pending { .. } => {
+                        // Certificate is now signed and active
+                        // Use not_before and not_after from the cert entry
+                        cert.state = Some(CertificateState::Active {
+                            not_before: cert.not_before,
+                            not_after: cert.not_after,
+                            usage_count: 0,
+                            last_used: None,
+                        });
+                    }
+                    // Already active or in other states - no transition
+                    _ => {}
+                }
+            } else {
+                // No state exists, initialize to Active
+                cert.state = Some(CertificateState::Active {
+                    not_before: cert.not_before,
+                    not_after: cert.not_after,
+                    usage_count: 0,
+                    last_used: None,
+                });
+            }
+
+            // Write signing info to certificate directory
+            let cert_dir = self.root_path.join("certificates").join(event.cert_id.to_string());
+            let signature_path = cert_dir.join("SIGNATURE.json");
+
+            let signature_json = serde_json::to_string_pretty(&event)
+                .map_err(|e| ProjectionError::SerializationError(format!("Failed to serialize signature: {}", e)))?;
+
+            fs::write(&signature_path, signature_json)
+                .map_err(|e| ProjectionError::IoError(format!("Failed to write signature: {}", e)))?;
+        }
+
+        Ok(())
+    }
+
     /// Project YubiKey provisioning
     fn project_yubikey_provisioned(&mut self, event: &crate::events::YubiKeyProvisionedEvent) -> Result<(), ProjectionError> {
         let yubikey_dir = self.root_path.join("yubikeys").join(&event.yubikey_serial);
@@ -466,6 +511,22 @@ impl OfflineKeyProjection {
         if let Some(key) = self.manifest.keys.iter_mut().find(|k| k.key_id == event.key_id) {
             // Update file_path to indicate offline storage location
             key.file_path = format!("keys/{}/offline", event.key_id);
+
+            // Transition state from Generated/Imported to Active
+            if let Some(current_state) = &key.state {
+                // Key is now stored and ready for use - transition to Active
+                match current_state {
+                    KeyState::Generated { .. } | KeyState::Imported { .. } => {
+                        key.state = Some(KeyState::Active {
+                            activated_at: event.stored_at,
+                            usage_count: 0,
+                            last_used: None,
+                        });
+                    }
+                    // Already active or in other states - no transition needed
+                    _ => {}
+                }
+            }
 
             // Log the offline storage event
             let key_dir = self.root_path.join("keys").join(event.key_id.to_string());
