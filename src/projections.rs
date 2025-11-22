@@ -482,9 +482,51 @@ impl OfflineKeyProjection {
 
     /// Project key revocation
     fn project_key_revoked(&mut self, event: &crate::events::KeyRevokedEvent) -> Result<(), ProjectionError> {
-        // Mark key as revoked in manifest
+        // Mark key as revoked and transition state
         if let Some(key) = self.manifest.keys.iter_mut().find(|k| k.key_id == event.key_id) {
             key.revoked = true;
+
+            // Convert event revocation reason to state machine revocation reason
+            use crate::events_legacy::RevocationReason as EventReason;
+            use crate::state_machines::key::RevocationReason as StateReason;
+
+            let state_reason = match &event.reason {
+                EventReason::KeyCompromise => StateReason::Compromised,
+                EventReason::CaCompromise => StateReason::Administrative {
+                    reason: "CA compromised".to_string(),
+                },
+                EventReason::AffiliationChanged => StateReason::EmployeeTermination,
+                EventReason::Superseded => StateReason::Superseded,
+                EventReason::CessationOfOperation => StateReason::CessationOfOperation,
+                EventReason::Unspecified => StateReason::Administrative {
+                    reason: "Unspecified".to_string(),
+                },
+            };
+
+            // Transition state machine to Revoked
+            if let Some(current_state) = &key.state {
+                // Validate that we can revoke from current state
+                let revoked_state = KeyState::Revoked {
+                    reason: state_reason.clone(),
+                    revoked_at: event.revoked_at,
+                    revoked_by: Uuid::now_v7(), // TODO: Parse from event.revoked_by string
+                };
+
+                if current_state.can_transition_to(&revoked_state) {
+                    key.state = Some(revoked_state);
+                } else {
+                    return Err(ProjectionError::InvalidStateTransition(
+                        format!("Cannot revoke key {} from state: {}", event.key_id, current_state.description())
+                    ));
+                }
+            } else {
+                // No state exists, initialize directly to Revoked
+                key.state = Some(KeyState::Revoked {
+                    reason: state_reason,
+                    revoked_at: event.revoked_at,
+                    revoked_by: Uuid::now_v7(),
+                });
+            }
         }
 
         // Write revocation info to key directory
@@ -717,4 +759,7 @@ pub enum ProjectionError {
 
     #[error("Not found: {0}")]
     NotFound(String),
+
+    #[error("Invalid state transition: {0}")]
+    InvalidStateTransition(String),
 }
