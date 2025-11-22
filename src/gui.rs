@@ -31,7 +31,7 @@ use crate::{
         YubiKeyCliAdapter,
     },
     // Icons
-    icons::{self, ICON_WARNING},
+    icons::{self, EMOJI_FONT, ICON_WARNING},
 };
 
 pub mod graph;
@@ -39,6 +39,16 @@ pub mod graph_pki;
 pub mod graph_nats;
 pub mod graph_yubikey;
 pub mod graph_events;
+
+// Aggregate-specific graph views for DDD organization
+pub mod graph_person;
+pub mod graph_location;
+pub mod graph_key;
+pub mod graph_relationship;
+pub mod graph_organization;
+pub mod graph_certificate;
+pub mod graph_manifest;
+
 pub mod event_emitter;
 pub mod cowboy_theme;
 pub mod animated_background;
@@ -3187,6 +3197,26 @@ impl CimKeysApp {
                                             slots_needed: slots_needed.clone(),
                                         }
                                     }
+                                    // Cryptographic Keys - read-only, return unchanged
+                                    graph::NodeType::Key { key_id, algorithm, purpose, created_at, expires_at } => {
+                                        graph::NodeType::Key {
+                                            key_id: *key_id,
+                                            algorithm: algorithm.clone(),
+                                            purpose: purpose.clone(),
+                                            created_at: *created_at,
+                                            expires_at: *expires_at,
+                                        }
+                                    }
+                                    // Export and Manifest - read-only, return unchanged
+                                    graph::NodeType::Manifest { manifest_id, name, destination, created_at, checksum } => {
+                                        graph::NodeType::Manifest {
+                                            manifest_id: *manifest_id,
+                                            name: name.clone(),
+                                            destination: destination.clone(),
+                                            created_at: *created_at,
+                                            checksum: checksum.clone(),
+                                        }
+                                    }
                                 };
 
                                 // Create and apply NodePropertiesChanged event
@@ -3567,6 +3597,17 @@ impl CimKeysApp {
                         graph::NodeType::YubiKeyStatus { yubikey_serial, .. } => {
                             "yubikey".contains(&query_lower) || "status".contains(&query_lower) ||
                             yubikey_serial.as_ref().map_or(false, |s| s.to_lowercase().contains(&query_lower))
+                        }
+                        // Cryptographic Keys
+                        graph::NodeType::Key { purpose, algorithm, .. } => {
+                            "key".contains(&query_lower) ||
+                            format!("{:?}", purpose).to_lowercase().contains(&query_lower) ||
+                            format!("{:?}", algorithm).to_lowercase().contains(&query_lower)
+                        }
+                        // Export and Manifest
+                        graph::NodeType::Manifest { name, .. } => {
+                            "manifest".contains(&query_lower) || "export".contains(&query_lower) ||
+                            name.to_lowercase().contains(&query_lower)
                         }
                     };
 
@@ -4189,47 +4230,49 @@ impl CimKeysApp {
                         self.organization_name,
                         self.org_graph.nodes.len(),
                         self.org_graph.edges.len()))
+                        .font(EMOJI_FONT)
                         .size(14)
                 } else {
                     text("⚠️  No domain - Right-click canvas to create")
+                        .font(EMOJI_FONT)
                         .size(14)
                         .color(self.view_model.colors.warning)
                 },
                 horizontal_space(),
                 // View mode switcher buttons
                 if self.graph_view == GraphView::Organization {
-                    button(text("📊").size(14))
+                    button(text("📊").font(EMOJI_FONT).size(14))
                         .on_press(Message::GraphViewSelected(GraphView::Organization))
                         .style(CowboyCustomTheme::primary_button())
                 } else {
-                    button(text("📊").size(14))
+                    button(text("📊").font(EMOJI_FONT).size(14))
                         .on_press(Message::GraphViewSelected(GraphView::Organization))
                         .style(CowboyCustomTheme::glass_button())
                 },
                 if self.graph_view == GraphView::NatsInfrastructure {
-                    button(text("🌐").size(14))
+                    button(text("🌐").font(EMOJI_FONT).size(14))
                         .on_press(Message::GraphViewSelected(GraphView::NatsInfrastructure))
                         .style(CowboyCustomTheme::primary_button())
                 } else {
-                    button(text("🌐").size(14))
+                    button(text("🌐").font(EMOJI_FONT).size(14))
                         .on_press(Message::GraphViewSelected(GraphView::NatsInfrastructure))
                         .style(CowboyCustomTheme::glass_button())
                 },
                 if self.graph_view == GraphView::PkiTrustChain {
-                    button(text("🔐").size(14))
+                    button(text("🔐").font(EMOJI_FONT).size(14))
                         .on_press(Message::GraphViewSelected(GraphView::PkiTrustChain))
                         .style(CowboyCustomTheme::primary_button())
                 } else {
-                    button(text("🔐").size(14))
+                    button(text("🔐").font(EMOJI_FONT).size(14))
                         .on_press(Message::GraphViewSelected(GraphView::PkiTrustChain))
                         .style(CowboyCustomTheme::glass_button())
                 },
                 if self.graph_view == GraphView::YubiKeyDetails {
-                    button(text("🔑").size(14))
+                    button(text("🔑").font(EMOJI_FONT).size(14))
                         .on_press(Message::GraphViewSelected(GraphView::YubiKeyDetails))
                         .style(CowboyCustomTheme::primary_button())
                 } else {
-                    button(text("🔑").size(14))
+                    button(text("🔑").font(EMOJI_FONT).size(14))
                         .on_press(Message::GraphViewSelected(GraphView::YubiKeyDetails))
                         .style(CowboyCustomTheme::glass_button())
                 },
@@ -4243,29 +4286,29 @@ impl CimKeysApp {
                         .style(CowboyCustomTheme::glass_button())
                 },
                 if self.graph_view == GraphView::Aggregates {
-                    button(text("🔄").size(14))
+                    button(text("🔄").font(EMOJI_FONT).size(14))
                         .on_press(Message::GraphViewSelected(GraphView::Aggregates))
                         .style(CowboyCustomTheme::primary_button())
                 } else {
-                    button(text("🔄").size(14))
+                    button(text("🔄").font(EMOJI_FONT).size(14))
                         .on_press(Message::GraphViewSelected(GraphView::Aggregates))
                         .style(CowboyCustomTheme::glass_button())
                 },
                 if self.graph_view == GraphView::CommandHistory {
-                    button(text("📋").size(14))
+                    button(text("📋").font(EMOJI_FONT).size(14))
                         .on_press(Message::GraphViewSelected(GraphView::CommandHistory))
                         .style(CowboyCustomTheme::primary_button())
                 } else {
-                    button(text("📋").size(14))
+                    button(text("📋").font(EMOJI_FONT).size(14))
                         .on_press(Message::GraphViewSelected(GraphView::CommandHistory))
                         .style(CowboyCustomTheme::glass_button())
                 },
                 if self.graph_view == GraphView::CausalityChains {
-                    button(text("🔗").size(14))
+                    button(text("🔗").font(EMOJI_FONT).size(14))
                         .on_press(Message::GraphViewSelected(GraphView::CausalityChains))
                         .style(CowboyCustomTheme::primary_button())
                 } else {
-                    button(text("🔗").size(14))
+                    button(text("🔗").font(EMOJI_FONT).size(14))
                         .on_press(Message::GraphViewSelected(GraphView::CausalityChains))
                         .style(CowboyCustomTheme::glass_button())
                 },

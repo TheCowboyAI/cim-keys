@@ -31,20 +31,20 @@ pub enum KeyState {
     /// Key generated but not yet activated
     Generated {
         algorithm: KeyAlgorithm,
-        generated_at: DateTime<Utc>,
-        generated_by: Uuid, // Person ID
+        generated_at: DateTime<Utc>,  // Derived from key_id (UUID v7 timestamp) - convenience field
+        generated_by: Uuid, // Person ID (also UUID v7)
     },
 
     /// Key imported from external source
     Imported {
         source: ImportSource,
-        imported_at: DateTime<Utc>,
-        imported_by: Uuid, // Person ID
+        imported_at: DateTime<Utc>,  // Derived from key_id (UUID v7 timestamp) - convenience field
+        imported_by: Uuid, // Person ID (also UUID v7)
     },
 
     /// Key is active and can be used for cryptographic operations
     Active {
-        activated_at: DateTime<Utc>,
+        activated_at: DateTime<Utc>,  // Actual activation time (operation timestamp, not key creation)
         usage_count: u64,
         last_used: Option<DateTime<Utc>>,
     },

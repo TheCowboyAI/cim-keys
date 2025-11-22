@@ -210,6 +210,23 @@ impl PropertyCard {
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
+            // Cryptographic Keys - read-only, no editing
+            NodeType::Key { key_id, algorithm, purpose, .. } => {
+                self.edit_name = format!("Key: {:?}", purpose);
+                self.edit_description = format!("Algorithm: {:?}, ID: {}", algorithm, key_id);
+                self.edit_email = String::new();
+                self.edit_enabled = true;
+            }
+            // Export and Manifest - read-only, no editing
+            NodeType::Manifest { manifest_id, name, destination, .. } => {
+                self.edit_name = format!("Manifest: {}", name);
+                self.edit_description = format!("ID: {}, Destination: {}",
+                    manifest_id,
+                    destination.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "None".to_string())
+                );
+                self.edit_email = String::new();
+                self.edit_enabled = true;
+            }
         }
     }
 

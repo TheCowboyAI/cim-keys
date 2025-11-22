@@ -1,0 +1,52 @@
+{
+  "nodes": {
+    "01933e5f-a1b2-c3d4-e5f6-0123456789ab": {
+      "id": "01933e5f-a1b2-c3d4-e5f6-0123456789ab",
+      "aggregate_type": "Organization",
+      "properties": {
+        "name": "Example Corp",
+        "display_name": "Example Corporation"
+      },
+      "version": 1
+    },
+    "01933e5f-b2c3-d4e5-f601-23456789abcd": {
+      "id": "01933e5f-b2c3-d4e5-f601-23456789abcd",
+      "aggregate_type": "Person",
+      "properties": {
+        "legal_name": "Alice Smith",
+        "active": true
+      },
+      "version": 1
+    },
+    "01933e5f-c3d4-e5f6-0123-456789abcdef": {
+      "id": "01933e5f-c3d4-e5f6-0123-456789abcdef",
+      "aggregate_type": "Person",
+      "properties": {
+        "legal_name": "Bob Jones",
+        "active": true
+      },
+      "version": 1
+    },
+    "01933e5f-d4e5-f601-2345-6789abcdef01": {
+      "id": "01933e5f-d4e5-f601-2345-6789abcdef01",
+      "aggregate_type": "Location",
+      "properties": {
+        "location_type": "email",
+        "address": "alice@example.com"
+      },
+      "version": 1
+    }
+  },
+  "edges": [
+    {
+      "source_id": "01933e5f-b2c3-d4e5-f601-23456789abcd",
+      "target_id": "01933e5f-c3d4-e5f6-0123-456789abcdef",
+      "relationship_type": "reports_to"
+    },
+    {
+      "source_id": "01933e5f-b2c3-d4e5-f601-23456789abcd",
+      "target_id": "01933e5f-d4e5-f601-2345-6789abcdef01",
+      "relationship_type": "located_at"
+    }
+  ]
+}

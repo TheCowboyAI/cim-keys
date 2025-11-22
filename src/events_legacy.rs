@@ -131,15 +131,37 @@ pub enum KeyEvent {
 
     /// Export manifest created
     ManifestCreated(ManifestCreatedEvent),
+
+    // Organization Domain Events
+    /// Person created in organization
+    PersonCreated(PersonCreatedEvent),
+
+    /// Location created
+    LocationCreated(LocationCreatedEvent),
+
+    /// Organization created
+    OrganizationCreated(OrganizationCreatedEvent),
+
+    /// Organizational unit created
+    OrganizationalUnitCreated(OrganizationalUnitCreatedEvent),
+
+    /// Role created
+    RoleCreated(RoleCreatedEvent),
+
+    /// Policy created
+    PolicyCreated(PolicyCreatedEvent),
+
+    /// Relationship established between entities
+    RelationshipEstablished(RelationshipEstablishedEvent),
 }
 
 /// Key was generated
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyGeneratedEvent {
-    pub key_id: Uuid,
+    pub key_id: Uuid,  // UUID v7 - contains embedded timestamp
     pub algorithm: KeyAlgorithm,
     pub purpose: KeyPurpose,
-    pub generated_at: DateTime<Utc>,
+    pub generated_at: DateTime<Utc>,  // Derived from key_id (UUID v7 timestamp) for convenience
     pub generated_by: String,
     pub hardware_backed: bool,
     pub metadata: KeyMetadata,
@@ -178,10 +200,10 @@ pub struct CertificateSignedEvent {
 /// Key was imported
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyImportedEvent {
-    pub key_id: Uuid,
+    pub key_id: Uuid,  // UUID v7 - contains embedded timestamp
     pub source: ImportSource,
     pub format: KeyFormat,
-    pub imported_at: DateTime<Utc>,
+    pub imported_at: DateTime<Utc>,  // Derived from key_id (UUID v7 timestamp) for convenience
     pub imported_by: String,
     pub metadata: KeyMetadata,
 }
@@ -189,10 +211,10 @@ pub struct KeyImportedEvent {
 /// Key was exported
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyExportedEvent {
-    pub key_id: Uuid,
+    pub key_id: Uuid,  // References the key (not UUID v7 - key already exists)
     pub format: KeyFormat,
     pub include_private: bool,
-    pub exported_at: DateTime<Utc>,
+    pub exported_at: DateTime<Utc>,  // Actual export timestamp (operation time, not key creation)
     pub exported_by: String,
     pub destination: ExportDestination,
 }
@@ -200,20 +222,20 @@ pub struct KeyExportedEvent {
 /// Key stored in offline partition
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyStoredOfflineEvent {
-    pub key_id: Uuid,
-    pub partition_id: Uuid,
+    pub key_id: Uuid,  // References the key (not UUID v7 - key already exists)
+    pub partition_id: Uuid,  // UUID v7 - contains embedded timestamp
     pub encrypted: bool,
-    pub stored_at: DateTime<Utc>,
+    pub stored_at: DateTime<Utc>,  // Actual storage timestamp (operation time, not key creation)
     pub checksum: String,
 }
 
 /// YubiKey was provisioned
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct YubiKeyProvisionedEvent {
-    pub event_id: Uuid,  // Unique event ID
+    pub event_id: Uuid,  // UUID v7 - contains embedded timestamp
     pub yubikey_serial: String,
     pub slots_configured: Vec<YubiKeySlot>,
-    pub provisioned_at: DateTime<Utc>,
+    pub provisioned_at: DateTime<Utc>,  // Derived from event_id (UUID v7 timestamp) for convenience
     pub provisioned_by: String,
 }
 
@@ -702,6 +724,98 @@ pub struct ManifestCreatedEvent {
 }
 
 // ============================================================================
+// Organization Domain Events
+// ============================================================================
+
+/// Person created in organization
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersonCreatedEvent {
+    pub person_id: Uuid,
+    pub name: String,
+    pub email: String,
+    pub title: Option<String>,
+    pub department: Option<String>,
+    pub organization_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Location created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocationCreatedEvent {
+    pub location_id: Uuid,
+    pub name: String,
+    pub location_type: String,
+    pub address: Option<String>,
+    pub coordinates: Option<(f64, f64)>,
+    pub organization_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Organization created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrganizationCreatedEvent {
+    pub organization_id: Uuid,
+    pub name: String,
+    pub domain: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Organizational unit created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrganizationalUnitCreatedEvent {
+    pub unit_id: Uuid,
+    pub name: String,
+    pub parent_id: Option<Uuid>,
+    pub organization_id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Role created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoleCreatedEvent {
+    pub role_id: Uuid,
+    pub name: String,
+    pub description: String,
+    pub organization_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Policy created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PolicyCreatedEvent {
+    pub policy_id: Uuid,
+    pub name: String,
+    pub description: String,
+    pub claims: Vec<crate::policy_types::PolicyClaim>,
+    pub conditions: Vec<crate::policy_types::PolicyCondition>,
+    pub organization_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Relationship established between entities
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelationshipEstablishedEvent {
+    pub from_id: Uuid,
+    pub to_id: Uuid,
+    pub relationship_type: crate::commands::organization::RelationshipType,
+    pub established_at: DateTime<Utc>,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+// ============================================================================
 // US-021: Projection Step Events (Audit Trail)
 // ============================================================================
 
@@ -808,6 +922,13 @@ impl DomainEvent for KeyEvent {
             KeyEvent::AccountabilityViolated(e) => e.violation_id,
             KeyEvent::CertificateExported(e) => e.export_id,
             KeyEvent::ManifestCreated(e) => e.manifest_id,
+            KeyEvent::PersonCreated(e) => e.person_id,
+            KeyEvent::LocationCreated(e) => e.location_id,
+            KeyEvent::OrganizationCreated(e) => e.organization_id,
+            KeyEvent::OrganizationalUnitCreated(e) => e.unit_id,
+            KeyEvent::RoleCreated(e) => e.role_id,
+            KeyEvent::PolicyCreated(e) => e.policy_id,
+            KeyEvent::RelationshipEstablished(e) => e.from_id,
         }
     }
 
@@ -852,6 +973,13 @@ impl DomainEvent for KeyEvent {
             KeyEvent::AccountabilityViolated(_) => "AccountabilityViolated",
             KeyEvent::CertificateExported(_) => "CertificateExported",
             KeyEvent::ManifestCreated(_) => "ManifestCreated",
+            KeyEvent::PersonCreated(_) => "PersonCreated",
+            KeyEvent::LocationCreated(_) => "LocationCreated",
+            KeyEvent::OrganizationCreated(_) => "OrganizationCreated",
+            KeyEvent::OrganizationalUnitCreated(_) => "OrganizationalUnitCreated",
+            KeyEvent::RoleCreated(_) => "RoleCreated",
+            KeyEvent::PolicyCreated(_) => "PolicyCreated",
+            KeyEvent::RelationshipEstablished(_) => "RelationshipEstablished",
         }
     }
 }

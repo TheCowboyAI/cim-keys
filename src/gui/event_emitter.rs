@@ -294,6 +294,13 @@ impl KeyEvent {
             KeyEvent::AccountabilityViolated(e) => e.violation_id,
             KeyEvent::CertificateExported(e) => e.export_id,
             KeyEvent::ManifestCreated(e) => e.manifest_id,
+            KeyEvent::PersonCreated(e) => e.person_id,
+            KeyEvent::LocationCreated(e) => e.location_id,
+            KeyEvent::OrganizationCreated(e) => e.organization_id,
+            KeyEvent::OrganizationalUnitCreated(e) => e.unit_id,
+            KeyEvent::RoleCreated(e) => e.role_id,
+            KeyEvent::PolicyCreated(e) => e.policy_id,
+            KeyEvent::RelationshipEstablished(e) => e.from_id,
         }
     }
 
@@ -338,6 +345,13 @@ impl KeyEvent {
             KeyEvent::AccountabilityViolated(_) => "AccountabilityViolated",
             KeyEvent::CertificateExported(_) => "CertificateExported",
             KeyEvent::ManifestCreated(_) => "ManifestCreated",
+            KeyEvent::PersonCreated(_) => "PersonCreated",
+            KeyEvent::LocationCreated(_) => "LocationCreated",
+            KeyEvent::OrganizationCreated(_) => "OrganizationCreated",
+            KeyEvent::OrganizationalUnitCreated(_) => "OrganizationalUnitCreated",
+            KeyEvent::RoleCreated(_) => "RoleCreated",
+            KeyEvent::PolicyCreated(_) => "PolicyCreated",
+            KeyEvent::RelationshipEstablished(_) => "RelationshipEstablished",
         }
     }
 }

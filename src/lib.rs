@@ -41,7 +41,8 @@
 #![warn(rustdoc::missing_crate_level_docs)]
 
 // Core modules following FRP/Event-sourcing
-pub mod events;
+pub mod events_legacy; // Legacy monolithic event enum (to be migrated)
+pub mod events; // New DDD-organized events by aggregate
 pub mod commands;
 pub mod aggregate;
 pub mod projections;
@@ -83,6 +84,18 @@ pub mod state_machines;
 
 // Value objects for cryptographic artifacts
 pub mod value_objects;
+
+// Policy types for authorization and governance
+pub mod policy_types;
+
+// NATS identity types for security configuration
+pub mod nats_identity_types;
+
+// Domain stubs for temporary compatibility
+pub mod domain_stubs;
+
+// IPLD support for content-addressed storage
+pub mod ipld_support;
 
 // Domain projections - functors mapping domain to library formats
 pub mod domain_projections;

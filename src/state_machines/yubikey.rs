@@ -31,15 +31,15 @@ pub enum YubiKeyState {
     Detected {
         serial: String,
         firmware: String,
-        detected_at: DateTime<Utc>,
-        detected_by: Uuid, // Person ID
+        detected_at: DateTime<Utc>,  // Derived from YubiKey entry UUID v7 ID - convenience field
+        detected_by: Uuid, // Person ID (also UUID v7)
     },
 
     /// YubiKey provisioned with PIV configuration
     Provisioned {
-        provisioned_at: DateTime<Utc>,
-        provisioned_by: Uuid, // Person ID
-        slots: HashMap<PivSlot, Uuid>, // Slot -> Key ID mapping
+        provisioned_at: DateTime<Utc>,  // Actual provisioning time (operation timestamp)
+        provisioned_by: Uuid, // Person ID (also UUID v7)
+        slots: HashMap<PivSlot, Uuid>, // Slot -> Key ID mapping (keys also UUID v7)
         pin_changed: bool,
         puk_changed: bool,
     },

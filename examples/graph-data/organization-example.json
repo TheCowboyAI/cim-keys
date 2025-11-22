@@ -1,0 +1,113 @@
+{
+  "nodes": {
+    "01933e60-0000-0000-0000-000000000001": {
+      "id": "01933e60-0000-0000-0000-000000000001",
+      "aggregate_type": "Organization",
+      "properties": {
+        "name": "CowboyAI",
+        "display_name": "CowboyAI Technologies"
+      },
+      "version": 1
+    },
+    "01933e60-0000-0000-0000-000000000002": {
+      "id": "01933e60-0000-0000-0000-000000000002",
+      "aggregate_type": "Person",
+      "properties": {
+        "legal_name": "Alice Smith",
+        "active": true,
+        "role": "Engineering Manager"
+      },
+      "version": 1
+    },
+    "01933e60-0000-0000-0000-000000000003": {
+      "id": "01933e60-0000-0000-0000-000000000003",
+      "aggregate_type": "Person",
+      "properties": {
+        "legal_name": "Bob Jones",
+        "active": true,
+        "role": "Senior Developer"
+      },
+      "version": 1
+    },
+    "01933e60-0000-0000-0000-000000000004": {
+      "id": "01933e60-0000-0000-0000-000000000004",
+      "aggregate_type": "Person",
+      "properties": {
+        "legal_name": "Charlie Davis",
+        "active": true,
+        "role": "Developer"
+      },
+      "version": 1
+    },
+    "01933e60-0000-0000-0000-000000000005": {
+      "id": "01933e60-0000-0000-0000-000000000005",
+      "aggregate_type": "Location",
+      "properties": {
+        "location_type": "email",
+        "address": "alice@cowboyai.com"
+      },
+      "version": 1
+    },
+    "01933e60-0000-0000-0000-000000000006": {
+      "id": "01933e60-0000-0000-0000-000000000006",
+      "aggregate_type": "Location",
+      "properties": {
+        "location_type": "email",
+        "address": "bob@cowboyai.com"
+      },
+      "version": 1
+    },
+    "01933e60-0000-0000-0000-000000000007": {
+      "id": "01933e60-0000-0000-0000-000000000007",
+      "aggregate_type": "Key",
+      "properties": {
+        "key_type": "ed25519",
+        "purpose": "signing",
+        "generated_at": "2025-11-21T00:00:00Z"
+      },
+      "version": 1
+    },
+    "01933e60-0000-0000-0000-000000000008": {
+      "id": "01933e60-0000-0000-0000-000000000008",
+      "aggregate_type": "Key",
+      "properties": {
+        "key_type": "ed25519",
+        "purpose": "signing",
+        "generated_at": "2025-11-21T00:00:00Z"
+      },
+      "version": 1
+    }
+  },
+  "edges": [
+    {
+      "source_id": "01933e60-0000-0000-0000-000000000003",
+      "target_id": "01933e60-0000-0000-0000-000000000002",
+      "relationship_type": "reports_to"
+    },
+    {
+      "source_id": "01933e60-0000-0000-0000-000000000004",
+      "target_id": "01933e60-0000-0000-0000-000000000002",
+      "relationship_type": "reports_to"
+    },
+    {
+      "source_id": "01933e60-0000-0000-0000-000000000002",
+      "target_id": "01933e60-0000-0000-0000-000000000005",
+      "relationship_type": "located_at"
+    },
+    {
+      "source_id": "01933e60-0000-0000-0000-000000000003",
+      "target_id": "01933e60-0000-0000-0000-000000000006",
+      "relationship_type": "located_at"
+    },
+    {
+      "source_id": "01933e60-0000-0000-0000-000000000002",
+      "target_id": "01933e60-0000-0000-0000-000000000007",
+      "relationship_type": "owns_key"
+    },
+    {
+      "source_id": "01933e60-0000-0000-0000-000000000003",
+      "target_id": "01933e60-0000-0000-0000-000000000008",
+      "relationship_type": "owns_key"
+    }
+  ]
+}

@@ -108,6 +108,16 @@ pub enum NodeType {
         san: Vec<String>, // Subject Alternative Names
     },
 
+    // Cryptographic Keys (Phase 4)
+    /// Cryptographic key - can be stored in YubiKey or other locations
+    Key {
+        key_id: Uuid,
+        algorithm: crate::events::KeyAlgorithm,
+        purpose: crate::events::KeyPurpose,
+        created_at: chrono::DateTime<chrono::Utc>,
+        expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    },
+
     // YubiKey Hardware (Phase 3)
     /// YubiKey hardware token
     YubiKey {
@@ -132,6 +142,16 @@ pub enum NodeType {
         slots_provisioned: Vec<super::graph_yubikey::PIVSlot>,
         slots_needed: Vec<super::graph_yubikey::PIVSlot>,
     },
+
+    // Export and Manifest (Phase 4)
+    /// Export manifest - tracks what was exported and where
+    Manifest {
+        manifest_id: Uuid,
+        name: String,
+        destination: Option<std::path::PathBuf>,
+        created_at: chrono::DateTime<chrono::Utc>,
+        checksum: Option<String>,
+    },
 }
 
 /// An edge in the organization graph (represents relationship/delegation)
@@ -152,6 +172,14 @@ pub enum EdgeType {
     ManagesUnit,
     /// Membership (Person → OrganizationalUnit)
     MemberOf,
+    /// Person responsible for unit (Person → OrganizationalUnit)
+    ResponsibleFor,
+    /// General management relationship (Person → Entity)
+    Manages,
+    /// Resource management (Organization/Unit → Resource)
+    ManagesResource,
+    /// Managed by relationship (Entity → Organization/Unit)
+    ManagedBy,
 
     // Key relationships
     /// Key ownership (Person → Key)
@@ -160,6 +188,12 @@ pub enum EdgeType {
     DelegatesKey(KeyDelegation),
     /// Storage location (Key → Location)
     StoredAt,
+    /// Key rotation chain (OldKey → NewKey)
+    KeyRotation,
+    /// Certificate uses key (Certificate → Key)
+    CertificateUsesKey,
+    /// Key stored in YubiKey slot (Key → YubiKey) with slot name
+    StoredInYubiKeySlot(String),
 
     // Policy relationships
     /// Role assignment (Person → Role)
@@ -168,12 +202,18 @@ pub enum EdgeType {
     RoleRequiresPolicy,
     /// Policy governance (Policy → Entity)
     PolicyGovernsEntity,
+    /// Organization defines role (Organization → Role)
+    DefinesRole,
+    /// Organization defines policy (Organization → Policy)
+    DefinesPolicy,
 
-    // Trust relationships
+    // Trust and Access relationships
     /// Trust relationship (Organization → Organization)
     Trusts,
     /// Certificate authority (Key → Key)
     CertifiedBy,
+    /// Access permission (Person → Location/Resource)
+    HasAccess,
 
     // NATS Infrastructure (Phase 1)
     /// JWT signing relationship (Operator → Account, Account → User)
@@ -206,6 +246,12 @@ pub enum EdgeType {
     LoadedCertificate,
     /// Person requires YubiKey (Person → YubiKeyStatus)
     Requires,
+
+    // Export and Manifest (Phase 4)
+    /// Entity exported to manifest (Manifest → Entity)
+    ExportedTo,
+    /// Export signed by person (Manifest → Person)
+    SignedByPerson,
 
     // Legacy (for backwards compatibility)
     /// Hierarchical relationship (manager -> report)
@@ -866,20 +912,30 @@ impl OrganizationGraph {
             EdgeType::ParentChild => Color::from_rgb(0.2, 0.4, 0.8),
             EdgeType::ManagesUnit => Color::from_rgb(0.4, 0.2, 0.8),
             EdgeType::MemberOf => Color::from_rgb(0.5, 0.5, 0.5),
+            EdgeType::ResponsibleFor => Color::from_rgb(0.3, 0.5, 0.9),
+            EdgeType::Manages => Color::from_rgb(0.4, 0.3, 0.7),
+            EdgeType::ManagesResource => Color::from_rgb(0.5, 0.4, 0.8),
+            EdgeType::ManagedBy => Color::from_rgb(0.4, 0.5, 0.7),
 
             // Key relationships - greens
             EdgeType::OwnsKey => Color::from_rgb(0.2, 0.7, 0.2),
             EdgeType::DelegatesKey(_) => Color::from_rgb(0.9, 0.6, 0.2),
             EdgeType::StoredAt => Color::from_rgb(0.6, 0.5, 0.4),
+            EdgeType::KeyRotation => Color::from_rgb(0.3, 0.8, 0.3),
+            EdgeType::CertificateUsesKey => Color::from_rgb(0.4, 0.7, 0.4),
+            EdgeType::StoredInYubiKeySlot(_) => Color::from_rgb(0.7, 0.4, 0.7),
 
             // Policy relationships - gold/yellow
             EdgeType::HasRole => Color::from_rgb(0.6, 0.3, 0.8),
             EdgeType::RoleRequiresPolicy => Color::from_rgb(0.9, 0.7, 0.2),
             EdgeType::PolicyGovernsEntity => Color::from_rgb(0.9, 0.7, 0.2),
+            EdgeType::DefinesRole => Color::from_rgb(0.8, 0.6, 0.2),
+            EdgeType::DefinesPolicy => Color::from_rgb(0.9, 0.6, 0.3),
 
-            // Trust relationships
+            // Trust and Access relationships
             EdgeType::Trusts => Color::from_rgb(0.7, 0.5, 0.3),
             EdgeType::CertifiedBy => Color::from_rgb(0.7, 0.5, 0.3),
+            EdgeType::HasAccess => Color::from_rgb(0.5, 0.6, 0.7),
 
             // NATS Infrastructure - orange/red (JWT signing chains)
             EdgeType::Signs => Color::from_rgb(1.0, 0.4, 0.0), // Bright orange
@@ -899,6 +955,10 @@ impl OrganizationGraph {
             EdgeType::StoresKey => Color::from_rgb(0.6, 0.2, 0.9), // Purple (key storage)
             EdgeType::LoadedCertificate => Color::from_rgb(0.7, 0.5, 0.9), // Light purple (cert)
             EdgeType::Requires => Color::from_rgb(0.6, 0.4, 0.8), // Purple (requirement)
+
+            // Export and Manifest - brown/tan
+            EdgeType::ExportedTo => Color::from_rgb(0.6, 0.5, 0.3), // Brown (export)
+            EdgeType::SignedByPerson => Color::from_rgb(0.7, 0.6, 0.4), // Tan (signature)
 
             // Legacy
             EdgeType::Hierarchy => Color::from_rgb(0.3, 0.3, 0.7),
@@ -1037,10 +1097,14 @@ impl OrganizationGraph {
                 NodeType::RootCertificate { .. } => "RootCertificate",
                 NodeType::IntermediateCertificate { .. } => "IntermediateCertificate",
                 NodeType::LeafCertificate { .. } => "LeafCertificate",
+                // Cryptographic Keys
+                NodeType::Key { .. } => "Key",
                 // YubiKey Hardware
                 NodeType::YubiKey { .. } => "YubiKey",
                 NodeType::PivSlot { .. } => "PivSlot",
                 NodeType::YubiKeyStatus { .. } => "YubiKeyStatus",
+                // Export and Manifest
+                NodeType::Manifest { .. } => "Manifest",
             };
             type_groups.entry(type_key.to_string()).or_insert_with(Vec::new).push(*id);
         }
@@ -1392,6 +1456,10 @@ impl OrganizationGraph {
             NodeType::YubiKey { .. } | NodeType::PivSlot { .. } | NodeType::YubiKeyStatus { .. } => {
                 self.filter_show_yubikey
             }
+            // Cryptographic Keys
+            NodeType::Key { .. } => self.filter_show_pki,
+            // Export and Manifest
+            NodeType::Manifest { .. } => self.filter_show_orgs,
         }
     }
 
@@ -1562,6 +1630,10 @@ impl OrganizationGraph {
                 NodeType::YubiKey { .. } | NodeType::PivSlot { .. } | NodeType::YubiKeyStatus { .. } => {
                     yubikey_nodes.push(*id);
                 }
+                // Cryptographic Keys
+                NodeType::Key { .. } => pki_nodes.push(*id),
+                // Export and Manifest
+                NodeType::Manifest { .. } => org_nodes.push(*id),
             }
         }
 
@@ -1708,6 +1780,28 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                     EdgeType::StoresKey => "stores key",
                     EdgeType::LoadedCertificate => "has cert",
                     EdgeType::Requires => "requires",
+
+                    // Key relationships (Phase 4)
+                    EdgeType::KeyRotation => "rotates",
+                    EdgeType::CertificateUsesKey => "uses key",
+                    EdgeType::StoredInYubiKeySlot(_) => "in slot",
+
+                    // Organizational hierarchy (Phase 4)
+                    EdgeType::ResponsibleFor => "responsible for",
+                    EdgeType::Manages => "manages",
+                    EdgeType::ManagesResource => "manages",
+                    EdgeType::ManagedBy => "managed by",
+
+                    // Policy relationships (Phase 4)
+                    EdgeType::DefinesRole => "defines",
+                    EdgeType::DefinesPolicy => "defines",
+
+                    // Trust and Access (Phase 4)
+                    EdgeType::HasAccess => "has access",
+
+                    // Export and Manifest (Phase 4)
+                    EdgeType::ExportedTo => "exported to",
+                    EdgeType::SignedByPerson => "signed by",
 
                     // Legacy
                     EdgeType::Hierarchy => "reports to",
@@ -1928,6 +2022,28 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                         format!("{}/{} slots ({}))", slots_provisioned.len(), slots_needed.len(), serial)
                     } else {
                         format!("{}/{} slots needed", slots_provisioned.len(), slots_needed.len())
+                    },
+                ),
+                // Cryptographic Keys
+                NodeType::Key { algorithm, purpose, expires_at, .. } => (
+                    crate::icons::ICON_LOCK,
+                    crate::icons::MATERIAL_ICONS,
+                    format!("Key: {:?}", purpose),
+                    if let Some(exp) = expires_at {
+                        format!("{:?} (expires {})", algorithm, exp.format("%Y-%m-%d"))
+                    } else {
+                        format!("{:?} (no expiry)", algorithm)
+                    },
+                ),
+                // Export and Manifest
+                NodeType::Manifest { name, destination, created_at, .. } => (
+                    crate::icons::ICON_BUSINESS,
+                    crate::icons::MATERIAL_ICONS,
+                    format!("Manifest: {}", name),
+                    if let Some(dest) = destination {
+                        format!("→ {}", dest.display())
+                    } else {
+                        format!("Created {}", created_at.format("%Y-%m-%d"))
                     },
                 ),
             };
@@ -2363,6 +2479,24 @@ pub fn view_graph(graph: &OrganizationGraph) -> Element<'_, GraphMessage> {
                     text(format!("Serial: {}", yubikey_serial.clone().unwrap_or_else(|| "Not detected".to_string()))),
                     text(format!("Provisioned Slots: {}", slots_provisioned.len())),
                     text(format!("Needed Slots: {}", slots_needed.len())),
+                ],
+                // Cryptographic Keys
+                NodeType::Key { key_id, algorithm, purpose, created_at, expires_at } => column![
+                    text("Selected Key:").size(16),
+                    text(format!("ID: {}", key_id)),
+                    text(format!("Algorithm: {:?}", algorithm)),
+                    text(format!("Purpose: {:?}", purpose)),
+                    text(format!("Created: {}", created_at.format("%Y-%m-%d %H:%M:%S UTC"))),
+                    text(format!("Expires: {}", expires_at.map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string()).unwrap_or_else(|| "Never".to_string()))),
+                ],
+                // Export and Manifest
+                NodeType::Manifest { manifest_id, name, destination, created_at, checksum } => column![
+                    text("Selected Manifest:").size(16),
+                    text(format!("ID: {}", manifest_id)),
+                    text(format!("Name: {}", name)),
+                    text(format!("Destination: {}", destination.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "None".to_string()))),
+                    text(format!("Created: {}", created_at.format("%Y-%m-%d %H:%M:%S UTC"))),
+                    text(format!("Checksum: {}", checksum.clone().unwrap_or_else(|| "None".to_string()))),
                 ],
             };
             items = items.push(details.spacing(5));

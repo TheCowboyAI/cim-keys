@@ -1,0 +1,12 @@
+[
+  {
+    "event_type": "DomainObjectCreated",
+    "object_id": "019aa921-f729-73d1-a83b-ea61e8896b48",
+    "aggregate_type": "Person",
+    "properties": {
+      "active": true,
+      "legal_name": "New Person"
+    },
+    "timestamp": "2025-11-22T01:16:06.825311311Z"
+  }
+]

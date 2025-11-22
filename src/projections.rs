@@ -269,6 +269,8 @@ impl OfflineKeyProjection {
         // Then update the specific projections
         match event {
             KeyEvent::KeyGenerated(e) => self.project_key_generated(e)?,
+            KeyEvent::KeyImported(e) => self.project_key_imported(e)?,
+            KeyEvent::KeyExported(e) => self.project_key_exported(e)?,
             KeyEvent::CertificateGenerated(e) => self.project_certificate_generated(e)?,
             KeyEvent::CertificateSigned(e) => self.project_certificate_signed(e)?,
             KeyEvent::YubiKeyDetected(e) => self.project_yubikey_detected(e)?,
@@ -352,6 +354,125 @@ impl OfflineKeyProjection {
                 generated_by: Uuid::now_v7(), // TODO: Get from event ownership
             }),
         });
+
+        Ok(())
+    }
+
+    /// Project a key import event (initialize with Imported state)
+    fn project_key_imported(&mut self, event: &crate::events_legacy::KeyImportedEvent) -> Result<(), ProjectionError> {
+        // Create key directory
+        let key_dir = self.root_path.join("keys").join(event.key_id.to_string());
+        fs::create_dir_all(&key_dir)
+            .map_err(|e| ProjectionError::IoError(format!("Failed to create key directory: {}", e)))?;
+
+        // Write import metadata
+        let metadata_path = key_dir.join("metadata.json");
+        let import_info = serde_json::json!({
+            "key_id": event.key_id,
+            "source": event.source,
+            "format": event.format,
+            "imported_at": event.imported_at,
+            "imported_by": event.imported_by,
+            "metadata": event.metadata,
+        });
+
+        let metadata_json = serde_json::to_string_pretty(&import_info)
+            .map_err(|e| ProjectionError::SerializationError(format!("Failed to serialize import metadata: {}", e)))?;
+
+        fs::write(&metadata_path, metadata_json)
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write import metadata: {}", e)))?;
+
+        // Write import source marker
+        let import_marker_path = key_dir.join("IMPORTED.json");
+        let import_marker = serde_json::json!({
+            "source": event.source,
+            "format": event.format,
+            "imported_at": event.imported_at,
+        });
+
+        fs::write(&import_marker_path, serde_json::to_string_pretty(&import_marker).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write import marker: {}", e)))?;
+
+        // Add to manifest with Imported state
+        self.manifest.keys.push(KeyEntry {
+            key_id: event.key_id,
+            algorithm: crate::events::KeyAlgorithm::Ed25519,  // TODO: Get from event.metadata
+            purpose: crate::events::KeyPurpose::Signing,      // TODO: Get from event.metadata
+            label: event.metadata.label.clone(),
+            created_at: event.imported_at,
+            hardware_backed: false,  // Imported keys are typically not hardware-backed
+            yubikey_serial: None,
+            yubikey_slot: None,
+            revoked: false,
+            file_path: format!("keys/{}", event.key_id),
+            // Initialize state machine to Imported
+            state: Some(KeyState::Imported {
+                source: match &event.source {
+                    crate::events_legacy::ImportSource::File { path } => {
+                        crate::state_machines::key::ImportSource::File { path: path.clone() }
+                    },
+                    crate::events_legacy::ImportSource::YubiKey { serial } => {
+                        crate::state_machines::key::ImportSource::YubiKey {
+                            serial: serial.clone(),
+                            slot: "Unknown".to_string(),  // Not available in event
+                        }
+                    },
+                    crate::events_legacy::ImportSource::Hsm { identifier } => {
+                        crate::state_machines::key::ImportSource::ExternalPKI {
+                            authority: identifier.clone(),
+                        }
+                    },
+                    crate::events_legacy::ImportSource::Memory => {
+                        crate::state_machines::key::ImportSource::File {
+                            path: "<memory>".to_string(),
+                        }
+                    },
+                },
+                imported_at: event.imported_at,
+                imported_by: Uuid::now_v7(),  // TODO: Parse imported_by string to UUID
+            }),
+        });
+
+        Ok(())
+    }
+
+    /// Project a key export event (record export operation, no state change)
+    fn project_key_exported(&mut self, event: &crate::events_legacy::KeyExportedEvent) -> Result<(), ProjectionError> {
+        // Find the key directory
+        let key_dir = self.root_path.join("keys").join(event.key_id.to_string());
+
+        if !key_dir.exists() {
+            return Err(ProjectionError::IoError(format!(
+                "Key directory not found for export: {}",
+                event.key_id
+            )));
+        }
+
+        // Write export metadata
+        let exports_dir = key_dir.join("exports");
+        fs::create_dir_all(&exports_dir)
+            .map_err(|e| ProjectionError::IoError(format!("Failed to create exports directory: {}", e)))?;
+
+        // Create export record with timestamp in filename
+        let export_filename = format!("export_{}.json", event.exported_at.timestamp_millis());
+        let export_path = exports_dir.join(export_filename);
+
+        let export_record = serde_json::json!({
+            "key_id": event.key_id,
+            "format": event.format,
+            "include_private": event.include_private,
+            "exported_at": event.exported_at,
+            "exported_by": event.exported_by,
+            "destination": event.destination,
+        });
+
+        fs::write(&export_path, serde_json::to_string_pretty(&export_record).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write export record: {}", e)))?;
+
+        // Note: We don't change the key's state - export is an operation, not a state transition
+        // The key remains in its current state (Generated, Imported, Active, etc.)
+        // Export records are tracked in the filesystem (exports/ directory)
+        // We could add a "last_exported_at" field to KeyEntry in the future if needed
 
         Ok(())
     }

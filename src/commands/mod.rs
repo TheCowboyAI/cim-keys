@@ -1,6 +1,6 @@
 // Command Module
 //
-// Command handlers for all key operations.
+// Command handlers for all key operations organized by DDD aggregate roots.
 // Each handler validates input, executes domain logic, and emits events.
 //
 // Commands follow the pattern:
@@ -11,10 +11,23 @@
 //
 // All commands include correlation_id and causation_id for event tracing.
 
+// Legacy command modules (to be refactored)
+pub mod organization;
 pub mod nats_identity;
 pub mod yubikey;
 pub mod pki;
 pub mod export;
+
+// DDD-organized command modules (aggregate-aligned)
+pub mod person;
+pub mod location;
+pub mod certificate;
+pub mod key;
+pub mod nats_operator;
+pub mod nats_account;
+pub mod nats_user;
+pub mod relationship;
+pub mod manifest;
 
 // Re-export command types
 pub use nats_identity::{

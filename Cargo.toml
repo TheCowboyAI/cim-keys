@@ -112,6 +112,7 @@ gui = ["iced", "iced_widget", "iced_futures", "bytemuck"]
 policy = ["cim-domain-policy", "cim-domain-organization", "cim-domain-person"]
 yubikey-support = ["yubikey", "pcsc"]
 gpg-support = ["sequoia-openpgp", "gpgme"]
+ipld = []  # IPLD content-addressed storage support (placeholder for future implementation)
 test-utils = []
 
 [[example]]

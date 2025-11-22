@@ -30,20 +30,139 @@ impl KeyManagementAggregate {
         }
     }
 
-    /// Handle a command (legacy stub for GUI compatibility)
+    /// Handle a command by routing to the appropriate handler
     ///
-    /// TODO: Implement actual command handling coordinating with new modular commands
-    pub async fn handle_command<C>(
+    /// Routes KeyCommand variants to their corresponding handler functions.
+    /// Each handler validates the command and emits domain events.
+    pub async fn handle_command(
         &self,
-        _command: C,
+        command: crate::commands::KeyCommand,
         _projection: &crate::projections::OfflineKeyProjection,
         _nats_port: Option<()>,
         #[cfg(feature = "policy")]
         _policy_engine: Option<()>,
     ) -> Result<Vec<crate::events::KeyEvent>, KeyManagementError> {
-        // Stub implementation - returns empty events
-        // In the future, this will delegate to the appropriate command handler
-        Ok(vec![])
+        use crate::commands::KeyCommand;
+
+        // Route command to appropriate handler based on variant
+        // Handlers are synchronous and return Result<EventType, String>
+        // EventType has an `events` field containing Vec<KeyEvent>
+        match command {
+            KeyCommand::GenerateRootCA(cmd) => {
+                let result = crate::commands::pki::handle_generate_root_ca(cmd)
+                    .map_err(|e| KeyManagementError::CryptoError(e))?;
+                Ok(result.events)
+            }
+            KeyCommand::GenerateCertificate(cmd) => {
+                // Convert GUI GenerateCertificateCommand to handler GenerateCertificate
+                // First generate a key pair for the certificate
+                let key_purpose = if cmd.is_ca {
+                    crate::value_objects::AuthKeyPurpose::X509ServerAuth // CA cert
+                } else {
+                    crate::value_objects::AuthKeyPurpose::X509ServerAuth // Server cert
+                };
+
+                // Create minimal key context for certificate generation
+                let key_ownership = crate::domain::KeyOwnership {
+                    person_id: Uuid::now_v7(), // System-generated
+                    organization_id: Uuid::now_v7(), // From organization
+                    role: crate::domain::KeyOwnerRole::SecurityAdmin,
+                    delegations: vec![],
+                };
+
+                let key_context = crate::domain::KeyContext {
+                    actor: key_ownership,
+                    org_context: None,
+                    nats_identity: None,
+                    audit_requirements: vec![],
+                };
+
+                // Generate key pair first
+                let key_pair_cmd = crate::commands::pki::GenerateKeyPair {
+                    purpose: key_purpose,
+                    algorithm: Some(crate::events::KeyAlgorithm::Ed25519),
+                    owner_context: key_context,
+                    correlation_id: Uuid::now_v7(),
+                    causation_id: None,
+                };
+
+                let key_result = crate::commands::pki::handle_generate_key_pair(key_pair_cmd)
+                    .map_err(|e| KeyManagementError::CryptoError(e))?;
+
+                // Now generate certificate with the public key
+                let cert_cmd = crate::commands::pki::GenerateCertificate {
+                    subject: crate::value_objects::CertificateSubject {
+                        common_name: cmd.subject.common_name,
+                        organization: cmd.subject.organization,
+                        organizational_unit: cmd.subject.organizational_unit,
+                        country: cmd.subject.country,
+                        state: cmd.subject.state_or_province,
+                        locality: cmd.subject.locality,
+                        email: None,
+                    },
+                    public_key: key_result.public_key,
+                    key_id: key_result.key_id,
+                    purpose: crate::events::KeyPurpose::Authentication,
+                    validity_years: cmd.validity_days / 365,
+                    ca_id: Uuid::now_v7(), // Self-signed for now
+                    ca_certificate: None,
+                    ca_algorithm: None,
+                    correlation_id: Uuid::now_v7(),
+                    causation_id: Some(key_result.key_id),
+                };
+
+                let cert_result = crate::commands::pki::handle_generate_certificate(cert_cmd)
+                    .map_err(|e| KeyManagementError::CryptoError(e))?;
+
+                // Combine events from key generation and certificate generation
+                let mut all_events = key_result.events;
+                all_events.extend(cert_result.events);
+                Ok(all_events)
+            }
+            KeyCommand::GenerateSshKey(cmd) => {
+                // Convert GUI GenerateSshKeyCommand to handler GenerateKeyPair
+                // SSH keys use Ed25519 algorithm by default
+                let key_purpose = crate::value_objects::AuthKeyPurpose::SshAuthentication;
+
+                // Create key context from person_id
+                let key_ownership = crate::domain::KeyOwnership {
+                    person_id: cmd.person_id,
+                    organization_id: Uuid::now_v7(), // Should come from projection
+                    role: crate::domain::KeyOwnerRole::Developer,
+                    delegations: vec![],
+                };
+
+                let key_context = crate::domain::KeyContext {
+                    actor: key_ownership,
+                    org_context: None,
+                    nats_identity: None,
+                    audit_requirements: vec![],
+                };
+
+                let key_pair_cmd = crate::commands::pki::GenerateKeyPair {
+                    purpose: key_purpose,
+                    algorithm: Some(crate::events::KeyAlgorithm::Ed25519), // Ed25519 for SSH
+                    owner_context: key_context,
+                    correlation_id: Uuid::now_v7(),
+                    causation_id: None,
+                };
+
+                let result = crate::commands::pki::handle_generate_key_pair(key_pair_cmd)
+                    .map_err(|e| KeyManagementError::CryptoError(e))?;
+
+                Ok(result.events)
+            }
+            KeyCommand::ProvisionYubiKey(cmd) => {
+                let result = crate::commands::yubikey::handle_provision_yubikey_slot(cmd)
+                    .map_err(|e| KeyManagementError::InvalidCommand(e))?;
+                Ok(result.events)
+            }
+            KeyCommand::ExportKeys(cmd) => {
+                let result = crate::commands::export::handle_export_to_encrypted_storage(cmd)
+                    .map_err(|e| KeyManagementError::ProjectionError(e))?;
+                Ok(result.events)
+            }
+        }
     }
 }
 

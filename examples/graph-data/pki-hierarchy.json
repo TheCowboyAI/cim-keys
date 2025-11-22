@@ -1,0 +1,121 @@
+{
+  "nodes": {
+    "01933e62-0000-0000-0000-000000000001": {
+      "id": "01933e62-0000-0000-0000-000000000001",
+      "aggregate_type": "Certificate",
+      "properties": {
+        "common_name": "CowboyAI Root CA",
+        "certificate_type": "root",
+        "valid_from": "2025-11-21T00:00:00Z",
+        "valid_until": "2045-11-21T00:00:00Z"
+      },
+      "version": 1
+    },
+    "01933e62-0000-0000-0000-000000000002": {
+      "id": "01933e62-0000-0000-0000-000000000002",
+      "aggregate_type": "Certificate",
+      "properties": {
+        "common_name": "Engineering Intermediate CA",
+        "certificate_type": "intermediate",
+        "valid_from": "2025-11-21T00:00:00Z",
+        "valid_until": "2030-11-21T00:00:00Z"
+      },
+      "version": 1
+    },
+    "01933e62-0000-0000-0000-000000000003": {
+      "id": "01933e62-0000-0000-0000-000000000003",
+      "aggregate_type": "Certificate",
+      "properties": {
+        "common_name": "Operations Intermediate CA",
+        "certificate_type": "intermediate",
+        "valid_from": "2025-11-21T00:00:00Z",
+        "valid_until": "2030-11-21T00:00:00Z"
+      },
+      "version": 1
+    },
+    "01933e62-0000-0000-0000-000000000004": {
+      "id": "01933e62-0000-0000-0000-000000000004",
+      "aggregate_type": "Certificate",
+      "properties": {
+        "common_name": "Alice Smith",
+        "certificate_type": "leaf",
+        "valid_from": "2025-11-21T00:00:00Z",
+        "valid_until": "2026-11-21T00:00:00Z"
+      },
+      "version": 1
+    },
+    "01933e62-0000-0000-0000-000000000005": {
+      "id": "01933e62-0000-0000-0000-000000000005",
+      "aggregate_type": "Certificate",
+      "properties": {
+        "common_name": "Bob Jones",
+        "certificate_type": "leaf",
+        "valid_from": "2025-11-21T00:00:00Z",
+        "valid_until": "2026-11-21T00:00:00Z"
+      },
+      "version": 1
+    },
+    "01933e62-0000-0000-0000-000000000006": {
+      "id": "01933e62-0000-0000-0000-000000000006",
+      "aggregate_type": "Key",
+      "properties": {
+        "key_type": "ed25519",
+        "purpose": "root_ca",
+        "generated_at": "2025-11-21T00:00:00Z"
+      },
+      "version": 1
+    },
+    "01933e62-0000-0000-0000-000000000007": {
+      "id": "01933e62-0000-0000-0000-000000000007",
+      "aggregate_type": "YubiKey",
+      "properties": {
+        "serial_number": "12345678",
+        "firmware_version": "5.4.3",
+        "status": "provisioned"
+      },
+      "version": 1
+    }
+  },
+  "edges": [
+    {
+      "source_id": "01933e62-0000-0000-0000-000000000001",
+      "target_id": "01933e62-0000-0000-0000-000000000002",
+      "relationship_type": "signs"
+    },
+    {
+      "source_id": "01933e62-0000-0000-0000-000000000001",
+      "target_id": "01933e62-0000-0000-0000-000000000003",
+      "relationship_type": "signs"
+    },
+    {
+      "source_id": "01933e62-0000-0000-0000-000000000002",
+      "target_id": "01933e62-0000-0000-0000-000000000004",
+      "relationship_type": "signs"
+    },
+    {
+      "source_id": "01933e62-0000-0000-0000-000000000002",
+      "target_id": "01933e62-0000-0000-0000-000000000005",
+      "relationship_type": "signs"
+    },
+    {
+      "source_id": "01933e62-0000-0000-0000-000000000001",
+      "target_id": "01933e62-0000-0000-0000-000000000002",
+      "relationship_type": "trusts"
+    },
+    {
+      "source_id": "01933e62-0000-0000-0000-000000000001",
+      "target_id": "01933e62-0000-0000-0000-000000000003",
+      "relationship_type": "trusts"
+    },
+    {
+      "source_id": "01933e62-0000-0000-0000-000000000001",
+      "target_id": "01933e62-0000-0000-0000-000000000006",
+      "relationship_type": "uses"
+    },
+    {
+      "source_id": "01933e62-0000-0000-0000-000000000007",
+      "target_id": "01933e62-0000-0000-0000-000000000006",
+      "relationship_type": "stores"
+    }
+  ]
+}

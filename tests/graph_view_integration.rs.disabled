@@ -1,0 +1,384 @@
+//! Integration tests for graph visualization views
+//!
+//! Tests the CQRS graph views: Timeline, Aggregates, CommandHistory, and CausalityChains
+
+use cim_keys::gui::{
+    causality_chains::{CausalEvent, CausalWorkflow, populate_causality_chains, CausalityChainLayout, CausalityStats},
+    command_history::{CommandLogEntry, populate_command_history, CommandHistoryLayout, CommandStats},
+    state_machines::{AggregateType, StateMachine},
+    graph::OrganizationGraph,
+};
+use chrono::Utc;
+use uuid::Uuid;
+
+#[test]
+fn test_command_history_population() {
+    let mut graph = OrganizationGraph::new();
+    let correlation_id = Uuid::now_v7();
+
+    // Create test command log entries with proper causation chain
+    let cmd1_id = Uuid::now_v7();
+    let cmd2_id = Uuid::now_v7();
+    let cmd3_id = Uuid::now_v7();
+
+    let commands = vec![
+        CommandLogEntry::for_create_person(
+            cmd1_id,
+            "Alice Admin",
+            correlation_id,
+            None, // Root command
+            Utc::now(),
+            vec![Uuid::now_v7()],
+        ),
+        CommandLogEntry::for_generate_key(
+            cmd2_id,
+            "RSA-4096",
+            correlation_id,
+            Some(cmd1_id), // Caused by first command
+            Utc::now(),
+            vec![Uuid::now_v7()],
+        ),
+        CommandLogEntry::for_generate_certificate(
+            cmd3_id,
+            "alice@example.com",
+            correlation_id,
+            Some(cmd2_id), // Caused by second command
+            Utc::now(),
+            vec![Uuid::now_v7()],
+        ),
+    ];
+
+    // Populate the graph
+    let layout = CommandHistoryLayout::default();
+    populate_command_history(&mut graph, commands.clone(), &layout);
+
+    // Verify nodes were created
+    assert_eq!(graph.nodes.len(), 3, "Should create 3 command nodes");
+
+    // Verify edges (causation links)
+    assert!(
+        graph.edges.len() >= 1,
+        "Should create at least one causation edge"
+    );
+
+    // Verify statistics
+    let stats = CommandStats::from_commands(&commands);
+    assert_eq!(stats.total_commands, 3);
+    assert_eq!(stats.successful_commands, 3);
+    assert_eq!(stats.failed_commands, 0);
+}
+
+#[test]
+fn test_command_history_with_failures() {
+    let correlation_id = Uuid::now_v7();
+
+    let commands = vec![
+        CommandLogEntry::for_create_person(
+            Uuid::now_v7(),
+            "Bob User",
+            correlation_id,
+            None,
+            Utc::now(),
+            vec![Uuid::now_v7()],
+        ),
+        CommandLogEntry::failed(
+            Uuid::now_v7(),
+            "GenerateKey".to_string(),
+            "Failed to generate key".to_string(),
+            correlation_id,
+            Some(Uuid::now_v7()),
+            Utc::now(),
+            "Insufficient entropy".to_string(),
+        ),
+    ];
+
+    let stats = CommandStats::from_commands(&commands);
+    assert_eq!(stats.total_commands, 2);
+    assert_eq!(stats.successful_commands, 1);
+    assert_eq!(stats.failed_commands, 1);
+}
+
+#[test]
+fn test_causality_chain_workflow_creation() {
+    let correlation_id = Uuid::now_v7();
+
+    // Create a chain of related events
+    let event1_id = Uuid::now_v7();
+    let event2_id = Uuid::now_v7();
+    let event3_id = Uuid::now_v7();
+
+    let mut event1 = CausalEvent::new(
+        event1_id,
+        "PersonCreated".to_string(),
+        "Created person Alice".to_string(),
+        Utc::now(),
+        correlation_id,
+        None, // Root event
+        Uuid::now_v7(),
+        "Person".to_string(),
+    );
+
+    let mut event2 = CausalEvent::new(
+        event2_id,
+        "KeyGenerated".to_string(),
+        "Generated RSA key".to_string(),
+        Utc::now(),
+        correlation_id,
+        Some(event1_id), // Caused by event1
+        Uuid::now_v7(),
+        "Key".to_string(),
+    );
+
+    let mut event3 = CausalEvent::new(
+        event3_id,
+        "YubiKeyProvisioned".to_string(),
+        "Provisioned YubiKey slot".to_string(),
+        Utc::now(),
+        correlation_id,
+        Some(event2_id), // Caused by event2
+        Uuid::now_v7(),
+        "YubiKey".to_string(),
+    );
+
+    event1.event_id = event1_id;
+    event2.event_id = event2_id;
+    event3.event_id = event3_id;
+
+    let workflow = CausalWorkflow::from_events(
+        correlation_id,
+        vec![event1, event2, event3],
+    );
+
+    // Verify workflow structure
+    assert_eq!(workflow.event_count, 3);
+    assert_eq!(workflow.root_events().len(), 1, "Should have one root event");
+    assert_eq!(
+        workflow.children_of(event1_id).len(),
+        1,
+        "Event1 should have one child"
+    );
+    assert_eq!(
+        workflow.children_of(event2_id).len(),
+        1,
+        "Event2 should have one child"
+    );
+    assert_eq!(
+        workflow.max_depth(),
+        2,
+        "Chain depth should be 2 (0->1->2)"
+    );
+}
+
+#[test]
+fn test_causality_chain_graph_population() {
+    let mut graph = OrganizationGraph::new();
+    let correlation_id = Uuid::now_v7();
+
+    let events = vec![
+        CausalEvent::new(
+            Uuid::now_v7(),
+            "OrganizationCreated".to_string(),
+            "Created organization".to_string(),
+            Utc::now(),
+            correlation_id,
+            None,
+            Uuid::now_v7(),
+            "Organization".to_string(),
+        ),
+        CausalEvent::new(
+            Uuid::now_v7(),
+            "PersonAdded".to_string(),
+            "Added person to organization".to_string(),
+            Utc::now(),
+            correlation_id,
+            None,
+            Uuid::now_v7(),
+            "Person".to_string(),
+        ),
+    ];
+
+    let layout = CausalityChainLayout::default();
+    populate_causality_chains(&mut graph, events.clone(), &layout);
+
+    // Verify nodes were created
+    assert_eq!(graph.nodes.len(), 2, "Should create 2 event nodes");
+
+    // Verify statistics
+    let stats = CausalityStats::from_events(&events);
+    assert_eq!(stats.total_workflows, 1);
+    assert_eq!(stats.total_events, 2);
+}
+
+#[test]
+fn test_causality_multiple_workflows() {
+    let corr1 = Uuid::now_v7();
+    let corr2 = Uuid::now_v7();
+
+    let events = vec![
+        // Workflow 1
+        CausalEvent::new(
+            Uuid::now_v7(),
+            "Event1".to_string(),
+            "Description".to_string(),
+            Utc::now(),
+            corr1,
+            None,
+            Uuid::now_v7(),
+            "Person".to_string(),
+        ),
+        CausalEvent::new(
+            Uuid::now_v7(),
+            "Event2".to_string(),
+            "Description".to_string(),
+            Utc::now(),
+            corr1,
+            None,
+            Uuid::now_v7(),
+            "Person".to_string(),
+        ),
+        // Workflow 2
+        CausalEvent::new(
+            Uuid::now_v7(),
+            "Event3".to_string(),
+            "Description".to_string(),
+            Utc::now(),
+            corr2,
+            None,
+            Uuid::now_v7(),
+            "Key".to_string(),
+        ),
+    ];
+
+    let stats = CausalityStats::from_events(&events);
+    assert_eq!(stats.total_workflows, 2, "Should have 2 distinct workflows");
+    assert_eq!(stats.total_events, 3);
+}
+
+#[test]
+fn test_aggregate_state_machines() {
+    // Test that state machines are properly defined for all aggregate types
+    let aggregate_types = vec![
+        AggregateType::Person,
+        AggregateType::Organization,
+        AggregateType::Location,
+        AggregateType::Key,
+        AggregateType::Certificate,
+        AggregateType::YubiKey,
+        AggregateType::NatsOperator,
+        AggregateType::NatsAccount,
+        AggregateType::NatsUser,
+        AggregateType::Role,
+        AggregateType::Policy,
+    ];
+
+    for aggregate_type in aggregate_types {
+        let state_machine = aggregate_type.state_machine();
+
+        // Verify state machine has essential properties
+        assert!(!state_machine.name.is_empty(), "State machine should have a name");
+        assert!(!state_machine.initial_state.is_empty(), "State machine should have an initial state");
+        assert!(!state_machine.states.is_empty(), "State machine should have states");
+
+        // Verify initial state exists in states list
+        let has_initial = state_machine.states.iter()
+            .any(|s| s.name == state_machine.initial_state);
+        assert!(has_initial, "Initial state should be in states list for {:?}", aggregate_type);
+
+        // Note: Not all aggregates may have terminal states defined yet
+        // This is acceptable during development
+    }
+}
+
+#[test]
+fn test_command_log_entry_creation() {
+    let correlation_id = Uuid::now_v7();
+    let command_id = Uuid::now_v7();
+    let executed_at = Utc::now();
+    let events_generated = vec![Uuid::now_v7()];
+
+    // Test successful command
+    let cmd = CommandLogEntry::for_create_person(
+        command_id,
+        "Test Person",
+        correlation_id,
+        None,
+        executed_at,
+        events_generated.clone(),
+    );
+
+    assert_eq!(cmd.command_id, command_id);
+    assert_eq!(cmd.command_type, "CreatePerson");
+    assert!(cmd.success);
+    assert!(cmd.description.contains("Test Person"));
+    assert_eq!(cmd.events_generated.len(), 1);
+
+    // Test failed command
+    let failed_cmd = CommandLogEntry::failed(
+        command_id,
+        "CreatePerson".to_string(),
+        "Failed to create person".to_string(),
+        correlation_id,
+        None,
+        executed_at,
+        "Validation error".to_string(),
+    );
+
+    assert!(!failed_cmd.success);
+    assert!(failed_cmd.error_message.is_some());
+    assert_eq!(failed_cmd.events_generated.len(), 0);
+}
+
+#[test]
+fn test_causal_event_colors() {
+    // Verify different aggregate types get different colors
+    let aggregate_types = vec![
+        "Person", "Organization", "Location", "Key",
+        "Certificate", "YubiKey", "NatsOperator",
+    ];
+
+    let events: Vec<_> = aggregate_types
+        .iter()
+        .map(|agg_type| CausalEvent::new(
+            Uuid::now_v7(),
+            format!("{}Created", agg_type),
+            "Description".to_string(),
+            Utc::now(),
+            Uuid::now_v7(),
+            None,
+            Uuid::now_v7(),
+            agg_type.to_string(),
+        ))
+        .collect();
+
+    // Each should have a color
+    for event in &events {
+        let color = event.color();
+        // Verify color is not the default gray (0.5, 0.5, 0.5)
+        let is_default = (color.r - 0.5).abs() < 0.01
+            && (color.g - 0.5).abs() < 0.01
+            && (color.b - 0.5).abs() < 0.01;
+
+        assert!(
+            !is_default || event.aggregate_type == "Unknown",
+            "Known aggregate types should have distinct colors"
+        );
+    }
+}
+
+#[test]
+fn test_empty_graph_population() {
+    // Test that empty data doesn't break visualization
+    let mut graph = OrganizationGraph::new();
+
+    // Empty command history
+    let layout = CommandHistoryLayout::default();
+    populate_command_history(&mut graph, vec![], &layout);
+    assert_eq!(graph.nodes.len(), 0);
+    assert_eq!(graph.edges.len(), 0);
+
+    // Empty causality chains
+    let layout = CausalityChainLayout::default();
+    populate_causality_chains(&mut graph, vec![], &layout);
+    assert_eq!(graph.nodes.len(), 0);
+    assert_eq!(graph.edges.len(), 0);
+}
