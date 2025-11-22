@@ -89,6 +89,15 @@ pub struct KeyManifest {
     /// YubiKey serials
     pub yubikeys: Vec<YubiKeyEntry>,
 
+    /// NATS operators
+    pub nats_operators: Vec<NatsOperatorEntry>,
+
+    /// NATS accounts
+    pub nats_accounts: Vec<NatsAccountEntry>,
+
+    /// NATS users
+    pub nats_users: Vec<NatsUserEntry>,
+
     /// Event count for consistency checking
     pub event_count: u64,
 
@@ -195,6 +204,42 @@ pub struct LocationEntry {
     pub state: Option<LocationState>,
 }
 
+/// Entry for a NATS operator in the manifest
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsOperatorEntry {
+    pub operator_id: Uuid,
+    pub name: String,
+    pub public_key: String,
+    pub organization_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,  // Derived from operator_id (UUID v7 timestamp)
+    pub created_by: String,
+}
+
+/// Entry for a NATS account in the manifest
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsAccountEntry {
+    pub account_id: Uuid,
+    pub operator_id: Uuid,
+    pub name: String,
+    pub public_key: String,
+    pub is_system: bool,
+    pub organization_unit_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,  // Derived from account_id (UUID v7 timestamp)
+    pub created_by: String,
+}
+
+/// Entry for a NATS user in the manifest
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsUserEntry {
+    pub user_id: Uuid,
+    pub account_id: Uuid,
+    pub name: String,
+    pub public_key: String,
+    pub person_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,  // Derived from user_id (UUID v7 timestamp)
+    pub created_by: String,
+}
+
 impl OfflineKeyProjection {
     /// Create a new projection targeting an encrypted partition
     pub fn new<P: AsRef<Path>>(root_path: P) -> Result<Self, ProjectionError> {
@@ -220,6 +265,7 @@ impl OfflineKeyProjection {
             root.join("certificates"),
             root.join("yubikeys"),
             root.join("pki"),
+            root.join("nats"),
         ];
 
         for dir in &dirs {
@@ -253,6 +299,9 @@ impl OfflineKeyProjection {
                 certificates: Vec::new(),
                 pki_hierarchies: Vec::new(),
                 yubikeys: Vec::new(),
+                nats_operators: Vec::new(),
+                nats_accounts: Vec::new(),
+                nats_users: Vec::new(),
                 event_count: 0,
                 checksum: String::new(),
             };
@@ -283,6 +332,9 @@ impl OfflineKeyProjection {
             KeyEvent::PersonCreated(e) => self.project_person_created(e)?,
             KeyEvent::LocationCreated(e) => self.project_location_created(e)?,
             KeyEvent::OrganizationCreated(e) => self.project_organization_created(e)?,
+            KeyEvent::NatsOperatorCreated(e) => self.project_nats_operator_created(e)?,
+            KeyEvent::NatsAccountCreated(e) => self.project_nats_account_created(e)?,
+            KeyEvent::NatsUserCreated(e) => self.project_nats_user_created(e)?,
             _ => {} // Handle other events as needed
         }
 
@@ -594,6 +646,123 @@ impl OfflineKeyProjection {
             country: "US".to_string(),  // TODO: Add to event
             admin_email: "admin@example.com".to_string(),  // TODO: Add to event
         };
+
+        Ok(())
+    }
+
+    /// Project a NATS operator creation event (initialize operator entry)
+    fn project_nats_operator_created(&mut self, event: &crate::events_legacy::NatsOperatorCreatedEvent) -> Result<(), ProjectionError> {
+        // Create NATS operator directory
+        let operator_dir = self.root_path
+            .join("nats")
+            .join("operators")
+            .join(event.operator_id.to_string());
+        fs::create_dir_all(&operator_dir)
+            .map_err(|e| ProjectionError::IoError(format!("Failed to create operator directory: {}", e)))?;
+
+        // Write operator metadata
+        let metadata_path = operator_dir.join("metadata.json");
+        let operator_info = serde_json::json!({
+            "operator_id": event.operator_id,
+            "name": event.name,
+            "public_key": event.public_key,
+            "organization_id": event.organization_id,
+            "created_at": event.created_at,
+            "created_by": event.created_by,
+        });
+
+        fs::write(&metadata_path, serde_json::to_string_pretty(&operator_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write operator metadata: {}", e)))?;
+
+        // Add to manifest
+        self.manifest.nats_operators.push(NatsOperatorEntry {
+            operator_id: event.operator_id,
+            name: event.name.clone(),
+            public_key: event.public_key.clone(),
+            organization_id: event.organization_id,
+            created_at: event.created_at,  // Derived from operator_id (UUID v7 timestamp)
+            created_by: event.created_by.clone(),
+        });
+
+        Ok(())
+    }
+
+    /// Project a NATS account creation event (initialize account entry)
+    fn project_nats_account_created(&mut self, event: &crate::events_legacy::NatsAccountCreatedEvent) -> Result<(), ProjectionError> {
+        // Create NATS account directory
+        let account_dir = self.root_path
+            .join("nats")
+            .join("accounts")
+            .join(event.account_id.to_string());
+        fs::create_dir_all(&account_dir)
+            .map_err(|e| ProjectionError::IoError(format!("Failed to create account directory: {}", e)))?;
+
+        // Write account metadata
+        let metadata_path = account_dir.join("metadata.json");
+        let account_info = serde_json::json!({
+            "account_id": event.account_id,
+            "operator_id": event.operator_id,
+            "name": event.name,
+            "public_key": event.public_key,
+            "is_system": event.is_system,
+            "organization_unit_id": event.organization_unit_id,
+            "created_at": event.created_at,
+            "created_by": event.created_by,
+        });
+
+        fs::write(&metadata_path, serde_json::to_string_pretty(&account_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write account metadata: {}", e)))?;
+
+        // Add to manifest
+        self.manifest.nats_accounts.push(NatsAccountEntry {
+            account_id: event.account_id,
+            operator_id: event.operator_id,
+            name: event.name.clone(),
+            public_key: event.public_key.clone(),
+            is_system: event.is_system,
+            organization_unit_id: event.organization_unit_id,
+            created_at: event.created_at,  // Derived from account_id (UUID v7 timestamp)
+            created_by: event.created_by.clone(),
+        });
+
+        Ok(())
+    }
+
+    /// Project a NATS user creation event (initialize user entry)
+    fn project_nats_user_created(&mut self, event: &crate::events_legacy::NatsUserCreatedEvent) -> Result<(), ProjectionError> {
+        // Create NATS user directory
+        let user_dir = self.root_path
+            .join("nats")
+            .join("users")
+            .join(event.user_id.to_string());
+        fs::create_dir_all(&user_dir)
+            .map_err(|e| ProjectionError::IoError(format!("Failed to create user directory: {}", e)))?;
+
+        // Write user metadata
+        let metadata_path = user_dir.join("metadata.json");
+        let user_info = serde_json::json!({
+            "user_id": event.user_id,
+            "account_id": event.account_id,
+            "name": event.name,
+            "public_key": event.public_key,
+            "person_id": event.person_id,
+            "created_at": event.created_at,
+            "created_by": event.created_by,
+        });
+
+        fs::write(&metadata_path, serde_json::to_string_pretty(&user_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write user metadata: {}", e)))?;
+
+        // Add to manifest
+        self.manifest.nats_users.push(NatsUserEntry {
+            user_id: event.user_id,
+            account_id: event.account_id,
+            name: event.name.clone(),
+            public_key: event.public_key.clone(),
+            person_id: event.person_id,
+            created_at: event.created_at,  // Derived from user_id (UUID v7 timestamp)
+            created_by: event.created_by.clone(),
+        });
 
         Ok(())
     }
@@ -1149,6 +1318,9 @@ impl OfflineKeyProjection {
             certificates: Vec::new(),
             pki_hierarchies: Vec::new(),
             yubikeys: Vec::new(),
+            nats_operators: Vec::new(),
+            nats_accounts: Vec::new(),
+            nats_users: Vec::new(),
             event_count: 0,
             checksum: String::new(),
         };
