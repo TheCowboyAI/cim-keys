@@ -9,8 +9,8 @@ use uuid::Uuid;
 
 use crate::domain::{KeyContext, KeyOwnership, Organization};
 use crate::domain_projections::CertificateRequestProjection;
-use crate::events::KeyEvent;
-use crate::events::{KeyAlgorithm, KeyPurpose};
+use crate::events::DomainEvent;
+use crate::types::{KeyAlgorithm, KeyPurpose};
 use crate::value_objects::{
     Certificate, CertificateSubject, PublicKey, Validity,
 };
@@ -36,7 +36,7 @@ pub struct KeyPairGenerated {
     pub public_key: PublicKey,
     // Private key stored securely, not returned
     pub algorithm: KeyAlgorithm,
-    pub events: Vec<KeyEvent>,
+    pub events: Vec<DomainEvent>,
 }
 
 /// Handle GenerateKeyPair command
@@ -80,31 +80,31 @@ pub fn handle_generate_key_pair(cmd: GenerateKeyPair) -> Result<KeyPairGenerated
     };
 
     // Step 3: Emit key generated event
-    events.push(crate::events::KeyEvent::KeyGenerated(
-        crate::events::KeyGeneratedEvent {
-            key_id,
-            algorithm: algorithm.clone(),
-            purpose: match cmd.purpose {
-                crate::value_objects::AuthKeyPurpose::X509ServerAuth => KeyPurpose::Authentication,
-                crate::value_objects::AuthKeyPurpose::X509CodeSigning => KeyPurpose::Signing,
-                crate::value_objects::AuthKeyPurpose::GpgEncryption => KeyPurpose::Encryption,
-                _ => KeyPurpose::Authentication,
-            },
-            generated_at: Utc::now(),
-            generated_by: "system".to_string(),
-            hardware_backed: false,
-            metadata: crate::events::KeyMetadata {
-                label: format!("Key pair for {:?}", cmd.purpose),
-                description: Some(format!("Generated {:?} key for {:?}", algorithm, cmd.purpose)),
-                tags: vec![],
-                attributes: std::collections::HashMap::new(),
-                jwt_kid: None,
-                jwt_alg: None,
-                jwt_use: None,
-            },
-            ownership: Some(cmd.owner_context.actor.clone()),
+    events.push(DomainEvent::Key(crate::events::KeyEvents::KeyGenerated(crate::events::key::KeyGeneratedEvent {
+        key_id,
+        algorithm: algorithm.clone(),
+        purpose: match cmd.purpose {
+            crate::value_objects::AuthKeyPurpose::X509ServerAuth => KeyPurpose::Authentication,
+            crate::value_objects::AuthKeyPurpose::X509CodeSigning => KeyPurpose::Signing,
+            crate::value_objects::AuthKeyPurpose::GpgEncryption => KeyPurpose::Encryption,
+            _ => KeyPurpose::Authentication,
         },
-    ));
+        generated_at: Utc::now(),
+        generated_by: "system".to_string(),
+        hardware_backed: false,
+        metadata: crate::types::KeyMetadata {
+            label: format!("Key pair for {:?}", cmd.purpose),
+            description: Some(format!("Generated {:?} key for {:?}", algorithm, cmd.purpose)),
+            tags: vec![],
+            attributes: std::collections::HashMap::new(),
+            jwt_kid: None,
+            jwt_alg: None,
+            jwt_use: None,
+        },
+        ownership: Some(cmd.owner_context.actor.clone()),
+        correlation_id: cmd.correlation_id,
+        causation_id: cmd.causation_id,
+    })));
 
     Ok(KeyPairGenerated {
         key_id,
@@ -133,7 +133,7 @@ pub struct RootCAGenerated {
     pub ca_id: Uuid,
     pub certificate: Certificate,
     pub public_key: PublicKey,
-    pub events: Vec<KeyEvent>,
+    pub events: Vec<DomainEvent>,
 }
 
 /// Handle GenerateRootCA command
@@ -263,26 +263,24 @@ pub fn handle_generate_root_ca(cmd: GenerateRootCA) -> Result<RootCAGenerated, S
     };
 
     // Step 4: Emit certificate generated event
-    events.push(crate::events::KeyEvent::CertificateGenerated(
-        crate::events::CertificateGeneratedEvent {
-            cert_id: ca_id,
-            key_id: key_pair.key_id,
-            subject: certificate.subject.common_name.clone(),
-            issuer: None, // Self-signed root CA
-            not_before: certificate.validity.not_before,
-            not_after: certificate.validity.not_after,
-            is_ca: true,
-            san: vec![],
-            key_usage: vec![
-                "KeyCertSign".to_string(),
-                "CrlSign".to_string(),
-                "DigitalSignature".to_string(),
-            ],
-            extended_key_usage: vec![],
-            correlation_id: cmd.correlation_id,
-            causation_id: Some(key_pair.key_id), // Certificate caused by key generation
-        },
-    ));
+    events.push(DomainEvent::Certificate(crate::events::CertificateEvents::CertificateGenerated(crate::events::certificate::CertificateGeneratedEvent {
+        cert_id: ca_id,
+        key_id: key_pair.key_id,
+        subject: certificate.subject.common_name.clone(),
+        issuer: None, // Self-signed root CA
+        not_before: certificate.validity.not_before,
+        not_after: certificate.validity.not_after,
+        is_ca: true,
+        san: vec![],
+        key_usage: vec![
+            "KeyCertSign".to_string(),
+            "CrlSign".to_string(),
+            "DigitalSignature".to_string(),
+        ],
+        extended_key_usage: vec![],
+        correlation_id: cmd.correlation_id,
+        causation_id: Some(key_pair.key_id), // Certificate caused by key generation
+    })));
 
     Ok(RootCAGenerated {
         ca_id,
@@ -316,7 +314,7 @@ pub struct GenerateCertificate {
 pub struct CertificateGenerated {
     pub cert_id: Uuid,
     pub certificate: Certificate,
-    pub events: Vec<KeyEvent>,
+    pub events: Vec<DomainEvent>,
 }
 
 /// Handle GenerateCertificate command
@@ -447,34 +445,30 @@ pub fn handle_generate_certificate(cmd: GenerateCertificate) -> Result<Certifica
     };
 
     // Step 4: Emit certificate generated event
-    events.push(crate::events::KeyEvent::CertificateGenerated(
-        crate::events::CertificateGeneratedEvent {
-            cert_id,
-            key_id: cmd.key_id, // Link to the actual key ID
-            subject: cmd.subject.common_name.clone(),
-            issuer: Some(cmd.ca_id), // The CA that issued this certificate
-            not_before: certificate.validity.not_before,
-            not_after: certificate.validity.not_after,
-            is_ca: false,
-            san: vec![],
-            key_usage,
-            extended_key_usage,
-            correlation_id: cmd.correlation_id,
-            causation_id: cmd.causation_id,
-        },
-    ));
+    events.push(DomainEvent::Certificate(crate::events::CertificateEvents::CertificateGenerated(crate::events::certificate::CertificateGeneratedEvent {
+        cert_id,
+        key_id: cmd.key_id, // Link to the actual key ID
+        subject: cmd.subject.common_name.clone(),
+        issuer: Some(cmd.ca_id), // The CA that issued this certificate
+        not_before: certificate.validity.not_before,
+        not_after: certificate.validity.not_after,
+        is_ca: false,
+        san: vec![],
+        key_usage,
+        extended_key_usage,
+        correlation_id: cmd.correlation_id,
+        causation_id: cmd.causation_id,
+    })));
 
     // Step 5: Emit certificate signed event
-    events.push(crate::events::KeyEvent::CertificateSigned(
-        crate::events::CertificateSignedEvent {
-            cert_id,
-            signed_by: cmd.ca_id, // The CA certificate ID that signed this
-            signature_algorithm: signature_algorithm_name, // Use actual CA algorithm
-            signed_at: Utc::now(),
-            correlation_id: cmd.correlation_id,
-            causation_id: Some(cert_id), // Signing caused by certificate generation
-        },
-    ));
+    events.push(DomainEvent::Certificate(crate::events::CertificateEvents::CertificateSigned(crate::events::certificate::CertificateSignedEvent {
+        cert_id,
+        signed_by: cmd.ca_id, // The CA certificate ID that signed this
+        signature_algorithm: signature_algorithm_name, // Use actual CA algorithm
+        signed_at: Utc::now(),
+        correlation_id: cmd.correlation_id,
+        causation_id: Some(cert_id), // Signing caused by certificate generation
+    })));
 
     Ok(CertificateGenerated {
         cert_id,
