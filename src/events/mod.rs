@@ -17,8 +17,8 @@
 //! - **Relationship** - Connections between domain entities
 //! - **Manifest** - Export tracking and metadata
 
-// Re-export legacy types for backward compatibility and shared usage
-pub use crate::events_legacy::*;
+// Re-export shared domain ontologies for convenience
+pub use crate::types::*;
 
 // Aggregate-specific event modules
 pub mod person;

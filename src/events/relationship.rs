@@ -9,7 +9,7 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
 // Import shared types
-use crate::events_legacy::TrustLevel;
+use crate::types::TrustLevel;
 use crate::commands::organization::RelationshipType;
 
 /// Events for the Relationship aggregate

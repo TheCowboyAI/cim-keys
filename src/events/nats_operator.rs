@@ -9,7 +9,7 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
 // Import shared types from legacy module
-use crate::events_legacy::{NatsEntityType, NatsExportFormat};
+use crate::types::{NatsEntityType, NatsExportFormat};
 
 /// Events for the NATS Operator aggregate
 #[derive(Debug, Clone, Serialize, Deserialize)]

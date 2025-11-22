@@ -41,6 +41,7 @@
 #![warn(rustdoc::missing_crate_level_docs)]
 
 // Core modules following FRP/Event-sourcing
+pub mod types; // Shared domain ontologies (value objects, enums)
 pub mod events_legacy; // Legacy monolithic event enum (to be migrated)
 pub mod events; // New DDD-organized events by aggregate
 pub mod commands;

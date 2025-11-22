@@ -8,12 +8,12 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
-// Import shared types from legacy module
-use crate::events_legacy::{
+// Import shared domain ontologies
+use crate::types::{
     KeyAlgorithm, KeyPurpose, KeyMetadata,
     ImportSource, KeyFormat, ExportDestination, RevocationReason,
 };
-// Import from domain (not re-exported by events_legacy)
+// Import from domain
 use crate::domain::KeyOwnership;
 
 /// Events for the Key aggregate

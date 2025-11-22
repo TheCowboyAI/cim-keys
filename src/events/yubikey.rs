@@ -9,7 +9,7 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
 // Import shared types from legacy module
-use crate::events_legacy::{YubiKeySlot, KeyAlgorithm, KeyPurpose};
+use crate::types::{YubiKeySlot, KeyAlgorithm, KeyPurpose};
 
 /// Events for the YubiKey aggregate
 #[derive(Debug, Clone, Serialize, Deserialize)]

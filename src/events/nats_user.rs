@@ -9,7 +9,7 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
 // Import shared types from legacy module
-use crate::events_legacy::NatsPermissions;
+use crate::types::NatsPermissions;
 
 /// Events for the NATS User aggregate
 #[derive(Debug, Clone, Serialize, Deserialize)]
