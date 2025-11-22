@@ -32,6 +32,19 @@ pub enum LocationEvents {
 
     /// Asset was removed from location
     AssetRemoved(AssetRemovedEvent),
+
+    // Lifecycle State Transitions (Phase 12)
+    /// Location activated
+    LocationActivated(LocationActivatedEvent),
+
+    /// Location suspended
+    LocationSuspended(LocationSuspendedEvent),
+
+    /// Location reactivated
+    LocationReactivated(LocationReactivatedEvent),
+
+    /// Location decommissioned (terminal)
+    LocationDecommissioned(LocationDecommissionedEvent),
 }
 
 /// A new location was created
@@ -122,6 +135,53 @@ pub struct AssetRemovedEvent {
     pub causation_id: Option<Uuid>,
 }
 
+// ============================================================================
+// Location Lifecycle State Transitions (Phase 12)
+// ============================================================================
+
+/// Location activated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocationActivatedEvent {
+    pub location_id: Uuid,
+    pub activated_at: DateTime<Utc>,
+    pub activated_by: Uuid,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Location suspended
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocationSuspendedEvent {
+    pub location_id: Uuid,
+    pub reason: String,
+    pub suspended_at: DateTime<Utc>,
+    pub suspended_by: Uuid,
+    pub expected_restoration: Option<DateTime<Utc>>,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Location reactivated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocationReactivatedEvent {
+    pub location_id: Uuid,
+    pub reactivated_at: DateTime<Utc>,
+    pub reactivated_by: Uuid,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Location decommissioned (terminal state)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocationDecommissionedEvent {
+    pub location_id: Uuid,
+    pub reason: String,
+    pub decommissioned_at: DateTime<Utc>,
+    pub decommissioned_by: Uuid,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
 impl DomainEvent for LocationEvents {
     fn aggregate_id(&self) -> Uuid {
         match self {
@@ -132,6 +192,10 @@ impl DomainEvent for LocationEvents {
             LocationEvents::AccessRevoked(e) => e.location_id,
             LocationEvents::AssetStored(e) => e.location_id,
             LocationEvents::AssetRemoved(e) => e.location_id,
+            LocationEvents::LocationActivated(e) => e.location_id,
+            LocationEvents::LocationSuspended(e) => e.location_id,
+            LocationEvents::LocationReactivated(e) => e.location_id,
+            LocationEvents::LocationDecommissioned(e) => e.location_id,
         }
     }
 
@@ -144,6 +208,10 @@ impl DomainEvent for LocationEvents {
             LocationEvents::AccessRevoked(_) => "AccessRevoked",
             LocationEvents::AssetStored(_) => "AssetStored",
             LocationEvents::AssetRemoved(_) => "AssetRemoved",
+            LocationEvents::LocationActivated(_) => "LocationActivated",
+            LocationEvents::LocationSuspended(_) => "LocationSuspended",
+            LocationEvents::LocationReactivated(_) => "LocationReactivated",
+            LocationEvents::LocationDecommissioned(_) => "LocationDecommissioned",
         }
     }
 }

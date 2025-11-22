@@ -32,6 +32,16 @@ pub enum CertificateEvents {
 
     /// PKI hierarchy was created
     PkiHierarchyCreated(PkiHierarchyCreatedEvent),
+
+    // Lifecycle State Transitions (Phase 11)
+    /// Certificate activated
+    CertificateActivated(CertificateActivatedEvent),
+
+    /// Certificate suspended
+    CertificateSuspended(CertificateSuspendedEvent),
+
+    /// Certificate expired (terminal)
+    CertificateExpired(CertificateExpiredEvent),
 }
 
 /// A new certificate was generated
@@ -121,6 +131,41 @@ pub struct PkiHierarchyCreatedEvent {
     pub causation_id: Option<Uuid>,
 }
 
+// ============================================================================
+// Certificate Lifecycle State Transitions (Phase 11)
+// ============================================================================
+
+/// Certificate activated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CertificateActivatedEvent {
+    pub cert_id: Uuid,
+    pub activated_at: DateTime<Utc>,
+    pub activated_by: Uuid,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Certificate suspended
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CertificateSuspendedEvent {
+    pub cert_id: Uuid,
+    pub reason: String,
+    pub suspended_at: DateTime<Utc>,
+    pub suspended_by: Uuid,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Certificate expired (terminal state)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CertificateExpiredEvent {
+    pub cert_id: Uuid,
+    pub expired_at: DateTime<Utc>,
+    pub not_after: DateTime<Utc>,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
 impl DomainEvent for CertificateEvents {
     fn aggregate_id(&self) -> Uuid {
         match self {
@@ -131,6 +176,9 @@ impl DomainEvent for CertificateEvents {
             CertificateEvents::CertificateValidated(e) => e.cert_id,
             CertificateEvents::CertificateExported(e) => e.cert_id,
             CertificateEvents::PkiHierarchyCreated(e) => e.root_ca_id,
+            CertificateEvents::CertificateActivated(e) => e.cert_id,
+            CertificateEvents::CertificateSuspended(e) => e.cert_id,
+            CertificateEvents::CertificateExpired(e) => e.cert_id,
         }
     }
 
@@ -143,6 +191,9 @@ impl DomainEvent for CertificateEvents {
             CertificateEvents::CertificateValidated(_) => "CertificateValidated",
             CertificateEvents::CertificateExported(_) => "CertificateExported",
             CertificateEvents::PkiHierarchyCreated(_) => "PkiHierarchyCreated",
+            CertificateEvents::CertificateActivated(_) => "CertificateActivated",
+            CertificateEvents::CertificateSuspended(_) => "CertificateSuspended",
+            CertificateEvents::CertificateExpired(_) => "CertificateExpired",
         }
     }
 }
