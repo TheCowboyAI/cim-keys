@@ -1,0 +1,49 @@
+//! State Machines for CIM Keys
+//!
+//! This module contains all state machines used in cim-keys:
+//!
+//! ## Workflow State Machines
+//! - PKIBootstrapState - Root CA → Intermediate → Leaf certificate workflow
+//! - YubiKeyProvisioningState - YubiKey initialization and provisioning
+//! - ExportWorkflowState - Export to encrypted storage
+//!
+//! ## Aggregate Lifecycle State Machines
+//! - KeyState - Cryptographic key lifecycle (8 states)
+//! - CertificateState - PKI certificate lifecycle (8 states)
+//! - PolicyState - Authorization policy lifecycle (5 states)
+//! - PersonState - Identity lifecycle (5 states)
+//! - OrganizationState - Organizational structure lifecycle (4 states)
+//! - LocationState - Physical/virtual location lifecycle (4 states)
+//! - RelationshipState - Graph relationship lifecycle (6 states)
+//! - ManifestState - Export manifest lifecycle (6 states)
+//! - NatsOperatorState - NATS operator lifecycle (5 states)
+//! - NatsAccountState - NATS account lifecycle (5 states)
+//! - NatsUserState - NATS user lifecycle (5 states)
+//! - YubiKeyState - Hardware security module lifecycle (6 states)
+//!
+//! All state machines follow a common pattern:
+//! - States are enums with data
+//! - Transitions are validated before execution
+//! - Events trigger state changes
+//! - Terminal states prevent further modifications
+//! - All state machines are serializable for event sourcing
+
+// Workflow state machines (cross-aggregate workflows)
+pub mod workflows;
+
+// Aggregate lifecycle state machines (per-aggregate)
+pub mod key;
+pub mod certificate;
+pub mod policy;
+
+// Re-export workflow state machines
+pub use workflows::{
+    ArtifactType, CertificateSubject, ExportWorkflowState, GenerationProgress,
+    PKIBootstrapState, PinPolicy, PivAlgorithm, PivSlot, SlotPlan, TouchPolicy,
+    YubiKeyProvisioningState,
+};
+
+// Re-export aggregate state machines
+pub use certificate::CertificateState;
+pub use key::KeyState;
+pub use policy::PolicyState;
