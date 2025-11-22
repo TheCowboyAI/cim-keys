@@ -297,6 +297,16 @@ impl KeyEvent {
             KeyEvent::CertificateRevoked(e) => e.cert_id,
             KeyEvent::CertificateExpired(e) => e.cert_id,
             KeyEvent::CertificateRenewed(e) => e.new_cert_id,
+            // Person Lifecycle State Transitions (Phase 12)
+            KeyEvent::PersonActivated(e) => e.person_id,
+            KeyEvent::PersonSuspended(e) => e.person_id,
+            KeyEvent::PersonReactivated(e) => e.person_id,
+            KeyEvent::PersonArchived(e) => e.person_id,
+            // Location Lifecycle State Transitions (Phase 12)
+            KeyEvent::LocationActivated(e) => e.location_id,
+            KeyEvent::LocationSuspended(e) => e.location_id,
+            KeyEvent::LocationReactivated(e) => e.location_id,
+            KeyEvent::LocationDecommissioned(e) => e.location_id,
             KeyEvent::NatsSigningKeyGenerated(_e) => Uuid::now_v7(), // Generate ID from event
             KeyEvent::NKeyGenerated(e) => e.nkey_id,
             KeyEvent::JwtClaimsCreated(e) => e.claims_id,
@@ -368,6 +378,16 @@ impl KeyEvent {
             KeyEvent::CertificateRevoked(_) => "CertificateRevoked",
             KeyEvent::CertificateExpired(_) => "CertificateExpired",
             KeyEvent::CertificateRenewed(_) => "CertificateRenewed",
+            // Person Lifecycle State Transitions (Phase 12)
+            KeyEvent::PersonActivated(_) => "PersonActivated",
+            KeyEvent::PersonSuspended(_) => "PersonSuspended",
+            KeyEvent::PersonReactivated(_) => "PersonReactivated",
+            KeyEvent::PersonArchived(_) => "PersonArchived",
+            // Location Lifecycle State Transitions (Phase 12)
+            KeyEvent::LocationActivated(_) => "LocationActivated",
+            KeyEvent::LocationSuspended(_) => "LocationSuspended",
+            KeyEvent::LocationReactivated(_) => "LocationReactivated",
+            KeyEvent::LocationDecommissioned(_) => "LocationDecommissioned",
             KeyEvent::NatsSigningKeyGenerated(_) => "NatsSigningKeyGenerated",
             KeyEvent::NKeyGenerated(_) => "NKeyGenerated",
             KeyEvent::JwtClaimsCreated(_) => "JwtClaimsCreated",

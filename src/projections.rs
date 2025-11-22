@@ -355,6 +355,16 @@ impl OfflineKeyProjection {
             KeyEvent::CertificateRevoked(e) => self.project_certificate_revoked(e)?,
             KeyEvent::CertificateExpired(e) => self.project_certificate_expired(e)?,
             KeyEvent::CertificateRenewed(e) => self.project_certificate_renewed(e)?,
+            // Person Lifecycle State Transitions (Phase 12)
+            KeyEvent::PersonActivated(e) => self.project_person_activated(e)?,
+            KeyEvent::PersonSuspended(e) => self.project_person_suspended(e)?,
+            KeyEvent::PersonReactivated(e) => self.project_person_reactivated(e)?,
+            KeyEvent::PersonArchived(e) => self.project_person_archived(e)?,
+            // Location Lifecycle State Transitions (Phase 12)
+            KeyEvent::LocationActivated(e) => self.project_location_activated(e)?,
+            KeyEvent::LocationSuspended(e) => self.project_location_suspended(e)?,
+            KeyEvent::LocationReactivated(e) => self.project_location_reactivated(e)?,
+            KeyEvent::LocationDecommissioned(e) => self.project_location_decommissioned(e)?,
             KeyEvent::NatsSigningKeyGenerated(e) => self.project_nats_signing_key_generated(e)?,
             KeyEvent::NatsPermissionsSet(e) => self.project_nats_permissions_set(e)?,
             KeyEvent::NatsConfigExported(e) => self.project_nats_config_exported(e)?,
@@ -1561,6 +1571,162 @@ impl OfflineKeyProjection {
         fs::write(&new_state_path, serde_json::to_string_pretty(&new_state_info).unwrap())
             .map_err(|e| ProjectionError::IoError(format!("Failed to write new cert state: {}", e)))?;
 
+        Ok(())
+    }
+
+    // ========================================================================
+    // Person Lifecycle State Transition Handlers (Phase 12)
+    // ========================================================================
+
+    fn project_person_activated(&mut self, event: &crate::events_legacy::PersonActivatedEvent) -> Result<(), ProjectionError> {
+        let person_dir = self.root_path
+            .join("people")
+            .join(event.person_id.to_string());
+
+        let state_path = person_dir.join("state.json");
+        let state_info = serde_json::json!({
+            "state": "Active",
+            "activated_at": event.activated_at,
+            "activated_by": event.activated_by,
+            "correlation_id": event.correlation_id,
+        });
+        fs::write(&state_path, serde_json::to_string_pretty(&state_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write person state: {}", e)))?;
+        Ok(())
+    }
+
+    fn project_person_suspended(&mut self, event: &crate::events_legacy::PersonSuspendedEvent) -> Result<(), ProjectionError> {
+        let person_dir = self.root_path
+            .join("people")
+            .join(event.person_id.to_string());
+
+        let state_path = person_dir.join("state.json");
+        let mut state_info = serde_json::json!({
+            "state": "Suspended",
+            "reason": event.reason,
+            "suspended_at": event.suspended_at,
+            "suspended_by": event.suspended_by,
+            "correlation_id": event.correlation_id,
+        });
+        if let Some(expected_return) = event.expected_return {
+            state_info["expected_return"] = serde_json::json!(expected_return);
+        }
+        fs::write(&state_path, serde_json::to_string_pretty(&state_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write person state: {}", e)))?;
+        Ok(())
+    }
+
+    fn project_person_reactivated(&mut self, event: &crate::events_legacy::PersonReactivatedEvent) -> Result<(), ProjectionError> {
+        let person_dir = self.root_path
+            .join("people")
+            .join(event.person_id.to_string());
+
+        let state_path = person_dir.join("state.json");
+        let state_info = serde_json::json!({
+            "state": "Active",
+            "reactivated_at": event.reactivated_at,
+            "reactivated_by": event.reactivated_by,
+            "correlation_id": event.correlation_id,
+        });
+        fs::write(&state_path, serde_json::to_string_pretty(&state_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write person state: {}", e)))?;
+        Ok(())
+    }
+
+    fn project_person_archived(&mut self, event: &crate::events_legacy::PersonArchivedEvent) -> Result<(), ProjectionError> {
+        let person_dir = self.root_path
+            .join("people")
+            .join(event.person_id.to_string());
+
+        let state_path = person_dir.join("state.json");
+        let state_info = serde_json::json!({
+            "state": "Archived",
+            "reason": event.reason,
+            "archived_at": event.archived_at,
+            "archived_by": event.archived_by,
+            "correlation_id": event.correlation_id,
+            "terminal": true,
+        });
+        fs::write(&state_path, serde_json::to_string_pretty(&state_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write person state: {}", e)))?;
+        Ok(())
+    }
+
+    // ========================================================================
+    // Location Lifecycle State Transition Handlers (Phase 12)
+    // ========================================================================
+
+    fn project_location_activated(&mut self, event: &crate::events_legacy::LocationActivatedEvent) -> Result<(), ProjectionError> {
+        let location_dir = self.root_path
+            .join("locations")
+            .join(event.location_id.to_string());
+
+        let state_path = location_dir.join("state.json");
+        let state_info = serde_json::json!({
+            "state": "Active",
+            "activated_at": event.activated_at,
+            "activated_by": event.activated_by,
+            "correlation_id": event.correlation_id,
+        });
+        fs::write(&state_path, serde_json::to_string_pretty(&state_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write location state: {}", e)))?;
+        Ok(())
+    }
+
+    fn project_location_suspended(&mut self, event: &crate::events_legacy::LocationSuspendedEvent) -> Result<(), ProjectionError> {
+        let location_dir = self.root_path
+            .join("locations")
+            .join(event.location_id.to_string());
+
+        let state_path = location_dir.join("state.json");
+        let mut state_info = serde_json::json!({
+            "state": "Suspended",
+            "reason": event.reason,
+            "suspended_at": event.suspended_at,
+            "suspended_by": event.suspended_by,
+            "correlation_id": event.correlation_id,
+        });
+        if let Some(expected_restoration) = event.expected_restoration {
+            state_info["expected_restoration"] = serde_json::json!(expected_restoration);
+        }
+        fs::write(&state_path, serde_json::to_string_pretty(&state_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write location state: {}", e)))?;
+        Ok(())
+    }
+
+    fn project_location_reactivated(&mut self, event: &crate::events_legacy::LocationReactivatedEvent) -> Result<(), ProjectionError> {
+        let location_dir = self.root_path
+            .join("locations")
+            .join(event.location_id.to_string());
+
+        let state_path = location_dir.join("state.json");
+        let state_info = serde_json::json!({
+            "state": "Active",
+            "reactivated_at": event.reactivated_at,
+            "reactivated_by": event.reactivated_by,
+            "correlation_id": event.correlation_id,
+        });
+        fs::write(&state_path, serde_json::to_string_pretty(&state_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write location state: {}", e)))?;
+        Ok(())
+    }
+
+    fn project_location_decommissioned(&mut self, event: &crate::events_legacy::LocationDecommissionedEvent) -> Result<(), ProjectionError> {
+        let location_dir = self.root_path
+            .join("locations")
+            .join(event.location_id.to_string());
+
+        let state_path = location_dir.join("state.json");
+        let state_info = serde_json::json!({
+            "state": "Decommissioned",
+            "reason": event.reason,
+            "decommissioned_at": event.decommissioned_at,
+            "decommissioned_by": event.decommissioned_by,
+            "correlation_id": event.correlation_id,
+            "terminal": true,
+        });
+        fs::write(&state_path, serde_json::to_string_pretty(&state_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write location state: {}", e)))?;
         Ok(())
     }
 

@@ -43,6 +43,32 @@ pub enum KeyEvent {
     /// Certificate renewed
     CertificateRenewed(CertificateRenewedEvent),
 
+    // Person Lifecycle State Transitions (Phase 12)
+    /// Person activated
+    PersonActivated(PersonActivatedEvent),
+
+    /// Person suspended
+    PersonSuspended(PersonSuspendedEvent),
+
+    /// Person reactivated
+    PersonReactivated(PersonReactivatedEvent),
+
+    /// Person archived (terminal)
+    PersonArchived(PersonArchivedEvent),
+
+    // Location Lifecycle State Transitions (Phase 12)
+    /// Location activated
+    LocationActivated(LocationActivatedEvent),
+
+    /// Location suspended
+    LocationSuspended(LocationSuspendedEvent),
+
+    /// Location reactivated
+    LocationReactivated(LocationReactivatedEvent),
+
+    /// Location decommissioned (terminal)
+    LocationDecommissioned(LocationDecommissionedEvent),
+
     /// A key was exported
     KeyExported(KeyExportedEvent),
 
@@ -303,6 +329,100 @@ pub struct CertificateRenewedEvent {
     pub renewed_at: DateTime<Utc>,
     pub renewed_by: Uuid, // Person ID
     pub new_not_after: DateTime<Utc>, // New expiry date
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+// ============================================================================
+// Person Lifecycle State Transitions (Phase 12)
+// ============================================================================
+
+/// Person activated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersonActivatedEvent {
+    pub person_id: Uuid,
+    pub activated_at: DateTime<Utc>,
+    pub activated_by: Uuid, // Person ID who performed activation
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Person suspended
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersonSuspendedEvent {
+    pub person_id: Uuid,
+    pub reason: String, // e.g., "On leave", "Security review"
+    pub suspended_at: DateTime<Utc>,
+    pub suspended_by: Uuid, // Person ID who performed suspension
+    pub expected_return: Option<DateTime<Utc>>, // Optional return date
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Person reactivated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersonReactivatedEvent {
+    pub person_id: Uuid,
+    pub reactivated_at: DateTime<Utc>,
+    pub reactivated_by: Uuid, // Person ID who performed reactivation
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Person archived (terminal state)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersonArchivedEvent {
+    pub person_id: Uuid,
+    pub reason: String, // e.g., "Left organization", "Retired"
+    pub archived_at: DateTime<Utc>,
+    pub archived_by: Uuid, // Person ID who performed archival
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+// ============================================================================
+// Location Lifecycle State Transitions (Phase 12)
+// ============================================================================
+
+/// Location activated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocationActivatedEvent {
+    pub location_id: Uuid,
+    pub activated_at: DateTime<Utc>,
+    pub activated_by: Uuid, // Person ID who performed activation
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Location suspended
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocationSuspendedEvent {
+    pub location_id: Uuid,
+    pub reason: String, // e.g., "Maintenance", "Security incident"
+    pub suspended_at: DateTime<Utc>,
+    pub suspended_by: Uuid, // Person ID who performed suspension
+    pub expected_restoration: Option<DateTime<Utc>>, // Optional restoration date
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Location reactivated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocationReactivatedEvent {
+    pub location_id: Uuid,
+    pub reactivated_at: DateTime<Utc>,
+    pub reactivated_by: Uuid, // Person ID who performed reactivation
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Location decommissioned (terminal state)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocationDecommissionedEvent {
+    pub location_id: Uuid,
+    pub reason: String, // e.g., "Facility closed", "Moved to new location"
+    pub decommissioned_at: DateTime<Utc>,
+    pub decommissioned_by: Uuid, // Person ID who performed decommissioning
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
 }
@@ -1174,6 +1294,16 @@ impl DomainEvent for KeyEvent {
             KeyEvent::CertificateRevoked(e) => e.cert_id,
             KeyEvent::CertificateExpired(e) => e.cert_id,
             KeyEvent::CertificateRenewed(e) => e.new_cert_id,
+            // Person Lifecycle State Transitions (Phase 12)
+            KeyEvent::PersonActivated(e) => e.person_id,
+            KeyEvent::PersonSuspended(e) => e.person_id,
+            KeyEvent::PersonReactivated(e) => e.person_id,
+            KeyEvent::PersonArchived(e) => e.person_id,
+            // Location Lifecycle State Transitions (Phase 12)
+            KeyEvent::LocationActivated(e) => e.location_id,
+            KeyEvent::LocationSuspended(e) => e.location_id,
+            KeyEvent::LocationReactivated(e) => e.location_id,
+            KeyEvent::LocationDecommissioned(e) => e.location_id,
             KeyEvent::NatsSigningKeyGenerated(e) => e.key_id,
             KeyEvent::NKeyGenerated(e) => e.nkey_id,
             KeyEvent::JwtClaimsCreated(e) => e.claims_id,
@@ -1245,6 +1375,16 @@ impl DomainEvent for KeyEvent {
             KeyEvent::CertificateRevoked(_) => "CertificateRevoked",
             KeyEvent::CertificateExpired(_) => "CertificateExpired",
             KeyEvent::CertificateRenewed(_) => "CertificateRenewed",
+            // Person Lifecycle State Transitions (Phase 12)
+            KeyEvent::PersonActivated(_) => "PersonActivated",
+            KeyEvent::PersonSuspended(_) => "PersonSuspended",
+            KeyEvent::PersonReactivated(_) => "PersonReactivated",
+            KeyEvent::PersonArchived(_) => "PersonArchived",
+            // Location Lifecycle State Transitions (Phase 12)
+            KeyEvent::LocationActivated(_) => "LocationActivated",
+            KeyEvent::LocationSuspended(_) => "LocationSuspended",
+            KeyEvent::LocationReactivated(_) => "LocationReactivated",
+            KeyEvent::LocationDecommissioned(_) => "LocationDecommissioned",
             KeyEvent::NatsSigningKeyGenerated(_) => "NatsSigningKeyGenerated",
             KeyEvent::NKeyGenerated(_) => "NKeyGenerated",
             KeyEvent::JwtClaimsCreated(_) => "JwtClaimsCreated",
