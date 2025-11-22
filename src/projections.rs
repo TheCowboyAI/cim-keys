@@ -271,6 +271,7 @@ impl OfflineKeyProjection {
             KeyEvent::KeyGenerated(e) => self.project_key_generated(e)?,
             KeyEvent::CertificateGenerated(e) => self.project_certificate_generated(e)?,
             KeyEvent::CertificateSigned(e) => self.project_certificate_signed(e)?,
+            KeyEvent::YubiKeyDetected(e) => self.project_yubikey_detected(e)?,
             KeyEvent::YubiKeyProvisioned(e) => self.project_yubikey_provisioned(e)?,
             KeyEvent::PkiHierarchyCreated(e) => self.project_pki_hierarchy_created(e)?,
             KeyEvent::KeyStoredOffline(e) => self.project_key_stored_offline(e)?,
@@ -450,7 +451,46 @@ impl OfflineKeyProjection {
         Ok(())
     }
 
-    /// Project YubiKey provisioning
+    /// Project YubiKey detection (initialize with Detected state)
+    fn project_yubikey_detected(&mut self, event: &crate::events::YubiKeyDetectedEvent) -> Result<(), ProjectionError> {
+        // Check if YubiKey already exists in manifest
+        if self.manifest.yubikeys.iter().any(|y| y.serial == event.yubikey_serial) {
+            // Already exists, don't create duplicate
+            return Ok(());
+        }
+
+        // Create YubiKey directory
+        let yubikey_dir = self.root_path.join("yubikeys").join(&event.yubikey_serial);
+        fs::create_dir_all(&yubikey_dir)
+            .map_err(|e| ProjectionError::IoError(format!("Failed to create YubiKey directory: {}", e)))?;
+
+        // Write detection info
+        let detection_path = yubikey_dir.join("DETECTED.json");
+        let detection_json = serde_json::to_string_pretty(&event)
+            .map_err(|e| ProjectionError::SerializationError(format!("Failed to serialize detection: {}", e)))?;
+
+        fs::write(&detection_path, detection_json)
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write detection: {}", e)))?;
+
+        // Add to manifest with Detected state
+        self.manifest.yubikeys.push(YubiKeyEntry {
+            serial: event.yubikey_serial.clone(),
+            provisioned_at: event.detected_at, // Use detected_at as placeholder
+            slots_used: Vec::new(), // No slots configured yet
+            config_path: format!("yubikeys/{}/DETECTED.json", event.yubikey_serial),
+            // Initialize state machine to Detected
+            state: Some(YubiKeyState::Detected {
+                serial: event.yubikey_serial.clone(),
+                firmware: event.firmware_version.clone(),
+                detected_at: event.detected_at,
+                detected_by: Uuid::now_v7(), // TODO: Get from event
+            }),
+        });
+
+        Ok(())
+    }
+
+    /// Project YubiKey provisioning (transition from Detected to Provisioned)
     fn project_yubikey_provisioned(&mut self, event: &crate::events::YubiKeyProvisionedEvent) -> Result<(), ProjectionError> {
         let yubikey_dir = self.root_path.join("yubikeys").join(&event.yubikey_serial);
         fs::create_dir_all(&yubikey_dir)
@@ -463,20 +503,46 @@ impl OfflineKeyProjection {
         fs::write(&config_path, config_json)
             .map_err(|e| ProjectionError::IoError(format!("Failed to write config: {}", e)))?;
 
-        self.manifest.yubikeys.push(YubiKeyEntry {
-            serial: event.yubikey_serial.clone(),
-            provisioned_at: event.provisioned_at,
-            slots_used: event.slots_configured.iter().map(|s| s.slot_id.clone()).collect(),
-            config_path: format!("yubikeys/{}/config.json", event.yubikey_serial),
-            // Initialize state machine
-            state: Some(YubiKeyState::Provisioned {
+        // Check if YubiKey entry already exists (from YubiKeyDetected)
+        if let Some(yubikey) = self.manifest.yubikeys.iter_mut().find(|y| y.serial == event.yubikey_serial) {
+            // Update existing entry and transition state
+            yubikey.provisioned_at = event.provisioned_at;
+            yubikey.slots_used = event.slots_configured.iter().map(|s| s.slot_id.clone()).collect();
+            yubikey.config_path = format!("yubikeys/{}/config.json", event.yubikey_serial);
+
+            // Transition state from Detected to Provisioned
+            if let Some(current_state) = &yubikey.state {
+                match current_state {
+                    YubiKeyState::Detected { .. } => {
+                        yubikey.state = Some(YubiKeyState::Provisioned {
+                            provisioned_at: event.provisioned_at,
+                            provisioned_by: Uuid::now_v7(), // TODO: Get from event
+                            slots: std::collections::HashMap::new(), // TODO: Map from event.slots_configured
+                            pin_changed: true, // Assume changed during provisioning
+                            puk_changed: true, // Assume changed during provisioning
+                        });
+                    }
+                    // Already provisioned or in other states - update fields but don't transition
+                    _ => {}
+                }
+            }
+        } else {
+            // No existing entry (backward compatibility) - create new entry
+            self.manifest.yubikeys.push(YubiKeyEntry {
+                serial: event.yubikey_serial.clone(),
                 provisioned_at: event.provisioned_at,
-                provisioned_by: Uuid::now_v7(), // TODO: Get from event
-                slots: std::collections::HashMap::new(), // TODO: Map from event.slots_configured
-                pin_changed: true, // Assume changed during provisioning
-                puk_changed: true, // Assume changed during provisioning
-            }),
-        });
+                slots_used: event.slots_configured.iter().map(|s| s.slot_id.clone()).collect(),
+                config_path: format!("yubikeys/{}/config.json", event.yubikey_serial),
+                // Initialize state machine to Provisioned
+                state: Some(YubiKeyState::Provisioned {
+                    provisioned_at: event.provisioned_at,
+                    provisioned_by: Uuid::now_v7(), // TODO: Get from event
+                    slots: std::collections::HashMap::new(), // TODO: Map from event.slots_configured
+                    pin_changed: true, // Assume changed during provisioning
+                    puk_changed: true, // Assume changed during provisioning
+                }),
+            });
+        }
 
         Ok(())
     }
