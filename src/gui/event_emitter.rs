@@ -277,6 +277,20 @@ impl KeyEvent {
             KeyEvent::NatsOperatorCreated(e) => e.operator_id,
             KeyEvent::NatsAccountCreated(e) => e.account_id,
             KeyEvent::NatsUserCreated(e) => e.user_id,
+            // NATS Operator State Transitions
+            KeyEvent::NatsOperatorSuspended(e) => e.operator_id,
+            KeyEvent::NatsOperatorReactivated(e) => e.operator_id,
+            KeyEvent::NatsOperatorRevoked(e) => e.operator_id,
+            // NATS Account State Transitions
+            KeyEvent::NatsAccountActivated(e) => e.account_id,
+            KeyEvent::NatsAccountSuspended(e) => e.account_id,
+            KeyEvent::NatsAccountReactivated(e) => e.account_id,
+            KeyEvent::NatsAccountDeleted(e) => e.account_id,
+            // NATS User State Transitions
+            KeyEvent::NatsUserActivated(e) => e.user_id,
+            KeyEvent::NatsUserSuspended(e) => e.user_id,
+            KeyEvent::NatsUserReactivated(e) => e.user_id,
+            KeyEvent::NatsUserDeleted(e) => e.user_id,
             KeyEvent::NatsSigningKeyGenerated(_e) => Uuid::now_v7(), // Generate ID from event
             KeyEvent::NKeyGenerated(e) => e.nkey_id,
             KeyEvent::JwtClaimsCreated(e) => e.claims_id,
@@ -328,6 +342,20 @@ impl KeyEvent {
             KeyEvent::NatsOperatorCreated(_) => "NatsOperatorCreated",
             KeyEvent::NatsAccountCreated(_) => "NatsAccountCreated",
             KeyEvent::NatsUserCreated(_) => "NatsUserCreated",
+            // NATS Operator State Transitions
+            KeyEvent::NatsOperatorSuspended(_) => "NatsOperatorSuspended",
+            KeyEvent::NatsOperatorReactivated(_) => "NatsOperatorReactivated",
+            KeyEvent::NatsOperatorRevoked(_) => "NatsOperatorRevoked",
+            // NATS Account State Transitions
+            KeyEvent::NatsAccountActivated(_) => "NatsAccountActivated",
+            KeyEvent::NatsAccountSuspended(_) => "NatsAccountSuspended",
+            KeyEvent::NatsAccountReactivated(_) => "NatsAccountReactivated",
+            KeyEvent::NatsAccountDeleted(_) => "NatsAccountDeleted",
+            // NATS User State Transitions
+            KeyEvent::NatsUserActivated(_) => "NatsUserActivated",
+            KeyEvent::NatsUserSuspended(_) => "NatsUserSuspended",
+            KeyEvent::NatsUserReactivated(_) => "NatsUserReactivated",
+            KeyEvent::NatsUserDeleted(_) => "NatsUserDeleted",
             KeyEvent::NatsSigningKeyGenerated(_) => "NatsSigningKeyGenerated",
             KeyEvent::NKeyGenerated(_) => "NKeyGenerated",
             KeyEvent::JwtClaimsCreated(_) => "JwtClaimsCreated",

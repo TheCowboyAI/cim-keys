@@ -81,6 +81,42 @@ pub enum KeyEvent {
     /// NATS user created
     NatsUserCreated(NatsUserCreatedEvent),
 
+    // NATS Operator State Transitions
+    /// NATS operator suspended
+    NatsOperatorSuspended(NatsOperatorSuspendedEvent),
+
+    /// NATS operator reactivated
+    NatsOperatorReactivated(NatsOperatorReactivatedEvent),
+
+    /// NATS operator revoked (terminal)
+    NatsOperatorRevoked(NatsOperatorRevokedEvent),
+
+    // NATS Account State Transitions
+    /// NATS account activated
+    NatsAccountActivated(NatsAccountActivatedEvent),
+
+    /// NATS account suspended
+    NatsAccountSuspended(NatsAccountSuspendedEvent),
+
+    /// NATS account reactivated
+    NatsAccountReactivated(NatsAccountReactivatedEvent),
+
+    /// NATS account deleted (terminal)
+    NatsAccountDeleted(NatsAccountDeletedEvent),
+
+    // NATS User State Transitions
+    /// NATS user activated
+    NatsUserActivated(NatsUserActivatedEvent),
+
+    /// NATS user suspended
+    NatsUserSuspended(NatsUserSuspendedEvent),
+
+    /// NATS user reactivated
+    NatsUserReactivated(NatsUserReactivatedEvent),
+
+    /// NATS user deleted (terminal)
+    NatsUserDeleted(NatsUserDeletedEvent),
+
     /// NATS signing key generated
     NatsSigningKeyGenerated(NatsSigningKeyGeneratedEvent),
 
@@ -420,6 +456,136 @@ pub struct NatsUserCreatedEvent {
     pub causation_id: Option<Uuid>,
 }
 
+// ============================================================================
+// NATS Operator State Transitions
+// ============================================================================
+
+/// NATS operator suspended
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsOperatorSuspendedEvent {
+    pub operator_id: Uuid,
+    pub reason: String,
+    pub suspended_at: DateTime<Utc>,
+    pub suspended_by: Uuid, // Person ID
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// NATS operator reactivated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsOperatorReactivatedEvent {
+    pub operator_id: Uuid,
+    pub reactivated_at: DateTime<Utc>,
+    pub reactivated_by: Uuid, // Person ID
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// NATS operator revoked (terminal state)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsOperatorRevokedEvent {
+    pub operator_id: Uuid,
+    pub reason: String,
+    pub revoked_at: DateTime<Utc>,
+    pub revoked_by: Uuid, // Person ID
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+// ============================================================================
+// NATS Account State Transitions
+// ============================================================================
+
+/// NATS account activated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsAccountActivatedEvent {
+    pub account_id: Uuid,
+    pub permissions: NatsPermissions,
+    pub activated_at: DateTime<Utc>,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// NATS account suspended
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsAccountSuspendedEvent {
+    pub account_id: Uuid,
+    pub reason: String,
+    pub suspended_at: DateTime<Utc>,
+    pub suspended_by: Uuid, // Person ID
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// NATS account reactivated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsAccountReactivatedEvent {
+    pub account_id: Uuid,
+    pub permissions: NatsPermissions,
+    pub reactivated_at: DateTime<Utc>,
+    pub reactivated_by: Uuid, // Person ID
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// NATS account deleted (terminal state)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsAccountDeletedEvent {
+    pub account_id: Uuid,
+    pub reason: String,
+    pub deleted_at: DateTime<Utc>,
+    pub deleted_by: Uuid, // Person ID
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+// ============================================================================
+// NATS User State Transitions
+// ============================================================================
+
+/// NATS user activated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsUserActivatedEvent {
+    pub user_id: Uuid,
+    pub permissions: NatsUserPermissions,
+    pub activated_at: DateTime<Utc>,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// NATS user suspended
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsUserSuspendedEvent {
+    pub user_id: Uuid,
+    pub reason: String,
+    pub suspended_at: DateTime<Utc>,
+    pub suspended_by: Uuid, // Person ID
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// NATS user reactivated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsUserReactivatedEvent {
+    pub user_id: Uuid,
+    pub permissions: NatsUserPermissions,
+    pub reactivated_at: DateTime<Utc>,
+    pub reactivated_by: Uuid, // Person ID
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// NATS user deleted (terminal state)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsUserDeletedEvent {
+    pub user_id: Uuid,
+    pub reason: String,
+    pub deleted_at: DateTime<Utc>,
+    pub deleted_by: Uuid, // Person ID
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
 /// NATS signing key generated
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NatsSigningKeyGeneratedEvent {
@@ -458,13 +624,22 @@ pub enum NatsEntityType {
     User,
 }
 
-/// NATS permissions
+/// NATS permissions (for operators and accounts)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NatsPermissions {
     pub publish: Vec<String>,
     pub subscribe: Vec<String>,
     pub allow_responses: bool,
     pub max_payload: Option<i64>,
+}
+
+/// NATS user permissions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsUserPermissions {
+    pub publish: Vec<String>,
+    pub subscribe: Vec<String>,
+    pub allow_responses: bool,
+    pub max_payload: Option<u64>,
 }
 
 /// NATS export format
@@ -905,6 +1080,20 @@ impl DomainEvent for KeyEvent {
             KeyEvent::NatsOperatorCreated(e) => e.operator_id,
             KeyEvent::NatsAccountCreated(e) => e.account_id,
             KeyEvent::NatsUserCreated(e) => e.user_id,
+            // NATS Operator State Transitions
+            KeyEvent::NatsOperatorSuspended(e) => e.operator_id,
+            KeyEvent::NatsOperatorReactivated(e) => e.operator_id,
+            KeyEvent::NatsOperatorRevoked(e) => e.operator_id,
+            // NATS Account State Transitions
+            KeyEvent::NatsAccountActivated(e) => e.account_id,
+            KeyEvent::NatsAccountSuspended(e) => e.account_id,
+            KeyEvent::NatsAccountReactivated(e) => e.account_id,
+            KeyEvent::NatsAccountDeleted(e) => e.account_id,
+            // NATS User State Transitions
+            KeyEvent::NatsUserActivated(e) => e.user_id,
+            KeyEvent::NatsUserSuspended(e) => e.user_id,
+            KeyEvent::NatsUserReactivated(e) => e.user_id,
+            KeyEvent::NatsUserDeleted(e) => e.user_id,
             KeyEvent::NatsSigningKeyGenerated(e) => e.key_id,
             KeyEvent::NKeyGenerated(e) => e.nkey_id,
             KeyEvent::JwtClaimsCreated(e) => e.claims_id,
@@ -956,6 +1145,20 @@ impl DomainEvent for KeyEvent {
             KeyEvent::NatsOperatorCreated(_) => "NatsOperatorCreated",
             KeyEvent::NatsAccountCreated(_) => "NatsAccountCreated",
             KeyEvent::NatsUserCreated(_) => "NatsUserCreated",
+            // NATS Operator State Transitions
+            KeyEvent::NatsOperatorSuspended(_) => "NatsOperatorSuspended",
+            KeyEvent::NatsOperatorReactivated(_) => "NatsOperatorReactivated",
+            KeyEvent::NatsOperatorRevoked(_) => "NatsOperatorRevoked",
+            // NATS Account State Transitions
+            KeyEvent::NatsAccountActivated(_) => "NatsAccountActivated",
+            KeyEvent::NatsAccountSuspended(_) => "NatsAccountSuspended",
+            KeyEvent::NatsAccountReactivated(_) => "NatsAccountReactivated",
+            KeyEvent::NatsAccountDeleted(_) => "NatsAccountDeleted",
+            // NATS User State Transitions
+            KeyEvent::NatsUserActivated(_) => "NatsUserActivated",
+            KeyEvent::NatsUserSuspended(_) => "NatsUserSuspended",
+            KeyEvent::NatsUserReactivated(_) => "NatsUserReactivated",
+            KeyEvent::NatsUserDeleted(_) => "NatsUserDeleted",
             KeyEvent::NatsSigningKeyGenerated(_) => "NatsSigningKeyGenerated",
             KeyEvent::NKeyGenerated(_) => "NKeyGenerated",
             KeyEvent::JwtClaimsCreated(_) => "JwtClaimsCreated",

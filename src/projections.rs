@@ -335,6 +335,20 @@ impl OfflineKeyProjection {
             KeyEvent::NatsOperatorCreated(e) => self.project_nats_operator_created(e)?,
             KeyEvent::NatsAccountCreated(e) => self.project_nats_account_created(e)?,
             KeyEvent::NatsUserCreated(e) => self.project_nats_user_created(e)?,
+            // NATS Operator State Transitions
+            KeyEvent::NatsOperatorSuspended(e) => self.project_nats_operator_suspended(e)?,
+            KeyEvent::NatsOperatorReactivated(e) => self.project_nats_operator_reactivated(e)?,
+            KeyEvent::NatsOperatorRevoked(e) => self.project_nats_operator_revoked(e)?,
+            // NATS Account State Transitions
+            KeyEvent::NatsAccountActivated(e) => self.project_nats_account_activated(e)?,
+            KeyEvent::NatsAccountSuspended(e) => self.project_nats_account_suspended(e)?,
+            KeyEvent::NatsAccountReactivated(e) => self.project_nats_account_reactivated(e)?,
+            KeyEvent::NatsAccountDeleted(e) => self.project_nats_account_deleted(e)?,
+            // NATS User State Transitions
+            KeyEvent::NatsUserActivated(e) => self.project_nats_user_activated(e)?,
+            KeyEvent::NatsUserSuspended(e) => self.project_nats_user_suspended(e)?,
+            KeyEvent::NatsUserReactivated(e) => self.project_nats_user_reactivated(e)?,
+            KeyEvent::NatsUserDeleted(e) => self.project_nats_user_deleted(e)?,
             KeyEvent::NatsSigningKeyGenerated(e) => self.project_nats_signing_key_generated(e)?,
             KeyEvent::NatsPermissionsSet(e) => self.project_nats_permissions_set(e)?,
             KeyEvent::NatsConfigExported(e) => self.project_nats_config_exported(e)?,
@@ -771,6 +785,250 @@ impl OfflineKeyProjection {
             created_at: event.created_at,  // Derived from user_id (UUID v7 timestamp)
             created_by: event.created_by.clone(),
         });
+
+        Ok(())
+    }
+
+    // ========================================================================
+    // NATS Operator State Transition Handlers (Phase 10)
+    // ========================================================================
+
+    /// Project NATS operator suspended event
+    fn project_nats_operator_suspended(&mut self, event: &crate::events_legacy::NatsOperatorSuspendedEvent) -> Result<(), ProjectionError> {
+        let operator_dir = self.root_path
+            .join("nats")
+            .join("operators")
+            .join(event.operator_id.to_string());
+
+        // Update state in metadata
+        let state_path = operator_dir.join("state.json");
+        let state_info = serde_json::json!({
+            "state": "Suspended",
+            "reason": event.reason,
+            "suspended_at": event.suspended_at,
+            "suspended_by": event.suspended_by,
+            "correlation_id": event.correlation_id,
+        });
+        fs::write(&state_path, serde_json::to_string_pretty(&state_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write state file: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Project NATS operator reactivated event
+    fn project_nats_operator_reactivated(&mut self, event: &crate::events_legacy::NatsOperatorReactivatedEvent) -> Result<(), ProjectionError> {
+        let operator_dir = self.root_path
+            .join("nats")
+            .join("operators")
+            .join(event.operator_id.to_string());
+
+        let state_path = operator_dir.join("state.json");
+        let state_info = serde_json::json!({
+            "state": "Active",
+            "reactivated_at": event.reactivated_at,
+            "reactivated_by": event.reactivated_by,
+            "correlation_id": event.correlation_id,
+        });
+        fs::write(&state_path, serde_json::to_string_pretty(&state_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write state file: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Project NATS operator revoked event (terminal state)
+    fn project_nats_operator_revoked(&mut self, event: &crate::events_legacy::NatsOperatorRevokedEvent) -> Result<(), ProjectionError> {
+        let operator_dir = self.root_path
+            .join("nats")
+            .join("operators")
+            .join(event.operator_id.to_string());
+
+        let state_path = operator_dir.join("state.json");
+        let state_info = serde_json::json!({
+            "state": "Revoked",
+            "reason": event.reason,
+            "revoked_at": event.revoked_at,
+            "revoked_by": event.revoked_by,
+            "correlation_id": event.correlation_id,
+            "terminal": true,
+        });
+        fs::write(&state_path, serde_json::to_string_pretty(&state_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write state file: {}", e)))?;
+
+        Ok(())
+    }
+
+    // ========================================================================
+    // NATS Account State Transition Handlers (Phase 10)
+    // ========================================================================
+
+    /// Project NATS account activated event
+    fn project_nats_account_activated(&mut self, event: &crate::events_legacy::NatsAccountActivatedEvent) -> Result<(), ProjectionError> {
+        let account_dir = self.root_path
+            .join("nats")
+            .join("accounts")
+            .join(event.account_id.to_string());
+
+        let state_path = account_dir.join("state.json");
+        let state_info = serde_json::json!({
+            "state": "Active",
+            "permissions": event.permissions,
+            "activated_at": event.activated_at,
+            "correlation_id": event.correlation_id,
+        });
+        fs::write(&state_path, serde_json::to_string_pretty(&state_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write state file: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Project NATS account suspended event
+    fn project_nats_account_suspended(&mut self, event: &crate::events_legacy::NatsAccountSuspendedEvent) -> Result<(), ProjectionError> {
+        let account_dir = self.root_path
+            .join("nats")
+            .join("accounts")
+            .join(event.account_id.to_string());
+
+        let state_path = account_dir.join("state.json");
+        let state_info = serde_json::json!({
+            "state": "Suspended",
+            "reason": event.reason,
+            "suspended_at": event.suspended_at,
+            "suspended_by": event.suspended_by,
+            "correlation_id": event.correlation_id,
+        });
+        fs::write(&state_path, serde_json::to_string_pretty(&state_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write state file: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Project NATS account reactivated event
+    fn project_nats_account_reactivated(&mut self, event: &crate::events_legacy::NatsAccountReactivatedEvent) -> Result<(), ProjectionError> {
+        let account_dir = self.root_path
+            .join("nats")
+            .join("accounts")
+            .join(event.account_id.to_string());
+
+        let state_path = account_dir.join("state.json");
+        let state_info = serde_json::json!({
+            "state": "Reactivated",
+            "permissions": event.permissions,
+            "reactivated_at": event.reactivated_at,
+            "reactivated_by": event.reactivated_by,
+            "correlation_id": event.correlation_id,
+        });
+        fs::write(&state_path, serde_json::to_string_pretty(&state_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write state file: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Project NATS account deleted event (terminal state)
+    fn project_nats_account_deleted(&mut self, event: &crate::events_legacy::NatsAccountDeletedEvent) -> Result<(), ProjectionError> {
+        let account_dir = self.root_path
+            .join("nats")
+            .join("accounts")
+            .join(event.account_id.to_string());
+
+        let state_path = account_dir.join("state.json");
+        let state_info = serde_json::json!({
+            "state": "Deleted",
+            "reason": event.reason,
+            "deleted_at": event.deleted_at,
+            "deleted_by": event.deleted_by,
+            "correlation_id": event.correlation_id,
+            "terminal": true,
+        });
+        fs::write(&state_path, serde_json::to_string_pretty(&state_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write state file: {}", e)))?;
+
+        Ok(())
+    }
+
+    // ========================================================================
+    // NATS User State Transition Handlers (Phase 10)
+    // ========================================================================
+
+    /// Project NATS user activated event
+    fn project_nats_user_activated(&mut self, event: &crate::events_legacy::NatsUserActivatedEvent) -> Result<(), ProjectionError> {
+        let user_dir = self.root_path
+            .join("nats")
+            .join("users")
+            .join(event.user_id.to_string());
+
+        let state_path = user_dir.join("state.json");
+        let state_info = serde_json::json!({
+            "state": "Active",
+            "permissions": event.permissions,
+            "activated_at": event.activated_at,
+            "correlation_id": event.correlation_id,
+        });
+        fs::write(&state_path, serde_json::to_string_pretty(&state_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write state file: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Project NATS user suspended event
+    fn project_nats_user_suspended(&mut self, event: &crate::events_legacy::NatsUserSuspendedEvent) -> Result<(), ProjectionError> {
+        let user_dir = self.root_path
+            .join("nats")
+            .join("users")
+            .join(event.user_id.to_string());
+
+        let state_path = user_dir.join("state.json");
+        let state_info = serde_json::json!({
+            "state": "Suspended",
+            "reason": event.reason,
+            "suspended_at": event.suspended_at,
+            "suspended_by": event.suspended_by,
+            "correlation_id": event.correlation_id,
+        });
+        fs::write(&state_path, serde_json::to_string_pretty(&state_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write state file: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Project NATS user reactivated event
+    fn project_nats_user_reactivated(&mut self, event: &crate::events_legacy::NatsUserReactivatedEvent) -> Result<(), ProjectionError> {
+        let user_dir = self.root_path
+            .join("nats")
+            .join("users")
+            .join(event.user_id.to_string());
+
+        let state_path = user_dir.join("state.json");
+        let state_info = serde_json::json!({
+            "state": "Reactivated",
+            "permissions": event.permissions,
+            "reactivated_at": event.reactivated_at,
+            "reactivated_by": event.reactivated_by,
+            "correlation_id": event.correlation_id,
+        });
+        fs::write(&state_path, serde_json::to_string_pretty(&state_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write state file: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Project NATS user deleted event (terminal state)
+    fn project_nats_user_deleted(&mut self, event: &crate::events_legacy::NatsUserDeletedEvent) -> Result<(), ProjectionError> {
+        let user_dir = self.root_path
+            .join("nats")
+            .join("users")
+            .join(event.user_id.to_string());
+
+        let state_path = user_dir.join("state.json");
+        let state_info = serde_json::json!({
+            "state": "Deleted",
+            "reason": event.reason,
+            "deleted_at": event.deleted_at,
+            "deleted_by": event.deleted_by,
+            "correlation_id": event.correlation_id,
+            "terminal": true,
+        });
+        fs::write(&state_path, serde_json::to_string_pretty(&state_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write state file: {}", e)))?;
 
         Ok(())
     }
