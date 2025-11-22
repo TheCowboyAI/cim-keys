@@ -14,7 +14,7 @@ use crate::policy_types::{
     KeyDelegation,
     PolicyClaim, PolicyCondition,
 };
-use crate::events::KeyEvent;
+use crate::events::DomainEvent;
 
 // ============================================================================
 // Entity Creation Commands
@@ -152,7 +152,7 @@ pub enum RelationshipType {
 /// Handle CreatePerson command
 pub async fn handle_create_person(
     cmd: CreatePerson,
-) -> Result<Vec<KeyEvent>, crate::aggregate::KeyManagementError> {
+) -> Result<Vec<DomainEvent>, crate::aggregate::KeyManagementError> {
     // Validate command
     if cmd.name.is_empty() {
         return Err(crate::aggregate::KeyManagementError::InvalidCommand(
@@ -167,7 +167,7 @@ pub async fn handle_create_person(
     }
 
     // Emit PersonCreated event
-    let event = KeyEvent::PersonCreated(crate::events::PersonCreatedEvent {
+    let event = DomainEvent::Person(crate::events::PersonEvents::PersonCreated(crate::events::person::PersonCreatedEvent {
         person_id: cmd.person_id,
         name: cmd.name,
         email: cmd.email,
@@ -177,7 +177,7 @@ pub async fn handle_create_person(
         created_at: cmd.timestamp,
         correlation_id: cmd.correlation_id,
         causation_id: Some(cmd.command_id),
-    });
+    }));
 
     Ok(vec![event])
 }
@@ -185,7 +185,7 @@ pub async fn handle_create_person(
 /// Handle CreateLocation command
 pub async fn handle_create_location(
     cmd: CreateLocation,
-) -> Result<Vec<KeyEvent>, crate::aggregate::KeyManagementError> {
+) -> Result<Vec<DomainEvent>, crate::aggregate::KeyManagementError> {
     // Validate command
     if cmd.name.is_empty() {
         return Err(crate::aggregate::KeyManagementError::InvalidCommand(
@@ -194,7 +194,7 @@ pub async fn handle_create_location(
     }
 
     // Emit LocationCreated event
-    let event = KeyEvent::LocationCreated(crate::events::LocationCreatedEvent {
+    let event = DomainEvent::Location(crate::events::LocationEvents::LocationCreated(crate::events::location::LocationCreatedEvent {
         location_id: cmd.location_id,
         name: cmd.name,
         location_type: cmd.location_type,
@@ -204,7 +204,7 @@ pub async fn handle_create_location(
         created_at: cmd.timestamp,
         correlation_id: cmd.correlation_id,
         causation_id: Some(cmd.command_id),
-    });
+    }));
 
     Ok(vec![event])
 }
@@ -212,7 +212,7 @@ pub async fn handle_create_location(
 /// Handle CreateOrganization command
 pub async fn handle_create_organization(
     cmd: CreateOrganization,
-) -> Result<Vec<KeyEvent>, crate::aggregate::KeyManagementError> {
+) -> Result<Vec<DomainEvent>, crate::aggregate::KeyManagementError> {
     // Validate command
     if cmd.name.is_empty() {
         return Err(crate::aggregate::KeyManagementError::InvalidCommand(
@@ -221,14 +221,14 @@ pub async fn handle_create_organization(
     }
 
     // Emit OrganizationCreated event
-    let event = KeyEvent::OrganizationCreated(crate::events::OrganizationCreatedEvent {
+    let event = DomainEvent::Organization(crate::events::OrganizationEvents::OrganizationCreated(crate::events::organization::OrganizationCreatedEvent {
         organization_id: cmd.organization_id,
         name: cmd.name,
         domain: cmd.domain,
         created_at: cmd.timestamp,
         correlation_id: cmd.correlation_id,
         causation_id: Some(cmd.command_id),
-    });
+    }));
 
     Ok(vec![event])
 }
@@ -236,7 +236,7 @@ pub async fn handle_create_organization(
 /// Handle EstablishRelationship command
 pub async fn handle_establish_relationship(
     cmd: EstablishRelationship,
-) -> Result<Vec<KeyEvent>, crate::aggregate::KeyManagementError> {
+) -> Result<Vec<DomainEvent>, crate::aggregate::KeyManagementError> {
     // Validate command
     if cmd.from_id == cmd.to_id {
         return Err(crate::aggregate::KeyManagementError::InvalidCommand(
@@ -245,7 +245,7 @@ pub async fn handle_establish_relationship(
     }
 
     // Emit RelationshipEstablished event
-    let event = KeyEvent::RelationshipEstablished(crate::events::RelationshipEstablishedEvent {
+    let event = DomainEvent::Relationship(crate::events::RelationshipEvents::RelationshipEstablished(crate::events::relationship::RelationshipEstablishedEvent {
         from_id: cmd.from_id,
         to_id: cmd.to_id,
         relationship_type: cmd.relationship_type,

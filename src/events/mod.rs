@@ -50,3 +50,26 @@ pub use manifest::ManifestEvents;
 // Each aggregate module defines its own event structs, but they're only accessible
 // through the aggregate namespace (e.g., person::PersonCreatedEvent)
 // This allows gradual migration from events_legacy::KeyEvent to aggregate-specific events
+
+use serde::{Deserialize, Serialize};
+
+/// Unified domain event type that wraps all aggregate events
+///
+/// This enum provides a single entry point for event handling while maintaining
+/// proper aggregate boundaries. Each variant delegates to the appropriate aggregate's
+/// event enum.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "aggregate", content = "event")]
+pub enum DomainEvent {
+    Person(PersonEvents),
+    Organization(OrganizationEvents),
+    Location(LocationEvents),
+    Certificate(CertificateEvents),
+    Key(KeyEvents),
+    NatsOperator(NatsOperatorEvents),
+    NatsAccount(NatsAccountEvents),
+    NatsUser(NatsUserEvents),
+    YubiKey(YubiKeyEvents),
+    Relationship(RelationshipEvents),
+    Manifest(ManifestEvents),
+}

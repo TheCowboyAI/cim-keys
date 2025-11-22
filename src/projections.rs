@@ -10,9 +10,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json;
 
-use crate::events::{
-    KeyEvent, KeyAlgorithm, KeyPurpose, KeyMetadata,
-};
+use crate::events::DomainEvent;
+use crate::types::{KeyAlgorithm, KeyPurpose, KeyMetadata};
 
 // Import state machines for lifecycle tracking
 use crate::state_machines::{
@@ -311,68 +310,82 @@ impl OfflineKeyProjection {
     }
 
     /// Apply an event and update the projection files
-    pub fn apply(&mut self, event: &KeyEvent) -> Result<(), ProjectionError> {
+    pub fn apply(&mut self, event: &DomainEvent) -> Result<(), ProjectionError> {
         // First, append event to the event log
         self.append_event(event)?;
 
         // Then update the specific projections
+        use crate::events::{KeyEvents, CertificateEvents, PersonEvents, LocationEvents, OrganizationEvents,
+                           NatsOperatorEvents, NatsAccountEvents, NatsUserEvents, YubiKeyEvents};
         match event {
-            KeyEvent::KeyGenerated(e) => self.project_key_generated(e)?,
-            KeyEvent::KeyImported(e) => self.project_key_imported(e)?,
-            KeyEvent::KeyExported(e) => self.project_key_exported(e)?,
-            KeyEvent::KeyStoredOffline(e) => self.project_key_stored_offline(e)?,
-            KeyEvent::KeyRevoked(e) => self.project_key_revoked(e)?,
-            KeyEvent::KeyRotationInitiated(e) => self.project_key_rotation_initiated(e)?,
-            KeyEvent::KeyRotationCompleted(e) => self.project_key_rotation_completed(e)?,
-            KeyEvent::CertificateGenerated(e) => self.project_certificate_generated(e)?,
-            KeyEvent::CertificateSigned(e) => self.project_certificate_signed(e)?,
-            KeyEvent::YubiKeyDetected(e) => self.project_yubikey_detected(e)?,
-            KeyEvent::YubiKeyProvisioned(e) => self.project_yubikey_provisioned(e)?,
-            KeyEvent::PkiHierarchyCreated(e) => self.project_pki_hierarchy_created(e)?,
-            KeyEvent::PersonCreated(e) => self.project_person_created(e)?,
-            KeyEvent::LocationCreated(e) => self.project_location_created(e)?,
-            KeyEvent::OrganizationCreated(e) => self.project_organization_created(e)?,
-            KeyEvent::NatsOperatorCreated(e) => self.project_nats_operator_created(e)?,
-            KeyEvent::NatsAccountCreated(e) => self.project_nats_account_created(e)?,
-            KeyEvent::NatsUserCreated(e) => self.project_nats_user_created(e)?,
-            // NATS Operator State Transitions
-            KeyEvent::NatsOperatorSuspended(e) => self.project_nats_operator_suspended(e)?,
-            KeyEvent::NatsOperatorReactivated(e) => self.project_nats_operator_reactivated(e)?,
-            KeyEvent::NatsOperatorRevoked(e) => self.project_nats_operator_revoked(e)?,
-            // NATS Account State Transitions
-            KeyEvent::NatsAccountActivated(e) => self.project_nats_account_activated(e)?,
-            KeyEvent::NatsAccountSuspended(e) => self.project_nats_account_suspended(e)?,
-            KeyEvent::NatsAccountReactivated(e) => self.project_nats_account_reactivated(e)?,
-            KeyEvent::NatsAccountDeleted(e) => self.project_nats_account_deleted(e)?,
-            // NATS User State Transitions
-            KeyEvent::NatsUserActivated(e) => self.project_nats_user_activated(e)?,
-            KeyEvent::NatsUserSuspended(e) => self.project_nats_user_suspended(e)?,
-            KeyEvent::NatsUserReactivated(e) => self.project_nats_user_reactivated(e)?,
-            KeyEvent::NatsUserDeleted(e) => self.project_nats_user_deleted(e)?,
-            // Certificate Lifecycle State Transitions (Phase 11)
-            KeyEvent::CertificateActivated(e) => self.project_certificate_activated(e)?,
-            KeyEvent::CertificateSuspended(e) => self.project_certificate_suspended(e)?,
-            KeyEvent::CertificateRevoked(e) => self.project_certificate_revoked(e)?,
-            KeyEvent::CertificateExpired(e) => self.project_certificate_expired(e)?,
-            KeyEvent::CertificateRenewed(e) => self.project_certificate_renewed(e)?,
-            // Person Lifecycle State Transitions (Phase 12)
-            KeyEvent::PersonActivated(e) => self.project_person_activated(e)?,
-            KeyEvent::PersonSuspended(e) => self.project_person_suspended(e)?,
-            KeyEvent::PersonReactivated(e) => self.project_person_reactivated(e)?,
-            KeyEvent::PersonArchived(e) => self.project_person_archived(e)?,
-            // Location Lifecycle State Transitions (Phase 12)
-            KeyEvent::LocationActivated(e) => self.project_location_activated(e)?,
-            KeyEvent::LocationSuspended(e) => self.project_location_suspended(e)?,
-            KeyEvent::LocationReactivated(e) => self.project_location_reactivated(e)?,
-            KeyEvent::LocationDecommissioned(e) => self.project_location_decommissioned(e)?,
-            KeyEvent::NatsSigningKeyGenerated(e) => self.project_nats_signing_key_generated(e)?,
-            KeyEvent::NatsPermissionsSet(e) => self.project_nats_permissions_set(e)?,
-            KeyEvent::NatsConfigExported(e) => self.project_nats_config_exported(e)?,
-            KeyEvent::NKeyGenerated(e) => self.project_nkey_generated(e)?,
-            KeyEvent::JwtClaimsCreated(e) => self.project_jwt_claims_created(e)?,
-            KeyEvent::JwtSigned(e) => self.project_jwt_signed(e)?,
-            KeyEvent::ServiceAccountCreated(e) => self.project_service_account_created(e)?,
-            KeyEvent::AgentCreated(e) => self.project_agent_created(e)?,
+            // Key aggregate events
+            DomainEvent::Key(KeyEvents::KeyGenerated(e)) => self.project_key_generated(e)?,
+            DomainEvent::Key(KeyEvents::KeyImported(e)) => self.project_key_imported(e)?,
+            DomainEvent::Key(KeyEvents::KeyExported(e)) => self.project_key_exported(e)?,
+            DomainEvent::Key(KeyEvents::KeyStoredOffline(e)) => self.project_key_stored_offline(e)?,
+            DomainEvent::Key(KeyEvents::KeyRevoked(e)) => self.project_key_revoked(e)?,
+            DomainEvent::Key(KeyEvents::KeyRotationInitiated(e)) => self.project_key_rotation_initiated(e)?,
+            DomainEvent::Key(KeyEvents::KeyRotationCompleted(e)) => self.project_key_rotation_completed(e)?,
+
+            // Certificate aggregate events
+            DomainEvent::Certificate(CertificateEvents::CertificateGenerated(e)) => self.project_certificate_generated(e)?,
+            DomainEvent::Certificate(CertificateEvents::CertificateSigned(e)) => self.project_certificate_signed(e)?,
+            DomainEvent::Certificate(CertificateEvents::PkiHierarchyCreated(e)) => self.project_pki_hierarchy_created(e)?,
+            DomainEvent::Certificate(CertificateEvents::CertificateActivated(e)) => self.project_certificate_activated(e)?,
+            DomainEvent::Certificate(CertificateEvents::CertificateSuspended(e)) => self.project_certificate_suspended(e)?,
+            DomainEvent::Certificate(CertificateEvents::CertificateRevoked(e)) => self.project_certificate_revoked(e)?,
+            DomainEvent::Certificate(CertificateEvents::CertificateExpired(e)) => self.project_certificate_expired(e)?,
+            DomainEvent::Certificate(CertificateEvents::CertificateRenewed(e)) => self.project_certificate_renewed(e)?,
+
+            // YubiKey aggregate events
+            DomainEvent::YubiKey(YubiKeyEvents::YubiKeyDetected(e)) => self.project_yubikey_detected(e)?,
+            DomainEvent::YubiKey(YubiKeyEvents::YubiKeyProvisioned(e)) => self.project_yubikey_provisioned(e)?,
+
+            // Person aggregate events
+            DomainEvent::Person(PersonEvents::PersonCreated(e)) => self.project_person_created(e)?,
+            DomainEvent::Person(PersonEvents::PersonActivated(e)) => self.project_person_activated(e)?,
+            DomainEvent::Person(PersonEvents::PersonSuspended(e)) => self.project_person_suspended(e)?,
+            DomainEvent::Person(PersonEvents::PersonReactivated(e)) => self.project_person_reactivated(e)?,
+            DomainEvent::Person(PersonEvents::PersonArchived(e)) => self.project_person_archived(e)?,
+
+            // Location aggregate events
+            DomainEvent::Location(LocationEvents::LocationCreated(e)) => self.project_location_created(e)?,
+            DomainEvent::Location(LocationEvents::LocationActivated(e)) => self.project_location_activated(e)?,
+            DomainEvent::Location(LocationEvents::LocationSuspended(e)) => self.project_location_suspended(e)?,
+            DomainEvent::Location(LocationEvents::LocationReactivated(e)) => self.project_location_reactivated(e)?,
+            DomainEvent::Location(LocationEvents::LocationDecommissioned(e)) => self.project_location_decommissioned(e)?,
+
+            // Organization aggregate events
+            DomainEvent::Organization(OrganizationEvents::OrganizationCreated(e)) => self.project_organization_created(e)?,
+
+            // NATS Operator aggregate events
+            DomainEvent::NatsOperator(NatsOperatorEvents::NatsOperatorCreated(e)) => self.project_nats_operator_created(e)?,
+            DomainEvent::NatsOperator(NatsOperatorEvents::NatsOperatorSuspended(e)) => self.project_nats_operator_suspended(e)?,
+            DomainEvent::NatsOperator(NatsOperatorEvents::NatsOperatorReactivated(e)) => self.project_nats_operator_reactivated(e)?,
+            DomainEvent::NatsOperator(NatsOperatorEvents::NatsOperatorRevoked(e)) => self.project_nats_operator_revoked(e)?,
+            DomainEvent::NatsOperator(NatsOperatorEvents::NatsSigningKeyGenerated(e)) => self.project_nats_signing_key_generated(e)?,
+            DomainEvent::NatsOperator(NatsOperatorEvents::NatsConfigExported(e)) => self.project_nats_config_exported(e)?,
+            DomainEvent::NatsOperator(NatsOperatorEvents::NKeyGenerated(e)) => self.project_nkey_generated(e)?,
+            DomainEvent::NatsOperator(NatsOperatorEvents::JwtClaimsCreated(e)) => self.project_jwt_claims_created(e)?,
+            DomainEvent::NatsOperator(NatsOperatorEvents::JwtSigned(e)) => self.project_jwt_signed(e)?,
+
+            // NATS Account aggregate events
+            DomainEvent::NatsAccount(NatsAccountEvents::NatsAccountCreated(e)) => self.project_nats_account_created(e)?,
+            DomainEvent::NatsAccount(NatsAccountEvents::NatsAccountActivated(e)) => self.project_nats_account_activated(e)?,
+            DomainEvent::NatsAccount(NatsAccountEvents::NatsAccountSuspended(e)) => self.project_nats_account_suspended(e)?,
+            DomainEvent::NatsAccount(NatsAccountEvents::NatsAccountReactivated(e)) => self.project_nats_account_reactivated(e)?,
+            DomainEvent::NatsAccount(NatsAccountEvents::NatsAccountDeleted(e)) => self.project_nats_account_deleted(e)?,
+            DomainEvent::NatsAccount(NatsAccountEvents::NatsPermissionsSet(e)) => self.project_nats_permissions_set(e)?,
+
+            // NATS User aggregate events
+            DomainEvent::NatsUser(NatsUserEvents::NatsUserCreated(e)) => self.project_nats_user_created(e)?,
+            DomainEvent::NatsUser(NatsUserEvents::NatsUserActivated(e)) => self.project_nats_user_activated(e)?,
+            DomainEvent::NatsUser(NatsUserEvents::NatsUserSuspended(e)) => self.project_nats_user_suspended(e)?,
+            DomainEvent::NatsUser(NatsUserEvents::NatsUserReactivated(e)) => self.project_nats_user_reactivated(e)?,
+            DomainEvent::NatsUser(NatsUserEvents::NatsUserDeleted(e)) => self.project_nats_user_deleted(e)?,
+            DomainEvent::NatsUser(NatsUserEvents::ServiceAccountCreated(e)) => self.project_service_account_created(e)?,
+            DomainEvent::NatsUser(NatsUserEvents::AgentCreated(e)) => self.project_agent_created(e)?,
+
             _ => {} // Handle other events as needed
         }
 
@@ -390,7 +403,7 @@ impl OfflineKeyProjection {
     }
 
     /// Append event to the event log
-    fn append_event(&self, event: &KeyEvent) -> Result<(), ProjectionError> {
+    fn append_event(&self, event: &DomainEvent) -> Result<(), ProjectionError> {
         let event_id = Uuid::now_v7();
         let timestamp = Utc::now().timestamp_nanos_opt().unwrap_or(0);
         let filename = format!("{}_{}.json", timestamp, event_id);
@@ -454,7 +467,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project a key import event (initialize with Imported state)
-    fn project_key_imported(&mut self, event: &crate::events_legacy::KeyImportedEvent) -> Result<(), ProjectionError> {
+    fn project_key_imported(&mut self, event: &crate::events::key::KeyImportedEvent) -> Result<(), ProjectionError> {
         // Create key directory
         let key_dir = self.root_path.join("keys").join(event.key_id.to_string());
         fs::create_dir_all(&key_dir)
@@ -503,21 +516,21 @@ impl OfflineKeyProjection {
             // Initialize state machine to Imported
             state: Some(KeyState::Imported {
                 source: match &event.source {
-                    crate::events_legacy::ImportSource::File { path } => {
+                    crate::types::ImportSource::File { path } => {
                         crate::state_machines::key::ImportSource::File { path: path.clone() }
                     },
-                    crate::events_legacy::ImportSource::YubiKey { serial } => {
+                    crate::types::ImportSource::YubiKey { serial } => {
                         crate::state_machines::key::ImportSource::YubiKey {
                             serial: serial.clone(),
                             slot: "Unknown".to_string(),  // Not available in event
                         }
                     },
-                    crate::events_legacy::ImportSource::Hsm { identifier } => {
+                    crate::types::ImportSource::Hsm { identifier } => {
                         crate::state_machines::key::ImportSource::ExternalPKI {
                             authority: identifier.clone(),
                         }
                     },
-                    crate::events_legacy::ImportSource::Memory => {
+                    crate::types::ImportSource::Memory => {
                         crate::state_machines::key::ImportSource::File {
                             path: "<memory>".to_string(),
                         }
@@ -532,7 +545,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project a key export event (record export operation, no state change)
-    fn project_key_exported(&mut self, event: &crate::events_legacy::KeyExportedEvent) -> Result<(), ProjectionError> {
+    fn project_key_exported(&mut self, event: &crate::events::key::KeyExportedEvent) -> Result<(), ProjectionError> {
         // Find the key directory
         let key_dir = self.root_path.join("keys").join(event.key_id.to_string());
 
@@ -573,7 +586,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project a person creation event (initialize with Created state)
-    fn project_person_created(&mut self, event: &crate::events_legacy::PersonCreatedEvent) -> Result<(), ProjectionError> {
+    fn project_person_created(&mut self, event: &crate::events::person::PersonCreatedEvent) -> Result<(), ProjectionError> {
         // Create person directory
         let person_dir = self.root_path.join("people").join(event.person_id.to_string());
         fs::create_dir_all(&person_dir)
@@ -613,7 +626,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project a location creation event (initialize with Active state)
-    fn project_location_created(&mut self, event: &crate::events_legacy::LocationCreatedEvent) -> Result<(), ProjectionError> {
+    fn project_location_created(&mut self, event: &crate::events::location::LocationCreatedEvent) -> Result<(), ProjectionError> {
         // Create location directory
         let location_dir = self.root_path.join("locations").join(event.location_id.to_string());
         fs::create_dir_all(&location_dir)
@@ -659,7 +672,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project an organization creation event (initialize organization info)
-    fn project_organization_created(&mut self, event: &crate::events_legacy::OrganizationCreatedEvent) -> Result<(), ProjectionError> {
+    fn project_organization_created(&mut self, event: &crate::events::organization::OrganizationCreatedEvent) -> Result<(), ProjectionError> {
         // Create organization directory
         let org_dir = self.root_path.join("organization");
         fs::create_dir_all(&org_dir)
@@ -689,7 +702,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project a NATS operator creation event (initialize operator entry)
-    fn project_nats_operator_created(&mut self, event: &crate::events_legacy::NatsOperatorCreatedEvent) -> Result<(), ProjectionError> {
+    fn project_nats_operator_created(&mut self, event: &crate::events::nats_operator::NatsOperatorCreatedEvent) -> Result<(), ProjectionError> {
         // Create NATS operator directory
         let operator_dir = self.root_path
             .join("nats")
@@ -726,7 +739,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project a NATS account creation event (initialize account entry)
-    fn project_nats_account_created(&mut self, event: &crate::events_legacy::NatsAccountCreatedEvent) -> Result<(), ProjectionError> {
+    fn project_nats_account_created(&mut self, event: &crate::events::nats_account::NatsAccountCreatedEvent) -> Result<(), ProjectionError> {
         // Create NATS account directory
         let account_dir = self.root_path
             .join("nats")
@@ -767,7 +780,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project a NATS user creation event (initialize user entry)
-    fn project_nats_user_created(&mut self, event: &crate::events_legacy::NatsUserCreatedEvent) -> Result<(), ProjectionError> {
+    fn project_nats_user_created(&mut self, event: &crate::events::nats_user::NatsUserCreatedEvent) -> Result<(), ProjectionError> {
         // Create NATS user directory
         let user_dir = self.root_path
             .join("nats")
@@ -810,7 +823,7 @@ impl OfflineKeyProjection {
     // ========================================================================
 
     /// Project NATS operator suspended event
-    fn project_nats_operator_suspended(&mut self, event: &crate::events_legacy::NatsOperatorSuspendedEvent) -> Result<(), ProjectionError> {
+    fn project_nats_operator_suspended(&mut self, event: &crate::events::nats_operator::NatsOperatorSuspendedEvent) -> Result<(), ProjectionError> {
         let operator_dir = self.root_path
             .join("nats")
             .join("operators")
@@ -832,7 +845,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project NATS operator reactivated event
-    fn project_nats_operator_reactivated(&mut self, event: &crate::events_legacy::NatsOperatorReactivatedEvent) -> Result<(), ProjectionError> {
+    fn project_nats_operator_reactivated(&mut self, event: &crate::events::nats_operator::NatsOperatorReactivatedEvent) -> Result<(), ProjectionError> {
         let operator_dir = self.root_path
             .join("nats")
             .join("operators")
@@ -852,7 +865,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project NATS operator revoked event (terminal state)
-    fn project_nats_operator_revoked(&mut self, event: &crate::events_legacy::NatsOperatorRevokedEvent) -> Result<(), ProjectionError> {
+    fn project_nats_operator_revoked(&mut self, event: &crate::events::nats_operator::NatsOperatorRevokedEvent) -> Result<(), ProjectionError> {
         let operator_dir = self.root_path
             .join("nats")
             .join("operators")
@@ -878,7 +891,7 @@ impl OfflineKeyProjection {
     // ========================================================================
 
     /// Project NATS account activated event
-    fn project_nats_account_activated(&mut self, event: &crate::events_legacy::NatsAccountActivatedEvent) -> Result<(), ProjectionError> {
+    fn project_nats_account_activated(&mut self, event: &crate::events::nats_account::NatsAccountActivatedEvent) -> Result<(), ProjectionError> {
         let account_dir = self.root_path
             .join("nats")
             .join("accounts")
@@ -898,7 +911,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project NATS account suspended event
-    fn project_nats_account_suspended(&mut self, event: &crate::events_legacy::NatsAccountSuspendedEvent) -> Result<(), ProjectionError> {
+    fn project_nats_account_suspended(&mut self, event: &crate::events::nats_account::NatsAccountSuspendedEvent) -> Result<(), ProjectionError> {
         let account_dir = self.root_path
             .join("nats")
             .join("accounts")
@@ -919,7 +932,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project NATS account reactivated event
-    fn project_nats_account_reactivated(&mut self, event: &crate::events_legacy::NatsAccountReactivatedEvent) -> Result<(), ProjectionError> {
+    fn project_nats_account_reactivated(&mut self, event: &crate::events::nats_account::NatsAccountReactivatedEvent) -> Result<(), ProjectionError> {
         let account_dir = self.root_path
             .join("nats")
             .join("accounts")
@@ -940,7 +953,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project NATS account deleted event (terminal state)
-    fn project_nats_account_deleted(&mut self, event: &crate::events_legacy::NatsAccountDeletedEvent) -> Result<(), ProjectionError> {
+    fn project_nats_account_deleted(&mut self, event: &crate::events::nats_account::NatsAccountDeletedEvent) -> Result<(), ProjectionError> {
         let account_dir = self.root_path
             .join("nats")
             .join("accounts")
@@ -966,7 +979,7 @@ impl OfflineKeyProjection {
     // ========================================================================
 
     /// Project NATS user activated event
-    fn project_nats_user_activated(&mut self, event: &crate::events_legacy::NatsUserActivatedEvent) -> Result<(), ProjectionError> {
+    fn project_nats_user_activated(&mut self, event: &crate::events::nats_user::NatsUserActivatedEvent) -> Result<(), ProjectionError> {
         let user_dir = self.root_path
             .join("nats")
             .join("users")
@@ -986,7 +999,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project NATS user suspended event
-    fn project_nats_user_suspended(&mut self, event: &crate::events_legacy::NatsUserSuspendedEvent) -> Result<(), ProjectionError> {
+    fn project_nats_user_suspended(&mut self, event: &crate::events::nats_user::NatsUserSuspendedEvent) -> Result<(), ProjectionError> {
         let user_dir = self.root_path
             .join("nats")
             .join("users")
@@ -1007,7 +1020,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project NATS user reactivated event
-    fn project_nats_user_reactivated(&mut self, event: &crate::events_legacy::NatsUserReactivatedEvent) -> Result<(), ProjectionError> {
+    fn project_nats_user_reactivated(&mut self, event: &crate::events::nats_user::NatsUserReactivatedEvent) -> Result<(), ProjectionError> {
         let user_dir = self.root_path
             .join("nats")
             .join("users")
@@ -1028,7 +1041,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project NATS user deleted event (terminal state)
-    fn project_nats_user_deleted(&mut self, event: &crate::events_legacy::NatsUserDeletedEvent) -> Result<(), ProjectionError> {
+    fn project_nats_user_deleted(&mut self, event: &crate::events::nats_user::NatsUserDeletedEvent) -> Result<(), ProjectionError> {
         let user_dir = self.root_path
             .join("nats")
             .join("users")
@@ -1050,16 +1063,16 @@ impl OfflineKeyProjection {
     }
 
     /// Project a NATS signing key generation event (operational)
-    fn project_nats_signing_key_generated(&mut self, event: &crate::events_legacy::NatsSigningKeyGeneratedEvent) -> Result<(), ProjectionError> {
+    fn project_nats_signing_key_generated(&mut self, event: &crate::events::nats_operator::NatsSigningKeyGeneratedEvent) -> Result<(), ProjectionError> {
         // Determine entity directory based on type
         let entity_dir = match event.entity_type {
-            crate::events_legacy::NatsEntityType::Operator => {
+            crate::types::NatsEntityType::Operator => {
                 self.root_path.join("nats").join("operators").join(event.entity_id.to_string())
             }
-            crate::events_legacy::NatsEntityType::Account => {
+            crate::types::NatsEntityType::Account => {
                 self.root_path.join("nats").join("accounts").join(event.entity_id.to_string())
             }
-            crate::events_legacy::NatsEntityType::User => {
+            crate::types::NatsEntityType::User => {
                 self.root_path.join("nats").join("users").join(event.entity_id.to_string())
             }
         };
@@ -1084,16 +1097,16 @@ impl OfflineKeyProjection {
     }
 
     /// Project a NATS permissions set event (operational)
-    fn project_nats_permissions_set(&mut self, event: &crate::events_legacy::NatsPermissionsSetEvent) -> Result<(), ProjectionError> {
+    fn project_nats_permissions_set(&mut self, event: &crate::events::nats_account::NatsPermissionsSetEvent) -> Result<(), ProjectionError> {
         // Determine entity directory based on type
         let entity_dir = match event.entity_type {
-            crate::events_legacy::NatsEntityType::Operator => {
+            crate::types::NatsEntityType::Operator => {
                 self.root_path.join("nats").join("operators").join(event.entity_id.to_string())
             }
-            crate::events_legacy::NatsEntityType::Account => {
+            crate::types::NatsEntityType::Account => {
                 self.root_path.join("nats").join("accounts").join(event.entity_id.to_string())
             }
-            crate::events_legacy::NatsEntityType::User => {
+            crate::types::NatsEntityType::User => {
                 self.root_path.join("nats").join("users").join(event.entity_id.to_string())
             }
         };
@@ -1116,7 +1129,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project a NATS config export event (operational)
-    fn project_nats_config_exported(&mut self, event: &crate::events_legacy::NatsConfigExportedEvent) -> Result<(), ProjectionError> {
+    fn project_nats_config_exported(&mut self, event: &crate::events::nats_operator::NatsConfigExportedEvent) -> Result<(), ProjectionError> {
         // Create exports directory under operator
         let exports_dir = self.root_path
             .join("nats")
@@ -1142,7 +1155,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project an NKey generation event (operational)
-    fn project_nkey_generated(&mut self, event: &crate::events_legacy::NKeyGeneratedEvent) -> Result<(), ProjectionError> {
+    fn project_nkey_generated(&mut self, event: &crate::events::nats_operator::NKeyGeneratedEvent) -> Result<(), ProjectionError> {
         // Create nkeys directory
         let nkeys_dir = self.root_path.join("nats").join("nkeys");
         fs::create_dir_all(&nkeys_dir)
@@ -1168,7 +1181,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project a JWT claims creation event (operational)
-    fn project_jwt_claims_created(&mut self, event: &crate::events_legacy::JwtClaimsCreatedEvent) -> Result<(), ProjectionError> {
+    fn project_jwt_claims_created(&mut self, event: &crate::events::nats_operator::JwtClaimsCreatedEvent) -> Result<(), ProjectionError> {
         // Create jwt_claims directory
         let claims_dir = self.root_path.join("nats").join("jwt_claims");
         fs::create_dir_all(&claims_dir)
@@ -1196,7 +1209,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project a JWT signed event (operational)
-    fn project_jwt_signed(&mut self, event: &crate::events_legacy::JwtSignedEvent) -> Result<(), ProjectionError> {
+    fn project_jwt_signed(&mut self, event: &crate::events::nats_operator::JwtSignedEvent) -> Result<(), ProjectionError> {
         // Create jwt_tokens directory
         let tokens_dir = self.root_path.join("nats").join("jwt_tokens");
         fs::create_dir_all(&tokens_dir)
@@ -1221,7 +1234,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project a service account creation event (initialize service account entry)
-    fn project_service_account_created(&mut self, event: &crate::events_legacy::ServiceAccountCreatedEvent) -> Result<(), ProjectionError> {
+    fn project_service_account_created(&mut self, event: &crate::events::nats_user::ServiceAccountCreatedEvent) -> Result<(), ProjectionError> {
         // Create service account directory under NATS users
         let sa_dir = self.root_path
             .join("nats")
@@ -1248,7 +1261,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project an agent creation event (initialize agent entry)
-    fn project_agent_created(&mut self, event: &crate::events_legacy::AgentCreatedEvent) -> Result<(), ProjectionError> {
+    fn project_agent_created(&mut self, event: &crate::events::nats_user::AgentCreatedEvent) -> Result<(), ProjectionError> {
         // Create agent directory under NATS
         let agent_dir = self.root_path
             .join("nats")
@@ -1275,7 +1288,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project a key rotation initiated event (Active → RotationPending)
-    fn project_key_rotation_initiated(&mut self, event: &crate::events_legacy::KeyRotationInitiatedEvent) -> Result<(), ProjectionError> {
+    fn project_key_rotation_initiated(&mut self, event: &crate::events::key::KeyRotationInitiatedEvent) -> Result<(), ProjectionError> {
         // Find the old key entry and transition to RotationPending
         if let Some(key_entry) = self.manifest.keys.iter_mut().find(|k| k.key_id == event.old_key_id) {
             if let Some(current_state) = &key_entry.state {
@@ -1314,7 +1327,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project a key rotation completed event (RotationPending → Rotated)
-    fn project_key_rotation_completed(&mut self, event: &crate::events_legacy::KeyRotationCompletedEvent) -> Result<(), ProjectionError> {
+    fn project_key_rotation_completed(&mut self, event: &crate::events::key::KeyRotationCompletedEvent) -> Result<(), ProjectionError> {
         // Find the old key entry and transition to Rotated
         if let Some(key_entry) = self.manifest.keys.iter_mut().find(|k| k.key_id == event.old_key_id) {
             if let Some(current_state) = &key_entry.state {
@@ -1455,7 +1468,7 @@ impl OfflineKeyProjection {
     // ========================================================================
 
     /// Project certificate activated event
-    fn project_certificate_activated(&mut self, event: &crate::events_legacy::CertificateActivatedEvent) -> Result<(), ProjectionError> {
+    fn project_certificate_activated(&mut self, event: &crate::events::certificate::CertificateActivatedEvent) -> Result<(), ProjectionError> {
         let cert_dir = self.root_path
             .join("certificates")
             .join(event.cert_id.to_string());
@@ -1474,7 +1487,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project certificate suspended event
-    fn project_certificate_suspended(&mut self, event: &crate::events_legacy::CertificateSuspendedEvent) -> Result<(), ProjectionError> {
+    fn project_certificate_suspended(&mut self, event: &crate::events::certificate::CertificateSuspendedEvent) -> Result<(), ProjectionError> {
         let cert_dir = self.root_path
             .join("certificates")
             .join(event.cert_id.to_string());
@@ -1494,7 +1507,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project certificate revoked event (terminal state)
-    fn project_certificate_revoked(&mut self, event: &crate::events_legacy::CertificateRevokedEvent) -> Result<(), ProjectionError> {
+    fn project_certificate_revoked(&mut self, event: &crate::events::certificate::CertificateRevokedEvent) -> Result<(), ProjectionError> {
         let cert_dir = self.root_path
             .join("certificates")
             .join(event.cert_id.to_string());
@@ -1515,7 +1528,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project certificate expired event (terminal state)
-    fn project_certificate_expired(&mut self, event: &crate::events_legacy::CertificateExpiredEvent) -> Result<(), ProjectionError> {
+    fn project_certificate_expired(&mut self, event: &crate::events::certificate::CertificateExpiredEvent) -> Result<(), ProjectionError> {
         let cert_dir = self.root_path
             .join("certificates")
             .join(event.cert_id.to_string());
@@ -1535,7 +1548,7 @@ impl OfflineKeyProjection {
     }
 
     /// Project certificate renewed event
-    fn project_certificate_renewed(&mut self, event: &crate::events_legacy::CertificateRenewedEvent) -> Result<(), ProjectionError> {
+    fn project_certificate_renewed(&mut self, event: &crate::events::certificate::CertificateRenewedEvent) -> Result<(), ProjectionError> {
         // Update old certificate to show it's been renewed
         let old_cert_dir = self.root_path
             .join("certificates")
@@ -1578,7 +1591,7 @@ impl OfflineKeyProjection {
     // Person Lifecycle State Transition Handlers (Phase 12)
     // ========================================================================
 
-    fn project_person_activated(&mut self, event: &crate::events_legacy::PersonActivatedEvent) -> Result<(), ProjectionError> {
+    fn project_person_activated(&mut self, event: &crate::events::person::PersonActivatedEvent) -> Result<(), ProjectionError> {
         let person_dir = self.root_path
             .join("people")
             .join(event.person_id.to_string());
@@ -1595,7 +1608,7 @@ impl OfflineKeyProjection {
         Ok(())
     }
 
-    fn project_person_suspended(&mut self, event: &crate::events_legacy::PersonSuspendedEvent) -> Result<(), ProjectionError> {
+    fn project_person_suspended(&mut self, event: &crate::events::person::PersonSuspendedEvent) -> Result<(), ProjectionError> {
         let person_dir = self.root_path
             .join("people")
             .join(event.person_id.to_string());
@@ -1616,7 +1629,7 @@ impl OfflineKeyProjection {
         Ok(())
     }
 
-    fn project_person_reactivated(&mut self, event: &crate::events_legacy::PersonReactivatedEvent) -> Result<(), ProjectionError> {
+    fn project_person_reactivated(&mut self, event: &crate::events::person::PersonReactivatedEvent) -> Result<(), ProjectionError> {
         let person_dir = self.root_path
             .join("people")
             .join(event.person_id.to_string());
@@ -1633,7 +1646,7 @@ impl OfflineKeyProjection {
         Ok(())
     }
 
-    fn project_person_archived(&mut self, event: &crate::events_legacy::PersonArchivedEvent) -> Result<(), ProjectionError> {
+    fn project_person_archived(&mut self, event: &crate::events::person::PersonArchivedEvent) -> Result<(), ProjectionError> {
         let person_dir = self.root_path
             .join("people")
             .join(event.person_id.to_string());
@@ -1656,7 +1669,7 @@ impl OfflineKeyProjection {
     // Location Lifecycle State Transition Handlers (Phase 12)
     // ========================================================================
 
-    fn project_location_activated(&mut self, event: &crate::events_legacy::LocationActivatedEvent) -> Result<(), ProjectionError> {
+    fn project_location_activated(&mut self, event: &crate::events::location::LocationActivatedEvent) -> Result<(), ProjectionError> {
         let location_dir = self.root_path
             .join("locations")
             .join(event.location_id.to_string());
@@ -1673,7 +1686,7 @@ impl OfflineKeyProjection {
         Ok(())
     }
 
-    fn project_location_suspended(&mut self, event: &crate::events_legacy::LocationSuspendedEvent) -> Result<(), ProjectionError> {
+    fn project_location_suspended(&mut self, event: &crate::events::location::LocationSuspendedEvent) -> Result<(), ProjectionError> {
         let location_dir = self.root_path
             .join("locations")
             .join(event.location_id.to_string());
@@ -1694,7 +1707,7 @@ impl OfflineKeyProjection {
         Ok(())
     }
 
-    fn project_location_reactivated(&mut self, event: &crate::events_legacy::LocationReactivatedEvent) -> Result<(), ProjectionError> {
+    fn project_location_reactivated(&mut self, event: &crate::events::location::LocationReactivatedEvent) -> Result<(), ProjectionError> {
         let location_dir = self.root_path
             .join("locations")
             .join(event.location_id.to_string());
@@ -1711,7 +1724,7 @@ impl OfflineKeyProjection {
         Ok(())
     }
 
-    fn project_location_decommissioned(&mut self, event: &crate::events_legacy::LocationDecommissionedEvent) -> Result<(), ProjectionError> {
+    fn project_location_decommissioned(&mut self, event: &crate::events::location::LocationDecommissionedEvent) -> Result<(), ProjectionError> {
         let location_dir = self.root_path
             .join("locations")
             .join(event.location_id.to_string());
@@ -1893,7 +1906,7 @@ impl OfflineKeyProjection {
             key.revoked = true;
 
             // Convert event revocation reason to state machine revocation reason
-            use crate::events_legacy::RevocationReason as EventReason;
+            use crate::types::RevocationReason as EventReason;
             use crate::state_machines::key::RevocationReason as StateReason;
 
             let state_reason = match &event.reason {
@@ -2117,7 +2130,7 @@ impl OfflineKeyProjection {
             let content = fs::read_to_string(entry.path())
                 .map_err(|e| ProjectionError::IoError(format!("Failed to read event file: {}", e)))?;
 
-            let event: KeyEvent = serde_json::from_str(&content)
+            let event: DomainEvent = serde_json::from_str(&content)
                 .map_err(|e| ProjectionError::ParseError(format!("Invalid event JSON: {}", e)))?;
 
             self.apply(&event)?;
