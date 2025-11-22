@@ -280,6 +280,7 @@ impl OfflineKeyProjection {
             KeyEvent::KeyRevoked(e) => self.project_key_revoked(e)?,
             KeyEvent::PersonCreated(e) => self.project_person_created(e)?,
             KeyEvent::LocationCreated(e) => self.project_location_created(e)?,
+            KeyEvent::OrganizationCreated(e) => self.project_organization_created(e)?,
             _ => {} // Handle other events as needed
         }
 
@@ -561,6 +562,36 @@ impl OfflineKeyProjection {
                 last_accessed: None,
             }),
         });
+
+        Ok(())
+    }
+
+    /// Project an organization creation event (initialize organization info)
+    fn project_organization_created(&mut self, event: &crate::events_legacy::OrganizationCreatedEvent) -> Result<(), ProjectionError> {
+        // Create organization directory
+        let org_dir = self.root_path.join("organization");
+        fs::create_dir_all(&org_dir)
+            .map_err(|e| ProjectionError::IoError(format!("Failed to create organization directory: {}", e)))?;
+
+        // Write organization metadata
+        let metadata_path = org_dir.join("metadata.json");
+        let org_info = serde_json::json!({
+            "organization_id": event.organization_id,
+            "name": event.name,
+            "domain": event.domain,
+            "created_at": event.created_at,
+        });
+
+        fs::write(&metadata_path, serde_json::to_string_pretty(&org_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write organization metadata: {}", e)))?;
+
+        // Update manifest organization info
+        self.manifest.organization = OrganizationInfo {
+            name: event.name.clone(),
+            domain: event.domain.clone().unwrap_or_else(|| "example.com".to_string()),
+            country: "US".to_string(),  // TODO: Add to event
+            admin_email: "admin@example.com".to_string(),  // TODO: Add to event
+        };
 
         Ok(())
     }
