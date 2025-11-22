@@ -14,6 +14,12 @@ use crate::events::{
     KeyEvent, KeyAlgorithm, KeyPurpose, KeyMetadata,
 };
 
+// Import state machines for lifecycle tracking
+use crate::state_machines::{
+    KeyState, CertificateState, PersonState,
+    LocationState, YubiKeyState,
+};
+
 /// Offline key storage projection
 ///
 /// This projection writes all state as JSON files to an encrypted partition.
@@ -103,6 +109,9 @@ pub struct KeyEntry {
     pub yubikey_slot: Option<String>,
     pub revoked: bool,
     pub file_path: String,
+    /// Lifecycle state machine for this key
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<KeyState>,
 }
 
 /// Entry for a certificate in the manifest
@@ -117,6 +126,9 @@ pub struct CertificateEntry {
     pub not_after: DateTime<Utc>,
     pub is_ca: bool,
     pub file_path: String,
+    /// Lifecycle state machine for this certificate
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<CertificateState>,
 }
 
 /// Entry for PKI hierarchy
@@ -136,6 +148,9 @@ pub struct YubiKeyEntry {
     pub provisioned_at: DateTime<Utc>,
     pub slots_used: Vec<String>,
     pub config_path: String,
+    /// Lifecycle state machine for this YubiKey
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<YubiKeyState>,
 }
 
 /// Organization information
@@ -156,6 +171,9 @@ pub struct PersonEntry {
     pub role: String,
     pub organization_id: Uuid,
     pub created_at: DateTime<Utc>,
+    /// Lifecycle state machine for this person
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<PersonState>,
 }
 
 /// Entry for a location in the manifest
@@ -172,6 +190,9 @@ pub struct LocationEntry {
     pub region: Option<String>,
     pub country: Option<String>,
     pub postal_code: Option<String>,
+    /// Lifecycle state machine for this location
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<LocationState>,
 }
 
 impl OfflineKeyProjection {
@@ -310,7 +331,7 @@ impl OfflineKeyProjection {
         fs::write(&metadata_path, metadata_json)
             .map_err(|e| ProjectionError::IoError(format!("Failed to write metadata: {}", e)))?;
 
-        // Add to manifest
+        // Add to manifest with initial state
         self.manifest.keys.push(KeyEntry {
             key_id: event.key_id,
             algorithm: event.algorithm.clone(),
@@ -322,6 +343,12 @@ impl OfflineKeyProjection {
             yubikey_slot: None,
             revoked: false,
             file_path: format!("keys/{}", event.key_id),
+            // Initialize state machine
+            state: Some(KeyState::Generated {
+                algorithm: event.algorithm.clone(),
+                generated_at: event.generated_at,
+                generated_by: Uuid::now_v7(), // TODO: Get from event ownership
+            }),
         });
 
         Ok(())
@@ -356,7 +383,7 @@ impl OfflineKeyProjection {
         fs::write(&metadata_path, metadata_json)
             .map_err(|e| ProjectionError::IoError(format!("Failed to write metadata: {}", e)))?;
 
-        // Add to manifest
+        // Add to manifest with initial state
         self.manifest.certificates.push(CertificateEntry {
             cert_id: event.cert_id,
             key_id: event.key_id,
@@ -367,6 +394,12 @@ impl OfflineKeyProjection {
             not_after: event.not_after,
             is_ca: event.is_ca,
             file_path: format!("certificates/{}", event.cert_id),
+            // Initialize state machine
+            state: Some(CertificateState::Pending {
+                csr_id: None,
+                pending_since: event.not_before,
+                requested_by: Uuid::now_v7(), // TODO: Get from event
+            }),
         });
 
         Ok(())
@@ -390,6 +423,14 @@ impl OfflineKeyProjection {
             provisioned_at: event.provisioned_at,
             slots_used: event.slots_configured.iter().map(|s| s.slot_id.clone()).collect(),
             config_path: format!("yubikeys/{}/config.json", event.yubikey_serial),
+            // Initialize state machine
+            state: Some(YubiKeyState::Provisioned {
+                provisioned_at: event.provisioned_at,
+                provisioned_by: Uuid::now_v7(), // TODO: Get from event
+                slots: std::collections::HashMap::new(), // TODO: Map from event.slots_configured
+                pin_changed: true, // Assume changed during provisioning
+                puk_changed: true, // Assume changed during provisioning
+            }),
         });
 
         Ok(())
@@ -487,6 +528,11 @@ impl OfflineKeyProjection {
             role,
             organization_id,
             created_at: Utc::now(),
+            // Initialize state machine
+            state: Some(PersonState::Created {
+                created_at: Utc::now(),
+                created_by: Uuid::now_v7(), // System created
+            }),
         };
 
         self.manifest.people.push(person_entry);
@@ -524,6 +570,13 @@ impl OfflineKeyProjection {
             region,
             country,
             postal_code,
+            // Initialize state machine
+            state: Some(LocationState::Active {
+                activated_at: Utc::now(),
+                access_grants: Vec::new(),
+                assets_stored: 0,
+                last_accessed: None,
+            }),
         };
 
         self.manifest.locations.push(location_entry);
