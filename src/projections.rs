@@ -271,13 +271,15 @@ impl OfflineKeyProjection {
             KeyEvent::KeyGenerated(e) => self.project_key_generated(e)?,
             KeyEvent::KeyImported(e) => self.project_key_imported(e)?,
             KeyEvent::KeyExported(e) => self.project_key_exported(e)?,
+            KeyEvent::KeyStoredOffline(e) => self.project_key_stored_offline(e)?,
+            KeyEvent::KeyRevoked(e) => self.project_key_revoked(e)?,
+            KeyEvent::KeyRotationInitiated(e) => self.project_key_rotation_initiated(e)?,
+            KeyEvent::KeyRotationCompleted(e) => self.project_key_rotation_completed(e)?,
             KeyEvent::CertificateGenerated(e) => self.project_certificate_generated(e)?,
             KeyEvent::CertificateSigned(e) => self.project_certificate_signed(e)?,
             KeyEvent::YubiKeyDetected(e) => self.project_yubikey_detected(e)?,
             KeyEvent::YubiKeyProvisioned(e) => self.project_yubikey_provisioned(e)?,
             KeyEvent::PkiHierarchyCreated(e) => self.project_pki_hierarchy_created(e)?,
-            KeyEvent::KeyStoredOffline(e) => self.project_key_stored_offline(e)?,
-            KeyEvent::KeyRevoked(e) => self.project_key_revoked(e)?,
             KeyEvent::PersonCreated(e) => self.project_person_created(e)?,
             KeyEvent::LocationCreated(e) => self.project_location_created(e)?,
             KeyEvent::OrganizationCreated(e) => self.project_organization_created(e)?,
@@ -592,6 +594,87 @@ impl OfflineKeyProjection {
             country: "US".to_string(),  // TODO: Add to event
             admin_email: "admin@example.com".to_string(),  // TODO: Add to event
         };
+
+        Ok(())
+    }
+
+    /// Project a key rotation initiated event (Active → RotationPending)
+    fn project_key_rotation_initiated(&mut self, event: &crate::events_legacy::KeyRotationInitiatedEvent) -> Result<(), ProjectionError> {
+        // Find the old key entry and transition to RotationPending
+        if let Some(key_entry) = self.manifest.keys.iter_mut().find(|k| k.key_id == event.old_key_id) {
+            if let Some(current_state) = &key_entry.state {
+                // Validate transition from Active state
+                if !matches!(current_state, KeyState::Active { .. }) {
+                    return Err(ProjectionError::InvalidStateTransition(format!(
+                        "Cannot initiate rotation from state: {}",
+                        current_state.description()
+                    )));
+                }
+
+                // Transition to RotationPending
+                key_entry.state = Some(KeyState::RotationPending {
+                    new_key_id: event.new_key_id,
+                    initiated_at: event.initiated_at,
+                    initiated_by: Uuid::now_v7(),  // TODO: Parse from event.initiated_by
+                });
+
+                // Write rotation marker
+                let key_dir = self.root_path.join("keys").join(event.old_key_id.to_string());
+                let rotation_path = key_dir.join("ROTATION_PENDING.json");
+                let rotation_info = serde_json::json!({
+                    "rotation_id": event.rotation_id,
+                    "old_key_id": event.old_key_id,
+                    "new_key_id": event.new_key_id,
+                    "initiated_at": event.initiated_at,
+                    "reason": event.rotation_reason,
+                });
+
+                fs::write(&rotation_path, serde_json::to_string_pretty(&rotation_info).unwrap())
+                    .map_err(|e| ProjectionError::IoError(format!("Failed to write rotation marker: {}", e)))?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Project a key rotation completed event (RotationPending → Rotated)
+    fn project_key_rotation_completed(&mut self, event: &crate::events_legacy::KeyRotationCompletedEvent) -> Result<(), ProjectionError> {
+        // Find the old key entry and transition to Rotated
+        if let Some(key_entry) = self.manifest.keys.iter_mut().find(|k| k.key_id == event.old_key_id) {
+            if let Some(current_state) = &key_entry.state {
+                // Validate transition from RotationPending state
+                if !matches!(current_state, KeyState::RotationPending { .. }) {
+                    return Err(ProjectionError::InvalidStateTransition(format!(
+                        "Cannot complete rotation from state: {}",
+                        current_state.description()
+                    )));
+                }
+
+                // Transition to Rotated
+                key_entry.state = Some(KeyState::Rotated {
+                    new_key_id: event.new_key_id,
+                    rotated_at: event.completed_at,
+                    rotated_by: Uuid::now_v7(),  // TODO: Get from event
+                });
+
+                // Update rotation marker
+                let key_dir = self.root_path.join("keys").join(event.old_key_id.to_string());
+                let rotation_path = key_dir.join("ROTATED.json");
+                let rotation_info = serde_json::json!({
+                    "rotation_id": event.rotation_id,
+                    "old_key_id": event.old_key_id,
+                    "new_key_id": event.new_key_id,
+                    "completed_at": event.completed_at,
+                });
+
+                fs::write(&rotation_path, serde_json::to_string_pretty(&rotation_info).unwrap())
+                    .map_err(|e| ProjectionError::IoError(format!("Failed to write rotation completion: {}", e)))?;
+
+                // Remove pending marker if it exists
+                let pending_path = key_dir.join("ROTATION_PENDING.json");
+                let _ = fs::remove_file(&pending_path);  // Ignore error if file doesn't exist
+            }
+        }
 
         Ok(())
     }
