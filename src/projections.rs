@@ -335,6 +335,14 @@ impl OfflineKeyProjection {
             KeyEvent::NatsOperatorCreated(e) => self.project_nats_operator_created(e)?,
             KeyEvent::NatsAccountCreated(e) => self.project_nats_account_created(e)?,
             KeyEvent::NatsUserCreated(e) => self.project_nats_user_created(e)?,
+            KeyEvent::NatsSigningKeyGenerated(e) => self.project_nats_signing_key_generated(e)?,
+            KeyEvent::NatsPermissionsSet(e) => self.project_nats_permissions_set(e)?,
+            KeyEvent::NatsConfigExported(e) => self.project_nats_config_exported(e)?,
+            KeyEvent::NKeyGenerated(e) => self.project_nkey_generated(e)?,
+            KeyEvent::JwtClaimsCreated(e) => self.project_jwt_claims_created(e)?,
+            KeyEvent::JwtSigned(e) => self.project_jwt_signed(e)?,
+            KeyEvent::ServiceAccountCreated(e) => self.project_service_account_created(e)?,
+            KeyEvent::AgentCreated(e) => self.project_agent_created(e)?,
             _ => {} // Handle other events as needed
         }
 
@@ -763,6 +771,231 @@ impl OfflineKeyProjection {
             created_at: event.created_at,  // Derived from user_id (UUID v7 timestamp)
             created_by: event.created_by.clone(),
         });
+
+        Ok(())
+    }
+
+    /// Project a NATS signing key generation event (operational)
+    fn project_nats_signing_key_generated(&mut self, event: &crate::events_legacy::NatsSigningKeyGeneratedEvent) -> Result<(), ProjectionError> {
+        // Determine entity directory based on type
+        let entity_dir = match event.entity_type {
+            crate::events_legacy::NatsEntityType::Operator => {
+                self.root_path.join("nats").join("operators").join(event.entity_id.to_string())
+            }
+            crate::events_legacy::NatsEntityType::Account => {
+                self.root_path.join("nats").join("accounts").join(event.entity_id.to_string())
+            }
+            crate::events_legacy::NatsEntityType::User => {
+                self.root_path.join("nats").join("users").join(event.entity_id.to_string())
+            }
+        };
+
+        // Create signing_keys subdirectory
+        let signing_keys_dir = entity_dir.join("signing_keys");
+        fs::create_dir_all(&signing_keys_dir)
+            .map_err(|e| ProjectionError::IoError(format!("Failed to create signing keys directory: {}", e)))?;
+
+        // Write signing key metadata
+        let key_file = signing_keys_dir.join(format!("{}.json", event.key_id));
+        let key_info = serde_json::json!({
+            "key_id": event.key_id,
+            "public_key": event.public_key,
+            "generated_at": event.generated_at,  // Actual generation time (operation timestamp)
+        });
+
+        fs::write(&key_file, serde_json::to_string_pretty(&key_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write signing key metadata: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Project a NATS permissions set event (operational)
+    fn project_nats_permissions_set(&mut self, event: &crate::events_legacy::NatsPermissionsSetEvent) -> Result<(), ProjectionError> {
+        // Determine entity directory based on type
+        let entity_dir = match event.entity_type {
+            crate::events_legacy::NatsEntityType::Operator => {
+                self.root_path.join("nats").join("operators").join(event.entity_id.to_string())
+            }
+            crate::events_legacy::NatsEntityType::Account => {
+                self.root_path.join("nats").join("accounts").join(event.entity_id.to_string())
+            }
+            crate::events_legacy::NatsEntityType::User => {
+                self.root_path.join("nats").join("users").join(event.entity_id.to_string())
+            }
+        };
+
+        // Write permissions file (overwrite previous)
+        let permissions_file = entity_dir.join("permissions.json");
+        let permissions_info = serde_json::json!({
+            "publish": event.permissions.publish,
+            "subscribe": event.permissions.subscribe,
+            "allow_responses": event.permissions.allow_responses,
+            "max_payload": event.permissions.max_payload,
+            "set_at": event.set_at,  // Actual set time (operation timestamp)
+            "set_by": event.set_by,
+        });
+
+        fs::write(&permissions_file, serde_json::to_string_pretty(&permissions_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write permissions file: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Project a NATS config export event (operational)
+    fn project_nats_config_exported(&mut self, event: &crate::events_legacy::NatsConfigExportedEvent) -> Result<(), ProjectionError> {
+        // Create exports directory under operator
+        let exports_dir = self.root_path
+            .join("nats")
+            .join("operators")
+            .join(event.operator_id.to_string())
+            .join("exports");
+        fs::create_dir_all(&exports_dir)
+            .map_err(|e| ProjectionError::IoError(format!("Failed to create exports directory: {}", e)))?;
+
+        // Write export record
+        let export_file = exports_dir.join(format!("export_{}.json", event.export_id));
+        let export_info = serde_json::json!({
+            "export_id": event.export_id,
+            "format": event.format,
+            "exported_at": event.exported_at,  // Actual export time (operation timestamp)
+            "exported_by": event.exported_by,
+        });
+
+        fs::write(&export_file, serde_json::to_string_pretty(&export_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write export record: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Project an NKey generation event (operational)
+    fn project_nkey_generated(&mut self, event: &crate::events_legacy::NKeyGeneratedEvent) -> Result<(), ProjectionError> {
+        // Create nkeys directory
+        let nkeys_dir = self.root_path.join("nats").join("nkeys");
+        fs::create_dir_all(&nkeys_dir)
+            .map_err(|e| ProjectionError::IoError(format!("Failed to create nkeys directory: {}", e)))?;
+
+        // Write NKey metadata (public key only, seed is sensitive)
+        let nkey_file = nkeys_dir.join(format!("{}.json", event.nkey_id));
+        let nkey_info = serde_json::json!({
+            "nkey_id": event.nkey_id,
+            "key_type": event.key_type,
+            "public_key": event.public_key,
+            "purpose": event.purpose,
+            "expires_at": event.expires_at,
+            "generated_at": event.generated_at,  // Derived from nkey_id (UUID v7 timestamp)
+            "correlation_id": event.correlation_id,
+            "causation_id": event.causation_id,
+        });
+
+        fs::write(&nkey_file, serde_json::to_string_pretty(&nkey_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write NKey metadata: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Project a JWT claims creation event (operational)
+    fn project_jwt_claims_created(&mut self, event: &crate::events_legacy::JwtClaimsCreatedEvent) -> Result<(), ProjectionError> {
+        // Create jwt_claims directory
+        let claims_dir = self.root_path.join("nats").join("jwt_claims");
+        fs::create_dir_all(&claims_dir)
+            .map_err(|e| ProjectionError::IoError(format!("Failed to create jwt_claims directory: {}", e)))?;
+
+        // Write JWT claims metadata
+        let claims_file = claims_dir.join(format!("{}.json", event.claims_id));
+        let claims_info = serde_json::json!({
+            "claims_id": event.claims_id,
+            "issuer": event.issuer,
+            "subject": event.subject,
+            "audience": event.audience,
+            "permissions": event.permissions,
+            "not_before": event.not_before,
+            "expires_at": event.expires_at,
+            "created_at": event.created_at,  // Derived from claims_id (UUID v7 timestamp)
+            "correlation_id": event.correlation_id,
+            "causation_id": event.causation_id,
+        });
+
+        fs::write(&claims_file, serde_json::to_string_pretty(&claims_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write JWT claims: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Project a JWT signed event (operational)
+    fn project_jwt_signed(&mut self, event: &crate::events_legacy::JwtSignedEvent) -> Result<(), ProjectionError> {
+        // Create jwt_tokens directory
+        let tokens_dir = self.root_path.join("nats").join("jwt_tokens");
+        fs::create_dir_all(&tokens_dir)
+            .map_err(|e| ProjectionError::IoError(format!("Failed to create jwt_tokens directory: {}", e)))?;
+
+        // Write JWT token metadata (NOT the actual token - that's sensitive)
+        let token_file = tokens_dir.join(format!("{}.json", event.jwt_id));
+        let token_info = serde_json::json!({
+            "jwt_id": event.jwt_id,
+            "signer_public_key": event.signer_public_key,
+            "signature_algorithm": event.signature_algorithm,
+            "signature_verification_data": event.signature_verification_data,
+            "signed_at": event.signed_at,  // Derived from jwt_id (UUID v7 timestamp)
+            "correlation_id": event.correlation_id,
+            "causation_id": event.causation_id,
+        });
+
+        fs::write(&token_file, serde_json::to_string_pretty(&token_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write JWT token metadata: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Project a service account creation event (initialize service account entry)
+    fn project_service_account_created(&mut self, event: &crate::events_legacy::ServiceAccountCreatedEvent) -> Result<(), ProjectionError> {
+        // Create service account directory under NATS users
+        let sa_dir = self.root_path
+            .join("nats")
+            .join("service_accounts")
+            .join(event.service_account_id.to_string());
+        fs::create_dir_all(&sa_dir)
+            .map_err(|e| ProjectionError::IoError(format!("Failed to create service account directory: {}", e)))?;
+
+        // Write service account metadata
+        let metadata_path = sa_dir.join("metadata.json");
+        let sa_info = serde_json::json!({
+            "service_account_id": event.service_account_id,
+            "name": event.name,
+            "purpose": event.purpose,
+            "owning_unit_id": event.owning_unit_id,
+            "responsible_person_id": event.responsible_person_id,
+            "created_at": event.created_at,  // Derived from service_account_id (UUID v7 timestamp)
+        });
+
+        fs::write(&metadata_path, serde_json::to_string_pretty(&sa_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write service account metadata: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Project an agent creation event (initialize agent entry)
+    fn project_agent_created(&mut self, event: &crate::events_legacy::AgentCreatedEvent) -> Result<(), ProjectionError> {
+        // Create agent directory under NATS
+        let agent_dir = self.root_path
+            .join("nats")
+            .join("agents")
+            .join(event.agent_id.to_string());
+        fs::create_dir_all(&agent_dir)
+            .map_err(|e| ProjectionError::IoError(format!("Failed to create agent directory: {}", e)))?;
+
+        // Write agent metadata
+        let metadata_path = agent_dir.join("metadata.json");
+        let agent_info = serde_json::json!({
+            "agent_id": event.agent_id,
+            "name": event.name,
+            "agent_type": event.agent_type,
+            "responsible_person_id": event.responsible_person_id,
+            "organization_id": event.organization_id,
+            "created_at": event.created_at,  // Derived from agent_id (UUID v7 timestamp)
+        });
+
+        fs::write(&metadata_path, serde_json::to_string_pretty(&agent_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write agent metadata: {}", e)))?;
 
         Ok(())
     }
