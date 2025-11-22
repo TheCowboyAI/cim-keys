@@ -13,8 +13,7 @@ use thiserror::Error;
 #[cfg(feature = "ipld")]
 use {
     cid::Cid,
-    libipld::cbor::DagCborCodec,
-    multihash_codetable::{Code, MultihashDigest},
+    multihash::Multihash,
     serde_json,
 };
 
@@ -23,15 +22,24 @@ use {
 /// Uses CBOR encoding and SHA2-256 hashing for deterministic content addressing.
 #[cfg(feature = "ipld")]
 pub fn generate_cid<T: Serialize>(event: &T) -> Result<Cid, IpldError> {
+    use sha2::{Sha256, Digest};
+
     // Serialize to JSON first (canonical representation)
     let json = serde_json::to_vec(event)
         .map_err(|e| IpldError::SerializationError(e.to_string()))?;
 
     // Hash with SHA2-256
-    let hash = Code::Sha2_256.digest(&json);
+    let mut hasher = Sha256::new();
+    hasher.update(&json);
+    let digest = hasher.finalize();
 
-    // Create CID v1 with DAG-CBOR codec
-    let cid = Cid::new_v1(DagCborCodec.into(), hash);
+    // Create multihash with SHA2-256 code (0x12)
+    const SHA2_256_CODE: u64 = 0x12;
+    let mh = Multihash::wrap(SHA2_256_CODE, &digest)
+        .map_err(|e| IpldError::ConversionError(format!("Multihash wrap failed: {:?}", e)))?;
+
+    // Create CID v1 with DAG-CBOR codec (0x71)
+    let cid = Cid::new_v1(0x71, mh);
 
     Ok(cid)
 }

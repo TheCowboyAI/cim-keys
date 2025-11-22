@@ -68,6 +68,11 @@ hex = "0.4"
 pem = "3.0"
 der = "0.7"
 
+# IPLD support (content-addressed storage)
+cid = { version = "0.11", optional = true }
+libipld = { version = "0.16", features = ["dag-cbor"], optional = true }
+multihash = { version = "0.19", optional = true }
+
 # Hashing and KDF
 sha2 = "0.10"
 argon2 = "0.5"  # Argon2id for passphrase derivation
@@ -112,7 +117,7 @@ gui = ["iced", "iced_widget", "iced_futures", "bytemuck"]
 policy = ["cim-domain-policy", "cim-domain-organization", "cim-domain-person"]
 yubikey-support = ["yubikey", "pcsc"]
 gpg-support = ["sequoia-openpgp", "gpgme"]
-ipld = []  # IPLD content-addressed storage support (placeholder for future implementation)
+ipld = ["dep:cid", "dep:libipld", "dep:multihash"]  # IPLD content-addressed storage support
 test-utils = []
 
 [[example]]
