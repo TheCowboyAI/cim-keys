@@ -278,6 +278,8 @@ impl OfflineKeyProjection {
             KeyEvent::PkiHierarchyCreated(e) => self.project_pki_hierarchy_created(e)?,
             KeyEvent::KeyStoredOffline(e) => self.project_key_stored_offline(e)?,
             KeyEvent::KeyRevoked(e) => self.project_key_revoked(e)?,
+            KeyEvent::PersonCreated(e) => self.project_person_created(e)?,
+            KeyEvent::LocationCreated(e) => self.project_location_created(e)?,
             _ => {} // Handle other events as needed
         }
 
@@ -473,6 +475,92 @@ impl OfflineKeyProjection {
         // The key remains in its current state (Generated, Imported, Active, etc.)
         // Export records are tracked in the filesystem (exports/ directory)
         // We could add a "last_exported_at" field to KeyEntry in the future if needed
+
+        Ok(())
+    }
+
+    /// Project a person creation event (initialize with Created state)
+    fn project_person_created(&mut self, event: &crate::events_legacy::PersonCreatedEvent) -> Result<(), ProjectionError> {
+        // Create person directory
+        let person_dir = self.root_path.join("people").join(event.person_id.to_string());
+        fs::create_dir_all(&person_dir)
+            .map_err(|e| ProjectionError::IoError(format!("Failed to create person directory: {}", e)))?;
+
+        // Write person metadata
+        let metadata_path = person_dir.join("metadata.json");
+        let person_info = serde_json::json!({
+            "person_id": event.person_id,
+            "name": event.name,
+            "email": event.email,
+            "title": event.title,
+            "department": event.department,
+            "organization_id": event.organization_id,
+            "created_at": event.created_at,
+        });
+
+        fs::write(&metadata_path, serde_json::to_string_pretty(&person_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write person metadata: {}", e)))?;
+
+        // Add to manifest with Created state
+        self.manifest.people.push(PersonEntry {
+            person_id: event.person_id,
+            name: event.name.clone(),
+            email: event.email.clone(),
+            role: event.title.clone().unwrap_or_else(|| "Member".to_string()),
+            organization_id: event.organization_id.unwrap_or_else(Uuid::now_v7),
+            created_at: event.created_at,
+            // Initialize state machine to Created
+            state: Some(PersonState::Created {
+                created_at: event.created_at,  // Derived from person_id (UUID v7 timestamp)
+                created_by: Uuid::now_v7(),    // TODO: Get from event
+            }),
+        });
+
+        Ok(())
+    }
+
+    /// Project a location creation event (initialize with Active state)
+    fn project_location_created(&mut self, event: &crate::events_legacy::LocationCreatedEvent) -> Result<(), ProjectionError> {
+        // Create location directory
+        let location_dir = self.root_path.join("locations").join(event.location_id.to_string());
+        fs::create_dir_all(&location_dir)
+            .map_err(|e| ProjectionError::IoError(format!("Failed to create location directory: {}", e)))?;
+
+        // Write location metadata
+        let metadata_path = location_dir.join("metadata.json");
+        let location_info = serde_json::json!({
+            "location_id": event.location_id,
+            "name": event.name,
+            "location_type": event.location_type,
+            "address": event.address,
+            "coordinates": event.coordinates,
+            "organization_id": event.organization_id,
+            "created_at": event.created_at,
+        });
+
+        fs::write(&metadata_path, serde_json::to_string_pretty(&location_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write location metadata: {}", e)))?;
+
+        // Add to manifest with Active state
+        self.manifest.locations.push(LocationEntry {
+            location_id: event.location_id,
+            name: event.name.clone(),
+            location_type: event.location_type.clone(),
+            organization_id: event.organization_id.unwrap_or_else(Uuid::now_v7),
+            created_at: event.created_at,
+            street: event.address.clone(),
+            city: None,
+            region: None,
+            country: None,
+            postal_code: None,
+            // Initialize state machine to Active (locations are immediately active when created)
+            state: Some(LocationState::Active {
+                activated_at: event.created_at,  // Derived from location_id (UUID v7 timestamp)
+                access_grants: Vec::new(),
+                assets_stored: 0,
+                last_accessed: None,
+            }),
+        });
 
         Ok(())
     }
