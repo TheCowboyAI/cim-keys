@@ -8,13 +8,19 @@
 //! - ExportWorkflowState - Export to encrypted storage
 //!
 //! ## Aggregate Lifecycle State Machines
-//! - KeyState - Cryptographic key lifecycle (8 states)
-//! - CertificateState - PKI certificate lifecycle (8 states)
-//! - PolicyState - Authorization policy lifecycle (5 states)
-//! - PersonState - Identity lifecycle (5 states)
-//! - OrganizationState - Organizational structure lifecycle (4 states)
-//! - LocationState - Physical/virtual location lifecycle (4 states)
-//! - RelationshipState - Graph relationship lifecycle (6 states)
+//!
+//! ### Phase 1: CRITICAL Security & Identity (IMPLEMENTED)
+//! - KeyState - Cryptographic key lifecycle (8 states) ✅
+//! - CertificateState - PKI certificate lifecycle (8 states) ✅
+//! - PolicyState - Authorization policy lifecycle (5 states) ✅
+//!
+//! ### Phase 2: Core Domain (IMPLEMENTED)
+//! - PersonState - Identity lifecycle (5 states) ✅
+//! - OrganizationState - Organizational structure lifecycle (4 states) ✅
+//! - LocationState - Physical/virtual location lifecycle (4 states) ✅
+//! - RelationshipState - Graph relationship lifecycle (6 states) ✅
+//!
+//! ### Phase 3: Infrastructure & Export (PENDING)
 //! - ManifestState - Export manifest lifecycle (6 states)
 //! - NatsOperatorState - NATS operator lifecycle (5 states)
 //! - NatsAccountState - NATS account lifecycle (5 states)
@@ -35,6 +41,10 @@ pub mod workflows;
 pub mod key;
 pub mod certificate;
 pub mod policy;
+pub mod person;
+pub mod organization;
+pub mod location;
+pub mod relationship;
 
 // Re-export workflow state machines
 pub use workflows::{
@@ -47,3 +57,7 @@ pub use workflows::{
 pub use certificate::CertificateState;
 pub use key::KeyState;
 pub use policy::PolicyState;
+pub use person::PersonState;
+pub use organization::OrganizationState;
+pub use location::{LocationState, LocationType, AccessGrant, AccessLevel};
+pub use relationship::{RelationshipState, RelationshipMetadata, RelationshipStrength, RelationshipChange};
