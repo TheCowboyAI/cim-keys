@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::domain::{Organization, Person};
 use crate::domain_projections::YubiKeyProvisioningProjection;
-use crate::events::KeyEvent;
+use crate::events::DomainEvent;
 use crate::state_machines::PivSlot;
 use crate::value_objects::{
     FirmwareVersion, ManagementKeyAlgorithm, ManagementKeyValue, PinValue, PukValue,
@@ -36,7 +36,7 @@ pub struct ConfigureYubiKeySecurity {
 pub struct YubiKeySecurityConfigured {
     pub configuration: YubiKeyPivConfiguration,
     pub warnings: Vec<String>,
-    pub events: Vec<KeyEvent>,
+    pub events: Vec<DomainEvent>,
 }
 
 /// Handle ConfigureYubiKeySecurity command
@@ -64,7 +64,7 @@ pub fn handle_configure_yubikey_security(
     let mut warnings = Vec::new();
 
     // Emit YubiKeyDetectedEvent
-    events.push(KeyEvent::YubiKeyDetected(YubiKeyDetectedEvent {
+    events.push(DomainEvent::YubiKey(crate::events::YubiKeyEvents::YubiKeyDetected(crate::events::yubikey::YubiKeyDetectedEvent {
         event_id: Uuid::now_v7(),
         yubikey_serial: cmd.yubikey_serial.clone(),
         firmware_version: format!(
@@ -73,7 +73,8 @@ pub fn handle_configure_yubikey_security(
         ),
         detected_at: Utc::now(),
         correlation_id: cmd.correlation_id,
-    }));
+        causation_id: cmd.causation_id,
+    })));
 
     // Step 1: Create factory-fresh configuration
     let mut config =
@@ -98,7 +99,7 @@ pub fn handle_configure_yubikey_security(
         config.pin = PinValue::new(pin_hash.clone(), 3);
 
         // Emit PinConfiguredEvent
-        events.push(KeyEvent::PinConfigured(PinConfiguredEvent {
+        events.push(DomainEvent::YubiKey(crate::events::YubiKeyEvents::PinConfigured(crate::events::yubikey::PinConfiguredEvent {
             event_id: Uuid::now_v7(),
             yubikey_serial: cmd.yubikey_serial.clone(),
             pin_hash,
@@ -106,7 +107,7 @@ pub fn handle_configure_yubikey_security(
             configured_at: Utc::now(),
             correlation_id: cmd.correlation_id,
             causation_id: cmd.causation_id,
-        }));
+        })));
     }
 
     // Step 4: Configure PUK if provided
@@ -122,7 +123,7 @@ pub fn handle_configure_yubikey_security(
         config.puk = PukValue::new(puk_hash.clone(), 3);
 
         // Emit PukConfiguredEvent
-        events.push(KeyEvent::PukConfigured(PukConfiguredEvent {
+        events.push(DomainEvent::YubiKey(crate::events::YubiKeyEvents::PukConfigured(crate::events::yubikey::PukConfiguredEvent {
             event_id: Uuid::now_v7(),
             yubikey_serial: cmd.yubikey_serial.clone(),
             puk_hash,
@@ -130,7 +131,7 @@ pub fn handle_configure_yubikey_security(
             configured_at: Utc::now(),
             correlation_id: cmd.correlation_id,
             causation_id: cmd.causation_id,
-        }));
+        })));
     }
 
     // Step 5: Rotate management key if requested (firmware-aware)
@@ -144,14 +145,14 @@ pub fn handle_configure_yubikey_security(
         config.management_key = ManagementKeyValue::generate_random(mgmt_key_algo);
 
         // Emit ManagementKeyRotatedEvent
-        events.push(KeyEvent::ManagementKeyRotated(ManagementKeyRotatedEvent {
+        events.push(DomainEvent::YubiKey(crate::events::YubiKeyEvents::ManagementKeyRotated(crate::events::yubikey::ManagementKeyRotatedEvent {
             event_id: Uuid::now_v7(),
             yubikey_serial: cmd.yubikey_serial.clone(),
             algorithm: format!("{:?}", mgmt_key_algo),
             rotated_at: Utc::now(),
             correlation_id: cmd.correlation_id,
             causation_id: cmd.causation_id,
-        }));
+        })));
     }
 
     // Step 6: Validate final configuration
@@ -191,7 +192,7 @@ pub struct YubiKeySlotProvisioned {
     pub slot: PivSlot,
     pub key_generated: bool,
     pub certificate_imported: bool,
-    pub events: Vec<KeyEvent>,
+    pub events: Vec<DomainEvent>,
 }
 
 /// Handle ProvisionYubiKeySlot command
@@ -217,18 +218,16 @@ pub fn handle_provision_yubikey_slot(
     let mut events = Vec::new();
 
     // Step 1: Plan slot allocation
-    events.push(KeyEvent::SlotAllocationPlanned(
-        SlotAllocationPlannedEvent {
-            event_id: Uuid::now_v7(),
-            yubikey_serial: cmd.yubikey_serial.clone(),
-            slot: cmd.slot.hex(),
-            purpose: map_auth_purpose_to_key_purpose(&cmd.purpose),
-            person_id: cmd.person.id,
-            planned_at: Utc::now(),
-            correlation_id: cmd.correlation_id,
-            causation_id: cmd.causation_id,
-        },
-    ));
+    events.push(DomainEvent::YubiKey(crate::events::YubiKeyEvents::SlotAllocationPlanned(crate::events::yubikey::SlotAllocationPlannedEvent {
+        event_id: Uuid::now_v7(),
+        yubikey_serial: cmd.yubikey_serial.clone(),
+        slot: cmd.slot.hex(),
+        purpose: map_auth_purpose_to_key_purpose(&cmd.purpose),
+        person_id: cmd.person.id,
+        planned_at: Utc::now(),
+        correlation_id: cmd.correlation_id,
+        causation_id: cmd.causation_id,
+    })));
 
     // Step 2: Generate key in slot (on-device generation)
     // NOTE: This is a stub - actual hardware interaction would happen through YubiKeyPort
@@ -237,7 +236,7 @@ pub fn handle_provision_yubikey_slot(
         curve: "P-256".to_string(),
     }; // Default to P-256 for modern security
 
-    events.push(KeyEvent::KeyGeneratedInSlot(KeyGeneratedInSlotEvent {
+    events.push(DomainEvent::YubiKey(crate::events::YubiKeyEvents::KeyGeneratedInSlot(crate::events::yubikey::KeyGeneratedInSlotEvent {
         event_id: Uuid::now_v7(),
         yubikey_serial: cmd.yubikey_serial.clone(),
         slot: cmd.slot.hex(),
@@ -247,7 +246,7 @@ pub fn handle_provision_yubikey_slot(
         generated_at: Utc::now(),
         correlation_id: cmd.correlation_id,
         causation_id: Some(cmd.correlation_id),
-    }));
+    })));
 
     // Step 3: Generate certificate for key
     let cert_id = Uuid::now_v7();
@@ -258,7 +257,7 @@ pub fn handle_provision_yubikey_slot(
         cmd.organization.units.first().map(|u| u.name.as_str()).unwrap_or("Default")
     );
 
-    events.push(KeyEvent::CertificateGenerated(CertificateGeneratedEvent {
+    events.push(DomainEvent::Certificate(crate::events::CertificateEvents::CertificateGenerated(crate::events::certificate::CertificateGeneratedEvent {
         cert_id,
         key_id,
         subject,
@@ -279,11 +278,10 @@ pub fn handle_provision_yubikey_slot(
         },
         correlation_id: cmd.correlation_id,
         causation_id: Some(key_id), // Certificate caused by key generation
-    }));
+    })));
 
     // Step 4: Import certificate to slot
-    events.push(KeyEvent::CertificateImportedToSlot(
-        CertificateImportedToSlotEvent {
+    events.push(DomainEvent::YubiKey(crate::events::YubiKeyEvents::CertificateImportedToSlot(crate::events::yubikey::CertificateImportedToSlotEvent {
             event_id: Uuid::now_v7(),
             yubikey_serial: cmd.yubikey_serial.clone(),
             slot: cmd.slot.hex(),
@@ -291,8 +289,7 @@ pub fn handle_provision_yubikey_slot(
             imported_at: Utc::now(),
             correlation_id: cmd.correlation_id,
             causation_id: Some(cmd.correlation_id),
-        },
-    ));
+    })));
 
     // Step 5: Attest slot (verify key was generated on device)
     // NOTE: Attestation would be done through YubiKeyPort in real implementation
@@ -344,7 +341,7 @@ pub struct ProvisionCompleteYubiKey {
 pub struct YubiKeyCompletelyProvisioned {
     pub security_config: YubiKeySecurityConfigured,
     pub provisioned_slots: Vec<YubiKeySlotProvisioned>,
-    pub events: Vec<KeyEvent>,
+    pub events: Vec<DomainEvent>,
 }
 
 /// Handle ProvisionCompleteYubiKey command

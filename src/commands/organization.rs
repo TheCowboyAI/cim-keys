@@ -252,7 +252,11 @@ pub async fn handle_establish_relationship(
         established_at: cmd.timestamp,
         correlation_id: cmd.correlation_id,
         causation_id: Some(cmd.command_id),
-    });
+        relationship_id: uuid::Uuid::now_v7(),
+        established_by: "system".to_string(),
+        valid_from: cmd.timestamp,
+        valid_until: None,
+    }));
 
     Ok(vec![event])
 }
