@@ -27,6 +27,22 @@ pub enum KeyEvent {
     /// A certificate was signed
     CertificateSigned(CertificateSignedEvent),
 
+    // Certificate Lifecycle State Transitions (Phase 11)
+    /// Certificate activated
+    CertificateActivated(CertificateActivatedEvent),
+
+    /// Certificate suspended
+    CertificateSuspended(CertificateSuspendedEvent),
+
+    /// Certificate revoked (terminal)
+    CertificateRevoked(CertificateRevokedEvent),
+
+    /// Certificate expired (terminal)
+    CertificateExpired(CertificateExpiredEvent),
+
+    /// Certificate renewed
+    CertificateRenewed(CertificateRenewedEvent),
+
     /// A key was exported
     KeyExported(KeyExportedEvent),
 
@@ -229,6 +245,64 @@ pub struct CertificateSignedEvent {
     pub signed_by: Uuid, // CA cert ID
     pub signature_algorithm: String,
     pub signed_at: DateTime<Utc>,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+// ============================================================================
+// Certificate Lifecycle State Transitions (Phase 11)
+// ============================================================================
+
+/// Certificate activated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CertificateActivatedEvent {
+    pub cert_id: Uuid,
+    pub activated_at: DateTime<Utc>,
+    pub activated_by: Uuid, // Person ID
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Certificate suspended
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CertificateSuspendedEvent {
+    pub cert_id: Uuid,
+    pub reason: String,
+    pub suspended_at: DateTime<Utc>,
+    pub suspended_by: Uuid, // Person ID
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Certificate revoked (terminal state)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CertificateRevokedEvent {
+    pub cert_id: Uuid,
+    pub reason: String,
+    pub revoked_at: DateTime<Utc>,
+    pub revoked_by: Uuid, // Person ID
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Certificate expired (terminal state)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CertificateExpiredEvent {
+    pub cert_id: Uuid,
+    pub expired_at: DateTime<Utc>,
+    pub not_after: DateTime<Utc>, // Original expiry date
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Certificate renewed
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CertificateRenewedEvent {
+    pub old_cert_id: Uuid,
+    pub new_cert_id: Uuid,
+    pub renewed_at: DateTime<Utc>,
+    pub renewed_by: Uuid, // Person ID
+    pub new_not_after: DateTime<Utc>, // New expiry date
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
 }
@@ -1094,6 +1168,12 @@ impl DomainEvent for KeyEvent {
             KeyEvent::NatsUserSuspended(e) => e.user_id,
             KeyEvent::NatsUserReactivated(e) => e.user_id,
             KeyEvent::NatsUserDeleted(e) => e.user_id,
+            // Certificate Lifecycle State Transitions (Phase 11)
+            KeyEvent::CertificateActivated(e) => e.cert_id,
+            KeyEvent::CertificateSuspended(e) => e.cert_id,
+            KeyEvent::CertificateRevoked(e) => e.cert_id,
+            KeyEvent::CertificateExpired(e) => e.cert_id,
+            KeyEvent::CertificateRenewed(e) => e.new_cert_id,
             KeyEvent::NatsSigningKeyGenerated(e) => e.key_id,
             KeyEvent::NKeyGenerated(e) => e.nkey_id,
             KeyEvent::JwtClaimsCreated(e) => e.claims_id,
@@ -1159,6 +1239,12 @@ impl DomainEvent for KeyEvent {
             KeyEvent::NatsUserSuspended(_) => "NatsUserSuspended",
             KeyEvent::NatsUserReactivated(_) => "NatsUserReactivated",
             KeyEvent::NatsUserDeleted(_) => "NatsUserDeleted",
+            // Certificate Lifecycle State Transitions (Phase 11)
+            KeyEvent::CertificateActivated(_) => "CertificateActivated",
+            KeyEvent::CertificateSuspended(_) => "CertificateSuspended",
+            KeyEvent::CertificateRevoked(_) => "CertificateRevoked",
+            KeyEvent::CertificateExpired(_) => "CertificateExpired",
+            KeyEvent::CertificateRenewed(_) => "CertificateRenewed",
             KeyEvent::NatsSigningKeyGenerated(_) => "NatsSigningKeyGenerated",
             KeyEvent::NKeyGenerated(_) => "NKeyGenerated",
             KeyEvent::JwtClaimsCreated(_) => "JwtClaimsCreated",

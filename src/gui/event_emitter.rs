@@ -291,6 +291,12 @@ impl KeyEvent {
             KeyEvent::NatsUserSuspended(e) => e.user_id,
             KeyEvent::NatsUserReactivated(e) => e.user_id,
             KeyEvent::NatsUserDeleted(e) => e.user_id,
+            // Certificate Lifecycle State Transitions (Phase 11)
+            KeyEvent::CertificateActivated(e) => e.cert_id,
+            KeyEvent::CertificateSuspended(e) => e.cert_id,
+            KeyEvent::CertificateRevoked(e) => e.cert_id,
+            KeyEvent::CertificateExpired(e) => e.cert_id,
+            KeyEvent::CertificateRenewed(e) => e.new_cert_id,
             KeyEvent::NatsSigningKeyGenerated(_e) => Uuid::now_v7(), // Generate ID from event
             KeyEvent::NKeyGenerated(e) => e.nkey_id,
             KeyEvent::JwtClaimsCreated(e) => e.claims_id,
@@ -356,6 +362,12 @@ impl KeyEvent {
             KeyEvent::NatsUserSuspended(_) => "NatsUserSuspended",
             KeyEvent::NatsUserReactivated(_) => "NatsUserReactivated",
             KeyEvent::NatsUserDeleted(_) => "NatsUserDeleted",
+            // Certificate Lifecycle State Transitions (Phase 11)
+            KeyEvent::CertificateActivated(_) => "CertificateActivated",
+            KeyEvent::CertificateSuspended(_) => "CertificateSuspended",
+            KeyEvent::CertificateRevoked(_) => "CertificateRevoked",
+            KeyEvent::CertificateExpired(_) => "CertificateExpired",
+            KeyEvent::CertificateRenewed(_) => "CertificateRenewed",
             KeyEvent::NatsSigningKeyGenerated(_) => "NatsSigningKeyGenerated",
             KeyEvent::NKeyGenerated(_) => "NKeyGenerated",
             KeyEvent::JwtClaimsCreated(_) => "JwtClaimsCreated",

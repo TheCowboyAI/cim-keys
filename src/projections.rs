@@ -349,6 +349,12 @@ impl OfflineKeyProjection {
             KeyEvent::NatsUserSuspended(e) => self.project_nats_user_suspended(e)?,
             KeyEvent::NatsUserReactivated(e) => self.project_nats_user_reactivated(e)?,
             KeyEvent::NatsUserDeleted(e) => self.project_nats_user_deleted(e)?,
+            // Certificate Lifecycle State Transitions (Phase 11)
+            KeyEvent::CertificateActivated(e) => self.project_certificate_activated(e)?,
+            KeyEvent::CertificateSuspended(e) => self.project_certificate_suspended(e)?,
+            KeyEvent::CertificateRevoked(e) => self.project_certificate_revoked(e)?,
+            KeyEvent::CertificateExpired(e) => self.project_certificate_expired(e)?,
+            KeyEvent::CertificateRenewed(e) => self.project_certificate_renewed(e)?,
             KeyEvent::NatsSigningKeyGenerated(e) => self.project_nats_signing_key_generated(e)?,
             KeyEvent::NatsPermissionsSet(e) => self.project_nats_permissions_set(e)?,
             KeyEvent::NatsConfigExported(e) => self.project_nats_config_exported(e)?,
@@ -1430,6 +1436,130 @@ impl OfflineKeyProjection {
             fs::write(&signature_path, signature_json)
                 .map_err(|e| ProjectionError::IoError(format!("Failed to write signature: {}", e)))?;
         }
+
+        Ok(())
+    }
+
+    // ========================================================================
+    // Certificate Lifecycle State Transition Handlers (Phase 11)
+    // ========================================================================
+
+    /// Project certificate activated event
+    fn project_certificate_activated(&mut self, event: &crate::events_legacy::CertificateActivatedEvent) -> Result<(), ProjectionError> {
+        let cert_dir = self.root_path
+            .join("certificates")
+            .join(event.cert_id.to_string());
+
+        let state_path = cert_dir.join("state.json");
+        let state_info = serde_json::json!({
+            "state": "Active",
+            "activated_at": event.activated_at,
+            "activated_by": event.activated_by,
+            "correlation_id": event.correlation_id,
+        });
+        fs::write(&state_path, serde_json::to_string_pretty(&state_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write state file: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Project certificate suspended event
+    fn project_certificate_suspended(&mut self, event: &crate::events_legacy::CertificateSuspendedEvent) -> Result<(), ProjectionError> {
+        let cert_dir = self.root_path
+            .join("certificates")
+            .join(event.cert_id.to_string());
+
+        let state_path = cert_dir.join("state.json");
+        let state_info = serde_json::json!({
+            "state": "Suspended",
+            "reason": event.reason,
+            "suspended_at": event.suspended_at,
+            "suspended_by": event.suspended_by,
+            "correlation_id": event.correlation_id,
+        });
+        fs::write(&state_path, serde_json::to_string_pretty(&state_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write state file: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Project certificate revoked event (terminal state)
+    fn project_certificate_revoked(&mut self, event: &crate::events_legacy::CertificateRevokedEvent) -> Result<(), ProjectionError> {
+        let cert_dir = self.root_path
+            .join("certificates")
+            .join(event.cert_id.to_string());
+
+        let state_path = cert_dir.join("state.json");
+        let state_info = serde_json::json!({
+            "state": "Revoked",
+            "reason": event.reason,
+            "revoked_at": event.revoked_at,
+            "revoked_by": event.revoked_by,
+            "correlation_id": event.correlation_id,
+            "terminal": true,
+        });
+        fs::write(&state_path, serde_json::to_string_pretty(&state_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write state file: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Project certificate expired event (terminal state)
+    fn project_certificate_expired(&mut self, event: &crate::events_legacy::CertificateExpiredEvent) -> Result<(), ProjectionError> {
+        let cert_dir = self.root_path
+            .join("certificates")
+            .join(event.cert_id.to_string());
+
+        let state_path = cert_dir.join("state.json");
+        let state_info = serde_json::json!({
+            "state": "Expired",
+            "expired_at": event.expired_at,
+            "not_after": event.not_after,
+            "correlation_id": event.correlation_id,
+            "terminal": true,
+        });
+        fs::write(&state_path, serde_json::to_string_pretty(&state_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write state file: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Project certificate renewed event
+    fn project_certificate_renewed(&mut self, event: &crate::events_legacy::CertificateRenewedEvent) -> Result<(), ProjectionError> {
+        // Update old certificate to show it's been renewed
+        let old_cert_dir = self.root_path
+            .join("certificates")
+            .join(event.old_cert_id.to_string());
+
+        let old_state_path = old_cert_dir.join("state.json");
+        let old_state_info = serde_json::json!({
+            "state": "Renewed",
+            "renewed_at": event.renewed_at,
+            "renewed_by": event.renewed_by,
+            "new_cert_id": event.new_cert_id,
+            "correlation_id": event.correlation_id,
+        });
+        fs::write(&old_state_path, serde_json::to_string_pretty(&old_state_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write old cert state: {}", e)))?;
+
+        // Mark new certificate as active (renewal creates new cert)
+        let new_cert_dir = self.root_path
+            .join("certificates")
+            .join(event.new_cert_id.to_string());
+
+        fs::create_dir_all(&new_cert_dir)
+            .map_err(|e| ProjectionError::IoError(format!("Failed to create new cert directory: {}", e)))?;
+
+        let new_state_path = new_cert_dir.join("state.json");
+        let new_state_info = serde_json::json!({
+            "state": "Active",
+            "renewed_from": event.old_cert_id,
+            "renewed_at": event.renewed_at,
+            "new_not_after": event.new_not_after,
+            "correlation_id": event.correlation_id,
+        });
+        fs::write(&new_state_path, serde_json::to_string_pretty(&new_state_info).unwrap())
+            .map_err(|e| ProjectionError::IoError(format!("Failed to write new cert state: {}", e)))?;
 
         Ok(())
     }
