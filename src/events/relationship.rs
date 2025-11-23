@@ -90,12 +90,14 @@ pub struct RelationshipTerminatedEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountabilityValidatedEvent {
     pub validation_id: Uuid,
-    pub entity_id: Uuid,
-    pub validator_id: Uuid,
-    pub validation_type: String,
-    pub result: bool,
+    pub identity_id: Uuid,
+    pub identity_type: String,
+    pub identity_name: String,
+    pub responsible_person_id: Uuid,
+    pub responsible_person_name: String,
     pub validated_at: DateTime<Utc>,
-    pub correlation_id: Uuid,
+    pub validation_result: String,
+    pub correlation_id: Option<Uuid>,
     pub causation_id: Option<Uuid>,
 }
 
@@ -103,12 +105,14 @@ pub struct AccountabilityValidatedEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountabilityViolatedEvent {
     pub violation_id: Uuid,
-    pub entity_id: Uuid,
-    pub violation_type: String,
-    pub description: String,
+    pub identity_id: Uuid,
+    pub identity_type: String,
+    pub identity_name: String,
+    pub violation_reason: String,
     pub detected_at: DateTime<Utc>,
+    pub required_action: String,
     pub severity: String,
-    pub correlation_id: Uuid,
+    pub correlation_id: Option<Uuid>,
     pub causation_id: Option<Uuid>,
 }
 

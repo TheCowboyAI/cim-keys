@@ -10,11 +10,7 @@ use uuid::Uuid;
 
 use crate::domain::{AccountIdentity, Organization, UserIdentity};
 use crate::domain_projections::NatsProjection;
-use crate::events::{
-    AccountabilityValidatedEvent, AccountabilityViolatedEvent, AgentCreatedEvent, KeyEvent,
-    NatsAccountCreatedEvent, NatsOperatorCreatedEvent, NatsUserCreatedEvent,
-    ServiceAccountCreatedEvent,
-};
+use crate::events::DomainEvent;
 use crate::value_objects::{
     AccountLimits, NatsCredential, NatsJwt, NKeyPair, Permissions, UserLimits,
 };
@@ -36,7 +32,7 @@ pub struct CreateNatsOperator {
 pub struct NatsOperatorCreated {
     pub operator_nkey: NKeyPair,
     pub operator_jwt: NatsJwt,
-    pub events: Vec<KeyEvent>,
+    pub events: Vec<DomainEvent>,
 }
 
 /// Handle CreateNatsOperator command
@@ -56,7 +52,7 @@ pub fn handle_create_nats_operator(
     );
 
     // Step 2: Emit operator created event
-    let event = KeyEvent::NatsOperatorCreated(NatsOperatorCreatedEvent {
+    let event = DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::NatsOperatorCreated(crate::events::nats_operator::NatsOperatorCreatedEvent {
         operator_id: identity.nkey.id,
         name: cmd.organization.name.clone(),
         public_key: identity.nkey.public_key_string().to_string(),
@@ -65,7 +61,7 @@ pub fn handle_create_nats_operator(
         organization_id: Some(cmd.organization.id),
         correlation_id: cmd.correlation_id,
         causation_id: cmd.causation_id,
-    });
+    }));
 
     // US-021: Combine projection events with high-level event
     let mut all_events = identity.events;
@@ -98,7 +94,7 @@ pub struct CreateNatsAccount {
 pub struct NatsAccountCreated {
     pub account_nkey: NKeyPair,
     pub account_jwt: NatsJwt,
-    pub events: Vec<KeyEvent>,
+    pub events: Vec<DomainEvent>,
 }
 
 /// Handle CreateNatsAccount command
@@ -121,7 +117,7 @@ pub fn handle_create_nats_account(
     );
 
     // Step 2: Emit account created event
-    let event = KeyEvent::NatsAccountCreated(NatsAccountCreatedEvent {
+    let event = DomainEvent::NatsAccount(crate::events::NatsAccountEvents::NatsAccountCreated(crate::events::nats_account::NatsAccountCreatedEvent {
         account_id: identity.nkey.id,
         operator_id: cmd.operator_nkey.id,
         name: cmd.account.name().to_string(),
@@ -135,7 +131,7 @@ pub fn handle_create_nats_account(
         },
         correlation_id: cmd.correlation_id,
         causation_id: cmd.causation_id,
-    });
+    }));
 
     // US-021: Combine projection events with high-level event
     let mut all_events = identity.events;
@@ -170,7 +166,7 @@ pub struct NatsUserCreated {
     pub user_nkey: NKeyPair,
     pub user_jwt: NatsJwt,
     pub credential: Option<NatsCredential>,
-    pub events: Vec<KeyEvent>,
+    pub events: Vec<DomainEvent>,
 }
 
 /// Handle CreateNatsUser command
@@ -198,8 +194,8 @@ pub fn handle_create_nats_user(cmd: CreateNatsUser) -> Result<NatsUserCreated, S
                 // For now, we use the person_id as the name placeholder.
                 let responsible_person_name = format!("person-{}", responsible_person_id);
 
-                events.push(KeyEvent::AccountabilityValidated(
-                    AccountabilityValidatedEvent {
+                events.push(DomainEvent::Relationship(crate::events::RelationshipEvents::AccountabilityValidated(
+                    crate::events::relationship::AccountabilityValidatedEvent {
                         validation_id: Uuid::now_v7(),
                         identity_id: cmd.user.id(),
                         identity_type: match &cmd.user {
@@ -213,13 +209,15 @@ pub fn handle_create_nats_user(cmd: CreateNatsUser) -> Result<NatsUserCreated, S
                         responsible_person_name,
                         validated_at: Utc::now(),
                         validation_result: "PASSED".to_string(),
+                        correlation_id: Some(cmd.correlation_id),
+                        causation_id: cmd.causation_id,
                     },
-                ));
+                )));
             }
             Err(reason) => {
                 // Emit accountability violation event
-                let violation_event = KeyEvent::AccountabilityViolated(
-                    AccountabilityViolatedEvent {
+                let violation_event = DomainEvent::Relationship(crate::events::RelationshipEvents::AccountabilityViolated(
+                    crate::events::relationship::AccountabilityViolatedEvent {
                         violation_id: Uuid::now_v7(),
                         identity_id: cmd.user.id(),
                         identity_type: match &cmd.user {
@@ -233,8 +231,10 @@ pub fn handle_create_nats_user(cmd: CreateNatsUser) -> Result<NatsUserCreated, S
                         detected_at: Utc::now(),
                         required_action: "Assign valid responsible_person_id".to_string(),
                         severity: "CRITICAL".to_string(),
+                        correlation_id: Some(cmd.correlation_id),
+                        causation_id: cmd.causation_id,
                     },
-                );
+                ));
                 events.push(violation_event);
                 return Err(reason);
             }
@@ -244,28 +244,30 @@ pub fn handle_create_nats_user(cmd: CreateNatsUser) -> Result<NatsUserCreated, S
     // Step 2: Emit creation event for ServiceAccount or Agent
     match &cmd.user {
         UserIdentity::ServiceAccount(sa) => {
-            events.push(KeyEvent::ServiceAccountCreated(ServiceAccountCreatedEvent {
+            events.push(DomainEvent::NatsUser(crate::events::NatsUserEvents::ServiceAccountCreated(crate::events::nats_user::ServiceAccountCreatedEvent {
                 service_account_id: sa.id,
                 name: sa.name.clone(),
                 purpose: sa.purpose.clone(),
                 owning_unit_id: sa.owning_unit_id,
                 responsible_person_id: sa.responsible_person_id,
                 created_at: Utc::now(),
-            }));
+                correlation_id: Some(cmd.correlation_id),
+                causation_id: cmd.causation_id,
+            })));
         }
         #[cfg(feature = "cim-domain-agent")]
         UserIdentity::Agent(agent) => {
             // Convert agent_type to string representation using Display trait
             let agent_type_str = agent.agent_type().to_string();
 
-            events.push(KeyEvent::AgentCreated(AgentCreatedEvent {
+            events.push(DomainEvent::NatsUser(crate::events::NatsUserEvents::AgentCreated(crate::events::nats_user::AgentCreatedEvent {
                 agent_id: agent.id().into(), // Convert AgentId to Uuid
                 name: agent.metadata().name().to_string(),
                 agent_type: agent_type_str,
                 responsible_person_id: agent.metadata().owner_id(), // owner_id is the responsible person
                 organization_id: agent.metadata().owner_id(), // Using owner as org for now
                 created_at: Utc::now(),
-            }));
+            })));
         }
         UserIdentity::Person(_) => {
             // Person is self-accountable, no special event needed
@@ -287,7 +289,7 @@ pub fn handle_create_nats_user(cmd: CreateNatsUser) -> Result<NatsUserCreated, S
     events.extend(identity.events);
 
     // Step 4: Emit user created event
-    events.push(KeyEvent::NatsUserCreated(NatsUserCreatedEvent {
+    events.push(DomainEvent::NatsUser(crate::events::NatsUserEvents::NatsUserCreated(crate::events::nats_user::NatsUserCreatedEvent {
         user_id: identity.nkey.id,
         account_id: cmd.account_nkey.id,
         name: cmd.user.name().to_string(),
@@ -300,7 +302,7 @@ pub fn handle_create_nats_user(cmd: CreateNatsUser) -> Result<NatsUserCreated, S
         },
         correlation_id: cmd.correlation_id,
         causation_id: cmd.causation_id,
-    }));
+    })));
 
     Ok(NatsUserCreated {
         user_nkey: identity.nkey,
@@ -327,7 +329,7 @@ pub struct NatsInfrastructureBootstrapped {
     pub operator: NatsOperatorCreated,
     pub accounts: Vec<NatsAccountCreated>,
     pub users: Vec<NatsUserCreated>,
-    pub events: Vec<KeyEvent>,
+    pub events: Vec<DomainEvent>,
 }
 
 /// Handle BootstrapNatsInfrastructure command
@@ -448,19 +450,19 @@ mod tests {
         assert_eq!(result.events.len(), 4);
         assert!(matches!(
             result.events[0],
-            KeyEvent::NKeyGenerated(_)
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::NKeyGenerated(_))
         ));
         assert!(matches!(
             result.events[1],
-            KeyEvent::JwtClaimsCreated(_)
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::JwtClaimsCreated(_))
         ));
         assert!(matches!(
             result.events[2],
-            KeyEvent::JwtSigned(_)
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::JwtSigned(_))
         ));
         assert!(matches!(
             result.events[3],
-            KeyEvent::NatsOperatorCreated(_)
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::NatsOperatorCreated(_))
         ));
         assert_eq!(result.operator_nkey.key_type, NKeyType::Operator);
     }
@@ -509,19 +511,19 @@ mod tests {
         assert_eq!(result.events.len(), 4);
         assert!(matches!(
             result.events[0],
-            KeyEvent::NKeyGenerated(_)
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::NKeyGenerated(_))
         ));
         assert!(matches!(
             result.events[1],
-            KeyEvent::JwtClaimsCreated(_)
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::JwtClaimsCreated(_))
         ));
         assert!(matches!(
             result.events[2],
-            KeyEvent::JwtSigned(_)
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::JwtSigned(_))
         ));
         assert!(matches!(
             result.events[3],
-            KeyEvent::NatsAccountCreated(_)
+            DomainEvent::NatsAccount(crate::events::NatsAccountEvents::NatsAccountCreated(_))
         ));
         assert_eq!(result.account_nkey.key_type, NKeyType::Account);
     }
@@ -593,6 +595,6 @@ mod tests {
         assert!(result
             .events
             .iter()
-            .any(|e| matches!(e, KeyEvent::NatsUserCreated(_))));
+            .any(|e| matches!(e, DomainEvent::NatsUser(crate::events::NatsUserEvents::NatsUserCreated(_)))));
     }
 }

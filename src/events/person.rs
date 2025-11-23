@@ -51,11 +51,13 @@ pub enum PersonEvents {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PersonCreatedEvent {
     pub person_id: Uuid,
-    pub legal_name: String,
+    pub name: String,
     pub email: Option<String>,
+    pub title: Option<String>,
+    pub department: Option<String>,
     pub organization_id: Uuid,
     pub created_at: DateTime<Utc>,
-    pub created_by: String,
+    pub created_by: Option<String>,
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
 }

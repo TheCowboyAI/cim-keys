@@ -170,11 +170,12 @@ pub async fn handle_create_person(
     let event = DomainEvent::Person(crate::events::PersonEvents::PersonCreated(crate::events::person::PersonCreatedEvent {
         person_id: cmd.person_id,
         name: cmd.name,
-        email: cmd.email,
+        email: Some(cmd.email),
         title: cmd.title,
         department: cmd.department,
-        organization_id: cmd.organization_id,
+        organization_id: cmd.organization_id.unwrap_or_else(|| Uuid::now_v7()),
         created_at: cmd.timestamp,
+        created_by: Some("system".to_string()),
         correlation_id: cmd.correlation_id,
         causation_id: Some(cmd.command_id),
     }));
@@ -202,6 +203,7 @@ pub async fn handle_create_location(
         coordinates: cmd.coordinates,
         organization_id: cmd.organization_id,
         created_at: cmd.timestamp,
+        created_by: "system".to_string(),
         correlation_id: cmd.correlation_id,
         causation_id: Some(cmd.command_id),
     }));

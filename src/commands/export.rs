@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use uuid::Uuid;
 
 use crate::domain::{KeyContext, Organization};
-use crate::events::{KeyEvent, KeyExportedEvent, KeyStoredOfflineEvent, NatsConfigExportedEvent};
+use crate::events::DomainEvent;
 use crate::value_objects::{Certificate, ExportFormat, NKeyPair, NatsJwt, PublicKey};
 
 // ============================================================================
@@ -68,7 +68,7 @@ pub struct ExportCompleted {
     pub certificates_exported: usize,
     pub nats_configs_exported: usize,
     pub total_bytes_written: u64,
-    pub events: Vec<KeyEvent>,
+    pub events: Vec<DomainEvent>,
 }
 
 /// Handle ExportToEncryptedStorage command
@@ -102,25 +102,29 @@ pub fn handle_export_to_encrypted_storage(
         // Map ExportFormat to KeyFormat
         let key_format = map_export_format_to_key_format(&key_item.export_format);
 
-        events.push(KeyEvent::KeyExported(KeyExportedEvent {
+        events.push(DomainEvent::Key(crate::events::KeyEvents::KeyExported(crate::events::key::KeyExportedEvent {
             key_id: key_item.key_id,
             format: key_format,
             include_private: false, // Only exporting public keys
             exported_at: Utc::now(),
             exported_by: cmd.organization.name.clone(),
-            destination: crate::events::ExportDestination::File {
+            destination: crate::types::ExportDestination::File {
                 path: key_item.destination_path.to_string_lossy().to_string(),
             },
-        }));
+            correlation_id: cmd.correlation_id,
+            causation_id: cmd.causation_id,
+        })));
 
         // Emit offline storage event with actual checksum
-        events.push(KeyEvent::KeyStoredOffline(KeyStoredOfflineEvent {
+        events.push(DomainEvent::Key(crate::events::KeyEvents::KeyStoredOffline(crate::events::key::KeyStoredOfflineEvent {
             key_id: key_item.key_id,
             partition_id: Uuid::now_v7(), // ID of the encrypted partition
             encrypted: true,
             stored_at: Utc::now(),
             checksum,
-        }));
+            correlation_id: cmd.correlation_id,
+            causation_id: cmd.causation_id,
+        })));
     }
 
     // Step 3: Export certificates
@@ -129,8 +133,8 @@ pub fn handle_export_to_encrypted_storage(
         let bytes_written = export_certificate_to_file(cert_item)?;
         total_bytes += bytes_written;
 
-        events.push(KeyEvent::CertificateExported(
-            crate::events::CertificateExportedEvent {
+        events.push(DomainEvent::Certificate(crate::events::CertificateEvents::CertificateExported(
+            crate::events::certificate::CertificateExportedEvent {
                 export_id: Uuid::now_v7(),
                 cert_id: cert_item.cert_id,
                 export_format: format!("{:?}", cert_item.export_format),
@@ -139,7 +143,7 @@ pub fn handle_export_to_encrypted_storage(
                 correlation_id: cmd.correlation_id,
                 causation_id: cmd.causation_id,
             },
-        ));
+        )));
     }
 
     // Step 4: Export NATS configurations
@@ -149,13 +153,15 @@ pub fn handle_export_to_encrypted_storage(
         total_bytes += bytes_written;
 
         // Emit event with proper correlation tracking
-        events.push(KeyEvent::NatsConfigExported(NatsConfigExportedEvent {
+        events.push(DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::NatsConfigExported(crate::events::nats_operator::NatsConfigExportedEvent {
             export_id: Uuid::now_v7(),
             operator_id: nats_item.identity_id, // Use identity_id for tracking
-            format: crate::events::NatsExportFormat::Credentials,
+            format: crate::types::NatsExportFormat::Credentials,
             exported_at: Utc::now(),
             exported_by: cmd.organization.name.clone(),
-        }));
+            correlation_id: cmd.correlation_id,
+            causation_id: cmd.causation_id,
+        })));
     }
 
     // Step 5: Generate manifest if requested
@@ -171,8 +177,8 @@ pub fn handle_export_to_encrypted_storage(
         let manifest_bytes = manifest_json.len() as u64;
         total_bytes += manifest_bytes;
 
-        events.push(KeyEvent::ManifestCreated(
-            crate::events::ManifestCreatedEvent {
+        events.push(DomainEvent::Manifest(crate::events::ManifestEvents::ManifestCreated(
+            crate::events::manifest::ManifestCreatedEvent {
                 manifest_id: Uuid::now_v7(),
                 manifest_path: path.to_string_lossy().to_string(),
                 organization_id: cmd.organization.id,
@@ -181,9 +187,11 @@ pub fn handle_export_to_encrypted_storage(
                 certificates_count: cmd.certificates.len(),
                 nats_configs_count: cmd.nats_identities.len(),
                 created_at: Utc::now(),
+                created_by: "system".to_string(),
                 correlation_id: cmd.correlation_id,
+                causation_id: cmd.causation_id,
             },
-        ));
+        )));
 
         Some(path)
     } else {
@@ -413,7 +421,7 @@ fn export_nats_credentials_to_file(nats_item: &NatsIdentityExportItem) -> Result
 /// Generate export manifest
 fn generate_manifest(
     cmd: &ExportToEncryptedStorage,
-    events: &[KeyEvent],
+    events: &[DomainEvent],
 ) -> Result<ExportManifest, String> {
     Ok(ExportManifest {
         manifest_id: Uuid::now_v7(),
@@ -532,7 +540,7 @@ mod tests {
         assert!(result
             .events
             .iter()
-            .any(|e| matches!(e, KeyEvent::ManifestCreated(_))));
+            .any(|e| matches!(e, DomainEvent::Manifest(crate::events::ManifestEvents::ManifestCreated(_)))));
         assert!(result.manifest_path.is_some());
 
         // Clean up test directory

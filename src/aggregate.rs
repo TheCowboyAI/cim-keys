@@ -41,12 +41,12 @@ impl KeyManagementAggregate {
         _nats_port: Option<()>,
         #[cfg(feature = "policy")]
         _policy_engine: Option<()>,
-    ) -> Result<Vec<crate::events::KeyEvent>, KeyManagementError> {
+    ) -> Result<Vec<crate::events::DomainEvent>, KeyManagementError> {
         use crate::commands::KeyCommand;
 
         // Route command to appropriate handler based on variant
         // Handlers are synchronous and return Result<EventType, String>
-        // EventType has an `events` field containing Vec<KeyEvent>
+        // EventType has an `events` field containing Vec<DomainEvent>
         match command {
             KeyCommand::GenerateRootCA(cmd) => {
                 let result = crate::commands::pki::handle_generate_root_ca(cmd)

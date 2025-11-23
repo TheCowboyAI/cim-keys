@@ -17,7 +17,7 @@ use uuid::Uuid;
 use crate::domain::{
     AccountIdentity, Organization, OrganizationUnit, Person, ServiceAccount, UserIdentity,
 };
-use crate::events::{NKeyGeneratedEvent, JwtClaimsCreatedEvent, JwtSignedEvent};
+use crate::events::nats_operator::{NKeyGeneratedEvent, JwtClaimsCreatedEvent, JwtSignedEvent};
 use crate::value_objects::{
     AccountClaims, AccountData, AccountLimits, NatsCredential, NatsJwt, NKeyPair, NKeyPublic,
     NKeySeed, NKeyType, OperatorClaims, OperatorData, Permissions, UserClaims, UserData,
@@ -203,7 +203,7 @@ impl NKeyProjection {
         // Wrap in our domain value objects
         let seed = NKeySeed::new(
             params.key_type,
-            seed_string,
+            seed_string.clone(), // Clone here so we can use seed_string in the event
             generated_at,
         );
 
@@ -233,6 +233,7 @@ impl NKeyProjection {
             nkey_id,
             key_type: format!("{:?}", params.key_type),
             public_key: public_key_string,
+            seed: seed_string,
             purpose: params.description.clone().unwrap_or_else(|| params.name.clone()),
             expires_at,
             generated_at,
@@ -648,10 +649,12 @@ impl JwtSigningProjection {
         // US-021: Emit JWT signing event for audit trail
         let event = JwtSignedEvent {
             jwt_id: Uuid::now_v7(),
+            claims_id: Uuid::now_v7(), // Unique ID for these claims
+            signed_by: Uuid::now_v7(), // Signer identity
             signer_public_key: signing_key.public_key_string().to_string(),
             signature_algorithm: "ed25519".to_string(),
             jwt_token: jwt_token.clone(),
-            signature_verification_data: signature_b64,
+            signature_verification_data: Some(signature_b64),
             signed_at,
             correlation_id,
             causation_id,
@@ -675,7 +678,7 @@ pub struct NatsIdentityProjection {
     /// Combined credential (for user credentials)
     pub credential: Option<NatsCredential>,
     /// Events emitted during projection (US-021: audit trail)
-    pub events: Vec<crate::events::KeyEvent>,
+    pub events: Vec<crate::events::DomainEvent>,
 }
 
 /// High-level projection functions
@@ -700,7 +703,7 @@ impl NatsProjection {
         // Generate NKey
         let params = NKeyProjection::project_operator_nkey(organization);
         let (nkey, nkey_event) = NKeyProjection::generate_nkey(&params, correlation_id, causation_id);
-        events.push(crate::events::KeyEvent::NKeyGenerated(nkey_event));
+        events.push(crate::events::DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::NKeyGenerated(nkey_event)));
 
         // Create claims
         let signing_keys = vec![]; // TODO: Load from org metadata
@@ -711,7 +714,7 @@ impl NatsProjection {
             correlation_id,
             Some(correlation_id),
         );
-        events.push(crate::events::KeyEvent::JwtClaimsCreated(claims_event));
+        events.push(crate::events::DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::JwtClaimsCreated(claims_event)));
 
         // Sign JWT
         let (jwt, jwt_event) = JwtSigningProjection::sign_operator_jwt(
@@ -720,7 +723,7 @@ impl NatsProjection {
             correlation_id,
             Some(correlation_id),
         );
-        events.push(crate::events::KeyEvent::JwtSigned(jwt_event));
+        events.push(crate::events::DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::JwtSigned(jwt_event)));
 
         NatsIdentityProjection {
             nkey,
@@ -751,7 +754,7 @@ impl NatsProjection {
         // Generate NKey
         let params = NKeyProjection::project_account_nkey(organization, unit);
         let (nkey, nkey_event) = NKeyProjection::generate_nkey(&params, correlation_id, causation_id);
-        events.push(crate::events::KeyEvent::NKeyGenerated(nkey_event));
+        events.push(crate::events::DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::NKeyGenerated(nkey_event)));
 
         // Create claims
         let signing_keys = vec![]; // TODO: Load from unit metadata
@@ -765,7 +768,7 @@ impl NatsProjection {
             correlation_id,
             Some(correlation_id),
         );
-        events.push(crate::events::KeyEvent::JwtClaimsCreated(claims_event));
+        events.push(crate::events::DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::JwtClaimsCreated(claims_event)));
 
         // Sign JWT (operator signs account)
         let (jwt, jwt_event) = JwtSigningProjection::sign_account_jwt(
@@ -775,7 +778,7 @@ impl NatsProjection {
             correlation_id,
             Some(correlation_id),
         );
-        events.push(crate::events::KeyEvent::JwtSigned(jwt_event));
+        events.push(crate::events::DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::JwtSigned(jwt_event)));
 
         NatsIdentityProjection {
             nkey,
@@ -808,7 +811,7 @@ impl NatsProjection {
         // Generate NKey
         let params = NKeyProjection::project_user_nkey(person, organization);
         let (nkey, nkey_event) = NKeyProjection::generate_nkey(&params, correlation_id, causation_id);
-        events.push(crate::events::KeyEvent::NKeyGenerated(nkey_event));
+        events.push(crate::events::DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::NKeyGenerated(nkey_event)));
 
         // Create claims
         let (claims, claims_event) = JwtClaimsProjection::project_user_claims(
@@ -820,7 +823,7 @@ impl NatsProjection {
             correlation_id,
             Some(correlation_id),
         );
-        events.push(crate::events::KeyEvent::JwtClaimsCreated(claims_event));
+        events.push(crate::events::DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::JwtClaimsCreated(claims_event)));
 
         // Sign JWT (account signs user)
         let (jwt, jwt_event) = JwtSigningProjection::sign_user_jwt(
@@ -830,7 +833,7 @@ impl NatsProjection {
             correlation_id,
             Some(correlation_id),
         );
-        events.push(crate::events::KeyEvent::JwtSigned(jwt_event));
+        events.push(crate::events::DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::JwtSigned(jwt_event)));
 
         // Create credential file (JWT + seed combined)
         let credential = NatsCredential::new(
@@ -872,7 +875,7 @@ impl NatsProjection {
         // Generate NKey
         let params = NKeyProjection::project_user_identity_nkey(user, organization);
         let (nkey, nkey_event) = NKeyProjection::generate_nkey(&params, correlation_id, causation_id);
-        events.push(crate::events::KeyEvent::NKeyGenerated(nkey_event));
+        events.push(crate::events::DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::NKeyGenerated(nkey_event)));
 
         // Create claims
         let (claims, claims_event) = JwtClaimsProjection::project_user_identity_claims(
@@ -884,7 +887,7 @@ impl NatsProjection {
             correlation_id,
             Some(correlation_id),
         );
-        events.push(crate::events::KeyEvent::JwtClaimsCreated(claims_event));
+        events.push(crate::events::DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::JwtClaimsCreated(claims_event)));
 
         // Sign JWT (account signs user)
         let (jwt, jwt_event) = JwtSigningProjection::sign_user_jwt(
@@ -894,7 +897,7 @@ impl NatsProjection {
             correlation_id,
             Some(correlation_id),
         );
-        events.push(crate::events::KeyEvent::JwtSigned(jwt_event));
+        events.push(crate::events::DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::JwtSigned(jwt_event)));
 
         // Create credential file (JWT + seed combined)
         let credential = NatsCredential::new(
@@ -934,7 +937,7 @@ impl NatsProjection {
         // Generate NKey
         let params = NKeyProjection::project_account_identity_nkey(account, parent_org);
         let (nkey, nkey_event) = NKeyProjection::generate_nkey(&params, correlation_id, causation_id);
-        events.push(crate::events::KeyEvent::NKeyGenerated(nkey_event));
+        events.push(crate::events::DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::NKeyGenerated(nkey_event)));
 
         // Extract organization details
         let (org, unit) = match account {
@@ -977,7 +980,7 @@ impl NatsProjection {
                 Some(correlation_id),
             )
         };
-        events.push(crate::events::KeyEvent::JwtClaimsCreated(claims_event));
+        events.push(crate::events::DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::JwtClaimsCreated(claims_event)));
 
         // Sign JWT (operator signs account)
         let (jwt, jwt_event) = JwtSigningProjection::sign_account_jwt(
@@ -987,7 +990,7 @@ impl NatsProjection {
             correlation_id,
             Some(correlation_id),
         );
-        events.push(crate::events::KeyEvent::JwtSigned(jwt_event));
+        events.push(crate::events::DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::JwtSigned(jwt_event)));
 
         NatsIdentityProjection {
             nkey,

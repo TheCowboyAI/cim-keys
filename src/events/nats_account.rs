@@ -29,6 +29,12 @@ pub enum NatsAccountEvents {
 
     /// NATS account was reactivated
     NatsAccountReactivated(NatsAccountReactivatedEvent),
+
+    /// NATS account was activated
+    NatsAccountActivated(NatsAccountActivatedEvent),
+
+    /// NATS account was deleted
+    NatsAccountDeleted(NatsAccountDeletedEvent),
 }
 
 /// A new NATS account was created
@@ -63,6 +69,8 @@ pub struct NatsAccountUpdatedEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NatsPermissionsSetEvent {
     pub account_id: Uuid,
+    pub entity_id: Uuid,
+    pub entity_type: crate::types::NatsEntityType,
     pub permissions: NatsPermissions,
     pub set_at: DateTime<Utc>,
     pub set_by: String,
@@ -85,8 +93,31 @@ pub struct NatsAccountSuspendedEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NatsAccountReactivatedEvent {
     pub account_id: Uuid,
+    pub permissions: Option<NatsPermissions>,
     pub reactivated_at: DateTime<Utc>,
     pub reactivated_by: String,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// NATS account was activated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsAccountActivatedEvent {
+    pub account_id: Uuid,
+    pub permissions: Option<NatsPermissions>,
+    pub activated_at: DateTime<Utc>,
+    pub activated_by: String,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// NATS account was deleted
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsAccountDeletedEvent {
+    pub account_id: Uuid,
+    pub reason: String,
+    pub deleted_at: DateTime<Utc>,
+    pub deleted_by: String,
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
 }
@@ -99,6 +130,8 @@ impl DomainEvent for NatsAccountEvents {
             NatsAccountEvents::NatsPermissionsSet(e) => e.account_id,
             NatsAccountEvents::NatsAccountSuspended(e) => e.account_id,
             NatsAccountEvents::NatsAccountReactivated(e) => e.account_id,
+            NatsAccountEvents::NatsAccountActivated(e) => e.account_id,
+            NatsAccountEvents::NatsAccountDeleted(e) => e.account_id,
         }
     }
 
@@ -109,6 +142,8 @@ impl DomainEvent for NatsAccountEvents {
             NatsAccountEvents::NatsPermissionsSet(_) => "NatsPermissionsSet",
             NatsAccountEvents::NatsAccountSuspended(_) => "NatsAccountSuspended",
             NatsAccountEvents::NatsAccountReactivated(_) => "NatsAccountReactivated",
+            NatsAccountEvents::NatsAccountActivated(_) => "NatsAccountActivated",
+            NatsAccountEvents::NatsAccountDeleted(_) => "NatsAccountDeleted",
         }
     }
 }

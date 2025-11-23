@@ -35,6 +35,21 @@ pub enum NatsOperatorEvents {
 
     /// JWT was signed
     JwtSigned(JwtSignedEvent),
+
+    /// NATS operator was suspended
+    NatsOperatorSuspended(NatsOperatorSuspendedEvent),
+
+    /// NATS operator was reactivated
+    NatsOperatorReactivated(NatsOperatorReactivatedEvent),
+
+    /// NATS operator was revoked
+    NatsOperatorRevoked(NatsOperatorRevokedEvent),
+
+    /// JWKS (JSON Web Key Set) was exported
+    JwksExported(JwksExportedEvent),
+
+    /// Projection was applied to storage
+    ProjectionApplied(ProjectionAppliedEvent),
 }
 
 /// A new NATS operator was created
@@ -94,6 +109,8 @@ pub struct NKeyGeneratedEvent {
     pub key_type: String,
     pub public_key: String,
     pub seed: String,
+    pub purpose: String,
+    pub expires_at: Option<DateTime<Utc>>,
     pub generated_at: DateTime<Utc>,
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
@@ -103,9 +120,12 @@ pub struct NKeyGeneratedEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JwtClaimsCreatedEvent {
     pub claims_id: Uuid,
-    pub entity_id: Uuid,
-    pub entity_type: NatsEntityType,
-    pub claims: serde_json::Value,
+    pub issuer: String,
+    pub subject: String,
+    pub audience: Option<String>,
+    pub permissions: String,
+    pub not_before: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
@@ -117,8 +137,66 @@ pub struct JwtSignedEvent {
     pub jwt_id: Uuid,
     pub claims_id: Uuid,
     pub signed_by: Uuid,
+    pub signer_public_key: String,
     pub jwt_token: String,
+    pub signature_algorithm: String,
+    pub signature_verification_data: Option<String>,
     pub signed_at: DateTime<Utc>,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// NATS operator was suspended
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsOperatorSuspendedEvent {
+    pub operator_id: Uuid,
+    pub reason: String,
+    pub suspended_at: DateTime<Utc>,
+    pub suspended_by: String,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// NATS operator was reactivated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsOperatorReactivatedEvent {
+    pub operator_id: Uuid,
+    pub reactivated_at: DateTime<Utc>,
+    pub reactivated_by: String,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// NATS operator was revoked
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsOperatorRevokedEvent {
+    pub operator_id: Uuid,
+    pub reason: String,
+    pub revoked_at: DateTime<Utc>,
+    pub revoked_by: String,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// JWKS (JSON Web Key Set) was exported
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JwksExportedEvent {
+    pub export_id: Uuid,
+    pub operator_id: Uuid,
+    pub jwks_data: String,
+    pub exported_at: DateTime<Utc>,
+    pub exported_by: String,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// Projection was applied to storage
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectionAppliedEvent {
+    pub projection_id: Uuid,
+    pub projection_type: String,
+    pub entity_id: Uuid,
+    pub applied_at: DateTime<Utc>,
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
 }
@@ -131,8 +209,13 @@ impl DomainEvent for NatsOperatorEvents {
             NatsOperatorEvents::NatsSigningKeyGenerated(e) => e.entity_id,
             NatsOperatorEvents::NatsConfigExported(e) => e.operator_id,
             NatsOperatorEvents::NKeyGenerated(e) => e.nkey_id,
-            NatsOperatorEvents::JwtClaimsCreated(e) => e.entity_id,
+            NatsOperatorEvents::JwtClaimsCreated(e) => e.claims_id,
             NatsOperatorEvents::JwtSigned(e) => e.jwt_id,
+            NatsOperatorEvents::NatsOperatorSuspended(e) => e.operator_id,
+            NatsOperatorEvents::NatsOperatorReactivated(e) => e.operator_id,
+            NatsOperatorEvents::NatsOperatorRevoked(e) => e.operator_id,
+            NatsOperatorEvents::JwksExported(e) => e.export_id,
+            NatsOperatorEvents::ProjectionApplied(e) => e.projection_id,
         }
     }
 
@@ -145,6 +228,11 @@ impl DomainEvent for NatsOperatorEvents {
             NatsOperatorEvents::NKeyGenerated(_) => "NKeyGenerated",
             NatsOperatorEvents::JwtClaimsCreated(_) => "JwtClaimsCreated",
             NatsOperatorEvents::JwtSigned(_) => "JwtSigned",
+            NatsOperatorEvents::NatsOperatorSuspended(_) => "NatsOperatorSuspended",
+            NatsOperatorEvents::NatsOperatorReactivated(_) => "NatsOperatorReactivated",
+            NatsOperatorEvents::NatsOperatorRevoked(_) => "NatsOperatorRevoked",
+            NatsOperatorEvents::JwksExported(_) => "JwksExported",
+            NatsOperatorEvents::ProjectionApplied(_) => "ProjectionApplied",
         }
     }
 }

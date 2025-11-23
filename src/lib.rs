@@ -42,8 +42,7 @@
 
 // Core modules following FRP/Event-sourcing
 pub mod types; // Shared domain ontologies (value objects, enums)
-pub mod events_legacy; // Legacy monolithic event enum (to be migrated)
-pub mod events; // New DDD-organized events by aggregate
+pub mod events; // DDD-organized events by aggregate root
 pub mod commands;
 pub mod aggregate;
 pub mod projections;
@@ -121,7 +120,8 @@ pub mod icons;
 pub mod policy;
 
 // Re-export core types
-pub use events::{KeyEvent, KeyMetadata};
+pub use events::DomainEvent;
+pub use types::KeyMetadata;
 // TODO: Re-export command types when modular structure is stabilized
 // pub use commands::{...};
 pub use aggregate::{KeyManagementAggregate, KeyManagementError};
@@ -136,7 +136,7 @@ pub use domain::{
 
 // Re-export from cim-domain for convenience
 pub use cim_domain::{
-    DomainEvent, Command, CommandId, EventId,
+    Command, CommandId, EventId,
     CausationId, CorrelationId, EntityId
 };
 

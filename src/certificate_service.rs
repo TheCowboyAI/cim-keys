@@ -10,7 +10,7 @@ use rcgen::{
     ExtendedKeyUsagePurpose, KeyPair, Issuer,
 };
 use time::{Duration, OffsetDateTime};
-use crate::events::CertificateGeneratedEvent;
+use crate::events::certificate::CertificateGeneratedEvent;
 
 /// Result of certificate generation
 pub struct GeneratedCertificate {

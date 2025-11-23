@@ -611,9 +611,9 @@ impl OfflineKeyProjection {
         self.manifest.people.push(PersonEntry {
             person_id: event.person_id,
             name: event.name.clone(),
-            email: event.email.clone(),
+            email: event.email.clone().unwrap_or_else(|| "unknown@example.com".to_string()),
             role: event.title.clone().unwrap_or_else(|| "Member".to_string()),
-            organization_id: event.organization_id.unwrap_or_else(Uuid::now_v7),
+            organization_id: event.organization_id,
             created_at: event.created_at,
             // Initialize state machine to Created
             state: Some(PersonState::Created {
@@ -1578,7 +1578,6 @@ impl OfflineKeyProjection {
             "state": "Active",
             "renewed_from": event.old_cert_id,
             "renewed_at": event.renewed_at,
-            "new_not_after": event.new_not_after,
             "correlation_id": event.correlation_id,
         });
         fs::write(&new_state_path, serde_json::to_string_pretty(&new_state_info).unwrap())
@@ -1841,7 +1840,10 @@ impl OfflineKeyProjection {
 
     /// Project PKI hierarchy creation
     fn project_pki_hierarchy_created(&mut self, event: &crate::events::PkiHierarchyCreatedEvent) -> Result<(), ProjectionError> {
-        let pki_dir = self.root_path.join("pki").join(&event.hierarchy_name);
+        // Generate hierarchy name from root CA ID
+        let hierarchy_name = format!("hierarchy-{}", event.root_ca_id);
+
+        let pki_dir = self.root_path.join("pki").join(&hierarchy_name);
         fs::create_dir_all(&pki_dir)
             .map_err(|e| ProjectionError::IoError(format!("Failed to create PKI directory: {}", e)))?;
 
@@ -1853,11 +1855,11 @@ impl OfflineKeyProjection {
             .map_err(|e| ProjectionError::IoError(format!("Failed to write hierarchy: {}", e)))?;
 
         self.manifest.pki_hierarchies.push(PkiHierarchyEntry {
-            hierarchy_name: event.hierarchy_name.clone(),
+            hierarchy_name: hierarchy_name.clone(),
             root_ca_id: event.root_ca_id,
-            intermediate_ca_ids: event.intermediate_ca_ids.clone(),
+            intermediate_ca_ids: event.intermediate_cas.clone(),
             created_at: event.created_at,
-            directory_path: format!("pki/{}", event.hierarchy_name),
+            directory_path: format!("pki/{}", hierarchy_name),
         });
 
         Ok(())

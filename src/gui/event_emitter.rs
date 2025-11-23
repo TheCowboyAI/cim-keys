@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::{
     commands::KeyCommand,
     domain::{Person, KeyOwnerRole},
-    events::KeyEvent,
+    events::DomainEvent,
 };
 
 /// GUI Event Emitter following CIM principles
@@ -138,7 +138,7 @@ impl CimEventEmitter {
     }
 
     /// Process an event that was received
-    pub fn process_event(&mut self, event: &KeyEvent) {
+    pub fn process_event(&mut self, event: &DomainEvent) {
         // Update last event ID for causation tracking
         *self.last_event_id.lock().unwrap() = Some(event.id());
     }
@@ -155,7 +155,7 @@ pub struct GuiEventSubscriber {
     subscriptions: Vec<String>,
 
     /// Event buffer for processing
-    event_buffer: VecDeque<KeyEvent>,
+    event_buffer: VecDeque<DomainEvent>,
 }
 
 impl GuiEventSubscriber {
@@ -179,7 +179,7 @@ impl GuiEventSubscriber {
     }
 
     /// Buffer an incoming event
-    pub fn buffer_event(&mut self, event: KeyEvent) {
+    pub fn buffer_event(&mut self, event: DomainEvent) {
         self.event_buffer.push_back(event);
     }
 
@@ -188,27 +188,25 @@ impl GuiEventSubscriber {
         let mut messages = Vec::new();
 
         while let Some(event) = self.event_buffer.pop_front() {
-            use KeyEvent::*;
-
-            let message = match event {
-                KeyGenerated(e) => GuiUpdateMessage::KeyAdded {
+            let message = match &event {
+                DomainEvent::Key(crate::events::KeyEvents::KeyGenerated(e)) => GuiUpdateMessage::KeyAdded {
                     owner_id: e.ownership.as_ref().map(|o| match o {
                         crate::domain::KeyOwnership { person_id, .. } => *person_id
                     }).unwrap_or_else(Uuid::nil),
                     key_type: format!("{:?}", e.algorithm),
                 },
 
-                NatsOperatorCreated(e) => GuiUpdateMessage::StatusUpdate {
+                DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::NatsOperatorCreated(e)) => GuiUpdateMessage::StatusUpdate {
                     message: format!("NATS operator '{}' created", e.name),
                 },
 
-                TrustEstablished(e) => GuiUpdateMessage::GraphEdgeAdded {
+                DomainEvent::Relationship(crate::events::RelationshipEvents::TrustEstablished(e)) => GuiUpdateMessage::GraphEdgeAdded {
                     from: e.trustor_id,
                     to: e.trustee_id,
                     edge_type: "trust".to_string(),
                 },
 
-                KeyRevoked(e) => GuiUpdateMessage::KeyRemoved {
+                DomainEvent::Key(crate::events::KeyEvents::KeyRevoked(e)) => GuiUpdateMessage::KeyRemoved {
                     key_id: e.key_id,
                     reason: format!("{:?}", e.reason),  // Convert enum to string
                 },
@@ -251,167 +249,169 @@ pub enum GuiUpdateMessage {
     ProjectionReloaded,
 }
 
-// Extension trait for KeyEvent to get metadata
-impl KeyEvent {
+// Extension trait for DomainEvent to get metadata
+impl DomainEvent {
     pub fn id(&self) -> Uuid {
         match self {
-            KeyEvent::KeyGenerated(e) => e.key_id,
-            KeyEvent::KeyImported(e) => e.key_id,
-            KeyEvent::CertificateGenerated(e) => e.cert_id,
-            KeyEvent::CertificateSigned(e) => e.cert_id,
-            KeyEvent::KeyExported(e) => e.key_id,
-            KeyEvent::KeyStoredOffline(e) => e.key_id,
-            KeyEvent::YubiKeyProvisioned(_e) => Uuid::now_v7(), // Generate ID for YubiKey events based on event data
-            KeyEvent::PinConfigured(e) => e.event_id,
-            KeyEvent::PukConfigured(e) => e.event_id,
-            KeyEvent::ManagementKeyRotated(e) => e.event_id,
-            KeyEvent::YubiKeyDetected(e) => e.event_id,
-            KeyEvent::KeyGeneratedInSlot(e) => e.event_id,
-            KeyEvent::CertificateImportedToSlot(e) => e.event_id,
-            KeyEvent::SlotAllocationPlanned(e) => e.event_id,
-            KeyEvent::SshKeyGenerated(e) => e.key_id,
-            KeyEvent::GpgKeyGenerated(e) => e.key_id,
-            KeyEvent::KeyRevoked(e) => e.key_id,
-            KeyEvent::TrustEstablished(e) => e.trustor_id, // Use trustor_id as event ID
-            KeyEvent::PkiHierarchyCreated(e) => e.root_ca_id,
-            KeyEvent::NatsOperatorCreated(e) => e.operator_id,
-            KeyEvent::NatsAccountCreated(e) => e.account_id,
-            KeyEvent::NatsUserCreated(e) => e.user_id,
-            // NATS Operator State Transitions
-            KeyEvent::NatsOperatorSuspended(e) => e.operator_id,
-            KeyEvent::NatsOperatorReactivated(e) => e.operator_id,
-            KeyEvent::NatsOperatorRevoked(e) => e.operator_id,
-            // NATS Account State Transitions
-            KeyEvent::NatsAccountActivated(e) => e.account_id,
-            KeyEvent::NatsAccountSuspended(e) => e.account_id,
-            KeyEvent::NatsAccountReactivated(e) => e.account_id,
-            KeyEvent::NatsAccountDeleted(e) => e.account_id,
-            // NATS User State Transitions
-            KeyEvent::NatsUserActivated(e) => e.user_id,
-            KeyEvent::NatsUserSuspended(e) => e.user_id,
-            KeyEvent::NatsUserReactivated(e) => e.user_id,
-            KeyEvent::NatsUserDeleted(e) => e.user_id,
-            // Certificate Lifecycle State Transitions (Phase 11)
-            KeyEvent::CertificateActivated(e) => e.cert_id,
-            KeyEvent::CertificateSuspended(e) => e.cert_id,
-            KeyEvent::CertificateRevoked(e) => e.cert_id,
-            KeyEvent::CertificateExpired(e) => e.cert_id,
-            KeyEvent::CertificateRenewed(e) => e.new_cert_id,
-            // Person Lifecycle State Transitions (Phase 12)
-            KeyEvent::PersonActivated(e) => e.person_id,
-            KeyEvent::PersonSuspended(e) => e.person_id,
-            KeyEvent::PersonReactivated(e) => e.person_id,
-            KeyEvent::PersonArchived(e) => e.person_id,
-            // Location Lifecycle State Transitions (Phase 12)
-            KeyEvent::LocationActivated(e) => e.location_id,
-            KeyEvent::LocationSuspended(e) => e.location_id,
-            KeyEvent::LocationReactivated(e) => e.location_id,
-            KeyEvent::LocationDecommissioned(e) => e.location_id,
-            KeyEvent::NatsSigningKeyGenerated(_e) => Uuid::now_v7(), // Generate ID from event
-            KeyEvent::NKeyGenerated(e) => e.nkey_id,
-            KeyEvent::JwtClaimsCreated(e) => e.claims_id,
-            KeyEvent::JwtSigned(e) => e.jwt_id,
-            KeyEvent::ProjectionApplied(e) => e.projection_id,
-            KeyEvent::NatsPermissionsSet(_e) => Uuid::now_v7(), // Generate ID from event
-            KeyEvent::NatsConfigExported(_e) => Uuid::now_v7(), // Generate ID from event
-            KeyEvent::JwksExported(e) => e.export_id,
-            KeyEvent::KeyRotationInitiated(e) => e.rotation_id,
-            KeyEvent::KeyRotationCompleted(e) => e.rotation_id,
-            KeyEvent::TotpSecretGenerated(e) => e.secret_id,
-            KeyEvent::ServiceAccountCreated(e) => e.service_account_id,
-            KeyEvent::AgentCreated(e) => e.agent_id,
-            KeyEvent::AccountabilityValidated(e) => e.validation_id,
-            KeyEvent::AccountabilityViolated(e) => e.violation_id,
-            KeyEvent::CertificateExported(e) => e.export_id,
-            KeyEvent::ManifestCreated(e) => e.manifest_id,
-            KeyEvent::PersonCreated(e) => e.person_id,
-            KeyEvent::LocationCreated(e) => e.location_id,
-            KeyEvent::OrganizationCreated(e) => e.organization_id,
-            KeyEvent::OrganizationalUnitCreated(e) => e.unit_id,
-            KeyEvent::RoleCreated(e) => e.role_id,
-            KeyEvent::PolicyCreated(e) => e.policy_id,
-            KeyEvent::RelationshipEstablished(e) => e.from_id,
+            // Key aggregate events
+            DomainEvent::Key(crate::events::KeyEvents::KeyGenerated(e)) => e.key_id,
+            DomainEvent::Key(crate::events::KeyEvents::KeyImported(e)) => e.key_id,
+            DomainEvent::Key(crate::events::KeyEvents::KeyExported(e)) => e.key_id,
+            DomainEvent::Key(crate::events::KeyEvents::KeyStoredOffline(e)) => e.key_id,
+            DomainEvent::Key(crate::events::KeyEvents::SshKeyGenerated(e)) => e.key_id,
+            DomainEvent::Key(crate::events::KeyEvents::GpgKeyGenerated(e)) => e.key_id,
+            DomainEvent::Key(crate::events::KeyEvents::KeyRevoked(e)) => e.key_id,
+            DomainEvent::Key(crate::events::KeyEvents::KeyRotationInitiated(e)) => e.rotation_id,
+            DomainEvent::Key(crate::events::KeyEvents::KeyRotationCompleted(e)) => e.rotation_id,
+            // Certificate aggregate events
+            DomainEvent::Certificate(crate::events::CertificateEvents::CertificateGenerated(e)) => e.cert_id,
+            DomainEvent::Certificate(crate::events::CertificateEvents::CertificateSigned(e)) => e.cert_id,
+            DomainEvent::Certificate(crate::events::CertificateEvents::CertificateActivated(e)) => e.cert_id,
+            DomainEvent::Certificate(crate::events::CertificateEvents::CertificateSuspended(e)) => e.cert_id,
+            DomainEvent::Certificate(crate::events::CertificateEvents::CertificateRevoked(e)) => e.cert_id,
+            DomainEvent::Certificate(crate::events::CertificateEvents::CertificateExpired(e)) => e.cert_id,
+            DomainEvent::Certificate(crate::events::CertificateEvents::CertificateRenewed(e)) => e.new_cert_id,
+            DomainEvent::Certificate(crate::events::CertificateEvents::CertificateExported(e)) => e.export_id,
+            DomainEvent::Certificate(crate::events::CertificateEvents::PkiHierarchyCreated(e)) => e.root_ca_id,
+            // YubiKey aggregate events
+            DomainEvent::YubiKey(crate::events::YubiKeyEvents::YubiKeyProvisioned(_e)) => Uuid::now_v7(),
+            DomainEvent::YubiKey(crate::events::YubiKeyEvents::PinConfigured(e)) => e.event_id,
+            DomainEvent::YubiKey(crate::events::YubiKeyEvents::PukConfigured(e)) => e.event_id,
+            DomainEvent::YubiKey(crate::events::YubiKeyEvents::ManagementKeyRotated(e)) => e.event_id,
+            DomainEvent::YubiKey(crate::events::YubiKeyEvents::YubiKeyDetected(e)) => e.event_id,
+            DomainEvent::YubiKey(crate::events::YubiKeyEvents::KeyGeneratedInSlot(e)) => e.event_id,
+            DomainEvent::YubiKey(crate::events::YubiKeyEvents::CertificateImportedToSlot(e)) => e.event_id,
+            DomainEvent::YubiKey(crate::events::YubiKeyEvents::SlotAllocationPlanned(e)) => e.event_id,
+            // Relationship aggregate events
+            DomainEvent::Relationship(crate::events::RelationshipEvents::TrustEstablished(e)) => e.trustor_id,
+            DomainEvent::Relationship(crate::events::RelationshipEvents::RelationshipEstablished(e)) => e.from_id,
+            DomainEvent::Relationship(crate::events::RelationshipEvents::AccountabilityValidated(e)) => e.validation_id,
+            DomainEvent::Relationship(crate::events::RelationshipEvents::AccountabilityViolated(e)) => e.violation_id,
+            // NATS Operator aggregate events
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::NatsOperatorCreated(e)) => e.operator_id,
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::NatsOperatorSuspended(e)) => e.operator_id,
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::NatsOperatorReactivated(e)) => e.operator_id,
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::NatsOperatorRevoked(e)) => e.operator_id,
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::NatsSigningKeyGenerated(_e)) => Uuid::now_v7(),
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::NKeyGenerated(e)) => e.nkey_id,
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::JwtClaimsCreated(e)) => e.claims_id,
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::JwtSigned(e)) => e.jwt_id,
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::NatsConfigExported(_e)) => Uuid::now_v7(),
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::JwksExported(e)) => e.export_id,
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::ProjectionApplied(e)) => e.projection_id,
+            // NATS Account aggregate events
+            DomainEvent::NatsAccount(crate::events::NatsAccountEvents::NatsAccountCreated(e)) => e.account_id,
+            DomainEvent::NatsAccount(crate::events::NatsAccountEvents::NatsAccountSuspended(e)) => e.account_id,
+            DomainEvent::NatsAccount(crate::events::NatsAccountEvents::NatsAccountReactivated(e)) => e.account_id,
+            DomainEvent::NatsAccount(crate::events::NatsAccountEvents::NatsPermissionsSet(_e)) => Uuid::now_v7(),
+            // NATS User aggregate events
+            DomainEvent::NatsUser(crate::events::NatsUserEvents::NatsUserCreated(e)) => e.user_id,
+            DomainEvent::NatsUser(crate::events::NatsUserEvents::ServiceAccountCreated(e)) => e.service_account_id,
+            DomainEvent::NatsUser(crate::events::NatsUserEvents::AgentCreated(e)) => e.agent_id,
+            DomainEvent::NatsUser(crate::events::NatsUserEvents::TotpSecretGenerated(e)) => e.secret_id,
+            // Person aggregate events
+            DomainEvent::Person(crate::events::PersonEvents::PersonCreated(e)) => e.person_id,
+            DomainEvent::Person(crate::events::PersonEvents::PersonActivated(e)) => e.person_id,
+            DomainEvent::Person(crate::events::PersonEvents::PersonSuspended(e)) => e.person_id,
+            DomainEvent::Person(crate::events::PersonEvents::PersonReactivated(e)) => e.person_id,
+            DomainEvent::Person(crate::events::PersonEvents::PersonArchived(e)) => e.person_id,
+            // Location aggregate events
+            DomainEvent::Location(crate::events::LocationEvents::LocationCreated(e)) => e.location_id,
+            DomainEvent::Location(crate::events::LocationEvents::LocationActivated(e)) => e.location_id,
+            DomainEvent::Location(crate::events::LocationEvents::LocationSuspended(e)) => e.location_id,
+            DomainEvent::Location(crate::events::LocationEvents::LocationReactivated(e)) => e.location_id,
+            DomainEvent::Location(crate::events::LocationEvents::LocationDecommissioned(e)) => e.location_id,
+            // Organization aggregate events
+            DomainEvent::Organization(crate::events::OrganizationEvents::OrganizationCreated(e)) => e.organization_id,
+            DomainEvent::Organization(crate::events::OrganizationEvents::OrganizationalUnitCreated(e)) => e.unit_id,
+            DomainEvent::Organization(crate::events::OrganizationEvents::RoleCreated(e)) => e.role_id,
+            DomainEvent::Organization(crate::events::OrganizationEvents::PolicyCreated(e)) => e.policy_id,
+            // Manifest aggregate events
+            DomainEvent::Manifest(crate::events::ManifestEvents::ManifestCreated(e)) => e.manifest_id,
+            // Catch-all for any events not explicitly handled
+            _ => Uuid::now_v7(),
         }
     }
 
     pub fn event_type(&self) -> &'static str {
         match self {
-            KeyEvent::KeyGenerated(_) => "KeyGenerated",
-            KeyEvent::KeyImported(_) => "KeyImported",
-            KeyEvent::CertificateGenerated(_) => "CertificateGenerated",
-            KeyEvent::CertificateSigned(_) => "CertificateSigned",
-            KeyEvent::KeyExported(_) => "KeyExported",
-            KeyEvent::KeyStoredOffline(_) => "KeyStoredOffline",
-            KeyEvent::YubiKeyProvisioned(_) => "YubiKeyProvisioned",
-            KeyEvent::PinConfigured(_) => "PinConfigured",
-            KeyEvent::PukConfigured(_) => "PukConfigured",
-            KeyEvent::ManagementKeyRotated(_) => "ManagementKeyRotated",
-            KeyEvent::YubiKeyDetected(_) => "YubiKeyDetected",
-            KeyEvent::KeyGeneratedInSlot(_) => "KeyGeneratedInSlot",
-            KeyEvent::CertificateImportedToSlot(_) => "CertificateImportedToSlot",
-            KeyEvent::SlotAllocationPlanned(_) => "SlotAllocationPlanned",
-            KeyEvent::SshKeyGenerated(_) => "SshKeyGenerated",
-            KeyEvent::GpgKeyGenerated(_) => "GpgKeyGenerated",
-            KeyEvent::KeyRevoked(_) => "KeyRevoked",
-            KeyEvent::TrustEstablished(_) => "TrustEstablished",
-            KeyEvent::PkiHierarchyCreated(_) => "PkiHierarchyCreated",
-            KeyEvent::NatsOperatorCreated(_) => "NatsOperatorCreated",
-            KeyEvent::NatsAccountCreated(_) => "NatsAccountCreated",
-            KeyEvent::NatsUserCreated(_) => "NatsUserCreated",
-            // NATS Operator State Transitions
-            KeyEvent::NatsOperatorSuspended(_) => "NatsOperatorSuspended",
-            KeyEvent::NatsOperatorReactivated(_) => "NatsOperatorReactivated",
-            KeyEvent::NatsOperatorRevoked(_) => "NatsOperatorRevoked",
-            // NATS Account State Transitions
-            KeyEvent::NatsAccountActivated(_) => "NatsAccountActivated",
-            KeyEvent::NatsAccountSuspended(_) => "NatsAccountSuspended",
-            KeyEvent::NatsAccountReactivated(_) => "NatsAccountReactivated",
-            KeyEvent::NatsAccountDeleted(_) => "NatsAccountDeleted",
-            // NATS User State Transitions
-            KeyEvent::NatsUserActivated(_) => "NatsUserActivated",
-            KeyEvent::NatsUserSuspended(_) => "NatsUserSuspended",
-            KeyEvent::NatsUserReactivated(_) => "NatsUserReactivated",
-            KeyEvent::NatsUserDeleted(_) => "NatsUserDeleted",
-            // Certificate Lifecycle State Transitions (Phase 11)
-            KeyEvent::CertificateActivated(_) => "CertificateActivated",
-            KeyEvent::CertificateSuspended(_) => "CertificateSuspended",
-            KeyEvent::CertificateRevoked(_) => "CertificateRevoked",
-            KeyEvent::CertificateExpired(_) => "CertificateExpired",
-            KeyEvent::CertificateRenewed(_) => "CertificateRenewed",
-            // Person Lifecycle State Transitions (Phase 12)
-            KeyEvent::PersonActivated(_) => "PersonActivated",
-            KeyEvent::PersonSuspended(_) => "PersonSuspended",
-            KeyEvent::PersonReactivated(_) => "PersonReactivated",
-            KeyEvent::PersonArchived(_) => "PersonArchived",
-            // Location Lifecycle State Transitions (Phase 12)
-            KeyEvent::LocationActivated(_) => "LocationActivated",
-            KeyEvent::LocationSuspended(_) => "LocationSuspended",
-            KeyEvent::LocationReactivated(_) => "LocationReactivated",
-            KeyEvent::LocationDecommissioned(_) => "LocationDecommissioned",
-            KeyEvent::NatsSigningKeyGenerated(_) => "NatsSigningKeyGenerated",
-            KeyEvent::NKeyGenerated(_) => "NKeyGenerated",
-            KeyEvent::JwtClaimsCreated(_) => "JwtClaimsCreated",
-            KeyEvent::JwtSigned(_) => "JwtSigned",
-            KeyEvent::ProjectionApplied(_) => "ProjectionApplied",
-            KeyEvent::NatsPermissionsSet(_) => "NatsPermissionsSet",
-            KeyEvent::NatsConfigExported(_) => "NatsConfigExported",
-            KeyEvent::JwksExported(_) => "JwksExported",
-            KeyEvent::KeyRotationInitiated(_) => "KeyRotationInitiated",
-            KeyEvent::KeyRotationCompleted(_) => "KeyRotationCompleted",
-            KeyEvent::TotpSecretGenerated(_) => "TotpSecretGenerated",
-            KeyEvent::ServiceAccountCreated(_) => "ServiceAccountCreated",
-            KeyEvent::AgentCreated(_) => "AgentCreated",
-            KeyEvent::AccountabilityValidated(_) => "AccountabilityValidated",
-            KeyEvent::AccountabilityViolated(_) => "AccountabilityViolated",
-            KeyEvent::CertificateExported(_) => "CertificateExported",
-            KeyEvent::ManifestCreated(_) => "ManifestCreated",
-            KeyEvent::PersonCreated(_) => "PersonCreated",
-            KeyEvent::LocationCreated(_) => "LocationCreated",
-            KeyEvent::OrganizationCreated(_) => "OrganizationCreated",
-            KeyEvent::OrganizationalUnitCreated(_) => "OrganizationalUnitCreated",
-            KeyEvent::RoleCreated(_) => "RoleCreated",
-            KeyEvent::PolicyCreated(_) => "PolicyCreated",
-            KeyEvent::RelationshipEstablished(_) => "RelationshipEstablished",
+            // Key aggregate
+            DomainEvent::Key(crate::events::KeyEvents::KeyGenerated(_)) => "KeyGenerated",
+            DomainEvent::Key(crate::events::KeyEvents::KeyImported(_)) => "KeyImported",
+            DomainEvent::Key(crate::events::KeyEvents::KeyExported(_)) => "KeyExported",
+            DomainEvent::Key(crate::events::KeyEvents::KeyStoredOffline(_)) => "KeyStoredOffline",
+            DomainEvent::Key(crate::events::KeyEvents::SshKeyGenerated(_)) => "SshKeyGenerated",
+            DomainEvent::Key(crate::events::KeyEvents::GpgKeyGenerated(_)) => "GpgKeyGenerated",
+            DomainEvent::Key(crate::events::KeyEvents::KeyRevoked(_)) => "KeyRevoked",
+            DomainEvent::Key(crate::events::KeyEvents::KeyRotationInitiated(_)) => "KeyRotationInitiated",
+            DomainEvent::Key(crate::events::KeyEvents::KeyRotationCompleted(_)) => "KeyRotationCompleted",
+            // Certificate aggregate
+            DomainEvent::Certificate(crate::events::CertificateEvents::CertificateGenerated(_)) => "CertificateGenerated",
+            DomainEvent::Certificate(crate::events::CertificateEvents::CertificateSigned(_)) => "CertificateSigned",
+            DomainEvent::Certificate(crate::events::CertificateEvents::CertificateActivated(_)) => "CertificateActivated",
+            DomainEvent::Certificate(crate::events::CertificateEvents::CertificateSuspended(_)) => "CertificateSuspended",
+            DomainEvent::Certificate(crate::events::CertificateEvents::CertificateRevoked(_)) => "CertificateRevoked",
+            DomainEvent::Certificate(crate::events::CertificateEvents::CertificateExpired(_)) => "CertificateExpired",
+            DomainEvent::Certificate(crate::events::CertificateEvents::CertificateRenewed(_)) => "CertificateRenewed",
+            DomainEvent::Certificate(crate::events::CertificateEvents::CertificateExported(_)) => "CertificateExported",
+            DomainEvent::Certificate(crate::events::CertificateEvents::PkiHierarchyCreated(_)) => "PkiHierarchyCreated",
+            // YubiKey aggregate
+            DomainEvent::YubiKey(crate::events::YubiKeyEvents::YubiKeyProvisioned(_)) => "YubiKeyProvisioned",
+            DomainEvent::YubiKey(crate::events::YubiKeyEvents::PinConfigured(_)) => "PinConfigured",
+            DomainEvent::YubiKey(crate::events::YubiKeyEvents::PukConfigured(_)) => "PukConfigured",
+            DomainEvent::YubiKey(crate::events::YubiKeyEvents::ManagementKeyRotated(_)) => "ManagementKeyRotated",
+            DomainEvent::YubiKey(crate::events::YubiKeyEvents::YubiKeyDetected(_)) => "YubiKeyDetected",
+            DomainEvent::YubiKey(crate::events::YubiKeyEvents::KeyGeneratedInSlot(_)) => "KeyGeneratedInSlot",
+            DomainEvent::YubiKey(crate::events::YubiKeyEvents::CertificateImportedToSlot(_)) => "CertificateImportedToSlot",
+            DomainEvent::YubiKey(crate::events::YubiKeyEvents::SlotAllocationPlanned(_)) => "SlotAllocationPlanned",
+            // Relationship aggregate
+            DomainEvent::Relationship(crate::events::RelationshipEvents::TrustEstablished(_)) => "TrustEstablished",
+            DomainEvent::Relationship(crate::events::RelationshipEvents::RelationshipEstablished(_)) => "RelationshipEstablished",
+            DomainEvent::Relationship(crate::events::RelationshipEvents::AccountabilityValidated(_)) => "AccountabilityValidated",
+            DomainEvent::Relationship(crate::events::RelationshipEvents::AccountabilityViolated(_)) => "AccountabilityViolated",
+            // NATS Operator aggregate
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::NatsOperatorCreated(_)) => "NatsOperatorCreated",
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::NatsOperatorSuspended(_)) => "NatsOperatorSuspended",
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::NatsOperatorReactivated(_)) => "NatsOperatorReactivated",
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::NatsOperatorRevoked(_)) => "NatsOperatorRevoked",
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::NatsSigningKeyGenerated(_)) => "NatsSigningKeyGenerated",
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::NKeyGenerated(_)) => "NKeyGenerated",
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::JwtClaimsCreated(_)) => "JwtClaimsCreated",
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::JwtSigned(_)) => "JwtSigned",
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::ProjectionApplied(_)) => "ProjectionApplied",
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::NatsConfigExported(_)) => "NatsConfigExported",
+            DomainEvent::NatsOperator(crate::events::NatsOperatorEvents::JwksExported(_)) => "JwksExported",
+            // NATS Account aggregate
+            DomainEvent::NatsAccount(crate::events::NatsAccountEvents::NatsAccountCreated(_)) => "NatsAccountCreated",
+            DomainEvent::NatsAccount(crate::events::NatsAccountEvents::NatsAccountSuspended(_)) => "NatsAccountSuspended",
+            DomainEvent::NatsAccount(crate::events::NatsAccountEvents::NatsAccountReactivated(_)) => "NatsAccountReactivated",
+            DomainEvent::NatsAccount(crate::events::NatsAccountEvents::NatsPermissionsSet(_)) => "NatsPermissionsSet",
+            // NATS User aggregate
+            DomainEvent::NatsUser(crate::events::NatsUserEvents::NatsUserCreated(_)) => "NatsUserCreated",
+            DomainEvent::NatsUser(crate::events::NatsUserEvents::ServiceAccountCreated(_)) => "ServiceAccountCreated",
+            DomainEvent::NatsUser(crate::events::NatsUserEvents::AgentCreated(_)) => "AgentCreated",
+            DomainEvent::NatsUser(crate::events::NatsUserEvents::TotpSecretGenerated(_)) => "TotpSecretGenerated",
+            // Person aggregate
+            DomainEvent::Person(crate::events::PersonEvents::PersonCreated(_)) => "PersonCreated",
+            DomainEvent::Person(crate::events::PersonEvents::PersonActivated(_)) => "PersonActivated",
+            DomainEvent::Person(crate::events::PersonEvents::PersonSuspended(_)) => "PersonSuspended",
+            DomainEvent::Person(crate::events::PersonEvents::PersonReactivated(_)) => "PersonReactivated",
+            DomainEvent::Person(crate::events::PersonEvents::PersonArchived(_)) => "PersonArchived",
+            // Location aggregate
+            DomainEvent::Location(crate::events::LocationEvents::LocationCreated(_)) => "LocationCreated",
+            DomainEvent::Location(crate::events::LocationEvents::LocationActivated(_)) => "LocationActivated",
+            DomainEvent::Location(crate::events::LocationEvents::LocationSuspended(_)) => "LocationSuspended",
+            DomainEvent::Location(crate::events::LocationEvents::LocationReactivated(_)) => "LocationReactivated",
+            DomainEvent::Location(crate::events::LocationEvents::LocationDecommissioned(_)) => "LocationDecommissioned",
+            // Organization aggregate
+            DomainEvent::Organization(crate::events::OrganizationEvents::OrganizationCreated(_)) => "OrganizationCreated",
+            DomainEvent::Organization(crate::events::OrganizationEvents::OrganizationalUnitCreated(_)) => "OrganizationalUnitCreated",
+            DomainEvent::Organization(crate::events::OrganizationEvents::RoleCreated(_)) => "RoleCreated",
+            DomainEvent::Organization(crate::events::OrganizationEvents::PolicyCreated(_)) => "PolicyCreated",
+            // Manifest aggregate
+            DomainEvent::Manifest(crate::events::ManifestEvents::ManifestCreated(_)) => "ManifestCreated",
+            // Catch-all for any events not explicitly handled
+            _ => "UnknownEvent",
         }
     }
 }

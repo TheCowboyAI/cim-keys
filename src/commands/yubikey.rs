@@ -54,10 +54,8 @@ pub struct YubiKeySecurityConfigured {
 pub fn handle_configure_yubikey_security(
     cmd: ConfigureYubiKeySecurity,
 ) -> Result<YubiKeySecurityConfigured, String> {
-    use crate::events::{
-        KeyEvent, ManagementKeyRotatedEvent, PinConfiguredEvent, PukConfiguredEvent,
-        YubiKeyDetectedEvent,
-    };
+    use crate::events::DomainEvent;
+    
     use chrono::Utc;
 
     let mut events = Vec::new();
@@ -209,10 +207,10 @@ pub struct YubiKeySlotProvisioned {
 pub fn handle_provision_yubikey_slot(
     cmd: ProvisionYubiKeySlot,
 ) -> Result<YubiKeySlotProvisioned, String> {
-    use crate::events::{
-        CertificateGeneratedEvent, CertificateImportedToSlotEvent, KeyAlgorithm,
-        KeyEvent, KeyGeneratedInSlotEvent, SlotAllocationPlannedEvent,
-    };
+    use crate::events::DomainEvent;
+    
+    
+    use crate::types::KeyAlgorithm;
     use chrono::Utc;
 
     let mut events = Vec::new();

@@ -35,6 +35,15 @@ pub enum NatsUserEvents {
 
     /// Agent was created
     AgentCreated(AgentCreatedEvent),
+
+    /// NATS user was activated
+    NatsUserActivated(NatsUserActivatedEvent),
+
+    /// NATS user was deleted
+    NatsUserDeleted(NatsUserDeletedEvent),
+
+    /// TOTP secret was generated for user
+    TotpSecretGenerated(TotpSecretGeneratedEvent),
 }
 
 /// A new NATS user was created
@@ -90,6 +99,7 @@ pub struct NatsUserSuspendedEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NatsUserReactivatedEvent {
     pub user_id: Uuid,
+    pub permissions: Option<NatsPermissions>,
     pub reactivated_at: DateTime<Utc>,
     pub reactivated_by: String,
     pub correlation_id: Uuid,
@@ -101,11 +111,11 @@ pub struct NatsUserReactivatedEvent {
 pub struct ServiceAccountCreatedEvent {
     pub service_account_id: Uuid,
     pub name: String,
-    pub account_id: Uuid,
-    pub nkey_pair: String,
-    pub permissions: NatsPermissions,
+    pub purpose: String,
+    pub owning_unit_id: Uuid,
+    pub responsible_person_id: Uuid,
     pub created_at: DateTime<Utc>,
-    pub correlation_id: Uuid,
+    pub correlation_id: Option<Uuid>,
     pub causation_id: Option<Uuid>,
 }
 
@@ -115,8 +125,42 @@ pub struct AgentCreatedEvent {
     pub agent_id: Uuid,
     pub name: String,
     pub agent_type: String,
-    pub permissions: NatsPermissions,
+    pub responsible_person_id: Uuid,
+    pub organization_id: Uuid,
     pub created_at: DateTime<Utc>,
+    pub correlation_id: Option<Uuid>,
+    pub causation_id: Option<Uuid>,
+}
+
+/// NATS user was activated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsUserActivatedEvent {
+    pub user_id: Uuid,
+    pub permissions: Option<NatsPermissions>,
+    pub activated_at: DateTime<Utc>,
+    pub activated_by: String,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// NATS user was deleted
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsUserDeletedEvent {
+    pub user_id: Uuid,
+    pub reason: String,
+    pub deleted_at: DateTime<Utc>,
+    pub deleted_by: String,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+}
+
+/// TOTP secret was generated for user
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TotpSecretGeneratedEvent {
+    pub user_id: Uuid,
+    pub secret_id: Uuid,
+    pub algorithm: String,
+    pub generated_at: DateTime<Utc>,
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
 }
@@ -131,6 +175,9 @@ impl DomainEvent for NatsUserEvents {
             NatsUserEvents::NatsUserReactivated(e) => e.user_id,
             NatsUserEvents::ServiceAccountCreated(e) => e.service_account_id,
             NatsUserEvents::AgentCreated(e) => e.agent_id,
+            NatsUserEvents::NatsUserActivated(e) => e.user_id,
+            NatsUserEvents::NatsUserDeleted(e) => e.user_id,
+            NatsUserEvents::TotpSecretGenerated(e) => e.user_id,
         }
     }
 
@@ -143,6 +190,9 @@ impl DomainEvent for NatsUserEvents {
             NatsUserEvents::NatsUserReactivated(_) => "NatsUserReactivated",
             NatsUserEvents::ServiceAccountCreated(_) => "ServiceAccountCreated",
             NatsUserEvents::AgentCreated(_) => "AgentCreated",
+            NatsUserEvents::NatsUserActivated(_) => "NatsUserActivated",
+            NatsUserEvents::NatsUserDeleted(_) => "NatsUserDeleted",
+            NatsUserEvents::TotpSecretGenerated(_) => "TotpSecretGenerated",
         }
     }
 }

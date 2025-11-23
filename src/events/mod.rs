@@ -46,10 +46,12 @@ pub use yubikey::YubiKeyEvents;
 pub use relationship::RelationshipEvents;
 pub use manifest::ManifestEvents;
 
-// NOTE: Individual event structs are NOT re-exported to avoid conflicts with events_legacy
-// Each aggregate module defines its own event structs, but they're only accessible
-// through the aggregate namespace (e.g., person::PersonCreatedEvent)
-// This allows gradual migration from events_legacy::KeyEvent to aggregate-specific events
+// Re-export commonly used event structs for convenience
+// This allows using crate::events::CertificateGeneratedEvent instead of
+// crate::events::certificate::CertificateGeneratedEvent
+pub use certificate::{CertificateGeneratedEvent, CertificateSignedEvent, CertificateRenewedEvent, PkiHierarchyCreatedEvent};
+pub use yubikey::{YubiKeyProvisionedEvent, YubiKeyDetectedEvent};
+pub use key::{KeyGeneratedEvent, KeyRevokedEvent, KeyStoredOfflineEvent};
 
 use serde::{Deserialize, Serialize};
 
