@@ -47,14 +47,20 @@ pub use pki::{
 
 pub use export::{ExportToEncryptedStorage, ExportCompleted};
 
-// Legacy command wrapper for backward compatibility with GUI
+// Legacy command wrapper for backward compatibility with GUI and tests
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum KeyCommand {
+    // Key/Certificate operations
     GenerateRootCA(GenerateRootCA),
     GenerateCertificate(GenerateCertificateCommand),
     GenerateSshKey(GenerateSshKeyCommand),
     ProvisionYubiKey(ProvisionYubiKeySlot),
     ExportKeys(ExportToEncryptedStorage),
+
+    // Organizational domain operations
+    CreateOrganization(organization::CreateOrganization),
+    CreatePerson(organization::CreatePerson),
+    CreateLocation(organization::CreateLocation),
 }
 
 // Legacy command structures for backward compatibility

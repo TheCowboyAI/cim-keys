@@ -162,6 +162,15 @@ impl KeyManagementAggregate {
                     .map_err(|e| KeyManagementError::ProjectionError(e))?;
                 Ok(result.events)
             }
+            KeyCommand::CreateOrganization(cmd) => {
+                crate::commands::organization::handle_create_organization(cmd).await
+            }
+            KeyCommand::CreatePerson(cmd) => {
+                crate::commands::organization::handle_create_person(cmd).await
+            }
+            KeyCommand::CreateLocation(cmd) => {
+                crate::commands::organization::handle_create_location(cmd).await
+            }
         }
     }
 }
