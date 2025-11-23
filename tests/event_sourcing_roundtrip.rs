@@ -6,8 +6,88 @@
 use chrono::Utc;
 use serde_json::json;
 use uuid::Uuid;
+use std::collections::HashMap;
 
-use cim_keys::graph_ui::types::{DomainGraph, DomainObject, DomainRelationship};
+// Minimal graph types for testing event sourcing concepts
+#[derive(Debug, Clone)]
+struct DomainGraph {
+    nodes: HashMap<Uuid, DomainObject>,
+    edges: Vec<DomainRelationship>,
+}
+
+#[derive(Debug, Clone)]
+struct DomainObject {
+    id: Uuid,
+    aggregate_type: String,
+    properties: serde_json::Map<String, serde_json::Value>,
+    version: usize,
+}
+
+#[derive(Debug, Clone)]
+struct DomainRelationship {
+    source_id: Uuid,
+    target_id: Uuid,
+    relationship_type: String,
+}
+
+impl DomainGraph {
+    fn new() -> Self {
+        Self {
+            nodes: HashMap::new(),
+            edges: Vec::new(),
+        }
+    }
+
+    fn add_node(mut self, node: DomainObject) -> Self {
+        self.nodes.insert(node.id, node);
+        self
+    }
+
+    fn update_node(mut self, node: DomainObject) -> Self {
+        self.nodes.insert(node.id, node);
+        self
+    }
+
+    fn add_edge(mut self, edge: DomainRelationship) -> Self {
+        self.edges.push(edge);
+        self
+    }
+
+    fn get_node(&self, id: Uuid) -> Option<&DomainObject> {
+        self.nodes.get(&id)
+    }
+
+    fn traverse_edges(&self, source_id: Uuid, rel_type: &str, target_type: &str) -> Vec<Uuid> {
+        self.edges
+            .iter()
+            .filter(|e| e.source_id == source_id && e.relationship_type == rel_type)
+            .filter(|e| {
+                self.nodes
+                    .get(&e.target_id)
+                    .map(|n| n.aggregate_type == target_type)
+                    .unwrap_or(false)
+            })
+            .map(|e| e.target_id)
+            .collect()
+    }
+}
+
+impl DomainObject {
+    fn new(aggregate_type: String) -> Self {
+        Self {
+            id: Uuid::now_v7(),
+            aggregate_type,
+            properties: serde_json::Map::new(),
+            version: 0,
+        }
+    }
+
+    fn update_property(mut self, key: &str, value: serde_json::Value) -> Self {
+        self.properties.insert(key.to_string(), value);
+        self.version += 1;
+        self
+    }
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "event_type")]
