@@ -16,14 +16,23 @@ use cim_keys::{
     commands::{
         organization::{CreateOrganization, CreatePerson, CreateLocation},
         yubikey::ProvisionYubiKeySlot,
+        nats_identity::{
+            CreateNatsOperator, CreateNatsAccount, CreateNatsUser,
+            BootstrapNatsInfrastructure,
+            handle_create_nats_operator, handle_create_nats_account,
+            handle_create_nats_user, handle_bootstrap_nats_infrastructure,
+        },
         KeyCommand,
     },
-    domain::{Organization, Person},
+    domain::{Organization, OrganizationUnit, OrganizationUnitType, Person, UserIdentity, AccountIdentity},
     events::{
         DomainEvent,
         organization::OrganizationEvents,
         person::PersonEvents,
         yubikey::YubiKeyEvents,
+        nats_operator::NatsOperatorEvents,
+        nats_account::NatsAccountEvents,
+        nats_user::NatsUserEvents,
     },
     projections::OfflineKeyProjection,
     state_machines::PivSlot,
@@ -1044,5 +1053,333 @@ mod yubikey_provisioning {
                 projection.apply(event).ok();
             }
         }
+    }
+}
+
+// =============================================================================
+// 8. NATS Security Bootstrap Tests
+// =============================================================================
+
+mod nats_security_bootstrap {
+    use super::*;
+
+    fn create_test_organization_with_units() -> Organization {
+        Organization {
+            id: Uuid::now_v7(),
+            name: "cowboyai".to_string(),
+            display_name: "CowboyAI".to_string(),
+            description: Some("Test organization for NATS bootstrap".to_string()),
+            parent_id: None,
+            units: vec![
+                OrganizationUnit {
+                    id: Uuid::now_v7(),
+                    name: "core".to_string(),
+                    unit_type: OrganizationUnitType::Department,
+                    parent_unit_id: None,
+                    responsible_person_id: None,
+                    nats_account_name: Some("core".to_string()),
+                },
+                OrganizationUnit {
+                    id: Uuid::now_v7(),
+                    name: "media".to_string(),
+                    unit_type: OrganizationUnitType::Department,
+                    parent_unit_id: None,
+                    responsible_person_id: None,
+                    nats_account_name: Some("media".to_string()),
+                },
+                OrganizationUnit {
+                    id: Uuid::now_v7(),
+                    name: "development".to_string(),
+                    unit_type: OrganizationUnitType::Team,
+                    parent_unit_id: None,
+                    responsible_person_id: None,
+                    nats_account_name: Some("dev".to_string()),
+                },
+            ],
+            created_at: Utc::now(),
+            metadata: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn test_create_nats_operator() {
+        let org = create_test_organization_with_units();
+        let correlation_id = Uuid::now_v7();
+
+        let cmd = CreateNatsOperator {
+            organization: org.clone(),
+            correlation_id,
+            causation_id: None,
+        };
+
+        let result = handle_create_nats_operator(cmd);
+
+        assert!(result.is_ok(), "Operator creation should succeed");
+
+        let operator = result.unwrap();
+
+        // Verify operator has valid NKey
+        assert!(!operator.operator_nkey.public_key_string().is_empty());
+
+        // Verify operator has JWT
+        assert!(!operator.operator_jwt.token().is_empty());
+
+        // Verify events were emitted
+        assert!(!operator.events.is_empty(), "Should emit events");
+
+        // Check for operator created event
+        let has_operator_event = operator.events.iter().any(|e| {
+            matches!(e, DomainEvent::NatsOperator(NatsOperatorEvents::NatsOperatorCreated(_)))
+        });
+        assert!(has_operator_event, "Should have operator created event");
+    }
+
+    #[test]
+    fn test_create_nats_account() {
+        let org = create_test_organization_with_units();
+        let correlation_id = Uuid::now_v7();
+
+        // First create operator
+        let operator_cmd = CreateNatsOperator {
+            organization: org.clone(),
+            correlation_id,
+            causation_id: None,
+        };
+        let operator = handle_create_nats_operator(operator_cmd).unwrap();
+
+        // Now create account for an organizational unit
+        let unit = org.units.first().unwrap().clone();
+        let account_cmd = CreateNatsAccount {
+            account: AccountIdentity::OrganizationUnit(unit.clone()),
+            parent_org: Some(org.clone()),
+            operator_nkey: operator.operator_nkey.clone(),
+            limits: None,
+            correlation_id,
+            causation_id: Some(operator.operator_nkey.id),
+        };
+
+        let result = handle_create_nats_account(account_cmd);
+
+        assert!(result.is_ok(), "Account creation should succeed");
+
+        let account = result.unwrap();
+
+        // Verify account has valid NKey
+        assert!(!account.account_nkey.public_key_string().is_empty());
+
+        // Verify account has JWT
+        assert!(!account.account_jwt.token().is_empty());
+
+        // Verify events were emitted
+        assert!(!account.events.is_empty(), "Should emit events");
+
+        // Check for account created event
+        let has_account_event = account.events.iter().any(|e| {
+            matches!(e, DomainEvent::NatsAccount(NatsAccountEvents::NatsAccountCreated(_)))
+        });
+        assert!(has_account_event, "Should have account created event");
+    }
+
+    #[test]
+    fn test_create_nats_user_for_person() {
+        let org = create_test_organization_with_units();
+        let correlation_id = Uuid::now_v7();
+
+        // Create operator
+        let operator = handle_create_nats_operator(CreateNatsOperator {
+            organization: org.clone(),
+            correlation_id,
+            causation_id: None,
+        }).unwrap();
+
+        // Create account
+        let unit = org.units.first().unwrap().clone();
+        let account = handle_create_nats_account(CreateNatsAccount {
+            account: AccountIdentity::OrganizationUnit(unit.clone()),
+            parent_org: Some(org.clone()),
+            operator_nkey: operator.operator_nkey.clone(),
+            limits: None,
+            correlation_id,
+            causation_id: Some(operator.operator_nkey.id),
+        }).unwrap();
+
+        // Create a person
+        let person = Person {
+            id: Uuid::now_v7(),
+            name: "Alice Developer".to_string(),
+            email: "alice@cowboyai.com".to_string(),
+            roles: Vec::new(),
+            organization_id: org.id,
+            unit_ids: vec![unit.id],
+            created_at: Utc::now(),
+            active: true,
+            nats_permissions: None,
+        };
+
+        // Create user for person
+        let user_cmd = CreateNatsUser {
+            user: UserIdentity::Person(person.clone()),
+            organization: org.clone(),
+            account_nkey: account.account_nkey.clone(),
+            permissions: None,
+            limits: None,
+            correlation_id,
+            causation_id: Some(account.account_nkey.id),
+        };
+
+        let result = handle_create_nats_user(user_cmd);
+
+        assert!(result.is_ok(), "User creation should succeed");
+
+        let user = result.unwrap();
+
+        // Verify user has valid NKey
+        assert!(!user.user_nkey.public_key_string().is_empty());
+
+        // Verify user has JWT
+        assert!(!user.user_jwt.token().is_empty());
+
+        // Verify events were emitted
+        assert!(!user.events.is_empty(), "Should emit events");
+
+        // Check for user created event
+        let has_user_event = user.events.iter().any(|e| {
+            matches!(e, DomainEvent::NatsUser(NatsUserEvents::NatsUserCreated(_)))
+        });
+        assert!(has_user_event, "Should have user created event");
+    }
+
+    #[test]
+    fn test_bootstrap_nats_infrastructure() {
+        let org = create_test_organization_with_units();
+        let correlation_id = Uuid::now_v7();
+
+        let cmd = BootstrapNatsInfrastructure {
+            organization: org.clone(),
+            correlation_id,
+        };
+
+        let result = handle_bootstrap_nats_infrastructure(cmd);
+
+        assert!(result.is_ok(), "Bootstrap should succeed");
+
+        let infra = result.unwrap();
+
+        // Verify operator was created
+        assert!(!infra.operator.operator_nkey.public_key_string().is_empty());
+
+        // Verify accounts were created for each unit
+        assert_eq!(infra.accounts.len(), org.units.len(), "Should have account per unit");
+
+        // Verify all events collected
+        assert!(!infra.events.is_empty(), "Should have collected events");
+
+        // Verify event types
+        let has_operator_event = infra.events.iter().any(|e| {
+            matches!(e, DomainEvent::NatsOperator(_))
+        });
+        let has_account_events = infra.events.iter().any(|e| {
+            matches!(e, DomainEvent::NatsAccount(_))
+        });
+
+        assert!(has_operator_event, "Should have operator event");
+        assert!(has_account_events, "Should have account events");
+    }
+
+    #[test]
+    fn test_nats_operator_jwt_signing() {
+        let org = create_test_organization_with_units();
+        let correlation_id = Uuid::now_v7();
+
+        let operator = handle_create_nats_operator(CreateNatsOperator {
+            organization: org.clone(),
+            correlation_id,
+            causation_id: None,
+        }).unwrap();
+
+        // JWT should be a valid JWT format (header.payload.signature)
+        let jwt = operator.operator_jwt.token();
+        let parts: Vec<&str> = jwt.split('.').collect();
+
+        assert_eq!(parts.len(), 3, "JWT should have three parts");
+        assert!(!parts[0].is_empty(), "JWT header should not be empty");
+        assert!(!parts[1].is_empty(), "JWT payload should not be empty");
+        assert!(!parts[2].is_empty(), "JWT signature should not be empty");
+    }
+
+    #[test]
+    fn test_nats_correlation_chain() {
+        let org = create_test_organization_with_units();
+        let workflow_correlation_id = Uuid::now_v7();
+
+        // Create operator
+        let operator = handle_create_nats_operator(CreateNatsOperator {
+            organization: org.clone(),
+            correlation_id: workflow_correlation_id,
+            causation_id: None,
+        }).unwrap();
+
+        // Create account with causation link to operator
+        let unit = org.units.first().unwrap().clone();
+        let account = handle_create_nats_account(CreateNatsAccount {
+            account: AccountIdentity::OrganizationUnit(unit.clone()),
+            parent_org: Some(org.clone()),
+            operator_nkey: operator.operator_nkey.clone(),
+            limits: None,
+            correlation_id: workflow_correlation_id,
+            causation_id: Some(operator.operator_nkey.id),
+        }).unwrap();
+
+        // Verify correlation IDs are consistent
+        for event in &operator.events {
+            if let DomainEvent::NatsOperator(NatsOperatorEvents::NatsOperatorCreated(e)) = event {
+                assert_eq!(e.correlation_id, workflow_correlation_id);
+            }
+        }
+
+        for event in &account.events {
+            if let DomainEvent::NatsAccount(NatsAccountEvents::NatsAccountCreated(e)) = event {
+                assert_eq!(e.correlation_id, workflow_correlation_id);
+                assert_eq!(e.causation_id, Some(operator.operator_nkey.id));
+            }
+        }
+    }
+
+    #[test]
+    fn test_multiple_accounts_per_operator() {
+        let org = create_test_organization_with_units();
+        let correlation_id = Uuid::now_v7();
+
+        // Create operator
+        let operator = handle_create_nats_operator(CreateNatsOperator {
+            organization: org.clone(),
+            correlation_id,
+            causation_id: None,
+        }).unwrap();
+
+        // Create accounts for all units
+        let mut accounts = Vec::new();
+        for unit in &org.units {
+            let account = handle_create_nats_account(CreateNatsAccount {
+                account: AccountIdentity::OrganizationUnit(unit.clone()),
+                parent_org: Some(org.clone()),
+                operator_nkey: operator.operator_nkey.clone(),
+                limits: None,
+                correlation_id,
+                causation_id: Some(operator.operator_nkey.id),
+            }).unwrap();
+            accounts.push(account);
+        }
+
+        // Should have 3 accounts (core, media, development)
+        assert_eq!(accounts.len(), 3);
+
+        // Each account should have unique NKey
+        let public_keys: Vec<_> = accounts.iter()
+            .map(|a| a.account_nkey.public_key_string())
+            .collect();
+
+        let unique_keys: std::collections::HashSet<_> = public_keys.iter().collect();
+        assert_eq!(unique_keys.len(), 3, "Each account should have unique NKey");
     }
 }
