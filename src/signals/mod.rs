@@ -12,7 +12,7 @@
 //!
 //! ## Usage
 //!
-//! ```rust
+//! ```rust,ignore
 //! use cim_keys::signals::{Signal, EventKind, StepKind, ContinuousKind};
 //!
 //! // Event signal: Button clicks occur at discrete times

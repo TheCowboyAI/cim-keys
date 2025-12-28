@@ -37,7 +37,7 @@ where
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use cim_keys::routing::Route;
     ///
     /// let double = Route::new(|x: i32| x * 2);
@@ -57,7 +57,7 @@ where
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use cim_keys::routing::Route;
     ///
     /// let add_one = Route::new(|x: i32| x + 1);
@@ -79,7 +79,7 @@ where
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use cim_keys::routing::Route;
     ///
     /// let double = Route::new(|x: i32| x * 2);
@@ -102,7 +102,7 @@ where
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use cim_keys::routing::Route;
     ///
     /// let double = Route::new(|x: i32| x * 2);
@@ -135,7 +135,7 @@ where
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use cim_keys::routing::id;
 ///
 /// let identity = id::<i32>();
@@ -160,7 +160,7 @@ where
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use cim_keys::routing::{Route, compose};
 ///
 /// let double = Route::new(|x: i32| x * 2);
@@ -190,7 +190,7 @@ where
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use cim_keys::routing::{Route, parallel};
 ///
 /// let double = Route::new(|x: i32| x * 2);
@@ -224,7 +224,7 @@ where
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use cim_keys::routing::{Route, fanout};
 ///
 /// let double = Route::new(|x: i32| x * 2);

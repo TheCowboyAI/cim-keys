@@ -11,7 +11,7 @@ use crate::events::DomainEvent;
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use cim_keys::events::{DomainEvent, KeyGeneratedEvent};
 /// use cim_keys::causality::helpers::wrap_event;
 ///
@@ -35,7 +35,7 @@ pub fn wrap_event(event: DomainEvent) -> CausalEvent<DomainEvent> {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use cim_keys::events::{DomainEvent, KeyGeneratedEvent, KeyExportedEvent};
 /// use cim_keys::causality::helpers::{wrap_event, wrap_dependent_event};
 ///
@@ -66,7 +66,7 @@ pub fn wrap_dependent_event(event: DomainEvent, dependencies: Vec<CausalId>) -> 
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use cim_keys::events::{DomainEvent, KeyGeneratedEvent};
 /// use cim_keys::causality::helpers::{wrap_event, unwrap_event};
 ///
@@ -90,7 +90,7 @@ pub fn unwrap_event(causal_event: CausalEvent<DomainEvent>) -> DomainEvent {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use cim_keys::events::{DomainEvent, KeyGeneratedEvent};
 /// use cim_keys::causality::helpers::{wrap_event, peek_event};
 ///

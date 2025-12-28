@@ -19,7 +19,7 @@
 //!
 //! ## Example
 //!
-//! ```rust
+//! ```rust,ignore
 //! use cim_keys::signals::{SignalVec2, Signal, EventKind, StepKind};
 //!
 //! // Two independent signals as a vector

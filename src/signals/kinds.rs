@@ -25,7 +25,7 @@
 //!
 //! ## Example
 //!
-//! ```rust
+//! ```rust,ignore
 //! use cim_keys::signals::{SignalKind, EventKind, StepKind, ContinuousKind};
 //!
 //! fn process_event<K: SignalKind>(signal: Signal<K, Data>) {

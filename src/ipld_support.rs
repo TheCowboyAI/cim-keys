@@ -132,7 +132,7 @@ pub enum IpldError {
 
 #[cfg(test)]
 mod tests {
-    
+    use super::*;
     use serde::{Deserialize, Serialize};
     use uuid::Uuid;
 

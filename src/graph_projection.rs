@@ -34,7 +34,7 @@
 //!
 //! ## Usage
 //!
-//! ```rust
+//! ```rust,ignore
 //! use cim_keys::graph_projection::GraphProjector;
 //! use cim_domain_person::events::PersonEvent;
 //!

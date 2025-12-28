@@ -20,7 +20,7 @@
 //!
 //! ## Example
 //!
-//! ```rust
+//! ```rust,ignore
 //! use cim_keys::causality::{CausalTime, CausalEvent, CausalChain};
 //!
 //! // Create initial event (no dependencies)

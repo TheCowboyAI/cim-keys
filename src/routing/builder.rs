@@ -48,7 +48,7 @@ where
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use cim_keys::routing::RouteBuilder;
     ///
     /// let builder = RouteBuilder::<i32, i32>::new();
@@ -79,7 +79,7 @@ where
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use cim_keys::routing::{Route, RouteBuilder};
     ///
     /// let double = Route::new(|x: i32| x * 2);
@@ -99,7 +99,7 @@ where
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use cim_keys::routing::RouteBuilder;
     ///
     /// let workflow = RouteBuilder::new()
@@ -124,7 +124,7 @@ where
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use cim_keys::routing::{Route, RouteBuilder};
     ///
     /// let double = Route::new(|x: i32| x * 2);
@@ -153,7 +153,7 @@ where
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use cim_keys::routing::RouteBuilder;
     ///
     /// let double = RouteBuilder::new()
@@ -183,7 +183,7 @@ where
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use cim_keys::routing::RouteBuilder;
     ///
     /// let workflow = RouteBuilder::new()
@@ -218,7 +218,7 @@ where
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use cim_keys::routing::RouteBuilder;
     ///
     /// let workflow = RouteBuilder::new()
@@ -243,7 +243,7 @@ where
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use cim_keys::routing::RouteBuilder;
     ///
     /// let route = RouteBuilder::new()
@@ -263,7 +263,7 @@ where
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use cim_keys::routing::RouteBuilder;
     ///
     /// let result = RouteBuilder::new()

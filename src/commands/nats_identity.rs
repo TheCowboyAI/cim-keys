@@ -267,6 +267,8 @@ pub fn handle_create_nats_user(cmd: CreateNatsUser) -> Result<NatsUserCreated, S
                 responsible_person_id: agent.metadata().owner_id(), // owner_id is the responsible person
                 organization_id: agent.metadata().owner_id(), // Using owner as org for now
                 created_at: Utc::now(),
+                correlation_id: Some(cmd.correlation_id),
+                causation_id: cmd.causation_id,
             })));
         }
         UserIdentity::Person(_) => {

@@ -23,7 +23,7 @@ use crate::state_machines::{
 ///
 /// This projection writes all state as JSON files to an encrypted partition.
 /// The partition structure is:
-/// ```
+/// ```text
 /// /mnt/keys/
 /// ├── manifest.json           # Master index of all keys
 /// ├── events/                 # Event log (append-only)

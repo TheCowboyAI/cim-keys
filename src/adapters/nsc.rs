@@ -411,7 +411,7 @@ impl NscAdapter {
     /// Export NATS hierarchy to NSC directory structure
     ///
     /// Creates the NSC-compatible directory structure:
-    /// ```
+    /// ```text
     /// $NSC_STORE/stores/<org-name>/
     /// ├── operator.jwt
     /// ├── .nkeys/creds/<org-name>/<org-name>.nk
