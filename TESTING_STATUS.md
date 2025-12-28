@@ -2,7 +2,7 @@
 
 ## Status: PHASE 2 IN PROGRESS
 
-**Total Tests: 1087 passing**
+**Total Tests: 1091 passing**
 
 ## Completed State Machine Tests:
 1. ✅ Person (events + state machine)
@@ -51,13 +51,14 @@
 - ✅ Day 5: Projection application tests (32 tests)
 
 ## Phase 2: End-to-End Workflow Tests (In Progress)
-- ✅ end_to_end_workflows.rs (13 tests)
+- ✅ end_to_end_workflows.rs (17 tests)
   - PKI Bootstrap (4 tests)
   - Event Chains (2 tests)
   - Multi-Organization (2 tests)
   - Projection Consistency (2 tests)
   - Error Handling (1 test)
   - Bulk Operations (2 tests)
+  - YubiKey Provisioning (4 tests)
 
 ## Doc Test Cleanup:
 - ✅ Fixed 45 broken doc tests (marked as ignore)

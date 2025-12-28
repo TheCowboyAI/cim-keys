@@ -10,18 +10,24 @@
 //! 4. Multi-Organization Scenarios
 
 use chrono::Utc;
+use std::collections::HashMap;
 use cim_keys::{
     aggregate::KeyManagementAggregate,
     commands::{
         organization::{CreateOrganization, CreatePerson, CreateLocation},
+        yubikey::ProvisionYubiKeySlot,
         KeyCommand,
     },
+    domain::{Organization, Person},
     events::{
         DomainEvent,
         organization::OrganizationEvents,
         person::PersonEvents,
+        yubikey::YubiKeyEvents,
     },
     projections::OfflineKeyProjection,
+    state_machines::PivSlot,
+    value_objects::AuthKeyPurpose,
 };
 use tempfile::TempDir;
 use uuid::Uuid;
@@ -829,5 +835,214 @@ mod bulk_operations {
         }
 
         assert_eq!(projection.get_locations().len(), 50);
+    }
+}
+
+// =============================================================================
+// 7. YubiKey Provisioning Workflow Tests
+// =============================================================================
+
+mod yubikey_provisioning {
+    use super::*;
+
+    fn create_test_organization() -> Organization {
+        Organization {
+            id: Uuid::now_v7(),
+            name: "test_org".to_string(),
+            display_name: "Test Organization".to_string(),
+            description: Some("Test organization for YubiKey provisioning".to_string()),
+            parent_id: None,
+            units: Vec::new(),
+            created_at: Utc::now(),
+            metadata: HashMap::new(),
+        }
+    }
+
+    fn create_test_person(org_id: Uuid) -> Person {
+        Person {
+            id: Uuid::now_v7(),
+            name: "Security Admin".to_string(),
+            email: "admin@test.org".to_string(),
+            roles: Vec::new(),
+            organization_id: org_id,
+            unit_ids: Vec::new(),
+            created_at: Utc::now(),
+            active: true,
+            nats_permissions: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_yubikey_slot_provisioning() {
+        let (aggregate, mut projection, _temp_dir) = create_test_environment();
+        let correlation_id = Uuid::now_v7();
+
+        // Setup organization and person first
+        let org = create_test_organization();
+        let person = create_test_person(org.id);
+
+        // Create the provision command
+        let provision_command = KeyCommand::ProvisionYubiKey(ProvisionYubiKeySlot {
+            yubikey_serial: "12345678".to_string(),
+            slot: PivSlot::Authentication,
+            person: person.clone(),
+            organization: org.clone(),
+            purpose: AuthKeyPurpose::SsoAuthentication,
+            correlation_id,
+            causation_id: None,
+        });
+
+        let events = aggregate.handle_command(provision_command, &projection, None, None)
+            .await
+            .expect("YubiKey provisioning should succeed");
+
+        // Should emit multiple events
+        assert!(!events.is_empty(), "Should emit provisioning events");
+
+        // Verify we got YubiKey events
+        let yubikey_events: Vec<_> = events.iter().filter(|e| {
+            matches!(e, DomainEvent::YubiKey(_))
+        }).collect();
+
+        assert!(!yubikey_events.is_empty(), "Should have YubiKey-specific events");
+
+        // Apply events
+        for event in &events {
+            projection.apply(event).ok();
+        }
+    }
+
+    #[tokio::test]
+    async fn test_yubikey_multiple_slots() {
+        let (aggregate, mut projection, _temp_dir) = create_test_environment();
+        let correlation_id = Uuid::now_v7();
+
+        let org = create_test_organization();
+        let person = create_test_person(org.id);
+
+        // Provision authentication slot
+        let auth_command = KeyCommand::ProvisionYubiKey(ProvisionYubiKeySlot {
+            yubikey_serial: "12345678".to_string(),
+            slot: PivSlot::Authentication,
+            person: person.clone(),
+            organization: org.clone(),
+            purpose: AuthKeyPurpose::SsoAuthentication,
+            correlation_id,
+            causation_id: None,
+        });
+
+        let auth_events = aggregate.handle_command(auth_command, &projection, None, None)
+            .await
+            .expect("Authentication slot provisioning should succeed");
+
+        for event in &auth_events {
+            projection.apply(event).ok();
+        }
+
+        // Provision signature slot
+        let sign_command = KeyCommand::ProvisionYubiKey(ProvisionYubiKeySlot {
+            yubikey_serial: "12345678".to_string(),
+            slot: PivSlot::Signature,
+            person: person.clone(),
+            organization: org.clone(),
+            purpose: AuthKeyPurpose::GpgSigning,
+            correlation_id,
+            causation_id: Some(correlation_id),
+        });
+
+        let sign_events = aggregate.handle_command(sign_command, &projection, None, None)
+            .await
+            .expect("Signature slot provisioning should succeed");
+
+        for event in &sign_events {
+            projection.apply(event).ok();
+        }
+
+        // Both provisioning operations should have generated events
+        assert!(!auth_events.is_empty());
+        assert!(!sign_events.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_yubikey_provisioning_event_chain() {
+        let (aggregate, projection, _temp_dir) = create_test_environment();
+        let correlation_id = Uuid::now_v7();
+
+        let org = create_test_organization();
+        let person = create_test_person(org.id);
+
+        let provision_command = KeyCommand::ProvisionYubiKey(ProvisionYubiKeySlot {
+            yubikey_serial: "12345678".to_string(),
+            slot: PivSlot::KeyManagement,
+            person: person.clone(),
+            organization: org.clone(),
+            purpose: AuthKeyPurpose::GpgEncryption,
+            correlation_id,
+            causation_id: None,
+        });
+
+        let events = aggregate.handle_command(provision_command, &projection, None, None)
+            .await
+            .expect("Provisioning should succeed");
+
+        // Check event chain contains expected event types
+        let has_slot_planned = events.iter().any(|e| {
+            matches!(e, DomainEvent::YubiKey(YubiKeyEvents::SlotAllocationPlanned(_)))
+        });
+
+        let has_key_generated = events.iter().any(|e| {
+            matches!(e, DomainEvent::YubiKey(YubiKeyEvents::KeyGeneratedInSlot(_)))
+        });
+
+        assert!(has_slot_planned, "Should have slot allocation planned event");
+        assert!(has_key_generated, "Should have key generated event");
+    }
+
+    #[tokio::test]
+    async fn test_yubikey_different_users() {
+        let (aggregate, mut projection, _temp_dir) = create_test_environment();
+
+        let org = create_test_organization();
+
+        // Provision for multiple users
+        let users = vec![
+            ("Alice", "alice@test.org"),
+            ("Bob", "bob@test.org"),
+            ("Carol", "carol@test.org"),
+        ];
+
+        for (name, email) in users {
+            let person = Person {
+                id: Uuid::now_v7(),
+                name: name.to_string(),
+                email: email.to_string(),
+                roles: Vec::new(),
+                organization_id: org.id,
+                unit_ids: Vec::new(),
+                created_at: Utc::now(),
+                active: true,
+                nats_permissions: None,
+            };
+
+            let correlation_id = Uuid::now_v7();
+
+            let provision_command = KeyCommand::ProvisionYubiKey(ProvisionYubiKeySlot {
+                yubikey_serial: format!("YK-{}", Uuid::now_v7().as_u128() % 100000000),
+                slot: PivSlot::Authentication,
+                person: person.clone(),
+                organization: org.clone(),
+                purpose: AuthKeyPurpose::SsoAuthentication,
+                correlation_id,
+                causation_id: None,
+            });
+
+            let events = aggregate.handle_command(provision_command, &projection, None, None)
+                .await
+                .expect(&format!("Provisioning for {} should succeed", name));
+
+            for event in &events {
+                projection.apply(event).ok();
+            }
+        }
     }
 }
