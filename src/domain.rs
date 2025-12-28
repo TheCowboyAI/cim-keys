@@ -58,6 +58,8 @@ pub struct OrganizationUnit {
     pub unit_type: OrganizationUnitType,
     pub parent_unit_id: Option<Uuid>,
     pub responsible_person_id: Option<Uuid>,
+    /// NATS account name for NSC export (e.g., "core", "media", "development")
+    pub nats_account_name: Option<String>,
 }
 
 /// Type of organizational unit
@@ -82,6 +84,8 @@ pub struct Person {
     pub unit_ids: Vec<Uuid>,
     pub created_at: DateTime<Utc>,
     pub active: bool,
+    /// NATS permissions for NSC export (for Service role persons)
+    pub nats_permissions: Option<NatsPermissions>,
 }
 
 /// Role a person can have
@@ -120,6 +124,19 @@ pub enum Permission {
     ManageInfrastructure,
     ViewAuditLogs,
     ModifyConfiguration,
+}
+
+/// NATS permissions for publish/subscribe operations
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NatsPermissions {
+    /// Subjects this entity can publish to (e.g., ["thecowboyai.org.person.>"])
+    pub publish: Vec<String>,
+    /// Subjects this entity can subscribe to
+    pub subscribe: Vec<String>,
+    /// Allow request-reply responses
+    pub allow_responses: bool,
+    /// Maximum message payload size in bytes
+    pub max_payload: Option<usize>,
 }
 
 /// Key ownership tied to a person in the organization

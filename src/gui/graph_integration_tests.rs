@@ -34,6 +34,7 @@ mod graph_first_integration_tests {
             unit_type,
             parent_unit_id: None,
             responsible_person_id: None,
+            nats_account_name: None,
         }
     }
 
@@ -48,6 +49,7 @@ mod graph_first_integration_tests {
             unit_ids: vec![],
             created_at: Utc::now(),
             active: true,
+            nats_permissions: None,
         }
     }
 

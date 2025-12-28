@@ -103,6 +103,9 @@ pub mod domain_projections;
 // Secrets loader for importing configuration from JSON
 pub mod secrets_loader;
 
+// CLAN bootstrap loader for clan-bootstrap.json configuration
+pub mod clan_bootstrap;
+
 // Certificate generation service
 pub mod certificate_service;
 

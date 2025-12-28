@@ -260,6 +260,7 @@ impl SecretsLoader {
                 unit_ids: Vec::new(),
                 created_at: Utc::now(),
                 active: true,
+                nats_permissions: None,
             };
 
             people.push(person);

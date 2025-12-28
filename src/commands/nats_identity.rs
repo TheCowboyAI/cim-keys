@@ -486,6 +486,7 @@ mod tests {
             unit_type: OrganizationUnitType::Department,
             parent_unit_id: None,
             responsible_person_id: None,
+            nats_account_name: None,
         };
 
         // Create operator first
@@ -550,6 +551,7 @@ mod tests {
             unit_ids: vec![],
             created_at: Utc::now(),
             active: true,
+            nats_permissions: None,
         };
 
         // Create operator and account first
@@ -566,6 +568,7 @@ mod tests {
             unit_type: OrganizationUnitType::Department,
             parent_unit_id: None,
             responsible_person_id: None,
+            nats_account_name: None,
         };
 
         let account = handle_create_nats_account(CreateNatsAccount {

@@ -420,6 +420,7 @@ mod tests {
                 unit_type: crate::domain::OrganizationUnitType::Department,
                 parent_unit_id: None,
                 responsible_person_id: None,
+            nats_account_name: None,
             },
             org_id,
         ));

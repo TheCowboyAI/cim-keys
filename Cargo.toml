@@ -20,6 +20,7 @@ cim-domain-organization = { path = "../cim-domain-organization", optional = true
 cim-domain-policy = { path = "../cim-domain-policy", optional = true }
 cim-domain-agent = { path = "../cim-domain-agent", optional = true }
 cim-graph = { path = "../cim-graph" }
+cim-ipld = { path = "../cim-ipld" }
 
 # Core dependencies
 thiserror = "2.0"
@@ -120,17 +121,7 @@ gpg-support = ["sequoia-openpgp", "gpgme"]
 ipld = ["dep:cid", "dep:libipld", "dep:multihash"]  # IPLD content-addressed storage support
 test-utils = []
 
-[[example]]
-name = "basic_usage"
-
-[[example]]
-name = "cim_leaf_integration"
-
-[[example]]
-name = "nats_tls_setup"
-
-[[example]]
-name = "test_root_ca"
+# Examples are auto-discovered from examples/ directory
 
 [[bin]]
 name = "cim-keys"

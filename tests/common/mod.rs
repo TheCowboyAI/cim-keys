@@ -4,9 +4,6 @@
 //! Full test utilities will be restored after integration tests are stabilized.
 
 // Re-export for backward compatibility
-pub use cim_keys::events::DomainEvent;
-pub use cim_keys::projections::OfflineKeyProjection;
-pub use uuid::Uuid;
 
 /// Temporary directory utilities
 pub mod temp {

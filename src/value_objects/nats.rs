@@ -208,6 +208,42 @@ impl NKeyPair {
         }
     }
 
+    /// Generate a new NKey pair using nkeys crate
+    pub fn generate(key_type: NKeyType, name: Option<String>) -> Result<Self, String> {
+        use nkeys::KeyPair as NKeysKeyPair;
+
+        // Generate key pair using nkeys crate
+        let nkeys_pair = match key_type {
+            NKeyType::Operator => NKeysKeyPair::new_operator(),
+            NKeyType::Account => NKeysKeyPair::new_account(),
+            NKeyType::User => NKeysKeyPair::new_user(),
+            NKeyType::Server => NKeysKeyPair::new_server(),
+            NKeyType::Cluster => NKeysKeyPair::new_cluster(),
+        };
+
+        // Extract seed and public key
+        let seed_string = nkeys_pair
+            .seed()
+            .map_err(|e| format!("Failed to extract seed: {}", e))?;
+        let public_key_string = nkeys_pair.public_key();
+
+        let now = Utc::now();
+
+        // Create domain value objects
+        let seed = NKeySeed::new(key_type, seed_string, now);
+        let public_key = NKeyPublic::new(key_type, public_key_string);
+
+        // Verify prefixes
+        if !seed.is_valid_prefix() {
+            return Err(format!("Generated seed has invalid prefix for {:?}", key_type));
+        }
+        if !public_key.is_valid_prefix() {
+            return Err(format!("Generated public key has invalid prefix for {:?}", key_type));
+        }
+
+        Ok(Self::new(key_type, seed, public_key, name))
+    }
+
     /// Set expiration time
     pub fn with_expiration(mut self, expires_at: DateTime<Utc>) -> Self {
         self.expires_at = Some(expires_at);
@@ -227,6 +263,37 @@ impl NKeyPair {
     /// Get seed string (SENSITIVE!)
     pub fn seed_string(&self) -> &str {
         self.seed.seed()
+    }
+
+    /// Sign data using this key pair
+    pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>, String> {
+        use nkeys::KeyPair as NKeysKeyPair;
+
+        // Reconstruct nkeys keypair from seed
+        let nkeys_pair = NKeysKeyPair::from_seed(self.seed_string())
+            .map_err(|e| format!("Failed to create keypair from seed: {}", e))?;
+
+        // Sign the data
+        let signature = nkeys_pair
+            .sign(data)
+            .map_err(|e| format!("Failed to sign data: {}", e))?;
+
+        Ok(signature)
+    }
+
+    /// Verify a signature
+    pub fn verify(&self, data: &[u8], signature: &[u8]) -> Result<bool, String> {
+        use nkeys::KeyPair as NKeysKeyPair;
+
+        // Reconstruct nkeys keypair from seed
+        let nkeys_pair = NKeysKeyPair::from_seed(self.seed_string())
+            .map_err(|e| format!("Failed to create keypair from seed: {}", e))?;
+
+        // Verify the signature (returns Ok(()) if valid, Err if invalid)
+        match nkeys_pair.verify(data, signature) {
+            Ok(()) => Ok(true),
+            Err(_) => Ok(false),
+        }
     }
 }
 
@@ -465,6 +532,175 @@ impl NatsJwt {
         }
     }
 
+    /// Generate Operator JWT (self-signed)
+    pub fn generate_operator(
+        operator_keypair: &NKeyPair,
+        operator_name: String,
+        signing_keys: Vec<String>,
+    ) -> Result<Self, String> {
+        if operator_keypair.key_type != NKeyType::Operator {
+            return Err("Key pair must be of type Operator".to_string());
+        }
+
+        let now = Utc::now();
+        let iat = now.timestamp();
+
+        // Create operator claims
+        let claims = OperatorClaims {
+            jti: Uuid::now_v7().to_string(),
+            iat,
+            iss: operator_keypair.public_key_string().to_string(),
+            sub: operator_keypair.public_key_string().to_string(), // Self-signed
+            nats: OperatorData {
+                name: operator_name,
+                signing_keys,
+                version: 2,
+                account_server_url: None,
+                operator_service_urls: None,
+            },
+        };
+
+        // Encode and sign JWT
+        let jwt_token = Self::encode_and_sign(&NatsJwtHeader::default(), &claims, operator_keypair)?;
+
+        Ok(Self::new(
+            NKeyType::Operator,
+            jwt_token,
+            operator_keypair.public_key.clone(),
+            operator_keypair.public_key.clone(), // Self-signed
+            now,
+            None, // Operators typically don't expire
+        ))
+    }
+
+    /// Generate Account JWT (signed by operator)
+    pub fn generate_account(
+        account_keypair: &NKeyPair,
+        operator_keypair: &NKeyPair,
+        account_name: String,
+        signing_keys: Vec<String>,
+        limits: Option<AccountLimits>,
+        expires_at: Option<DateTime<Utc>>,
+    ) -> Result<Self, String> {
+        if account_keypair.key_type != NKeyType::Account {
+            return Err("Account key pair must be of type Account".to_string());
+        }
+        if operator_keypair.key_type != NKeyType::Operator {
+            return Err("Operator key pair must be of type Operator".to_string());
+        }
+
+        let now = Utc::now();
+        let iat = now.timestamp();
+        let exp = expires_at.map(|dt| dt.timestamp());
+
+        // Create account claims
+        let claims = AccountClaims {
+            jti: Uuid::now_v7().to_string(),
+            iat,
+            iss: operator_keypair.public_key_string().to_string(),
+            sub: account_keypair.public_key_string().to_string(),
+            exp,
+            nats: AccountData {
+                name: account_name,
+                signing_keys,
+                version: 2,
+                limits,
+                default_permissions: None,
+            },
+        };
+
+        // Encode and sign JWT with operator key
+        let jwt_token = Self::encode_and_sign(&NatsJwtHeader::default(), &claims, operator_keypair)?;
+
+        Ok(Self::new(
+            NKeyType::Account,
+            jwt_token,
+            operator_keypair.public_key.clone(),
+            account_keypair.public_key.clone(),
+            now,
+            expires_at,
+        ))
+    }
+
+    /// Generate User JWT (signed by account)
+    pub fn generate_user(
+        user_keypair: &NKeyPair,
+        account_keypair: &NKeyPair,
+        user_name: String,
+        permissions: Option<Permissions>,
+        limits: Option<UserLimits>,
+        expires_at: Option<DateTime<Utc>>,
+    ) -> Result<Self, String> {
+        if user_keypair.key_type != NKeyType::User {
+            return Err("User key pair must be of type User".to_string());
+        }
+        if account_keypair.key_type != NKeyType::Account {
+            return Err("Account key pair must be of type Account".to_string());
+        }
+
+        let now = Utc::now();
+        let iat = now.timestamp();
+        let exp = expires_at.map(|dt| dt.timestamp());
+
+        // Create user claims
+        let claims = UserClaims {
+            jti: Uuid::now_v7().to_string(),
+            iat,
+            iss: account_keypair.public_key_string().to_string(),
+            sub: user_keypair.public_key_string().to_string(),
+            exp,
+            nats: UserData {
+                name: user_name,
+                version: 2,
+                permissions,
+                limits,
+            },
+        };
+
+        // Encode and sign JWT with account key
+        let jwt_token = Self::encode_and_sign(&NatsJwtHeader::default(), &claims, account_keypair)?;
+
+        Ok(Self::new(
+            NKeyType::User,
+            jwt_token,
+            account_keypair.public_key.clone(),
+            user_keypair.public_key.clone(),
+            now,
+            expires_at,
+        ))
+    }
+
+    /// Encode header and claims, then sign to create JWT token
+    fn encode_and_sign<C: serde::Serialize>(
+        header: &NatsJwtHeader,
+        claims: &C,
+        signing_keypair: &NKeyPair,
+    ) -> Result<String, String> {
+        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+
+        // Encode header to base64
+        let header_json = serde_json::to_string(header)
+            .map_err(|e| format!("Failed to serialize header: {}", e))?;
+        let header_b64 = URL_SAFE_NO_PAD.encode(header_json.as_bytes());
+
+        // Encode claims to base64
+        let claims_json = serde_json::to_string(claims)
+            .map_err(|e| format!("Failed to serialize claims: {}", e))?;
+        let claims_b64 = URL_SAFE_NO_PAD.encode(claims_json.as_bytes());
+
+        // Create signing input (header.claims)
+        let signing_input = format!("{}.{}", header_b64, claims_b64);
+
+        // Sign using nkey
+        let signature = signing_keypair.sign(signing_input.as_bytes())?;
+
+        // Encode signature to base64
+        let signature_b64 = URL_SAFE_NO_PAD.encode(&signature);
+
+        // Combine into JWT format
+        Ok(format!("{}.{}", signing_input, signature_b64))
+    }
+
     /// Get the JWT token string
     pub fn token(&self) -> &str {
         &self.jwt_token
@@ -590,5 +826,218 @@ mod tests {
         assert_eq!(limits.conn, -1);
         assert_eq!(limits.data, -1);
         assert!(limits.wildcards);
+    }
+
+    #[test]
+    fn test_nkey_pair_generation_operator() {
+        let keypair = NKeyPair::generate(NKeyType::Operator, Some("test-operator".to_string()))
+            .expect("Failed to generate operator key pair");
+
+        assert_eq!(keypair.key_type, NKeyType::Operator);
+        assert_eq!(keypair.name, Some("test-operator".to_string()));
+        assert!(keypair.seed.is_valid_prefix());
+        assert!(keypair.public_key.is_valid_prefix());
+        assert!(keypair.seed_string().starts_with("SO"));
+        assert!(keypair.public_key_string().starts_with('O'));
+    }
+
+    #[test]
+    fn test_nkey_pair_generation_account() {
+        let keypair = NKeyPair::generate(NKeyType::Account, Some("test-account".to_string()))
+            .expect("Failed to generate account key pair");
+
+        assert_eq!(keypair.key_type, NKeyType::Account);
+        assert!(keypair.seed_string().starts_with("SA"));
+        assert!(keypair.public_key_string().starts_with('A'));
+    }
+
+    #[test]
+    fn test_nkey_pair_generation_user() {
+        let keypair = NKeyPair::generate(NKeyType::User, Some("test-user".to_string()))
+            .expect("Failed to generate user key pair");
+
+        assert_eq!(keypair.key_type, NKeyType::User);
+        assert!(keypair.seed_string().starts_with("SU"));
+        assert!(keypair.public_key_string().starts_with('U'));
+    }
+
+    #[test]
+    fn test_nkey_pair_signing_and_verification() {
+        let keypair = NKeyPair::generate(NKeyType::User, None)
+            .expect("Failed to generate user key pair");
+
+        let data = b"test message to sign";
+        let signature = keypair.sign(data).expect("Failed to sign data");
+
+        let is_valid = keypair.verify(data, &signature).expect("Failed to verify signature");
+        assert!(is_valid, "Signature should be valid");
+
+        // Verify with wrong data fails
+        let wrong_data = b"wrong message";
+        let is_invalid = keypair.verify(wrong_data, &signature).expect("Failed to verify signature");
+        assert!(!is_invalid, "Signature should be invalid for wrong data");
+    }
+
+    #[test]
+    fn test_operator_jwt_generation() {
+        let operator_keypair = NKeyPair::generate(NKeyType::Operator, Some("test-operator".to_string()))
+            .expect("Failed to generate operator key pair");
+
+        let jwt = NatsJwt::generate_operator(
+            &operator_keypair,
+            "Test Operator".to_string(),
+            vec![],
+        ).expect("Failed to generate operator JWT");
+
+        assert_eq!(jwt.jwt_type, NKeyType::Operator);
+        assert_eq!(jwt.issuer, jwt.subject); // Self-signed
+        assert!(!jwt.is_expired());
+        assert!(jwt.is_valid());
+        assert!(!jwt.token().is_empty());
+    }
+
+    #[test]
+    fn test_account_jwt_generation() {
+        let operator_keypair = NKeyPair::generate(NKeyType::Operator, Some("test-operator".to_string()))
+            .expect("Failed to generate operator key pair");
+
+        let account_keypair = NKeyPair::generate(NKeyType::Account, Some("test-account".to_string()))
+            .expect("Failed to generate account key pair");
+
+        let jwt = NatsJwt::generate_account(
+            &account_keypair,
+            &operator_keypair,
+            "Test Account".to_string(),
+            vec![],
+            Some(AccountLimits::default()),
+            None,
+        ).expect("Failed to generate account JWT");
+
+        assert_eq!(jwt.jwt_type, NKeyType::Account);
+        assert_eq!(jwt.issuer, operator_keypair.public_key);
+        assert_eq!(jwt.subject, account_keypair.public_key);
+        assert!(!jwt.is_expired());
+        assert!(jwt.is_valid());
+    }
+
+    #[test]
+    fn test_user_jwt_generation() {
+        let account_keypair = NKeyPair::generate(NKeyType::Account, Some("test-account".to_string()))
+            .expect("Failed to generate account key pair");
+
+        let user_keypair = NKeyPair::generate(NKeyType::User, Some("test-user".to_string()))
+            .expect("Failed to generate user key pair");
+
+        let permissions = Permissions {
+            pub_allow: Some(vec!["test.>".to_string()]),
+            pub_deny: None,
+            sub_allow: Some(vec!["test.>".to_string()]),
+            sub_deny: None,
+        };
+
+        let jwt = NatsJwt::generate_user(
+            &user_keypair,
+            &account_keypair,
+            "Test User".to_string(),
+            Some(permissions),
+            None,
+            None,
+        ).expect("Failed to generate user JWT");
+
+        assert_eq!(jwt.jwt_type, NKeyType::User);
+        assert_eq!(jwt.issuer, account_keypair.public_key);
+        assert_eq!(jwt.subject, user_keypair.public_key);
+        assert!(!jwt.is_expired());
+        assert!(jwt.is_valid());
+    }
+
+    #[test]
+    fn test_nats_credential_file_format() {
+        let account_keypair = NKeyPair::generate(NKeyType::Account, None)
+            .expect("Failed to generate account key pair");
+
+        let user_keypair = NKeyPair::generate(NKeyType::User, None)
+            .expect("Failed to generate user key pair");
+
+        let jwt = NatsJwt::generate_user(
+            &user_keypair,
+            &account_keypair,
+            "Test User".to_string(),
+            None,
+            None,
+            None,
+        ).expect("Failed to generate user JWT");
+
+        let credential = NatsCredential::new(jwt, user_keypair.seed.clone(), Some("test-user".to_string()));
+        let creds_file = credential.to_credential_file();
+
+        assert!(creds_file.contains("-----BEGIN NATS USER JWT-----"));
+        assert!(creds_file.contains("------END NATS USER JWT------"));
+        assert!(creds_file.contains("-----BEGIN USER NKEY SEED-----"));
+        assert!(creds_file.contains("------END USER NKEY SEED------"));
+        assert!(creds_file.contains("IMPORTANT"));
+    }
+
+    #[test]
+    fn test_complete_credential_workflow() {
+        // Generate operator
+        let operator_keypair = NKeyPair::generate(NKeyType::Operator, Some("thecowboyai".to_string()))
+            .expect("Failed to generate operator key pair");
+
+        let operator_jwt = NatsJwt::generate_operator(
+            &operator_keypair,
+            "thecowboyai".to_string(),
+            vec![],
+        ).expect("Failed to generate operator JWT");
+
+        // Generate account
+        let account_keypair = NKeyPair::generate(NKeyType::Account, Some("Core".to_string()))
+            .expect("Failed to generate account key pair");
+
+        let account_jwt = NatsJwt::generate_account(
+            &account_keypair,
+            &operator_keypair,
+            "Core".to_string(),
+            vec![],
+            Some(AccountLimits::default()),
+            None,
+        ).expect("Failed to generate account JWT");
+
+        // Generate user
+        let user_keypair = NKeyPair::generate(NKeyType::User, Some("organization-service".to_string()))
+            .expect("Failed to generate user key pair");
+
+        let permissions = Permissions {
+            pub_allow: Some(vec!["thecowboyai.org.organization.>".to_string()]),
+            pub_deny: None,
+            sub_allow: Some(vec!["thecowboyai.org.organization.>".to_string()]),
+            sub_deny: None,
+        };
+
+        let user_jwt = NatsJwt::generate_user(
+            &user_keypair,
+            &account_keypair,
+            "organization-service".to_string(),
+            Some(permissions),
+            None,
+            None,
+        ).expect("Failed to generate user JWT");
+
+        let credential = NatsCredential::new(
+            user_jwt,
+            user_keypair.seed.clone(),
+            Some("organization-service".to_string()),
+        );
+
+        // Verify hierarchy
+        assert!(operator_jwt.is_valid());
+        assert!(account_jwt.is_valid());
+        assert_eq!(account_jwt.issuer, operator_keypair.public_key);
+        assert_eq!(credential.jwt.issuer, account_keypair.public_key);
+
+        // Verify credential file format
+        let creds_file = credential.to_credential_file();
+        assert!(creds_file.contains("-----BEGIN NATS USER JWT-----"));
+        assert!(creds_file.contains(user_keypair.seed_string()));
     }
 }

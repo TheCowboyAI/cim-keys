@@ -4,10 +4,11 @@
 //! with beautiful gradients, glass morphism, and dark aesthetics
 
 use iced::{
-    Background, Border, Color, Shadow,
+    Background, Border, Color, Shadow, Font,
     gradient::{Gradient, Linear},
     widget::{button, container, text_input, pick_list, checkbox},
 };
+use crate::icons::{FONT_BODY, FONT_HEADING, EMOJI_FONT, MATERIAL_ICONS};
 
 /// The Cowboy AI theme colors and gradients
 pub struct CowboyTheme;
@@ -123,6 +124,38 @@ impl CowboyTheme {
     pub fn text_muted() -> Color {
         Color::from_rgba(1.0, 1.0, 1.0, 0.5)
     }
+
+    // ========================================================================
+    // TYPOGRAPHY - Font selection methods
+    // ========================================================================
+
+    /// Standard body text font (Rec Mono Linear - monospace)
+    /// Use for: Code, data, general UI text, labels
+    pub fn font_body() -> Font {
+        FONT_BODY
+    }
+
+    /// Heading font (Poller One - display)
+    /// Use for: Page titles, section headings, emphasis
+    pub fn font_heading() -> Font {
+        FONT_HEADING
+    }
+
+    /// Emoji font (Noto Color Emoji)
+    /// Use for: Emoji characters, status indicators
+    pub fn font_emoji() -> Font {
+        EMOJI_FONT
+    }
+
+    /// Icon font (Material Icons)
+    /// Use for: Interface icons, buttons, navigation
+    pub fn font_icons() -> Font {
+        MATERIAL_ICONS
+    }
+
+    // ========================================================================
+    // COLORS
+    // ========================================================================
 
     /// Border colors
     pub fn border_color() -> Color {
@@ -240,6 +273,70 @@ impl CowboyAppTheme {
                     color: border_color,
                     width: 1.0,
                     radius: 20.0.into(),  // More rounded buttons
+                },
+                shadow,
+            }
+        }
+    }
+
+    /// Glass button with optional selection highlight (for menu items)
+    pub fn glass_menu_button(is_selected: bool) -> impl Fn(&iced::Theme, button::Status) -> button::Style {
+        move |_theme, status| {
+            let (background, border_color, shadow) = if is_selected {
+                match status {
+                    button::Status::Active => (
+                        Background::Color(Color::from_rgba(0.0, 0.95, 0.99, 0.25)),  // Cyan highlight
+                        Color::from_rgba(0.0, 0.95, 0.99, 0.8),  // Bright cyan border
+                        CowboyTheme::glow_shadow(),
+                    ),
+                    button::Status::Hovered => (
+                        Background::Color(Color::from_rgba(0.0, 0.95, 0.99, 0.35)),
+                        Color::from_rgba(0.0, 0.95, 0.99, 1.0),
+                        CowboyTheme::glow_shadow(),
+                    ),
+                    button::Status::Pressed => (
+                        Background::Color(Color::from_rgba(0.0, 0.95, 0.99, 0.20)),
+                        Color::from_rgba(0.0, 0.95, 0.99, 0.8),
+                        Shadow::default(),
+                    ),
+                    button::Status::Disabled => (
+                        Background::Color(Color::from_rgba(0.5, 0.5, 0.5, 0.05)),
+                        Color::from_rgba(0.5, 0.5, 0.5, 0.2),
+                        Shadow::default(),
+                    ),
+                }
+            } else {
+                match status {
+                    button::Status::Active => (
+                        CowboyTheme::glass_background(),
+                        CowboyTheme::border_color(),
+                        Shadow::default(),
+                    ),
+                    button::Status::Hovered => (
+                        Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.15)),
+                        CowboyTheme::border_hover_color(),
+                        CowboyTheme::glow_shadow(),
+                    ),
+                    button::Status::Pressed => (
+                        Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.12)),
+                        CowboyTheme::border_hover_color(),
+                        Shadow::default(),
+                    ),
+                    button::Status::Disabled => (
+                        Background::Color(Color::from_rgba(0.5, 0.5, 0.5, 0.05)),
+                        Color::from_rgba(0.5, 0.5, 0.5, 0.2),
+                        Shadow::default(),
+                    ),
+                }
+            };
+
+            button::Style {
+                background: Some(background),
+                text_color: CowboyTheme::text_primary(),
+                border: Border {
+                    color: border_color,
+                    width: if is_selected { 2.0 } else { 1.0 },  // Thicker border for selected state
+                    radius: 20.0.into(),
                 },
                 shadow,
             }

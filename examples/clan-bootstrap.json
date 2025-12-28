@@ -1,0 +1,192 @@
+{
+  "organization": {
+    "name": "thecowboyai",
+    "display_name": "The Cowboy AI",
+    "description": "CIM infrastructure for The Cowboy AI platform",
+    "domain": "thecowboyai.com"
+  },
+  "organizational_units": [
+    {
+      "name": "Core",
+      "unit_type": "Infrastructure",
+      "description": "Core organizational domains",
+      "nats_account_name": "core",
+      "parent": null
+    },
+    {
+      "name": "Media",
+      "unit_type": "Infrastructure",
+      "description": "Content and media processing domains",
+      "nats_account_name": "media",
+      "parent": null
+    },
+    {
+      "name": "Development",
+      "unit_type": "Infrastructure",
+      "description": "Development infrastructure domains",
+      "nats_account_name": "development",
+      "parent": null
+    }
+  ],
+  "service_people": [
+    {
+      "name": "organization-service",
+      "email": "organization@thecowboyai.com",
+      "organizational_unit": "Core",
+      "role": "Service",
+      "nats_permissions": {
+        "publish": ["thecowboyai.org.organization.>"],
+        "subscribe": ["thecowboyai.org.organization.>", "thecowboyai.org.person.>"],
+        "allow_responses": true,
+        "max_payload": 1048576
+      },
+      "description": "Organization domain service - manages org structure"
+    },
+    {
+      "name": "person-service",
+      "email": "person@thecowboyai.com",
+      "organizational_unit": "Core",
+      "role": "Service",
+      "nats_permissions": {
+        "publish": ["thecowboyai.org.person.>"],
+        "subscribe": ["thecowboyai.org.person.>", "thecowboyai.org.location.>"],
+        "allow_responses": true,
+        "max_payload": 1048576
+      },
+      "description": "Person domain service - manages people and identities"
+    },
+    {
+      "name": "location-service",
+      "email": "location@thecowboyai.com",
+      "organizational_unit": "Core",
+      "role": "Service",
+      "nats_permissions": {
+        "publish": ["thecowboyai.org.location.>"],
+        "subscribe": ["thecowboyai.org.location.>"],
+        "allow_responses": true,
+        "max_payload": 1048576
+      },
+      "description": "Location domain service - manages physical/logical locations"
+    },
+    {
+      "name": "policy-service",
+      "email": "policy@thecowboyai.com",
+      "organizational_unit": "Core",
+      "role": "Service",
+      "nats_permissions": {
+        "publish": ["thecowboyai.org.policy.>"],
+        "subscribe": ["thecowboyai.org.policy.>", "thecowboyai.org.organization.>"],
+        "allow_responses": true,
+        "max_payload": 1048576
+      },
+      "description": "Policy domain service - manages policies and compliance"
+    },
+    {
+      "name": "agent-service",
+      "email": "agent@thecowboyai.com",
+      "organizational_unit": "Core",
+      "role": "Service",
+      "nats_permissions": {
+        "publish": ["thecowboyai.org.agent.>"],
+        "subscribe": ["thecowboyai.org.agent.>", "thecowboyai.org.person.>"],
+        "allow_responses": true,
+        "max_payload": 1048576
+      },
+      "description": "Agent domain service - manages AI agents"
+    },
+    {
+      "name": "audio-service",
+      "email": "audio@thecowboyai.com",
+      "organizational_unit": "Media",
+      "role": "Service",
+      "nats_permissions": {
+        "publish": ["thecowboyai.media.audio.>"],
+        "subscribe": ["thecowboyai.media.audio.>", "thecowboyai.media.document.>"],
+        "allow_responses": true,
+        "max_payload": 10485760
+      },
+      "description": "Audio domain service - processes audio content"
+    },
+    {
+      "name": "document-service",
+      "email": "document@thecowboyai.com",
+      "organizational_unit": "Media",
+      "role": "Service",
+      "nats_permissions": {
+        "publish": ["thecowboyai.media.document.>"],
+        "subscribe": ["thecowboyai.media.document.>", "thecowboyai.org.person.>"],
+        "allow_responses": true,
+        "max_payload": 10485760
+      },
+      "description": "Document domain service - manages documents"
+    },
+    {
+      "name": "video-service",
+      "email": "video@thecowboyai.com",
+      "organizational_unit": "Media",
+      "role": "Service",
+      "nats_permissions": {
+        "publish": ["thecowboyai.media.video.>"],
+        "subscribe": ["thecowboyai.media.video.>", "thecowboyai.media.document.>"],
+        "allow_responses": true,
+        "max_payload": 10485760
+      },
+      "description": "Video domain service - processes video content"
+    },
+    {
+      "name": "git-service",
+      "email": "git@thecowboyai.com",
+      "organizational_unit": "Development",
+      "role": "Service",
+      "nats_permissions": {
+        "publish": ["thecowboyai.dev.git.>"],
+        "subscribe": ["thecowboyai.dev.git.>", "thecowboyai.org.person.>"],
+        "allow_responses": true,
+        "max_payload": 10485760
+      },
+      "description": "Git domain service - manages git repositories"
+    },
+    {
+      "name": "nix-service",
+      "email": "nix@thecowboyai.com",
+      "organizational_unit": "Development",
+      "role": "Service",
+      "nats_permissions": {
+        "publish": ["thecowboyai.dev.nix.>"],
+        "subscribe": ["thecowboyai.dev.nix.>", "thecowboyai.dev.git.>"],
+        "allow_responses": true,
+        "max_payload": 10485760
+      },
+      "description": "Nix domain service - manages Nix configurations"
+    },
+    {
+      "name": "spaces-service",
+      "email": "spaces@thecowboyai.com",
+      "organizational_unit": "Development",
+      "role": "Service",
+      "nats_permissions": {
+        "publish": ["thecowboyai.dev.spaces.>"],
+        "subscribe": ["thecowboyai.dev.spaces.>"],
+        "allow_responses": true,
+        "max_payload": 1048576
+      },
+      "description": "Spaces domain service - manages conceptual spaces"
+    }
+  ],
+  "nsc_export_config": {
+    "output_path": "./nsc/stores/thecowboyai",
+    "operator_name": "thecowboyai",
+    "generate_operator_jwt": true,
+    "generate_account_jwts": true,
+    "generate_user_creds": true,
+    "secure_keys_directory": true,
+    "key_permissions": "0400"
+  },
+  "metadata": {
+    "version": "1.0.0",
+    "created_for": "CLAN Infrastructure Integration",
+    "nats_version": "2.10+",
+    "nsc_compatible": true,
+    "schema": "cim-keys-clan-bootstrap-v1"
+  }
+}

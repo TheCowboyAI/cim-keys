@@ -287,6 +287,7 @@ mod tests {
             unit_ids: vec![],
             created_at: Utc::now(),
             active: true,
+            nats_permissions: None,
         };
 
         let event = GraphEvent::NodeCreated {
@@ -317,6 +318,7 @@ mod tests {
             unit_ids: vec![],
             created_at: Utc::now(),
             active: true,
+            nats_permissions: None,
         };
 
         let created = GraphEvent::NodeCreated {
@@ -347,6 +349,7 @@ mod tests {
             unit_ids: vec![],
             created_at: Utc::now(),
             active: true,
+            nats_permissions: None,
         };
 
         let event = GraphEvent::NodeCreated {
@@ -387,6 +390,7 @@ mod tests {
             unit_ids: vec![],
             created_at: Utc::now(),
             active: true,
+            nats_permissions: None,
         };
 
         for i in 0..5 {

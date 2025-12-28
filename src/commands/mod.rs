@@ -17,6 +17,7 @@ pub mod nats_identity;
 pub mod yubikey;
 pub mod pki;
 pub mod export;
+pub mod nsc_export;
 
 // DDD-organized command modules (aggregate-aligned)
 pub mod person;
@@ -46,6 +47,10 @@ pub use pki::{
 };
 
 pub use export::{ExportToEncryptedStorage, ExportCompleted};
+
+pub use nsc_export::{
+    ExportToNscStore, NscExportCompleted, NscAccountCredentials, NscUserCredentials,
+};
 
 // Legacy command wrapper for backward compatibility with GUI and tests
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

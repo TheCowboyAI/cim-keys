@@ -298,6 +298,7 @@ mod tests {
             unit_ids: vec![],
             created_at: Utc::now(),
             active: true,
+            nats_permissions: None,
         };
         graph.add_node(person.clone(), KeyOwnerRole::Developer);
 

@@ -25,7 +25,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::routing::{Route, id, compose};
+    use crate::routing::{Route, id};
     use proptest::prelude::*;
 
     /// Generate arbitrary i32 values for testing

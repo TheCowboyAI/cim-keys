@@ -10,7 +10,7 @@ use uuid::Uuid;
 use std::collections::HashSet;
 
 use crate::gui::graph::{NodeType, EdgeType};
-use crate::domain::{PolicyClaim, RoleType};
+use crate::domain::{PolicyClaim, RoleType, LocationType};
 use crate::icons::{self, ICON_CLOSE};
 
 /// What is being edited
@@ -32,6 +32,11 @@ pub struct PropertyCard {
     edit_enabled: bool,
     edit_claims: HashSet<PolicyClaim>,
     edit_roles: HashSet<RoleType>,
+    // Location-specific fields
+    edit_location_type: LocationType,
+    edit_address: String,  // Full address as a string
+    edit_coordinates: String,  // "lat,long" format
+    edit_virtual_location: String,  // URL or platform details
     // Edge edit state
     edit_edge_type: EdgeType,
 }
@@ -52,12 +57,23 @@ pub enum PropertyCardMessage {
     ClaimToggled(PolicyClaim, bool),
     /// User toggled a role
     RoleToggled(RoleType, bool),
-    // Key generation messages (for Person nodes)
-    /// User clicked generate root CA button
+    // Location-specific messages
+    /// User changed location type
+    LocationTypeChanged(LocationType),
+    /// User changed address field
+    AddressChanged(String),
+    /// User changed coordinates field
+    CoordinatesChanged(String),
+    /// User changed virtual location field
+    VirtualLocationChanged(String),
+    // Key generation messages (for Person, Organization, and Unit nodes)
+    /// User clicked generate root CA button (Organization or Person)
     GenerateRootCA,
-    /// User clicked generate personal keys button
+    /// User clicked generate intermediate CA button (OrganizationalUnit)
+    GenerateIntermediateCA,
+    /// User clicked generate personal keys button (Person)
     GeneratePersonalKeys,
-    /// User clicked provision YubiKey button
+    /// User clicked provision YubiKey button (Person)
     ProvisionYubiKey,
     // Edge editing messages
     /// User changed edge type
@@ -91,6 +107,10 @@ impl PropertyCard {
             edit_enabled: true,
             edit_claims: HashSet::new(),
             edit_roles: HashSet::new(),
+            edit_location_type: LocationType::Physical,
+            edit_address: String::new(),
+            edit_coordinates: String::new(),
+            edit_virtual_location: String::new(),
             edit_edge_type: EdgeType::MemberOf,  // Default edge type
         }
     }
@@ -129,6 +149,33 @@ impl PropertyCard {
                 self.edit_description = String::new();
                 self.edit_email = String::new();
                 self.edit_enabled = true;
+                // Location-specific fields
+                self.edit_location_type = loc.location_type.clone();
+                self.edit_address = loc.address.as_ref()
+                    .map(|addr| {
+                        let mut parts = vec![addr.street1.clone()];
+                        if let Some(street2) = &addr.street2 {
+                            parts.push(street2.clone());
+                        }
+                        parts.push(addr.locality.clone());
+                        parts.push(addr.region.clone());
+                        parts.push(addr.country.clone());
+                        parts.push(addr.postal_code.clone());
+                        parts.join(", ")
+                    })
+                    .unwrap_or_default();
+                self.edit_coordinates = loc.coordinates.as_ref()
+                    .map(|coords| format!("{}, {}", coords.latitude, coords.longitude))
+                    .unwrap_or_default();
+                self.edit_virtual_location = loc.virtual_location.as_ref()
+                    .map(|vl| {
+                        if !vl.urls.is_empty() {
+                            vl.urls[0].url.clone()
+                        } else {
+                            vl.primary_identifier.clone()
+                        }
+                    })
+                    .unwrap_or_default();
             }
             NodeType::Role(role) => {
                 self.edit_name = role.name.clone();
@@ -361,11 +408,30 @@ impl PropertyCard {
                 }
                 self.dirty = true;
             }
+            PropertyCardMessage::LocationTypeChanged(location_type) => {
+                self.edit_location_type = location_type;
+                self.dirty = true;
+            }
+            PropertyCardMessage::AddressChanged(address) => {
+                self.edit_address = address;
+                self.dirty = true;
+            }
+            PropertyCardMessage::CoordinatesChanged(coords) => {
+                self.edit_coordinates = coords;
+                self.dirty = true;
+            }
+            PropertyCardMessage::VirtualLocationChanged(vl) => {
+                self.edit_virtual_location = vl;
+                self.dirty = true;
+            }
             PropertyCardMessage::EdgeTypeChanged(edge_type) => {
                 self.edit_edge_type = edge_type;
                 self.dirty = true;
             }
             PropertyCardMessage::GenerateRootCA => {
+                // Handled by parent
+            }
+            PropertyCardMessage::GenerateIntermediateCA => {
                 // Handled by parent
             }
             PropertyCardMessage::GeneratePersonalKeys => {
@@ -465,6 +531,117 @@ impl PropertyCard {
             .spacing(4)
         );
 
+        // Location-specific fields
+        if matches!(node_type, NodeType::Location(_)) {
+            // Location type selector (Physical, Virtual, Logical, Hybrid)
+            fields = fields.push(
+                column![
+                    text("Location Type:").size(12),
+                    row![
+                        button(text("Physical").size(10))
+                            .on_press(PropertyCardMessage::LocationTypeChanged(LocationType::Physical))
+                            .style(if matches!(self.edit_location_type, LocationType::Physical) {
+                                |theme: &Theme, _status| {
+                                    let palette = theme.extended_palette();
+                                    button::Style {
+                                        background: Some(iced::Background::Color(palette.primary.strong.color)),
+                                        text_color: palette.primary.strong.text,
+                                        border: iced::Border::default(),
+                                        shadow: iced::Shadow::default(),
+                                    }
+                                }
+                            } else {
+                                button::secondary
+                            }),
+                        button(text("Virtual").size(10))
+                            .on_press(PropertyCardMessage::LocationTypeChanged(LocationType::Virtual))
+                            .style(if matches!(self.edit_location_type, LocationType::Virtual) {
+                                |theme: &Theme, _status| {
+                                    let palette = theme.extended_palette();
+                                    button::Style {
+                                        background: Some(iced::Background::Color(palette.primary.strong.color)),
+                                        text_color: palette.primary.strong.text,
+                                        border: iced::Border::default(),
+                                        shadow: iced::Shadow::default(),
+                                    }
+                                }
+                            } else {
+                                button::secondary
+                            }),
+                        button(text("Logical").size(10))
+                            .on_press(PropertyCardMessage::LocationTypeChanged(LocationType::Logical))
+                            .style(if matches!(self.edit_location_type, LocationType::Logical) {
+                                |theme: &Theme, _status| {
+                                    let palette = theme.extended_palette();
+                                    button::Style {
+                                        background: Some(iced::Background::Color(palette.primary.strong.color)),
+                                        text_color: palette.primary.strong.text,
+                                        border: iced::Border::default(),
+                                        shadow: iced::Shadow::default(),
+                                    }
+                                }
+                            } else {
+                                button::secondary
+                            }),
+                        button(text("Hybrid").size(10))
+                            .on_press(PropertyCardMessage::LocationTypeChanged(LocationType::Hybrid))
+                            .style(if matches!(self.edit_location_type, LocationType::Hybrid) {
+                                |theme: &Theme, _status| {
+                                    let palette = theme.extended_palette();
+                                    button::Style {
+                                        background: Some(iced::Background::Color(palette.primary.strong.color)),
+                                        text_color: palette.primary.strong.text,
+                                        border: iced::Border::default(),
+                                        shadow: iced::Shadow::default(),
+                                    }
+                                }
+                            } else {
+                                button::secondary
+                            }),
+                    ]
+                    .spacing(4)
+                ]
+                .spacing(4)
+            );
+
+            // Address field (for physical/hybrid locations)
+            if matches!(self.edit_location_type, LocationType::Physical | LocationType::Hybrid) {
+                fields = fields.push(
+                    column![
+                        text("Address:").size(12),
+                        text_input("Enter address", &self.edit_address)
+                            .on_input(PropertyCardMessage::AddressChanged)
+                            .width(Length::Fill),
+                    ]
+                    .spacing(4)
+                );
+
+                // Coordinates field
+                fields = fields.push(
+                    column![
+                        text("Coordinates (lat, long):").size(12),
+                        text_input("e.g., 40.7128, -74.0060", &self.edit_coordinates)
+                            .on_input(PropertyCardMessage::CoordinatesChanged)
+                            .width(Length::Fill),
+                    ]
+                    .spacing(4)
+                );
+            }
+
+            // Virtual location field (for virtual/hybrid locations)
+            if matches!(self.edit_location_type, LocationType::Virtual | LocationType::Hybrid) {
+                fields = fields.push(
+                    column![
+                        text("Virtual Location (URL/Platform):").size(12),
+                        text_input("Enter URL or platform details", &self.edit_virtual_location)
+                            .on_input(PropertyCardMessage::VirtualLocationChanged)
+                            .width(Length::Fill),
+                    ]
+                    .spacing(4)
+                );
+            }
+        }
+
         // Description field (Organization, Role, Policy)
         if matches!(
             node_type,
@@ -563,6 +740,50 @@ impl PropertyCard {
                             button::Style {
                                 background: Some(iced::Background::Color(palette.secondary.strong.color)),
                                 text_color: palette.secondary.strong.text,
+                                border: iced::Border::default(),
+                                shadow: iced::Shadow::default(),
+                            }
+                        }),
+                ]
+                .spacing(4)
+            );
+        }
+
+        // Key Operations section for Organization nodes (Root CA only)
+        if matches!(node_type, NodeType::Organization(_)) {
+            fields = fields.push(
+                column![
+                    text("Key Operations:").size(12),
+                    button(text("Generate Root CA").size(11))
+                        .on_press(PropertyCardMessage::GenerateRootCA)
+                        .width(Length::Fill)
+                        .style(|theme: &Theme, _status| {
+                            let palette = theme.extended_palette();
+                            button::Style {
+                                background: Some(iced::Background::Color(palette.primary.strong.color)),
+                                text_color: palette.primary.strong.text,
+                                border: iced::Border::default(),
+                                shadow: iced::Shadow::default(),
+                            }
+                        }),
+                ]
+                .spacing(4)
+            );
+        }
+
+        // Key Operations section for OrganizationalUnit nodes (Intermediate CA only)
+        if matches!(node_type, NodeType::OrganizationalUnit(_)) {
+            fields = fields.push(
+                column![
+                    text("Key Operations:").size(12),
+                    button(text("Generate Intermediate CA").size(11))
+                        .on_press(PropertyCardMessage::GenerateIntermediateCA)
+                        .width(Length::Fill)
+                        .style(|theme: &Theme, _status| {
+                            let palette = theme.extended_palette();
+                            button::Style {
+                                background: Some(iced::Background::Color(palette.success.strong.color)),
+                                text_color: palette.success.strong.text,
                                 border: iced::Border::default(),
                                 shadow: iced::Shadow::default(),
                             }

@@ -22,6 +22,7 @@ use crate::domain_projections::NatsIdentityProjection;
 use super::edge_indicator::EdgeCreationIndicator;
 use super::graph_events::{EventStack, GraphEvent};
 use super::GraphLayout;
+use super::cowboy_theme::CowboyAppTheme as CowboyCustomTheme;
 
 /// Graph visualization widget for organizational structure
 #[derive(Clone)]
@@ -2352,12 +2353,24 @@ pub fn view_graph(graph: &OrganizationGraph) -> Element<'_, GraphMessage> {
         .height(Length::Fill);
 
     let controls = row![
-        button("Zoom In").on_press(GraphMessage::ZoomIn),
-        button("Zoom Out").on_press(GraphMessage::ZoomOut),
-        button("Reset").on_press(GraphMessage::ResetView),
-        button("Auto Layout").on_press(GraphMessage::AutoLayout),
+        button(text("+").size(16).font(crate::icons::FONT_BODY))
+            .on_press(GraphMessage::ZoomIn)
+            .style(CowboyCustomTheme::glass_button())
+            .padding(6),
+        button(text("-").size(16).font(crate::icons::FONT_BODY))
+            .on_press(GraphMessage::ZoomOut)
+            .style(CowboyCustomTheme::glass_button())
+            .padding(6),
+        button(text("🔄").size(14).font(crate::icons::EMOJI_FONT))
+            .on_press(GraphMessage::ResetView)
+            .style(CowboyCustomTheme::glass_button())
+            .padding(6),
+        button(text("Auto Layout").size(12).font(crate::icons::FONT_BODY))
+            .on_press(GraphMessage::AutoLayout)
+            .style(CowboyCustomTheme::glass_button())
+            .padding(6),
     ]
-    .spacing(10);
+    .spacing(8);
 
     let mut items = column![
         controls,
@@ -2506,5 +2519,7 @@ pub fn view_graph(graph: &OrganizationGraph) -> Element<'_, GraphMessage> {
     container(items)
         .width(Length::Fill)
         .height(Length::Fill)
+        .style(CowboyCustomTheme::glass_container())
+        .padding(10)
         .into()
 }

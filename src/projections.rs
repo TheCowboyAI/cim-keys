@@ -284,8 +284,41 @@ impl OfflineKeyProjection {
             let content = fs::read_to_string(&manifest_path)
                 .map_err(|e| ProjectionError::IoError(format!("Failed to read manifest: {}", e)))?;
 
-            serde_json::from_str(&content)
-                .map_err(|e| ProjectionError::ParseError(format!("Invalid manifest JSON: {}", e)))
+            // Try to parse existing manifest
+            match serde_json::from_str(&content) {
+                Ok(manifest) => Ok(manifest),
+                Err(e) => {
+                    // Manifest format is outdated or corrupted - back it up and create fresh
+                    eprintln!("⚠️  Warning: Existing manifest is outdated/invalid: {}", e);
+                    let backup_path = manifest_path.with_extension("json.backup");
+                    if let Err(backup_err) = fs::rename(&manifest_path, &backup_path) {
+                        eprintln!("⚠️  Warning: Could not backup old manifest: {}", backup_err);
+                    } else {
+                        eprintln!("✓  Old manifest backed up to: {}", backup_path.display());
+                    }
+
+                    // Create fresh manifest
+                    let manifest = KeyManifest {
+                        version: "1.0.0".to_string(),
+                        created_at: Utc::now(),
+                        updated_at: Utc::now(),
+                        organization: OrganizationInfo::default(),
+                        people: Vec::new(),
+                        locations: Vec::new(),
+                        keys: Vec::new(),
+                        certificates: Vec::new(),
+                        pki_hierarchies: Vec::new(),
+                        yubikeys: Vec::new(),
+                        nats_operators: Vec::new(),
+                        nats_accounts: Vec::new(),
+                        nats_users: Vec::new(),
+                        event_count: 0,
+                        checksum: String::new(),
+                    };
+
+                    Ok(manifest)
+                }
+            }
         } else {
             let manifest = KeyManifest {
                 version: "1.0.0".to_string(),

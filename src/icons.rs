@@ -1,12 +1,51 @@
-//! Material Icons - Helper Module
+//! Typography and Icons - Font Definitions
 //!
-//! Provides icon rendering functions for the GUI using Unicode characters
+//! Defines all fonts used in the CIM Keys application with explicit purposes
 
 use iced::{widget::text, Color, Element, Font};
 
-// Font with emoji support - uses system emoji fonts
-pub const EMOJI_FONT: Font = Font::with_name("Segoe UI Emoji"); // Windows
-// Fallback chain: Linux uses "Noto Color Emoji", macOS uses "Apple Color Emoji"
+// ============================================================================
+// FONT DEFINITIONS - Custom fonts referenced by family name
+//
+// Fonts are loaded in gui.rs run() function via .font(include_bytes!())
+// and then referenced here by their internal family names
+// ============================================================================
+
+/// Rec Mono Linear - Standard body text font (monospace)
+/// Use for: Code, data, general UI text
+pub const FONT_BODY: Font = Font {
+    family: iced::font::Family::Name("Rec Mono Linear"),
+    weight: iced::font::Weight::Normal,
+    stretch: iced::font::Stretch::Normal,
+    style: iced::font::Style::Normal,
+};
+
+/// Poller One - Heading font (display)
+/// Use for: Page titles, section headings, emphasis
+pub const FONT_HEADING: Font = Font {
+    family: iced::font::Family::Name("Poller One"),
+    weight: iced::font::Weight::Normal,
+    stretch: iced::font::Stretch::Normal,
+    style: iced::font::Style::Normal,
+};
+
+/// Material Icons - UI icon glyphs
+/// Use for: Interface icons, buttons, navigation
+pub const MATERIAL_ICONS: Font = Font {
+    family: iced::font::Family::Name("Material Icons"),
+    weight: iced::font::Weight::Normal,
+    stretch: iced::font::Stretch::Normal,
+    style: iced::font::Style::Normal,
+};
+
+/// Noto Color Emoji - Emoji rendering
+/// Use for: Emoji characters, status indicators
+pub const EMOJI_FONT: Font = Font {
+    family: iced::font::Family::Name("Noto Color Emoji"),
+    weight: iced::font::Weight::Normal,
+    stretch: iced::font::Stretch::Normal,
+    style: iced::font::Style::Normal,
+};
 
 // Icon constants - emoji for visual clarity
 pub const ICON_LOCK: char = '🔒';
@@ -25,9 +64,6 @@ pub const ICON_VISIBILITY_OFF: char = '🙈';
 pub const ICON_CLOUD: char = '☁';
 pub const ICON_ACCOUNT_CIRCLE: char = '👤';
 pub const ICON_SETTINGS: char = '⚙';
-
-// Material Icons font
-pub const MATERIAL_ICONS: Font = Font::DEFAULT;
 
 /// Render an icon with default size and emoji font
 pub fn icon<'a, Message: 'a>(icon_char: char) -> Element<'a, Message> {

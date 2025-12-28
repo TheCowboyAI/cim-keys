@@ -968,6 +968,7 @@ impl NatsProjection {
                 unit_type: crate::domain::OrganizationUnitType::Infrastructure,
                 parent_unit_id: None,
                 responsible_person_id: None,
+                nats_account_name: None,
             };
             JwtClaimsProjection::project_account_claims(
                 org,
@@ -1075,6 +1076,7 @@ impl NatsProjection {
                 unit_type: crate::domain::OrganizationUnitType::Infrastructure,
                 parent_unit_id: None,
                 responsible_person_id: None,
+                nats_account_name: None,
             };
             let default_account = Self::project_account(
                 organization,
@@ -1258,6 +1260,7 @@ mod tests {
             unit_type: crate::domain::OrganizationUnitType::Department,
             parent_unit_id: None,
             responsible_person_id: None,
+            nats_account_name: None,
         };
 
         let params = NKeyProjection::project_account_nkey(&org, &unit);
@@ -1349,6 +1352,7 @@ mod tests {
             unit_type: crate::domain::OrganizationUnitType::Department,
             parent_unit_id: None,
             responsible_person_id: None,
+            nats_account_name: None,
         };
 
         // US-021: Create operator (events emitted internally)

@@ -31,7 +31,7 @@ use crate::{
         YubiKeyCliAdapter,
     },
     // Icons
-    icons::{self, EMOJI_FONT, ICON_WARNING},
+    icons::{self, EMOJI_FONT, FONT_BODY, ICON_WARNING},
 };
 
 pub mod graph;
@@ -109,6 +109,13 @@ pub struct CimKeysApp {
 
     // Graph visualization
     org_graph: OrganizationGraph,
+    // Filtered graphs for different contexts (cached for performance)
+    pki_graph: OrganizationGraph,
+    nats_graph: OrganizationGraph,
+    yubikey_graph: OrganizationGraph,
+    location_graph: OrganizationGraph,
+    policy_graph: OrganizationGraph,
+    empty_graph: OrganizationGraph,
     graph_projector: crate::graph_projection::GraphProjector,  // Functorial projection to cim-graph
     selected_person: Option<Uuid>,
     selected_node_type: Option<String>,  // Node type selected in "Add Node" dropdown
@@ -180,6 +187,14 @@ pub struct CimKeysApp {
     nats_operator_id: Option<Uuid>,
     nats_export_path: PathBuf,
 
+    // CLAN bootstrap credential generation
+    clan_bootstrap_path: String,
+    clan_bootstrap_loaded: bool,
+    clan_credentials_generated: bool,
+    clan_nsc_store_path: Option<PathBuf>,
+    clan_accounts_exported: usize,
+    clan_users_exported: usize,
+
     // Collapsible sections state
     root_ca_collapsed: bool,
     intermediate_ca_collapsed: bool,
@@ -234,6 +249,11 @@ pub struct CimKeysApp {
     #[allow(dead_code)]
     loading_graph_data: bool,
 
+    // Phase 10: Node type selector for SPACE key
+    show_node_type_selector: bool,
+    node_selector_position: Point,
+    selected_menu_index: usize,  // Currently selected menu item (for keyboard navigation)
+
     // Phase 8: Node/edge type filtering
     filter_show_people: bool,
     filter_show_orgs: bool,
@@ -242,6 +262,41 @@ pub struct CimKeysApp {
     filter_show_yubikey: bool,
     // Phase 9: Graph layout options
     current_layout: GraphLayout,
+}
+
+/// Types of nodes in organizational context graph
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrganizationalNodeType {
+    Organization,
+    OrganizationalUnit,
+    Person,
+    Location,
+    Role,
+    Policy,
+}
+
+impl OrganizationalNodeType {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::Organization => "Organization",
+            Self::OrganizationalUnit => "Organizational Unit",
+            Self::Person => "Person",
+            Self::Location => "Location",
+            Self::Role => "Role",
+            Self::Policy => "Policy",
+        }
+    }
+
+    pub fn all() -> Vec<Self> {
+        vec![
+            Self::Organization,
+            Self::OrganizationalUnit,
+            Self::Person,
+            Self::Location,
+            Self::Role,
+            Self::Policy,
+        ]
+    }
 }
 
 /// Graph layout algorithms
@@ -386,6 +441,13 @@ pub enum Message {
     ExportToNsc,
     NscExported(Result<String, String>),
 
+    // CLAN Bootstrap credential generation
+    ClanBootstrapPathChanged(String),
+    LoadClanBootstrap,
+    ClanBootstrapLoaded(Result<(crate::domain::Organization, Vec<crate::domain::OrganizationUnit>, Vec<crate::domain::Person>), String>),
+    GenerateClanCredentials,
+    ClanCredentialsGenerated(Result<(PathBuf, usize, usize), String>),  // (nsc_store_path, accounts, users)
+
     // PKI operations
     PkiCertificatesLoaded(Vec<crate::projections::CertificateEntry>),
     GeneratePkiFromGraph,  // Graph-first PKI generation
@@ -424,7 +486,13 @@ pub enum Message {
 
     // Graph interactions
     GraphMessage(GraphMessage),
-    CreateContextAwareNode,  // SPACE key: create most likely next node
+    CreateContextAwareNode,  // SPACE key: show node type selector
+    SelectNodeType(OrganizationalNodeType),  // User selects node type from menu
+    CancelNodeTypeSelector,  // Escape key cancels selector
+    MenuNavigateUp,  // Arrow up: navigate menu selection up
+    MenuNavigateDown,  // Arrow down: navigate menu selection down
+    MenuAcceptSelection,  // Space/Enter: accept current menu selection
+    CycleEdgeType,  // TAB key: cycle selected edge through common types
 
     // Phase 4: Interactive UI Component Messages
     ContextMenuMessage(ContextMenuMessage),
@@ -602,6 +670,13 @@ impl CimKeysApp {
                 event_emitter: CimEventEmitter::new(default_org),
                 _event_subscriber: GuiEventSubscriber::new(default_org),
                 org_graph: OrganizationGraph::new(),
+                // Initialize filtered graphs (empty initially)
+                pki_graph: OrganizationGraph::new(),
+                nats_graph: OrganizationGraph::new(),
+                yubikey_graph: OrganizationGraph::new(),
+                location_graph: OrganizationGraph::new(),
+                policy_graph: OrganizationGraph::new(),
+                empty_graph: OrganizationGraph::new(),
                 graph_projector: crate::graph_projection::GraphProjector::new(),
                 selected_person: None,
                 selected_node_type: None,
@@ -651,6 +726,13 @@ impl CimKeysApp {
                 nats_hierarchy_generated: false,
                 nats_operator_id: None,
                 nats_export_path: PathBuf::from(&output_dir).join("nsc"),
+                // CLAN bootstrap
+                clan_bootstrap_path: String::from("examples/clan-bootstrap.json"),
+                clan_bootstrap_loaded: false,
+                clan_credentials_generated: false,
+                clan_nsc_store_path: None,
+                clan_accounts_exported: 0,
+                clan_users_exported: 0,
                 root_ca_collapsed: false,
                 intermediate_ca_collapsed: false,
                 server_cert_collapsed: false,
@@ -689,6 +771,10 @@ impl CimKeysApp {
                 loading_export: false,
                 loading_import: false,
                 loading_graph_data: false,
+                // Phase 10: Node type selector
+                show_node_type_selector: false,
+                node_selector_position: Point::new(400.0, 300.0),
+                selected_menu_index: 0,  // Default to first item
                 // Phase 8: Node/edge type filtering
                 filter_show_people: true,
                 filter_show_orgs: true,
@@ -722,81 +808,13 @@ impl CimKeysApp {
             }
 
             Message::GraphViewSelected(view) => {
+                // Simple: just change the context
                 self.graph_view = view;
 
-                // Populate the graph based on the selected view
-                match view {
-                    GraphView::Organization => {
-                        // Organization view is already populated
-                        self.status_message = format!("Organization Structure (Graph: {} nodes, {} edges)",
-                            self.org_graph.nodes.len(), self.org_graph.edges.len());
-                    }
-                    GraphView::NatsInfrastructure => {
-                        if let Some(ref bootstrap) = self.nats_bootstrap {
-                            // Clear the graph and populate with NATS infrastructure
-                            self.org_graph.nodes.clear();
-                            self.org_graph.edges.clear();
-                            self.org_graph.populate_nats_infrastructure(bootstrap);
-                            self.status_message = format!("NATS Infrastructure (Graph: {} nodes, {} edges)",
-                                self.org_graph.nodes.len(), self.org_graph.edges.len());
-                        } else {
-                            self.status_message = "NATS Infrastructure View - Generate NATS hierarchy first".to_string();
-                        }
-                    }
-                    GraphView::PkiTrustChain => {
-                        // Get certificates from projection
-                        let projection = self.projection.clone();
-                        return Task::perform(
-                            async move {
-                                let proj = projection.read().await;
-                                let certs = proj.get_certificates().to_vec();
-                                certs
-                            },
-                            |certs| Message::PkiCertificatesLoaded(certs)
-                        );
-                    }
-                    GraphView::YubiKeyDetails => {
-                        // Get YubiKeys and people from projection
-                        let projection = self.projection.clone();
-                        return Task::perform(
-                            async move {
-                                let proj = projection.read().await;
-                                let yubikeys = proj.get_yubikeys().to_vec();
-                                let people = proj.get_people().to_vec();
-                                (yubikeys, people)
-                            },
-                            |(yubikeys, people)| Message::YubiKeyDataLoaded(yubikeys, people)
-                        );
-                    }
-                    GraphView::Timeline => {
-                        // Timeline shows event sourcing audit trail
-                        self.org_graph.nodes.clear();
-                        self.org_graph.edges.clear();
-                        // TODO: Populate from event store
-                        self.status_message = "Timeline View - Event sourcing audit trail (coming soon)".to_string();
-                    }
-                    GraphView::Aggregates => {
-                        // Aggregates show state machine diagrams
-                        self.org_graph.nodes.clear();
-                        self.org_graph.edges.clear();
-                        // TODO: Populate with state machine nodes
-                        self.status_message = "Aggregates View - State machine diagrams (coming soon)".to_string();
-                    }
-                    GraphView::CommandHistory => {
-                        // Command history shows CQRS write operations
-                        self.org_graph.nodes.clear();
-                        self.org_graph.edges.clear();
-                        // TODO: Populate from command log
-                        self.status_message = "Command History - CQRS write audit trail (coming soon)".to_string();
-                    }
-                    GraphView::CausalityChains => {
-                        // Causality shows correlation/causation chains
-                        self.org_graph.nodes.clear();
-                        self.org_graph.edges.clear();
-                        // TODO: Populate from event correlations
-                        self.status_message = "Causality Chains - Distributed tracing (coming soon)".to_string();
-                    }
-                }
+                // Context changed - space menu will update automatically based on self.graph_view
+                // Graph rendering will show the appropriate graph for this context
+                self.status_message = format!("Graph Context: {:?}", view);
+
                 Task::none()
             }
 
@@ -1006,6 +1024,7 @@ impl CimKeysApp {
                                 organization_id: Uuid::now_v7(), // TODO: Use actual org ID from config
                                 unit_ids: vec![],
                                 roles: vec![],
+                                nats_permissions: None,
                                 active: true,
                                 created_at: chrono::Utc::now(),
                             };
@@ -1136,7 +1155,11 @@ impl CimKeysApp {
             }
 
             Message::InlineEditCancel => {
-                if self.editing_new_node.is_some() {
+                if self.show_node_type_selector {
+                    // Cancel node type selector
+                    self.show_node_type_selector = false;
+                    self.status_message = "Node creation cancelled".to_string();
+                } else if self.editing_new_node.is_some() {
                     // Cancel inline editing
                     self.editing_new_node = None;
                     self.inline_edit_name.clear();
@@ -1181,6 +1204,7 @@ impl CimKeysApp {
                     organization_id: org_id,
                     unit_ids: vec![],
                     roles: vec![],
+                    nats_permissions: None,
                     active: true,
                     created_at: chrono::Utc::now(),
                 };
@@ -2064,6 +2088,7 @@ impl CimKeysApp {
                                             name: format!("{} - Default", org_name),
                                             unit_type: OrganizationUnitType::Infrastructure,
                                             parent_unit_id: None,
+                                            nats_account_name: None,
                                             responsible_person_id: None,
                                         }
                                     ],
@@ -2084,6 +2109,7 @@ impl CimKeysApp {
                                     organization_id: org_id,
                                     unit_ids: vec![org_id],  // Assign to default unit
                                     created_at: p.created_at,
+                                    nats_permissions: None,
                                     active: true,
                                 }).collect();
 
@@ -2179,6 +2205,100 @@ impl CimKeysApp {
                     }
                     Err(e) => {
                         self.error_message = Some(format!("NSC export failed: {}", e));
+                    }
+                }
+                Task::none()
+            }
+
+            // CLAN Bootstrap credential generation
+            Message::ClanBootstrapPathChanged(path) => {
+                self.clan_bootstrap_path = path;
+                Task::none()
+            }
+
+            Message::LoadClanBootstrap => {
+                let path = self.clan_bootstrap_path.clone();
+                Task::perform(
+                    async move {
+                        use crate::clan_bootstrap::ClanBootstrapLoader;
+                        let config = ClanBootstrapLoader::load_from_file(&path)
+                            .map_err(|e| format!("Failed to load configuration: {}", e))?;
+                        ClanBootstrapLoader::to_domain_models(config)
+                            .map_err(|e| format!("Failed to convert to domain models: {}", e))
+                    },
+                    Message::ClanBootstrapLoaded
+                )
+            }
+
+            Message::ClanBootstrapLoaded(result) => {
+                match result {
+                    Ok((org, units, people)) => {
+                        self.clan_bootstrap_loaded = true;
+                        self.status_message = format!("[OK] Loaded CLAN bootstrap: {} ({} units, {} services)",
+                            org.name, units.len(), people.len());
+
+                        // Store in org_graph for visualization
+                        self.organization_name = org.name.clone();
+                        self.organization_domain = org.name.clone();
+                        self.organization_id = Some(org.id);
+                    }
+                    Err(e) => {
+                        self.error_message = Some(format!("Failed to load CLAN bootstrap: {}", e));
+                        self.clan_bootstrap_loaded = false;
+                    }
+                }
+                Task::none()
+            }
+
+            Message::GenerateClanCredentials => {
+                if !self.clan_bootstrap_loaded {
+                    self.error_message = Some("Load CLAN bootstrap configuration first".to_string());
+                    return Task::none();
+                }
+
+                let path = self.clan_bootstrap_path.clone();
+                let output_dir = self.export_path.clone();
+
+                Task::perform(
+                    async move {
+                        use crate::clan_bootstrap::ClanBootstrapLoader;
+                        use crate::commands::nsc_export::generate_and_export_credentials;
+
+                        // Load configuration
+                        let config = ClanBootstrapLoader::load_from_file(&path)
+                            .map_err(|e| format!("Failed to load configuration: {}", e))?;
+
+                        // Convert to domain models
+                        let (org, units, people) = ClanBootstrapLoader::to_domain_models(config)
+                            .map_err(|e| format!("Failed to convert to domain models: {}", e))?;
+
+                        // Generate and export credentials
+                        let result = generate_and_export_credentials(
+                            &output_dir,
+                            org,
+                            units,
+                            people,
+                        ).map_err(|e| format!("Failed to generate credentials: {}", e))?;
+
+                        Ok((result.nsc_store_path, result.accounts_exported, result.users_exported))
+                    },
+                    Message::ClanCredentialsGenerated
+                )
+            }
+
+            Message::ClanCredentialsGenerated(result) => {
+                match result {
+                    Ok((nsc_store_path, accounts, users)) => {
+                        self.clan_credentials_generated = true;
+                        self.clan_nsc_store_path = Some(nsc_store_path.clone());
+                        self.clan_accounts_exported = accounts;
+                        self.clan_users_exported = users;
+                        self.status_message = format!("[OK] Generated {} accounts and {} users. NSC store: {}",
+                            accounts, users, nsc_store_path.display());
+                    }
+                    Err(e) => {
+                        self.error_message = Some(format!("Credential generation failed: {}", e));
+                        self.clan_credentials_generated = false;
                     }
                 }
                 Task::none()
@@ -2295,115 +2415,324 @@ impl CimKeysApp {
 
             // Context-aware node creation (SPACE key)
             Message::CreateContextAwareNode => {
-                use crate::gui::graph::NodeType;
-                use crate::domain::{Organization, OrganizationUnit, OrganizationUnitType, Person, Location, LocationMarker, Address};
-                use cim_domain::EntityId;
+                // Close property card if it's showing (don't stack menu on top of it)
+                if self.property_card.is_editing() {
+                    self.property_card.clear();
+                }
+
+                // ALWAYS position menu at property card location (consistent, predictable)
+                self.node_selector_position = Point::new(800.0, 400.0);
+
+                // Reset menu selection to first item
+                self.selected_menu_index = 0;
+
+                // Show node type selector menu
+                self.show_node_type_selector = true;
+                self.status_message = "Select node type to create (↑↓ to navigate, Space/Enter to select)".to_string();
+                Task::none()
+            }
+
+            Message::CancelNodeTypeSelector => {
+                self.show_node_type_selector = false;
+                self.status_message = "Node creation cancelled".to_string();
+                Task::none()
+            }
+
+            Message::MenuNavigateUp => {
+                if self.show_node_type_selector {
+                    let total_items = OrganizationalNodeType::all().len();
+                    self.selected_menu_index = if self.selected_menu_index == 0 {
+                        total_items - 1  // Wrap to bottom
+                    } else {
+                        self.selected_menu_index - 1
+                    };
+                }
+                Task::none()
+            }
+
+            Message::MenuNavigateDown => {
+                if self.show_node_type_selector {
+                    let total_items = OrganizationalNodeType::all().len();
+                    self.selected_menu_index = (self.selected_menu_index + 1) % total_items;
+                }
+                Task::none()
+            }
+
+            Message::MenuAcceptSelection => {
+                if self.show_node_type_selector {
+                    // Menu is open - accept selected item
+                    let selected_type = OrganizationalNodeType::all()[self.selected_menu_index];
+                    // Close menu and trigger selection
+                    self.show_node_type_selector = false;
+                    // Trigger SelectNodeType message with selected type
+                    return self.update(Message::SelectNodeType(selected_type));
+                } else {
+                    // Menu is not open - open it (SPACE key)
+                    return self.update(Message::CreateContextAwareNode);
+                }
+            }
+
+            Message::CycleEdgeType => {
+                // Cycle the selected edge through common organizational edge types
+                use crate::gui::graph::EdgeType;
+                use crate::gui::graph_events::GraphEvent;
                 use chrono::Utc;
 
-                // Determine what type of node to create based on current graph state
-                let has_org = self.org_graph.nodes.values().any(|n| matches!(n.node_type, NodeType::Organization(_)));
-                let has_units = self.org_graph.nodes.values().any(|n| matches!(n.node_type, NodeType::OrganizationalUnit(_)));
-                let has_people = self.org_graph.nodes.values().any(|n| matches!(n.node_type, NodeType::Person { .. }));
+                if let Some(edge_index) = self.org_graph.selected_edge {
+                    if edge_index < self.org_graph.edges.len() {
+                        let current_edge = &self.org_graph.edges[edge_index];
+                        let old_type = current_edge.edge_type.clone();
 
-                if !has_org {
-                    // No organization yet - create one
-                    let org = Organization {
-                        id: Uuid::now_v7(),
-                        name: "New Organization".to_string(),
-                        display_name: "New Organization".to_string(),
-                        description: Some("Created with SPACE key".to_string()),
-                        parent_id: None,
-                        units: Vec::new(),
-                        created_at: Utc::now(),
-                        metadata: std::collections::HashMap::new(),
-                    };
-                    self.org_graph.add_organization_node(org);
-                    self.status_message = "✨ Created new organization (SPACE)".to_string();
-                } else if !has_units {
-                    // Has org but no units - create a unit
-                    let unit = OrganizationUnit {
-                        id: Uuid::now_v7(),
-                        name: "New Unit".to_string(),
-                        unit_type: OrganizationUnitType::Department,
-                        parent_unit_id: None,
-                        responsible_person_id: None,
-                    };
-                    self.org_graph.add_org_unit_node(unit);
-                    self.status_message = "✨ Created new organizational unit (SPACE)".to_string();
-                } else if !has_people {
-                    // Has org and units but no people - create a person
-                    let org_id = self.org_graph.nodes.values()
-                        .find_map(|n| if let NodeType::Organization(org) = &n.node_type { Some(org.id) } else { None })
-                        .unwrap_or_else(Uuid::now_v7);
+                        // Define common organizational edge types to cycle through
+                        let common_types = vec![
+                            EdgeType::MemberOf,
+                            EdgeType::Manages,
+                            EdgeType::ResponsibleFor,
+                            EdgeType::ParentChild,
+                            EdgeType::HasRole,
+                            EdgeType::DefinesRole,
+                            EdgeType::DefinesPolicy,
+                            EdgeType::Hierarchy,
+                        ];
 
-                    let person = Person {
-                        id: Uuid::now_v7(),
-                        name: "New Person".to_string(),
-                        email: "person@example.com".to_string(),
-                        roles: Vec::new(),
-                        organization_id: org_id,
-                        unit_ids: Vec::new(),
-                        created_at: Utc::now(),
-                        active: true,
-                    };
-                    self.org_graph.add_node(person, KeyOwnerRole::Developer);
-                    self.status_message = "✨ Created new person (SPACE)".to_string();
-                } else {
-                    // Has everything - default to creating a location
-                    let node_id = Uuid::now_v7();
-                    let address = Address::new(
-                        "123 Main St".to_string(),
-                        "City".to_string(),
-                        "State".to_string(),
-                        "Country".to_string(),
-                        "12345".to_string(),
-                    );
+                        // Find current type index, or start at 0 if not in common types
+                        let current_index = common_types.iter().position(|t| t == &old_type).unwrap_or(0);
+                        let next_index = (current_index + 1) % common_types.len();
+                        let new_type = common_types[next_index].clone();
 
-                    let location = Location::new_physical(
-                        EntityId::<LocationMarker>::from_uuid(node_id),
-                        "New Location".to_string(),
-                        address,
-                    ).expect("Failed to create location");
+                        // Create EdgeTypeChanged event (FRP event-driven pattern)
+                        let event = GraphEvent::EdgeTypeChanged {
+                            from: current_edge.from,
+                            to: current_edge.to,
+                            old_type: old_type.clone(),
+                            new_type: new_type.clone(),
+                            timestamp: Utc::now(),
+                        };
 
-                    self.org_graph.add_location_node(location);
+                        // Push event to stack and apply transformation
+                        self.org_graph.event_stack.push(event.clone());
+                        self.org_graph.apply_event(&event);
 
-                    // Also add to projection so it shows up in Locations tab
-                    if let Some(org_id) = self.organization_id {
-                        let projection = self.projection.clone();
-                        let location_name = "New Location".to_string();
-                        let location_type = "Physical".to_string();
-
-                        self.status_message = "✨ Created new location (SPACE)".to_string();
-
-                        return Task::perform(
-                            async move {
-                                let mut proj = projection.write().await;
-                                proj.add_location(
-                                    node_id,
-                                    location_name.clone(),
-                                    location_type,
-                                    org_id,
-                                    Some("123 Main St".to_string()),
-                                    Some("City".to_string()),
-                                    Some("State".to_string()),
-                                    Some("Country".to_string()),
-                                    Some("12345".to_string()),
-                                )
-                                .map(|_| format!("✨ Location added to both graph and list"))
-                                .map_err(|e| format!("Location added to graph but failed to add to list: {}", e))
-                            },
-                            |result| match result {
-                                Ok(msg) => Message::UpdateStatus(msg),
-                                Err(e) => Message::ShowError(e),
-                            }
-                        );
+                        self.status_message = format!("Edge type changed to {:?}", new_type);
                     } else {
-                        self.status_message = "✨ Created new location (SPACE) - create organization to persist".to_string();
+                        self.status_message = "No edge selected to cycle type".to_string();
                     }
+                } else {
+                    self.status_message = "Select an edge first (click on edge), then press Tab to cycle type".to_string();
                 }
 
                 Task::none()
             }
+
+            Message::SelectNodeType(node_type) => {
+                self.show_node_type_selector = false;
+
+                use crate::gui::graph::NodeType;
+                use crate::gui::graph_events::GraphEvent;
+                use crate::domain::{Organization, OrganizationUnit, OrganizationUnitType, Person, Location, LocationMarker, Address, Role, Policy};
+                use cim_domain::EntityId;
+                use chrono::Utc;
+
+                // FRP Event-Driven Pattern: Create immutable GraphEvent
+                let event = match node_type {
+                    OrganizationalNodeType::Organization => {
+                        let org = Organization {
+                            id: Uuid::now_v7(),
+                            name: "New Organization".to_string(),
+                            display_name: "New Organization".to_string(),
+                            description: Some("Edit name by clicking node".to_string()),
+                            parent_id: None,
+                            units: Vec::new(),
+                            created_at: Utc::now(),
+                            metadata: std::collections::HashMap::new(),
+                        };
+
+                        let node_id = org.id;
+                        let label = org.name.clone();
+                        let position = self.node_selector_position;
+                        let color = Color::from_rgb(0.2, 0.3, 0.6); // Dark blue
+
+                        self.status_message = "✨ Created Organization - click to edit name".to_string();
+
+                        GraphEvent::NodeCreated {
+                            node_id,
+                            node_type: NodeType::Organization(org),
+                            position,
+                            color,
+                            label,
+                            timestamp: Utc::now(),
+                        }
+                    }
+                    OrganizationalNodeType::OrganizationalUnit => {
+                        let unit = OrganizationUnit {
+                            id: Uuid::now_v7(),
+                            name: "New Unit".to_string(),
+                            unit_type: OrganizationUnitType::Department,
+                            parent_unit_id: None,
+                            nats_account_name: None,
+                            responsible_person_id: None,
+                        };
+
+                        let node_id = unit.id;
+                        let label = unit.name.clone();
+                        let position = self.node_selector_position;
+                        let color = Color::from_rgb(0.4, 0.5, 0.8); // Light blue
+
+                        self.status_message = "✨ Created Organizational Unit - click to edit name".to_string();
+
+                        GraphEvent::NodeCreated {
+                            node_id,
+                            node_type: NodeType::OrganizationalUnit(unit),
+                            position,
+                            color,
+                            label,
+                            timestamp: Utc::now(),
+                        }
+                    }
+                    OrganizationalNodeType::Person => {
+                        let org_id = self.org_graph.nodes.values()
+                            .find_map(|n| if let NodeType::Organization(org) = &n.node_type { Some(org.id) } else { None })
+                            .unwrap_or_else(Uuid::now_v7);
+
+                        let person = Person {
+                            id: Uuid::now_v7(),
+                            name: "New Person".to_string(),
+                            email: "person@example.com".to_string(),
+                            roles: Vec::new(),
+                            organization_id: org_id,
+                            unit_ids: Vec::new(),
+                            created_at: Utc::now(),
+                            nats_permissions: None,
+                            active: true,
+                        };
+
+                        let node_id = person.id;
+                        let label = person.name.clone();
+                        let position = self.node_selector_position;
+                        let role = KeyOwnerRole::Developer;
+                        let color = Color::from_rgb(0.2, 0.8, 0.3); // Green
+
+                        self.status_message = "✨ Created Person - click to edit details".to_string();
+
+                        GraphEvent::NodeCreated {
+                            node_id,
+                            node_type: NodeType::Person { person, role },
+                            position,
+                            color,
+                            label,
+                            timestamp: Utc::now(),
+                        }
+                    }
+                    OrganizationalNodeType::Location => {
+                        let node_id = Uuid::now_v7();
+                        let address = Address::new(
+                            "123 Main St".to_string(),
+                            "City".to_string(),
+                            "State".to_string(),
+                            "Country".to_string(),
+                            "12345".to_string(),
+                        );
+
+                        let location = Location::new_physical(
+                            EntityId::<LocationMarker>::from_uuid(node_id),
+                            "New Location".to_string(),
+                            address,
+                        ).expect("Failed to create location");
+
+                        let label = location.name.clone();
+                        let position = self.node_selector_position;
+                        let color = Color::from_rgb(0.6, 0.5, 0.4); // Brown/gray
+
+                        self.status_message = "✨ Created Location - click to edit address".to_string();
+
+                        GraphEvent::NodeCreated {
+                            node_id,
+                            node_type: NodeType::Location(location),
+                            position,
+                            color,
+                            label,
+                            timestamp: Utc::now(),
+                        }
+                    }
+                    OrganizationalNodeType::Role => {
+                        let org_id = self.org_graph.nodes.values()
+                            .find_map(|n| if let NodeType::Organization(org) = &n.node_type { Some(org.id) } else { None })
+                            .unwrap_or_else(Uuid::now_v7);
+
+                        let creator_id = Uuid::now_v7(); // TODO: Get actual user ID
+
+                        let role = Role {
+                            id: Uuid::now_v7(),
+                            name: "New Role".to_string(),
+                            description: "Define role responsibilities".to_string(),
+                            organization_id: org_id,
+                            unit_id: None,
+                            required_policies: Vec::new(),
+                            responsibilities: Vec::new(),
+                            created_at: Utc::now(),
+                            created_by: creator_id,
+                            active: true,
+                        };
+
+                        let node_id = role.id;
+                        let label = role.name.clone();
+                        let position = self.node_selector_position;
+                        let color = Color::from_rgb(0.6, 0.3, 0.8); // Purple
+
+                        self.status_message = "✨ Created Role - define responsibilities".to_string();
+
+                        GraphEvent::NodeCreated {
+                            node_id,
+                            node_type: NodeType::Role(role),
+                            position,
+                            color,
+                            label,
+                            timestamp: Utc::now(),
+                        }
+                    }
+                    OrganizationalNodeType::Policy => {
+                        let creator_id = Uuid::now_v7(); // TODO: Get actual user ID
+
+                        let policy = Policy {
+                            id: Uuid::now_v7(),
+                            name: "New Policy".to_string(),
+                            description: "Define policy claims and conditions".to_string(),
+                            claims: Vec::new(),
+                            conditions: Vec::new(),
+                            priority: 0,
+                            enabled: true,
+                            created_at: Utc::now(),
+                            created_by: creator_id,
+                            metadata: std::collections::HashMap::new(),
+                        };
+
+                        let node_id = policy.id;
+                        let label = policy.name.clone();
+                        let position = self.node_selector_position;
+                        let color = Color::from_rgb(0.9, 0.7, 0.2); // Gold/yellow
+
+                        self.status_message = "✨ Created Policy - define claims and conditions".to_string();
+
+                        GraphEvent::NodeCreated {
+                            node_id,
+                            node_type: NodeType::Policy(policy),
+                            position,
+                            color,
+                            label,
+                            timestamp: Utc::now(),
+                        }
+                    }
+                };
+
+                // Pure FRP: Push immutable event to stack and apply transformation
+                self.org_graph.event_stack.push(event.clone());
+                self.org_graph.apply_event(&event);
+
+                Task::none()
+            }
+
+            // OLD CODE REMOVED: Context-aware hierarchy creation
+            // Now using flexible node type selector menu
 
             // Graph interactions
             Message::GraphMessage(graph_msg) => {
@@ -2539,69 +2868,17 @@ impl CimKeysApp {
                         // Handled in graph.handle_message (starts edge indicator)
                         self.status_message = String::from("Drag to target node to create edge");
                     }
-                    // Phase 4: Right-click shows context menu
-                    GraphMessage::RightClick(position) => {
-                        // Position is now canvas-relative, transform to graph coordinates for hit detection
-                        let graph_x = (position.x - self.org_graph.pan_offset.x) / self.org_graph.zoom;
-                        let graph_y = (position.y - self.org_graph.pan_offset.y) / self.org_graph.zoom;
-
-                        // Check if we right-clicked on a node (using graph coords)
-                        self.context_menu_node = None;
-                        for (node_id, node) in &self.org_graph.nodes {
-                            let dx = graph_x - node.position.x;
-                            let dy = graph_y - node.position.y;
-                            let distance = (dx * dx + dy * dy).sqrt();
-                            if distance <= 25.0 {  // Within node radius
-                                self.context_menu_node = Some(*node_id);
-                                break;
-                            }
+                    // Phase 4: Right-click shows node selector menu (same as SPACE key)
+                    GraphMessage::RightClick(_position) => {
+                        // Close property card if it's showing (don't stack menu on top of it)
+                        if self.property_card.is_editing() {
+                            self.property_card.clear();
                         }
 
-                        // Adjust menu position to keep it on screen
-                        // Menu dimensions scaled by ui_scale
-                        let menu_width = 180.0 * self.view_model.scale;
-                        let menu_height = 300.0 * self.view_model.scale;
-                        const MIN_MARGIN: f32 = 10.0;
-
-                        // Use typical window dimensions for bounds checking
-                        // TODO: Track actual window size for precise bounds checking
-                        const TYPICAL_WIDTH: f32 = 1920.0;
-                        const TYPICAL_HEIGHT: f32 = 1080.0;
-
-                        let mut menu_x = position.x;
-                        let mut menu_y = position.y;
-
-                        // Adjust horizontally if menu would go off right edge
-                        if menu_x + menu_width + MIN_MARGIN > TYPICAL_WIDTH {
-                            menu_x = TYPICAL_WIDTH - menu_width - MIN_MARGIN;
-                        }
-                        // Ensure not off left edge
-                        if menu_x < MIN_MARGIN {
-                            menu_x = MIN_MARGIN;
-                        }
-
-                        // Adjust vertically if menu would go off bottom edge
-                        if menu_y + menu_height + MIN_MARGIN > TYPICAL_HEIGHT {
-                            menu_y = TYPICAL_HEIGHT - menu_height - MIN_MARGIN;
-                        }
-                        // Ensure not off top edge
-                        if menu_y < MIN_MARGIN {
-                            menu_y = MIN_MARGIN;
-                        }
-
-                        // Use adjusted screen coordinates for menu positioning
-                        self.context_menu.show(Point::new(menu_x, menu_y), self.view_model.scale);
-                        if self.context_menu_node.is_some() {
-                            self.status_message = format!(
-                                "Node menu: click({:.0},{:.0}) → canvas({:.0},{:.0}) → menu({:.0},{:.0})",
-                                position.x, position.y, graph_x, graph_y, menu_x, menu_y
-                            );
-                        } else {
-                            self.status_message = format!(
-                                "Canvas menu: click({:.0},{:.0}) → menu({:.0},{:.0})",
-                                position.x, position.y, menu_x, menu_y
-                            );
-                        }
+                        // ALWAYS position menu at property card location (consistent, predictable)
+                        self.node_selector_position = Point::new(800.0, 400.0);
+                        self.show_node_type_selector = true;
+                        self.status_message = "Select node type to create (Esc to cancel)".to_string();
                     }
                     // Phase 4: Update edge indicator position during edge creation
                     GraphMessage::CursorMoved(position) => {
@@ -2687,6 +2964,7 @@ impl CimKeysApp {
                                         organization_id: dummy_org_id,
                                         unit_ids: vec![],
                                         created_at: Utc::now(),
+                                        nats_permissions: None,
                                         active: true,
                                     };
                                     use crate::domain::KeyOwnerRole;
@@ -2698,6 +2976,7 @@ impl CimKeysApp {
                                         name: "New Unit".to_string(),
                                         unit_type: OrganizationUnitType::Department,
                                         parent_unit_id: None,
+                                        nats_account_name: None,
                                         responsible_person_id: None,
                                     };
                                     (NodeType::OrganizationalUnit(unit), "New Unit".to_string(), self.view_model.colors.node_unit)
@@ -2833,6 +3112,7 @@ impl CimKeysApp {
                                     name: "New Unit".to_string(),
                                     unit_type: OrganizationUnitType::Department,
                                     parent_unit_id: None,
+                                    nats_account_name: None,
                                     responsible_person_id: None,
                                 };
                                 let label = unit.name.clone();
@@ -2847,6 +3127,7 @@ impl CimKeysApp {
                                     organization_id: dummy_org_id,
                                     unit_ids: vec![],
                                     created_at: Utc::now(),
+                                    nats_permissions: None,
                                     active: true,
                                 };
                                 let label = person.name.clone();
@@ -2921,6 +3202,18 @@ impl CimKeysApp {
 
                         self.org_graph.event_stack.push(event.clone());
                         self.org_graph.apply_event(&event);
+
+                        // Mark domain as loaded when first organization is created
+                        if let GraphEvent::NodeCreated { node_type, .. } = &event {
+                            if let NodeType::Organization(org) = node_type {
+                                if !self.domain_loaded {
+                                    self.domain_loaded = true;
+                                    self.organization_name = org.display_name.clone();
+                                    self.organization_id = Some(org.id);
+                                    self.status_message = format!("Created organization: {}", org.display_name);
+                                }
+                            }
+                        }
 
                         // Emit domain event and project to cim-graph (demonstration)
                         #[cfg(feature = "policy")]
@@ -3255,10 +3548,20 @@ impl CimKeysApp {
                     PropertyCardMessage::GenerateRootCA => {
                         if let Some(node_id) = self.property_card.node_id() {
                             if let Some(node) = self.org_graph.nodes.get(&node_id) {
-                                if let graph::NodeType::Person { person, .. } = &node.node_type {
-                                    // Show passphrase dialog for Root CA generation
-                                    self.passphrase_dialog.show(passphrase_dialog::PassphrasePurpose::RootCA);
-                                    self.status_message = format!("Enter passphrase to generate Root CA for {}", person.name);
+                                match &node.node_type {
+                                    graph::NodeType::Person { person, .. } => {
+                                        // Show passphrase dialog for Root CA generation
+                                        self.passphrase_dialog.show(passphrase_dialog::PassphrasePurpose::RootCA);
+                                        self.status_message = format!("Enter passphrase to generate Root CA for {}", person.name);
+                                    }
+                                    graph::NodeType::Organization(org) => {
+                                        // Organization generates root CA (top-level authority)
+                                        self.passphrase_dialog.show(passphrase_dialog::PassphrasePurpose::RootCA);
+                                        self.status_message = format!("Enter passphrase to generate Root CA for organization '{}'", org.display_name);
+                                    }
+                                    _ => {
+                                        self.status_message = "Root CA can only be generated for Organizations or Persons".to_string();
+                                    }
                                 }
                             }
                         }
@@ -3294,6 +3597,27 @@ impl CimKeysApp {
                                     // - Generate keys in PIV slots (9A, 9C, 9D, 9E)
                                     // - Import certificates to slots
                                     // - Create YubiKey node and edge in graph
+                                }
+                            }
+                        }
+                    }
+                    PropertyCardMessage::GenerateIntermediateCA => {
+                        if let Some(node_id) = self.property_card.node_id() {
+                            if let Some(node) = self.org_graph.nodes.get(&node_id) {
+                                match &node.node_type {
+                                    graph::NodeType::Organization(org) => {
+                                        // Organization can also generate intermediate CAs (not just root)
+                                        self.passphrase_dialog.show(passphrase_dialog::PassphrasePurpose::IntermediateCA);
+                                        self.status_message = format!("Enter passphrase to generate Intermediate CA for organization '{}'", org.display_name);
+                                    }
+                                    graph::NodeType::OrganizationalUnit(unit) => {
+                                        // OrganizationalUnit generates intermediate CAs
+                                        self.passphrase_dialog.show(passphrase_dialog::PassphrasePurpose::IntermediateCA);
+                                        self.status_message = format!("Enter passphrase to generate Intermediate CA for unit '{}'", unit.name);
+                                    }
+                                    _ => {
+                                        self.status_message = "Intermediate CA can only be generated for Organizations or Units".to_string();
+                                    }
                                 }
                             }
                         }
@@ -4018,7 +4342,7 @@ impl CimKeysApp {
         .width(Length::Fill)
         .height(Length::Fill);
 
-        // Add passphrase dialog overlay if visible
+        // Add passphrase dialog overlay if visible (node selector is now in graph canvas)
         if self.passphrase_dialog.is_visible() {
             stack![
                 base_view,
@@ -4030,6 +4354,67 @@ impl CimKeysApp {
         } else {
             base_view.into()
         }
+    }
+
+    /// Render the node type selector menu (FRP event-driven UI)
+    fn view_node_selector_menu(&self) -> Element<'_, Message> {
+        use iced::widget::{button, column, container, text};
+        use iced::Length;
+
+        // Create menu with all node types
+        let mut menu_column = column![]
+            .spacing(self.view_model.spacing_xs);
+
+        // Title
+        menu_column = menu_column.push(
+            text("Select Node Type")
+                .size(self.view_model.text_normal)
+                .color(CowboyTheme::text_primary())
+        );
+
+        // Add button for each node type with selection highlighting
+        for (index, node_type) in OrganizationalNodeType::all().iter().enumerate() {
+            let is_selected = index == self.selected_menu_index;
+
+            let button_text = if is_selected {
+                text(format!("▶ {}", node_type.display_name()))
+                    .size(self.view_model.text_normal)
+            } else {
+                text(format!("  {}", node_type.display_name()))
+                    .size(self.view_model.text_normal)
+            };
+
+            menu_column = menu_column.push(
+                button(button_text)
+                .on_press(Message::SelectNodeType(*node_type))
+                .style(CowboyCustomTheme::glass_menu_button(is_selected))
+                .width(Length::Fill)
+                .padding(self.view_model.padding_md)
+            );
+        }
+
+        // Instructions
+        menu_column = menu_column.push(
+            text("↑↓: Navigate • Space/Enter: Select • Esc: Cancel")
+                .size(self.view_model.text_small)
+                .color(self.view_model.colors.text_light)
+        );
+
+        // Return styled menu container (positioning handled by caller)
+        container(menu_column)
+            .padding(self.view_model.padding_lg)
+            .width(Length::Fixed(320.0 * self.view_model.scale))
+            .style(|_theme: &Theme| container::Style {
+                background: Some(CowboyTheme::glass_background()),
+                text_color: Some(CowboyTheme::text_primary()),
+                border: Border {
+                    color: self.view_model.colors.with_alpha(self.view_model.colors.info, 0.8),
+                    width: 2.0,
+                    radius: 12.0.into(),
+                },
+                shadow: CowboyTheme::glow_shadow(),
+            })
+            .into()
     }
 
     fn subscription(&self) -> Subscription<Message> {
@@ -4102,7 +4487,7 @@ impl CimKeysApp {
                                     Some(Message::ToggleHelp)
                                 }
                                 Key::Named(keyboard::key::Named::Escape) => {
-                                    // Send InlineEditCancel - it will handle both cases
+                                    // Send InlineEditCancel - it will handle both node selector and inline edit
                                     Some(Message::InlineEditCancel)
                                 }
                                 Key::Named(keyboard::key::Named::Delete) => {
@@ -4110,9 +4495,25 @@ impl CimKeysApp {
                                         crate::gui::graph::GraphMessage::DeleteSelected
                                     ))
                                 }
+                                Key::Named(keyboard::key::Named::ArrowUp) => {
+                                    // Arrow up: navigate menu selection up
+                                    Some(Message::MenuNavigateUp)
+                                }
+                                Key::Named(keyboard::key::Named::ArrowDown) => {
+                                    // Arrow down: navigate menu selection down
+                                    Some(Message::MenuNavigateDown)
+                                }
                                 Key::Named(keyboard::key::Named::Space) => {
-                                    // SPACE: Create context-aware node
-                                    Some(Message::CreateContextAwareNode)
+                                    // SPACE: Accept menu selection if menu is open, otherwise create node
+                                    Some(Message::MenuAcceptSelection)
+                                }
+                                Key::Named(keyboard::key::Named::Enter) => {
+                                    // Enter: Accept menu selection if menu is open
+                                    Some(Message::MenuAcceptSelection)
+                                }
+                                Key::Named(keyboard::key::Named::Tab) => {
+                                    // TAB: Cycle selected edge type
+                                    Some(Message::CycleEdgeType)
                                 }
                                 _ => None,
                             }
@@ -4230,88 +4631,55 @@ impl CimKeysApp {
                         self.organization_name,
                         self.org_graph.nodes.len(),
                         self.org_graph.edges.len()))
-                        .font(EMOJI_FONT)
+                        .font(FONT_BODY)
                         .size(14)
+                        .color(Color::WHITE)
                 } else {
-                    text("⚠️  No domain - Right-click canvas to create")
-                        .font(EMOJI_FONT)
+                    text("⚠️  No domain loaded - Right-click canvas to create")
+                        .font(FONT_BODY)
                         .size(14)
-                        .color(self.view_model.colors.warning)
+                        .color(Color::from_rgb(1.0, 0.8, 0.2))  // Bright yellow/orange for visibility
                 },
+                // Graph context switcher - simple icon buttons centered in toolbar
                 horizontal_space(),
-                // View mode switcher buttons
-                if self.graph_view == GraphView::Organization {
-                    button(text("📊").font(EMOJI_FONT).size(14))
+                row![
+                    // Organization context - org structure
+                    button(text("🏢").font(EMOJI_FONT).size(16))
                         .on_press(Message::GraphViewSelected(GraphView::Organization))
-                        .style(CowboyCustomTheme::primary_button())
-                } else {
-                    button(text("📊").font(EMOJI_FONT).size(14))
-                        .on_press(Message::GraphViewSelected(GraphView::Organization))
-                        .style(CowboyCustomTheme::glass_button())
-                },
-                if self.graph_view == GraphView::NatsInfrastructure {
-                    button(text("🌐").font(EMOJI_FONT).size(14))
+                        .padding(8)
+                        .style(CowboyCustomTheme::glass_menu_button(self.graph_view == GraphView::Organization)),
+
+                    // Identity context - composing identities, matching people to roles and policies
+                    button(text("🆔").font(EMOJI_FONT).size(16))
                         .on_press(Message::GraphViewSelected(GraphView::NatsInfrastructure))
-                        .style(CowboyCustomTheme::primary_button())
-                } else {
-                    button(text("🌐").font(EMOJI_FONT).size(14))
-                        .on_press(Message::GraphViewSelected(GraphView::NatsInfrastructure))
-                        .style(CowboyCustomTheme::glass_button())
-                },
-                if self.graph_view == GraphView::PkiTrustChain {
-                    button(text("🔐").font(EMOJI_FONT).size(14))
-                        .on_press(Message::GraphViewSelected(GraphView::PkiTrustChain))
-                        .style(CowboyCustomTheme::primary_button())
-                } else {
-                    button(text("🔐").font(EMOJI_FONT).size(14))
-                        .on_press(Message::GraphViewSelected(GraphView::PkiTrustChain))
-                        .style(CowboyCustomTheme::glass_button())
-                },
-                if self.graph_view == GraphView::YubiKeyDetails {
-                    button(text("🔑").font(EMOJI_FONT).size(14))
-                        .on_press(Message::GraphViewSelected(GraphView::YubiKeyDetails))
-                        .style(CowboyCustomTheme::primary_button())
-                } else {
-                    button(text("🔑").font(EMOJI_FONT).size(14))
-                        .on_press(Message::GraphViewSelected(GraphView::YubiKeyDetails))
-                        .style(CowboyCustomTheme::glass_button())
-                },
-                if self.graph_view == GraphView::Timeline {
-                    button(text("⏱️").size(14))
+                        .padding(8)
+                        .style(CowboyCustomTheme::glass_menu_button(self.graph_view == GraphView::NatsInfrastructure)),
+
+                    // Location context - mapping locations to organizations and people
+                    button(text("📍").font(EMOJI_FONT).size(16))
                         .on_press(Message::GraphViewSelected(GraphView::Timeline))
-                        .style(CowboyCustomTheme::primary_button())
-                } else {
-                    button(text("⏱️").size(14))
-                        .on_press(Message::GraphViewSelected(GraphView::Timeline))
-                        .style(CowboyCustomTheme::glass_button())
-                },
-                if self.graph_view == GraphView::Aggregates {
-                    button(text("🔄").font(EMOJI_FONT).size(14))
+                        .padding(8)
+                        .style(CowboyCustomTheme::glass_menu_button(self.graph_view == GraphView::Timeline)),
+
+                    // Organization Policies context - composing policy use within organization
+                    button(text("📜").font(EMOJI_FONT).size(16))
                         .on_press(Message::GraphViewSelected(GraphView::Aggregates))
-                        .style(CowboyCustomTheme::primary_button())
-                } else {
-                    button(text("🔄").font(EMOJI_FONT).size(14))
-                        .on_press(Message::GraphViewSelected(GraphView::Aggregates))
-                        .style(CowboyCustomTheme::glass_button())
-                },
-                if self.graph_view == GraphView::CommandHistory {
-                    button(text("📋").font(EMOJI_FONT).size(14))
-                        .on_press(Message::GraphViewSelected(GraphView::CommandHistory))
-                        .style(CowboyCustomTheme::primary_button())
-                } else {
-                    button(text("📋").font(EMOJI_FONT).size(14))
-                        .on_press(Message::GraphViewSelected(GraphView::CommandHistory))
-                        .style(CowboyCustomTheme::glass_button())
-                },
-                if self.graph_view == GraphView::CausalityChains {
-                    button(text("🔗").font(EMOJI_FONT).size(14))
-                        .on_press(Message::GraphViewSelected(GraphView::CausalityChains))
-                        .style(CowboyCustomTheme::primary_button())
-                } else {
-                    button(text("🔗").font(EMOJI_FONT).size(14))
-                        .on_press(Message::GraphViewSelected(GraphView::CausalityChains))
-                        .style(CowboyCustomTheme::glass_button())
-                },
+                        .padding(8)
+                        .style(CowboyCustomTheme::glass_menu_button(self.graph_view == GraphView::Aggregates)),
+
+                    // PKI context - all cryptographic keys
+                    button(text("🔐").font(EMOJI_FONT).size(16))
+                        .on_press(Message::GraphViewSelected(GraphView::PkiTrustChain))
+                        .padding(8)
+                        .style(CowboyCustomTheme::glass_menu_button(self.graph_view == GraphView::PkiTrustChain)),
+
+                    // YubiKey context - hardware security keys
+                    button(text("🔑").font(EMOJI_FONT).size(16))
+                        .on_press(Message::GraphViewSelected(GraphView::YubiKeyDetails))
+                        .padding(8)
+                        .style(CowboyCustomTheme::glass_menu_button(self.graph_view == GraphView::YubiKeyDetails)),
+                ]
+                .spacing(6),
                 horizontal_space(),
                 // Context-aware "Add Node" dropdown - shows only valid nodes for current view
                 {
@@ -4357,9 +4725,40 @@ impl CimKeysApp {
 
         // THE GRAPH - this is the primary interface!
         let graph_canvas = {
+            // Show appropriate graph based on current context (using cached filtered graphs)
+            let graph_content: Element<'_, graph::GraphMessage> = match self.graph_view {
+                GraphView::Organization => {
+                    // Show full organization graph (all nodes)
+                    view_graph(&self.org_graph)
+                }
+                GraphView::PkiTrustChain => {
+                    // Show only PKI-related nodes
+                    view_graph(&self.pki_graph)
+                }
+                GraphView::NatsInfrastructure => {
+                    // Show only NATS identity nodes
+                    view_graph(&self.nats_graph)
+                }
+                GraphView::YubiKeyDetails => {
+                    // Show only YubiKey hardware and keys
+                    view_graph(&self.yubikey_graph)
+                }
+                GraphView::Timeline => {
+                    // Show only locations (temporal/spatial context)
+                    view_graph(&self.location_graph)
+                }
+                GraphView::Aggregates => {
+                    // Show only policies
+                    view_graph(&self.policy_graph)
+                }
+                GraphView::CommandHistory | GraphView::CausalityChains => {
+                    // Empty graph for read-only derived views
+                    view_graph(&self.empty_graph)
+                }
+            };
+
             let graph_base = Container::new(
-                view_graph(&self.org_graph)
-                    .map(Message::GraphMessage)
+                graph_content.map(Message::GraphMessage)
             )
             .width(Length::Fill)
             .height(Length::Fill)  // FILL ALL SPACE!
@@ -4369,7 +4768,7 @@ impl CimKeysApp {
                     border: Border {
                         color: self.view_model.colors.blue_bright,
                         width: 1.0,
-                        radius: 0.0.into(),
+                        radius: 12.0.into(),  // Rounded corners for canvas
                     },
                     ..Default::default()
                 }
@@ -4449,6 +4848,19 @@ impl CimKeysApp {
                 .padding(20);
 
                 stack_layers.push(card_overlay.into());
+            }
+
+            // Add node selector menu overlay if visible
+            if self.show_node_type_selector {
+                let menu_overlay = container(
+                    row![
+                        horizontal_space(),
+                        self.view_node_selector_menu()
+                    ]
+                )
+                .padding(20);
+
+                stack_layers.push(menu_overlay.into());
             }
 
             stack(stack_layers)
@@ -5951,9 +6363,17 @@ async fn export_domain(
 
 /// Run the GUI application
 pub async fn run(output_dir: String, config: Option<crate::config::Config>) -> iced::Result {
+    // Load all 4 custom fonts:
+    // 1. Rec Mono Linear - body text (monospace)
+    // 2. Poller One - headings (display)
+    // 3. Material Icons - UI icons
+    // 4. Noto Color Emoji - emoji rendering
     application("CIM Keys", CimKeysApp::update, CimKeysApp::view)
         .subscription(|app| app.subscription())
         .theme(|app| app.theme())
+        .font(include_bytes!("../assets/fonts/RecMonoLinear-Regular.ttf"))
+        .font(include_bytes!("../assets/fonts/PollerOne-Regular.ttf"))
         .font(include_bytes!("../assets/fonts/MaterialIcons-Regular.ttf"))
+        .font(include_bytes!("../assets/fonts/NotoColorEmoji.ttf"))
         .run_with(|| CimKeysApp::new(output_dir, config))
 }
