@@ -4,3 +4,16 @@ target/
 *.swo
 *~
 .DS_Store
+
+# Sensitive credentials and certificates (generated, not tracked)
+ca/
+cluster-certs/
+nats-credentials/
+remote-leaves/
+*.backup
+
+# Local configuration
+.mcp.json
+
+# Progress tracking (local state)
+progress.json
