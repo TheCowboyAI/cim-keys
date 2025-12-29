@@ -285,9 +285,9 @@ mod tests {
             roles: vec![],
             organization_id: Uuid::now_v7(),
             unit_ids: vec![],
-            created_at: Utc::now(),
             active: true,
             nats_permissions: None,
+            owner_id: None,
         };
 
         let event = GraphEvent::NodeCreated {
@@ -316,9 +316,9 @@ mod tests {
             roles: vec![],
             organization_id: Uuid::now_v7(),
             unit_ids: vec![],
-            created_at: Utc::now(),
             active: true,
             nats_permissions: None,
+            owner_id: None,
         };
 
         let created = GraphEvent::NodeCreated {
@@ -347,9 +347,9 @@ mod tests {
             roles: vec![],
             organization_id: Uuid::now_v7(),
             unit_ids: vec![],
-            created_at: Utc::now(),
             active: true,
             nats_permissions: None,
+            owner_id: None,
         };
 
         let event = GraphEvent::NodeCreated {
@@ -388,9 +388,9 @@ mod tests {
             roles: vec![],
             organization_id: Uuid::now_v7(),
             unit_ids: vec![],
-            created_at: Utc::now(),
             active: true,
             nats_permissions: None,
+            owner_id: None,
         };
 
         for i in 0..5 {

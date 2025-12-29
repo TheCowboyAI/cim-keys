@@ -29,7 +29,6 @@ fn sample_manifest_created() -> ManifestCreatedEvent {
         keys_count: 5,
         certificates_count: 3,
         nats_configs_count: 2,
-        created_at: Utc::now(),
         created_by: "admin".to_string(),
         correlation_id: Uuid::now_v7(),
         causation_id: None,

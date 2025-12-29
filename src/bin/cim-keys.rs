@@ -10,7 +10,33 @@ use cim_keys::{
 };
 use std::fs;
 use std::path::PathBuf;
+use serde::{Deserialize, Serialize};
 use serde_json;
+
+/// Domain bootstrap configuration wrapper
+/// Supports both the nested format (from domain-bootstrap.json) and flat Organization
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+enum DomainConfig {
+    /// Nested format: { "organization": {...}, "people": [...], ... }
+    Nested(NestedDomainConfig),
+    /// Flat format: just the Organization struct
+    Flat(Organization),
+}
+
+/// Nested domain configuration structure matching domain-bootstrap.json
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct NestedDomainConfig {
+    organization: Organization,
+    #[serde(default)]
+    people: Vec<Person>,
+    #[serde(default)]
+    locations: Vec<serde_json::Value>,
+    #[serde(default)]
+    yubikey_assignments: Vec<serde_json::Value>,
+    #[serde(default)]
+    nats_hierarchy: Option<serde_json::Value>,
+}
 
 #[derive(Parser)]
 #[command(name = "cim-keys")]
@@ -159,21 +185,34 @@ async fn bootstrap_command(
     println!("📖 Loading domain configuration from: {}", domain_path.display());
     let domain_json = fs::read_to_string(&domain_path)?;
 
-    // Parse the domain configuration
-    // For now, expect a simple Organization JSON structure
-    let organization: Organization = serde_json::from_str(&domain_json)
-        .map_err(|e| format!("Failed to parse organization: {}. \n\nThe domain file should contain an Organization JSON object.", e))?;
+    // Parse the domain configuration - supports both nested and flat formats
+    let config: DomainConfig = serde_json::from_str(&domain_json)
+        .map_err(|e| format!("Failed to parse domain configuration: {}. \n\nThe domain file should contain either a nested format with 'organization' key or a flat Organization JSON object.", e))?;
+
+    // Extract organization and embedded people based on format
+    let (organization, embedded_people) = match config {
+        DomainConfig::Nested(nested) => {
+            println!("   Format: Nested (domain-bootstrap.json style)");
+            (nested.organization, nested.people)
+        }
+        DomainConfig::Flat(org) => {
+            println!("   Format: Flat (Organization only)");
+            (org, vec![])
+        }
+    };
 
     println!("   Organization: {}", organization.name);
     println!("   Units: {}", organization.units.len());
 
-    // Load people (from separate file or embedded in domain config)
+    // Load people (from separate file, embedded in domain config, or empty)
     let people: Vec<Person> = if let Some(people_path) = people_path {
         println!("📖 Loading people from: {}", people_path.display());
         let people_json = fs::read_to_string(&people_path)?;
         serde_json::from_str(&people_json)?
+    } else if !embedded_people.is_empty() {
+        println!("   Using {} embedded people from domain config", embedded_people.len());
+        embedded_people
     } else {
-        // Try to extract from metadata or use empty list
         println!("   No people file specified - using empty list");
         vec![]
     };
@@ -266,7 +305,12 @@ async fn list_command(domain_path: PathBuf) -> Result<(), Box<dyn std::error::Er
     println!();
 
     let domain_json = fs::read_to_string(&domain_path)?;
-    let organization: Organization = serde_json::from_str(&domain_json)?;
+    let config: DomainConfig = serde_json::from_str(&domain_json)?;
+
+    let (organization, people) = match config {
+        DomainConfig::Nested(nested) => (nested.organization, nested.people),
+        DomainConfig::Flat(org) => (org, vec![]),
+    };
 
     println!("Organization: {}", organization.name);
     println!("  ID: {}", organization.id);
@@ -283,6 +327,14 @@ async fn list_command(domain_path: PathBuf) -> Result<(), Box<dyn std::error::Er
         println!("    Type: {:?}", unit.unit_type);
     }
 
+    if !people.is_empty() {
+        println!();
+        println!("People ({}):", people.len());
+        for person in &people {
+            println!("  • {} <{}>", person.name, person.email);
+        }
+    }
+
     Ok(())
 }
 
@@ -294,32 +346,68 @@ async fn validate_command(
     println!("✓ Validating domain configuration...");
     println!();
 
-    // Load and parse organization
+    // Load and parse domain configuration (supports both formats)
     let domain_json = fs::read_to_string(&domain_path)?;
-    let organization: Organization = serde_json::from_str(&domain_json)
-        .map_err(|e| format!("Invalid organization JSON: {}", e))?;
+    let config: DomainConfig = serde_json::from_str(&domain_json)
+        .map_err(|e| format!("Invalid domain configuration JSON: {}", e))?;
+
+    let (organization, embedded_people) = match config {
+        DomainConfig::Nested(nested) => {
+            println!("✓ Format: Nested (domain-bootstrap.json style)");
+            (nested.organization, nested.people)
+        }
+        DomainConfig::Flat(org) => {
+            println!("✓ Format: Flat (Organization only)");
+            (org, vec![])
+        }
+    };
 
     println!("✓ Organization valid: {}", organization.name);
     println!("  • {} units", organization.units.len());
 
-    // Load and validate people if provided
-    if let Some(people_path) = people_path {
-        let people_json = fs::read_to_string(&people_path)?;
-        let people: Vec<Person> = serde_json::from_str(&people_json)
-            .map_err(|e| format!("Invalid people JSON: {}", e))?;
+    // Validate unit references
+    for unit in &organization.units {
+        if let Some(parent_id) = unit.parent_unit_id {
+            let parent_exists = organization.units.iter().any(|u| u.id == parent_id);
+            if !parent_exists {
+                println!("⚠  Warning: Unit '{}' references non-existent parent unit {}", unit.name, parent_id);
+            }
+        }
+    }
 
+    // Load and validate people (from file or embedded)
+    let people: Vec<Person> = if let Some(people_path) = people_path {
+        let people_json = fs::read_to_string(&people_path)?;
+        serde_json::from_str(&people_json)
+            .map_err(|e| format!("Invalid people JSON: {}", e))?
+    } else {
+        embedded_people
+    };
+
+    if !people.is_empty() {
         println!("✓ People valid: {} persons", people.len());
 
         // Check that people reference valid organization
         let mut org_mismatches = 0;
+        let mut unit_mismatches = 0;
         for person in &people {
             if person.organization_id != organization.id {
                 org_mismatches += 1;
+            }
+            // Check that unit_ids reference valid units
+            for unit_id in &person.unit_ids {
+                let unit_exists = organization.units.iter().any(|u| u.id == *unit_id);
+                if !unit_exists {
+                    unit_mismatches += 1;
+                }
             }
         }
 
         if org_mismatches > 0 {
             println!("⚠  Warning: {} people reference different organization IDs", org_mismatches);
+        }
+        if unit_mismatches > 0 {
+            println!("⚠  Warning: {} unit references in people are invalid", unit_mismatches);
         }
     }
 

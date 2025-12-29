@@ -21,7 +21,6 @@ fn test_permissions() -> NatsUserPermissions {
 
 fn created_state() -> NatsUserState {
     NatsUserState::Created {
-        created_at: Utc::now(),
         created_by: test_person_id(),
         account_id: test_account_id(),
         person_id: test_person_id(),

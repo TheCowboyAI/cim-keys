@@ -45,7 +45,6 @@ pub struct NatsAccountCreatedEvent {
     pub name: String,
     pub public_key: String,
     pub is_system: bool,
-    pub created_at: DateTime<Utc>,
     pub created_by: String,
     pub organization_unit_id: Option<Uuid>,
     pub correlation_id: Uuid,

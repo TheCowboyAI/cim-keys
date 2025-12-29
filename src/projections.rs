@@ -62,7 +62,6 @@ pub struct KeyManifest {
     pub version: String,
 
     /// Creation timestamp
-    pub created_at: DateTime<Utc>,
 
     /// Last updated timestamp
     pub updated_at: DateTime<Utc>,
@@ -111,7 +110,6 @@ pub struct KeyEntry {
     pub algorithm: KeyAlgorithm,
     pub purpose: KeyPurpose,
     pub label: String,
-    pub created_at: DateTime<Utc>,
     pub hardware_backed: bool,
     pub yubikey_serial: Option<String>,
     pub yubikey_slot: Option<String>,
@@ -145,7 +143,6 @@ pub struct PkiHierarchyEntry {
     pub hierarchy_name: String,
     pub root_ca_id: Uuid,
     pub intermediate_ca_ids: Vec<Uuid>,
-    pub created_at: DateTime<Utc>,
     pub directory_path: String,
 }
 
@@ -178,7 +175,6 @@ pub struct PersonEntry {
     pub email: String,
     pub role: String,
     pub organization_id: Uuid,
-    pub created_at: DateTime<Utc>,
     /// Lifecycle state machine for this person
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<PersonState>,
@@ -191,7 +187,6 @@ pub struct LocationEntry {
     pub name: String,
     pub location_type: String,
     pub organization_id: Uuid,
-    pub created_at: DateTime<Utc>,
     // Address details
     pub street: Option<String>,
     pub city: Option<String>,
@@ -210,7 +205,6 @@ pub struct NatsOperatorEntry {
     pub name: String,
     pub public_key: String,
     pub organization_id: Option<Uuid>,
-    pub created_at: DateTime<Utc>,  // Derived from operator_id (UUID v7 timestamp)
     pub created_by: String,
 }
 
@@ -223,7 +217,6 @@ pub struct NatsAccountEntry {
     pub public_key: String,
     pub is_system: bool,
     pub organization_unit_id: Option<Uuid>,
-    pub created_at: DateTime<Utc>,  // Derived from account_id (UUID v7 timestamp)
     pub created_by: String,
 }
 
@@ -235,7 +228,6 @@ pub struct NatsUserEntry {
     pub name: String,
     pub public_key: String,
     pub person_id: Option<Uuid>,
-    pub created_at: DateTime<Utc>,  // Derived from user_id (UUID v7 timestamp)
     pub created_by: String,
 }
 
@@ -300,7 +292,6 @@ impl OfflineKeyProjection {
                     // Create fresh manifest
                     let manifest = KeyManifest {
                         version: "1.0.0".to_string(),
-                        created_at: Utc::now(),
                         updated_at: Utc::now(),
                         organization: OrganizationInfo::default(),
                         people: Vec::new(),
@@ -322,7 +313,6 @@ impl OfflineKeyProjection {
         } else {
             let manifest = KeyManifest {
                 version: "1.0.0".to_string(),
-                created_at: Utc::now(),
                 updated_at: Utc::now(),
                 organization: OrganizationInfo::default(),
                 people: Vec::new(),
@@ -482,7 +472,6 @@ impl OfflineKeyProjection {
             algorithm: event.algorithm.clone(),
             purpose: event.purpose.clone(),
             label: event.metadata.label.clone(),
-            created_at: event.generated_at,
             hardware_backed: event.hardware_backed,
             yubikey_serial: None,
             yubikey_slot: None,
@@ -540,7 +529,6 @@ impl OfflineKeyProjection {
             algorithm: crate::events::KeyAlgorithm::Ed25519,  // TODO: Get from event.metadata
             purpose: crate::events::KeyPurpose::Signing,      // TODO: Get from event.metadata
             label: event.metadata.label.clone(),
-            created_at: event.imported_at,
             hardware_backed: false,  // Imported keys are typically not hardware-backed
             yubikey_serial: None,
             yubikey_slot: None,
@@ -634,7 +622,6 @@ impl OfflineKeyProjection {
             "title": event.title,
             "department": event.department,
             "organization_id": event.organization_id,
-            "created_at": event.created_at,
         });
 
         fs::write(&metadata_path, serde_json::to_string_pretty(&person_info).unwrap())
@@ -647,10 +634,8 @@ impl OfflineKeyProjection {
             email: event.email.clone().unwrap_or_else(|| "unknown@example.com".to_string()),
             role: event.title.clone().unwrap_or_else(|| "Member".to_string()),
             organization_id: event.organization_id,
-            created_at: event.created_at,
             // Initialize state machine to Created
             state: Some(PersonState::Created {
-                created_at: event.created_at,  // Derived from person_id (UUID v7 timestamp)
                 created_by: Uuid::now_v7(),    // TODO: Get from event
             }),
         });
@@ -674,7 +659,6 @@ impl OfflineKeyProjection {
             "address": event.address,
             "coordinates": event.coordinates,
             "organization_id": event.organization_id,
-            "created_at": event.created_at,
         });
 
         fs::write(&metadata_path, serde_json::to_string_pretty(&location_info).unwrap())
@@ -686,7 +670,6 @@ impl OfflineKeyProjection {
             name: event.name.clone(),
             location_type: event.location_type.clone(),
             organization_id: event.organization_id.unwrap_or_else(Uuid::now_v7),
-            created_at: event.created_at,
             street: event.address.clone(),
             city: None,
             region: None,
@@ -694,7 +677,7 @@ impl OfflineKeyProjection {
             postal_code: None,
             // Initialize state machine to Active (locations are immediately active when created)
             state: Some(LocationState::Active {
-                activated_at: event.created_at,  // Derived from location_id (UUID v7 timestamp)
+                activated_at: Utc::now(),  // Derived from location_id (UUID v7 timestamp)
                 access_grants: Vec::new(),
                 assets_stored: 0,
                 last_accessed: None,
@@ -717,7 +700,6 @@ impl OfflineKeyProjection {
             "organization_id": event.organization_id,
             "name": event.name,
             "domain": event.domain,
-            "created_at": event.created_at,
         });
 
         fs::write(&metadata_path, serde_json::to_string_pretty(&org_info).unwrap())
@@ -751,7 +733,6 @@ impl OfflineKeyProjection {
             "name": event.name,
             "public_key": event.public_key,
             "organization_id": event.organization_id,
-            "created_at": event.created_at,
             "created_by": event.created_by,
         });
 
@@ -764,7 +745,6 @@ impl OfflineKeyProjection {
             name: event.name.clone(),
             public_key: event.public_key.clone(),
             organization_id: event.organization_id,
-            created_at: event.created_at,  // Derived from operator_id (UUID v7 timestamp)
             created_by: event.created_by.clone(),
         });
 
@@ -790,7 +770,6 @@ impl OfflineKeyProjection {
             "public_key": event.public_key,
             "is_system": event.is_system,
             "organization_unit_id": event.organization_unit_id,
-            "created_at": event.created_at,
             "created_by": event.created_by,
         });
 
@@ -805,7 +784,6 @@ impl OfflineKeyProjection {
             public_key: event.public_key.clone(),
             is_system: event.is_system,
             organization_unit_id: event.organization_unit_id,
-            created_at: event.created_at,  // Derived from account_id (UUID v7 timestamp)
             created_by: event.created_by.clone(),
         });
 
@@ -830,7 +808,6 @@ impl OfflineKeyProjection {
             "name": event.name,
             "public_key": event.public_key,
             "person_id": event.person_id,
-            "created_at": event.created_at,
             "created_by": event.created_by,
         });
 
@@ -844,7 +821,6 @@ impl OfflineKeyProjection {
             name: event.name.clone(),
             public_key: event.public_key.clone(),
             person_id: event.person_id,
-            created_at: event.created_at,  // Derived from user_id (UUID v7 timestamp)
             created_by: event.created_by.clone(),
         });
 
@@ -1230,7 +1206,6 @@ impl OfflineKeyProjection {
             "permissions": event.permissions,
             "not_before": event.not_before,
             "expires_at": event.expires_at,
-            "created_at": event.created_at,  // Derived from claims_id (UUID v7 timestamp)
             "correlation_id": event.correlation_id,
             "causation_id": event.causation_id,
         });
@@ -1284,7 +1259,6 @@ impl OfflineKeyProjection {
             "purpose": event.purpose,
             "owning_unit_id": event.owning_unit_id,
             "responsible_person_id": event.responsible_person_id,
-            "created_at": event.created_at,  // Derived from service_account_id (UUID v7 timestamp)
         });
 
         fs::write(&metadata_path, serde_json::to_string_pretty(&sa_info).unwrap())
@@ -1311,7 +1285,6 @@ impl OfflineKeyProjection {
             "agent_type": event.agent_type,
             "responsible_person_id": event.responsible_person_id,
             "organization_id": event.organization_id,
-            "created_at": event.created_at,  // Derived from agent_id (UUID v7 timestamp)
         });
 
         fs::write(&metadata_path, serde_json::to_string_pretty(&agent_info).unwrap())
@@ -1891,7 +1864,6 @@ impl OfflineKeyProjection {
             hierarchy_name: hierarchy_name.clone(),
             root_ca_id: event.root_ca_id,
             intermediate_ca_ids: event.intermediate_cas.clone(),
-            created_at: event.created_at,
             directory_path: format!("pki/{}", hierarchy_name),
         });
 
@@ -2023,10 +1995,8 @@ impl OfflineKeyProjection {
             email,
             role,
             organization_id,
-            created_at: Utc::now(),
             // Initialize state machine
             state: Some(PersonState::Created {
-                created_at: Utc::now(),
                 created_by: Uuid::now_v7(), // System created
             }),
         };
@@ -2060,7 +2030,6 @@ impl OfflineKeyProjection {
             name,
             location_type,
             organization_id,
-            created_at: Utc::now(),
             street,
             city,
             region,
@@ -2144,7 +2113,6 @@ impl OfflineKeyProjection {
         // Reset manifest
         self.manifest = KeyManifest {
             version: "1.0.0".to_string(),
-            created_at: self.manifest.created_at,
             updated_at: Utc::now(),
             organization: self.manifest.organization.clone(),
             people: Vec::new(),

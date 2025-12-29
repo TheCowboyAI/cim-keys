@@ -25,7 +25,6 @@ fn test_permissions() -> NatsPermissions {
 
 fn created_state() -> NatsAccountState {
     NatsAccountState::Created {
-        created_at: Utc::now(),
         created_by: test_person_id(),
         operator_id: test_operator_id(),
     }

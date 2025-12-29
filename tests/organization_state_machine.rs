@@ -17,7 +17,6 @@ fn test_member_ids(count: usize) -> Vec<Uuid> {
 
 fn draft_state() -> OrganizationState {
     OrganizationState::Draft {
-        created_at: Utc::now(),
         created_by: test_person_id(),
     }
 }

@@ -26,7 +26,6 @@ use uuid::Uuid;
 pub enum PersonState {
     /// Person created but not yet assigned any roles
     Created {
-        created_at: DateTime<Utc>,
         created_by: Uuid, // Person or System ID
     },
 

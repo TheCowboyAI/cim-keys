@@ -30,7 +30,6 @@ fn sample_nats_operator_created() -> NatsOperatorCreatedEvent {
         operator_id: test_operator_id(),
         name: "CowboyAI Operator".to_string(),
         public_key: "ODXYZ...".to_string(),
-        created_at: Utc::now(),
         created_by: "admin".to_string(),
         organization_id: Some(test_org_id()),
         correlation_id: Uuid::now_v7(),
@@ -98,7 +97,6 @@ fn sample_jwt_claims_created() -> JwtClaimsCreatedEvent {
         permissions: "{\"publish\": [\">\"], \"subscribe\": [\">\"]}".to_string(),
         not_before: Utc::now(),
         expires_at: Some(Utc::now() + chrono::Duration::days(365)),
-        created_at: Utc::now(),
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }

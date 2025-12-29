@@ -27,7 +27,6 @@ use uuid::Uuid;
 pub enum NatsAccountState {
     /// Account created but permissions not yet set
     Created {
-        created_at: DateTime<Utc>,
         created_by: Uuid, // Person ID
         operator_id: Uuid,
     },

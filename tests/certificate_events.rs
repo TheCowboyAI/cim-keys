@@ -100,7 +100,6 @@ fn sample_pki_hierarchy_created() -> PkiHierarchyCreatedEvent {
     PkiHierarchyCreatedEvent {
         root_ca_id: test_cert_id(),
         intermediate_cas: vec![Uuid::now_v7(), Uuid::now_v7()],
-        created_at: Utc::now(),
         created_by: "pki_admin".to_string(),
         organization_id: test_org_id(),
         correlation_id: Uuid::now_v7(),

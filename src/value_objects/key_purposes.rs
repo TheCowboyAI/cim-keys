@@ -397,16 +397,11 @@ pub struct KeyAssignment {
     pub piv_slot: Option<PivSlot>,
     pub pin_policy: PinPolicy,
     pub touch_policy: TouchPolicy,
-    pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
 impl PersonKeyBundle {
     /// Create a standard key bundle for a person
     pub fn standard_bundle(person_id: uuid::Uuid, person_name: String) -> Self {
-        use chrono::Utc;
-
-        let now = Utc::now();
-
         Self {
             person_id,
             person_name,
@@ -419,7 +414,6 @@ impl PersonKeyBundle {
                     piv_slot: Some(PivSlot::Authentication),
                     pin_policy: PinPolicy::Once,
                     touch_policy: TouchPolicy::Never,
-                    created_at: now,
                 },
                 // Slot 9c: GPG + code signing
                 KeyAssignment {
@@ -428,7 +422,6 @@ impl PersonKeyBundle {
                     piv_slot: Some(PivSlot::Signature),
                     pin_policy: PinPolicy::Always,
                     touch_policy: TouchPolicy::Always,
-                    created_at: now,
                 },
                 // Slot 9d: GPG encryption
                 KeyAssignment {
@@ -437,7 +430,6 @@ impl PersonKeyBundle {
                     piv_slot: Some(PivSlot::KeyManagement),
                     pin_policy: PinPolicy::Once,
                     touch_policy: TouchPolicy::Never,
-                    created_at: now,
                 },
                 // Slot 9e: WebAuthn passkeys
                 KeyAssignment {
@@ -446,7 +438,6 @@ impl PersonKeyBundle {
                     piv_slot: Some(PivSlot::CardAuth),
                     pin_policy: PinPolicy::Never,
                     touch_policy: TouchPolicy::Cached,
-                    created_at: now,
                 },
             ],
         }

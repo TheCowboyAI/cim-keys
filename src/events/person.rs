@@ -56,7 +56,6 @@ pub struct PersonCreatedEvent {
     pub title: Option<String>,
     pub department: Option<String>,
     pub organization_id: Uuid,
-    pub created_at: DateTime<Utc>,
     pub created_by: Option<String>,
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,

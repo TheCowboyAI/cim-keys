@@ -8,7 +8,6 @@ use crate::domain::{
     RoleScope, Permission, YubiKeyConfig, YubiKeyRole, PivConfig, PivAlgorithm,
     PgpConfig, FidoConfig, SslConfig,
 };
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -227,7 +226,6 @@ impl SecretsLoader {
             description: None,
             parent_id: None,
             units: Vec::new(),  // TODO: Parse organizational units
-            created_at: Utc::now(),
             metadata,
         })
     }
@@ -258,9 +256,9 @@ impl SecretsLoader {
                 }],
                 organization_id: organization.id,
                 unit_ids: Vec::new(),
-                created_at: Utc::now(),
                 active: true,
                 nats_permissions: None,
+                owner_id: None,
             };
 
             people.push(person);
@@ -387,4 +385,165 @@ impl SecretsLoader {
             _ => PivAlgorithm::Aes256,  // Default
         }
     }
+
+    /// Load from domain-bootstrap.json format (hierarchical structure)
+    /// Returns: (organization, units, people, yubikey_configs, nats_hierarchy, yubikey_assignments, master_passphrase)
+    pub fn load_from_bootstrap_file(
+        bootstrap_path: impl AsRef<Path>,
+    ) -> Result<BootstrapData, SecretsError> {
+        let content = fs::read_to_string(bootstrap_path)?;
+        let config: BootstrapConfig = serde_json::from_str(&content)?;
+
+        // Extract organization with embedded units
+        let organization = config.organization;
+        let units = organization.units.clone();
+
+        // Parse people directly
+        let people = config.people;
+
+        // Build YubiKey configs from assignments
+        let yubikey_configs = Self::build_yubikey_configs_from_bootstrap(&config.yubikey_assignments)?;
+
+        Ok(BootstrapData {
+            organization,
+            units,
+            people,
+            yubikey_configs,
+            yubikey_assignments: config.yubikey_assignments,
+            nats_hierarchy: config.nats_hierarchy,
+            master_passphrase: None,
+        })
+    }
+
+    /// Build YubiKey configs from bootstrap assignments
+    fn build_yubikey_configs_from_bootstrap(
+        assignments: &[YubiKeyAssignment],
+    ) -> Result<Vec<YubiKeyConfig>, SecretsError> {
+        let mut configs = Vec::new();
+
+        for assignment in assignments {
+            let role = match assignment.role.as_str() {
+                "RootAuthority" => YubiKeyRole::RootCA,
+                "BackupHolder" => YubiKeyRole::Backup,
+                "SecurityAdmin" => YubiKeyRole::User, // Maps to user with elevated access
+                "Developer" => YubiKeyRole::User,
+                "ServiceAccount" => YubiKeyRole::Service,
+                _ => YubiKeyRole::User,
+            };
+
+            configs.push(YubiKeyConfig {
+                serial: assignment.serial.clone(),
+                name: assignment.name.clone(),
+                owner_email: String::new(), // Will be filled from person lookup if needed
+                role,
+                piv: PivConfig {
+                    default_pin: "123456".to_string(),
+                    default_puk: "12345678".to_string(),
+                    pin: assignment.pin.clone(),
+                    puk: assignment.puk.clone(),
+                    mgmt_key: assignment.mgmt_key.clone(),
+                    mgmt_key_old: None,
+                    piv_alg: PivAlgorithm::Aes256,
+                },
+                pgp: None,
+                fido: None,
+                ssl: None,
+            });
+        }
+
+        Ok(configs)
+    }
+}
+
+/// Bootstrap configuration format (domain-bootstrap.json)
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BootstrapConfig {
+    pub organization: Organization,
+    #[serde(default)]
+    pub people: Vec<Person>,
+    #[serde(default)]
+    pub locations: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub yubikey_assignments: Vec<YubiKeyAssignment>,
+    #[serde(default)]
+    pub nats_hierarchy: Option<NatsHierarchy>,
+}
+
+/// NATS hierarchy from bootstrap config
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct NatsHierarchy {
+    pub operator: NatsOperatorConfig,
+    #[serde(default)]
+    pub accounts: Vec<NatsAccountConfig>,
+    #[serde(default)]
+    pub users: Vec<NatsUserConfig>,
+}
+
+/// NATS Operator configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct NatsOperatorConfig {
+    pub name: String,
+    pub organization_id: String,
+    #[serde(default)]
+    pub signing_keys: Vec<String>,
+}
+
+/// NATS Account configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct NatsAccountConfig {
+    pub name: String,
+    #[serde(default)]
+    pub unit_id: Option<String>,
+    #[serde(default)]
+    pub is_system: bool,
+    #[serde(default)]
+    pub signing_keys: Vec<String>,
+}
+
+/// NATS User configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct NatsUserConfig {
+    pub name: String,
+    #[serde(default)]
+    pub person_id: Option<String>,
+    pub account: String,
+    #[serde(default)]
+    pub permissions: Option<NatsUserPermissions>,
+}
+
+/// NATS User permissions
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct NatsUserPermissions {
+    #[serde(default)]
+    pub publish: Vec<String>,
+    #[serde(default)]
+    pub subscribe: Vec<String>,
+    #[serde(default)]
+    pub allow_responses: bool,
+}
+
+/// YubiKey assignment from bootstrap config
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct YubiKeyAssignment {
+    pub serial: String,
+    pub name: String,
+    pub person_id: String,
+    pub role: String,
+    #[serde(default)]
+    pub location_id: Option<String>,
+    pub pin: String,
+    pub puk: String,
+    pub mgmt_key: String,
+}
+
+/// Complete bootstrap data returned from load_from_bootstrap_file
+#[derive(Debug, Clone)]
+pub struct BootstrapData {
+    pub organization: Organization,
+    pub units: Vec<crate::domain::OrganizationUnit>,
+    pub people: Vec<Person>,
+    pub yubikey_configs: Vec<YubiKeyConfig>,
+    pub yubikey_assignments: Vec<YubiKeyAssignment>,
+    pub nats_hierarchy: Option<NatsHierarchy>,
+    pub master_passphrase: Option<String>,
 }

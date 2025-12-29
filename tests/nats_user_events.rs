@@ -37,7 +37,6 @@ fn sample_user_created() -> NatsUserCreatedEvent {
         account_id: test_account_id(),
         name: "test.user".to_string(),
         public_key: "UCAAABBBCCCDDDEEEFFFGGGHHHIIIJJJKKKLLLMMMNNNOOOPPPQQQRRR".to_string(),
-        created_at: Utc::now(),
         created_by: "admin".to_string(),
         person_id: Some(test_person_id()),
         correlation_id: Uuid::now_v7(),
@@ -98,7 +97,6 @@ fn sample_service_account_created() -> ServiceAccountCreatedEvent {
         purpose: "Backend API service account".to_string(),
         owning_unit_id: test_org_unit_id(),
         responsible_person_id: test_person_id(),
-        created_at: Utc::now(),
         correlation_id: Some(Uuid::now_v7()),
         causation_id: None,
     }
@@ -111,7 +109,6 @@ fn sample_agent_created() -> AgentCreatedEvent {
         agent_type: "Monitoring".to_string(),
         responsible_person_id: test_person_id(),
         organization_id: test_org_id(),
-        created_at: Utc::now(),
         correlation_id: Some(Uuid::now_v7()),
         causation_id: None,
     }

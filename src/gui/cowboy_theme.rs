@@ -94,22 +94,22 @@ impl CowboyTheme {
 
     /// Pastel teal card background (soft, colorful)
     pub fn pastel_teal_background() -> Background {
-        Background::Color(Color::from_rgba(0.4, 0.7, 0.75, 0.3))  // Soft teal with transparency
+        Background::Color(Color::from_rgba(0.15, 0.25, 0.30, 0.95))  // Darker teal, nearly opaque
     }
 
     /// Pastel coral card background (accent color)
     pub fn pastel_coral_background() -> Background {
-        Background::Color(Color::from_rgba(0.95, 0.7, 0.6, 0.3))  // Soft coral/peach
+        Background::Color(Color::from_rgba(0.35, 0.22, 0.18, 0.95))  // Darker coral, nearly opaque
     }
 
     /// Pastel cream card background (neutral accent)
     pub fn pastel_cream_background() -> Background {
-        Background::Color(Color::from_rgba(0.95, 0.92, 0.85, 0.3))  // Warm cream
+        Background::Color(Color::from_rgba(0.28, 0.27, 0.25, 0.95))  // Warm cream, nearly opaque
     }
 
     /// Pastel mint card background (fresh accent)
     pub fn pastel_mint_background() -> Background {
-        Background::Color(Color::from_rgba(0.7, 0.9, 0.8, 0.3))  // Soft mint green
+        Background::Color(Color::from_rgba(0.18, 0.30, 0.24, 0.95))  // Darker mint, nearly opaque
     }
 
     /// Text colors

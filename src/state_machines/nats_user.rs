@@ -27,7 +27,6 @@ use uuid::Uuid;
 pub enum NatsUserState {
     /// User created but permissions not yet set
     Created {
-        created_at: DateTime<Utc>,
         created_by: Uuid, // Person ID
         account_id: Uuid,
         person_id: Uuid, // Person this NATS user represents

@@ -174,7 +174,6 @@ pub async fn handle_create_person(
         title: cmd.title,
         department: cmd.department,
         organization_id: cmd.organization_id.unwrap_or_else(|| Uuid::now_v7()),
-        created_at: cmd.timestamp,
         created_by: Some("system".to_string()),
         correlation_id: cmd.correlation_id,
         causation_id: Some(cmd.command_id),
@@ -202,7 +201,6 @@ pub async fn handle_create_location(
         address: cmd.address,
         coordinates: cmd.coordinates,
         organization_id: cmd.organization_id,
-        created_at: cmd.timestamp,
         created_by: "system".to_string(),
         correlation_id: cmd.correlation_id,
         causation_id: Some(cmd.command_id),
@@ -227,7 +225,6 @@ pub async fn handle_create_organization(
         organization_id: cmd.organization_id,
         name: cmd.name,
         domain: cmd.domain,
-        created_at: cmd.timestamp,
         correlation_id: cmd.correlation_id,
         causation_id: Some(cmd.command_id),
     }));

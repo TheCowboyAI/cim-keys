@@ -21,7 +21,6 @@ mod graph_first_integration_tests {
             description: Some(format!("Test organization {}", name)),
             parent_id: None,
             units: Vec::new(),
-            created_at: Utc::now(),
             metadata: HashMap::new(),
         }
     }
@@ -47,9 +46,9 @@ mod graph_first_integration_tests {
             roles: vec![],
             organization_id: org_id,
             unit_ids: vec![],
-            created_at: Utc::now(),
             active: true,
             nats_permissions: None,
+            owner_id: None,
         }
     }
 

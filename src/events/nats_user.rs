@@ -53,7 +53,6 @@ pub struct NatsUserCreatedEvent {
     pub account_id: Uuid,
     pub name: String,
     pub public_key: String,
-    pub created_at: DateTime<Utc>,
     pub created_by: String,
     pub person_id: Option<Uuid>,
     pub correlation_id: Uuid,
@@ -114,7 +113,6 @@ pub struct ServiceAccountCreatedEvent {
     pub purpose: String,
     pub owning_unit_id: Uuid,
     pub responsible_person_id: Uuid,
-    pub created_at: DateTime<Utc>,
     pub correlation_id: Option<Uuid>,
     pub causation_id: Option<Uuid>,
 }
@@ -127,7 +125,6 @@ pub struct AgentCreatedEvent {
     pub agent_type: String,
     pub responsible_person_id: Uuid,
     pub organization_id: Uuid,
-    pub created_at: DateTime<Utc>,
     pub correlation_id: Option<Uuid>,
     pub causation_id: Option<Uuid>,
 }

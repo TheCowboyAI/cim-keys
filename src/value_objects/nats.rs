@@ -183,8 +183,6 @@ pub struct NKeyPair {
     pub public_key: NKeyPublic,
     /// Optional human-readable name
     pub name: Option<String>,
-    /// When this key pair was created
-    pub created_at: DateTime<Utc>,
     /// Optional expiration
     pub expires_at: Option<DateTime<Utc>>,
 }
@@ -203,7 +201,6 @@ impl NKeyPair {
             seed,
             public_key,
             name,
-            created_at: Utc::now(),
             expires_at: None,
         }
     }
@@ -305,7 +302,6 @@ impl fmt::Debug for NKeyPair {
             .field("seed", &"[REDACTED]")
             .field("public_key", &self.public_key)
             .field("name", &self.name)
-            .field("created_at", &self.created_at)
             .field("expires_at", &self.expires_at)
             .finish()
     }

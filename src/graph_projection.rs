@@ -93,7 +93,7 @@ impl GraphProjector {
                         cim_graph::events::ContextPayload::BoundedContextCreated {
                             context_id: created.person_id.as_uuid().to_string(),
                             name: format!("Person: {}", created.name.display_name()),
-                            description: format!("Person aggregate created at {}", created.created_at),
+                            description: format!("Person aggregate for {}", created.name.display_name()),
                         }
                     ),
                 };
@@ -880,7 +880,7 @@ mod tests {
                 cim_graph::events::ContextPayload::BoundedContextCreated { name, description, .. } => {
                     assert!(name.contains("Person:"));
                     assert!(name.contains("Alice"));
-                    assert!(description.contains("Person aggregate created"));
+                    assert!(description.contains("Person aggregate"));
                 }
                 _ => panic!("Expected BoundedContextCreated"),
             }

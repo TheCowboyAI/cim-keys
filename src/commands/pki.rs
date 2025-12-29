@@ -516,7 +516,6 @@ mod tests {
             description: None,
             parent_id: None,
             units: vec![],
-            created_at: Utc::now(),
             metadata: Default::default(),
         };
 

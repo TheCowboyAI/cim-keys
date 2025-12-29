@@ -25,7 +25,6 @@ fn test_policy_claim_composition() {
         conditions: vec![],
         priority: 100,
         enabled: true,
-        created_at: Utc::now(),
         created_by: Uuid::now_v7(),
         metadata: std::collections::HashMap::new(),
     };
@@ -41,7 +40,6 @@ fn test_policy_claim_composition() {
         conditions: vec![],
         priority: 200,
         enabled: true,
-        created_at: Utc::now(),
         created_by: Uuid::now_v7(),
         metadata: std::collections::HashMap::new(),
     };
@@ -111,7 +109,6 @@ fn test_policy_priority_sorting() {
         conditions: vec![],
         priority: 10,
         enabled: true,
-        created_at: Utc::now(),
         created_by: Uuid::now_v7(),
         metadata: std::collections::HashMap::new(),
     };
@@ -124,7 +121,6 @@ fn test_policy_priority_sorting() {
         conditions: vec![],
         priority: 1000,
         enabled: true,
-        created_at: Utc::now(),
         created_by: Uuid::now_v7(),
         metadata: std::collections::HashMap::new(),
     };
@@ -137,7 +133,6 @@ fn test_policy_priority_sorting() {
         conditions: vec![],
         priority: 500,
         enabled: true,
-        created_at: Utc::now(),
         created_by: Uuid::now_v7(),
         metadata: std::collections::HashMap::new(),
     };
@@ -216,7 +211,6 @@ fn test_policy_condition_minimum_clearance() {
         conditions: vec![PolicyCondition::MinimumSecurityClearance(SecurityClearance::Secret)],
         priority: 100,
         enabled: true,
-        created_at: Utc::now(),
         created_by: Uuid::now_v7(),
         metadata: std::collections::HashMap::new(),
     };
@@ -293,7 +287,6 @@ fn test_policy_condition_mfa_required() {
         conditions: vec![PolicyCondition::MFAEnabled(true)],
         priority: 100,
         enabled: true,
-        created_at: Utc::now(),
         created_by: Uuid::now_v7(),
         metadata: std::collections::HashMap::new(),
     };
@@ -370,7 +363,6 @@ fn test_policy_condition_witness_required() {
         }],
         priority: 100,
         enabled: true,
-        created_at: Utc::now(),
         created_by: Uuid::now_v7(),
         metadata: std::collections::HashMap::new(),
     };
@@ -485,7 +477,6 @@ fn test_role_fulfillment() {
         conditions: vec![],
         priority: 100,
         enabled: true,
-        created_at: Utc::now(),
         created_by: Uuid::now_v7(),
         metadata: std::collections::HashMap::new(),
     };
@@ -498,7 +489,6 @@ fn test_role_fulfillment() {
         unit_id: None,
         required_policies: vec![dev_policy.id],
         responsibilities: vec!["Code review".to_string(), "Mentoring".to_string()],
-        created_at: Utc::now(),
         created_by: Uuid::now_v7(),
         active: true,
     };
@@ -560,7 +550,6 @@ fn test_complex_multi_policy_scenario() {
         conditions: vec![],
         priority: 10,
         enabled: true,
-        created_at: Utc::now(),
         created_by: Uuid::now_v7(),
         metadata: std::collections::HashMap::new(),
     };
@@ -579,7 +568,6 @@ fn test_complex_multi_policy_scenario() {
         ],
         priority: 50,
         enabled: true,
-        created_at: Utc::now(),
         created_by: Uuid::now_v7(),
         metadata: std::collections::HashMap::new(),
     };
@@ -600,7 +588,6 @@ fn test_complex_multi_policy_scenario() {
         ],
         priority: 100,
         enabled: true,
-        created_at: Utc::now(),
         created_by: Uuid::now_v7(),
         metadata: std::collections::HashMap::new(),
     };

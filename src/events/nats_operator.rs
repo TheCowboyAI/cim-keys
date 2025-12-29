@@ -58,7 +58,6 @@ pub struct NatsOperatorCreatedEvent {
     pub operator_id: Uuid,
     pub name: String,
     pub public_key: String,
-    pub created_at: DateTime<Utc>,
     pub created_by: String,
     pub organization_id: Option<Uuid>,
     pub correlation_id: Uuid,
@@ -126,7 +125,6 @@ pub struct JwtClaimsCreatedEvent {
     pub permissions: String,
     pub not_before: DateTime<Utc>,
     pub expires_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
 }

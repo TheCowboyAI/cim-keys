@@ -46,7 +46,6 @@ pub struct Organization {
     pub description: Option<String>,
     pub parent_id: Option<Uuid>,
     pub units: Vec<OrganizationUnit>,
-    pub created_at: DateTime<Utc>,
     pub metadata: HashMap<String, String>,
 }
 
@@ -82,10 +81,12 @@ pub struct Person {
     pub roles: Vec<PersonRole>,
     pub organization_id: Uuid,
     pub unit_ids: Vec<Uuid>,
-    pub created_at: DateTime<Utc>,
     pub active: bool,
     /// NATS permissions for NSC export (for Service role persons)
     pub nats_permissions: Option<NatsPermissions>,
+    /// Owner/manager of this person or service account
+    #[serde(default)]
+    pub owner_id: Option<Uuid>,
 }
 
 /// Role a person can have
@@ -313,7 +314,6 @@ pub struct ServiceAccount {
     pub responsible_person_id: Uuid,
 
     /// Created timestamp
-    pub created_at: DateTime<Utc>,
 
     /// Active status
     pub active: bool,
@@ -333,7 +333,6 @@ impl ServiceAccount {
             purpose,
             owning_unit_id,
             responsible_person_id,
-            created_at: Utc::now(),
             active: true,
         }
     }
@@ -690,7 +689,6 @@ pub struct Policy {
     pub conditions: Vec<PolicyCondition>,
     pub priority: i32,
     pub enabled: bool,
-    pub created_at: DateTime<Utc>,
     pub created_by: Uuid,
     pub metadata: HashMap<String, String>,
 }
@@ -1168,7 +1166,6 @@ pub struct Role {
     pub unit_id: Option<Uuid>, // Optional: role specific to unit
     pub required_policies: Vec<Uuid>,
     pub responsibilities: Vec<String>,
-    pub created_at: DateTime<Utc>,
     pub created_by: Uuid,
     pub active: bool,
 }

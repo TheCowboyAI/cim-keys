@@ -243,7 +243,6 @@ mod tests {
             roles: vec![],
             organization_id: Uuid::now_v7(),
             unit_ids: vec![],
-            created_at: chrono::Utc::now(),
             active: true,
         }
     }
@@ -256,7 +255,6 @@ mod tests {
             description: None,
             parent_id: None,
             units: vec![],
-            created_at: chrono::Utc::now(),
             metadata: std::collections::HashMap::new(),
         }
     }

@@ -29,7 +29,6 @@ fn test_conditions() -> Vec<PolicyCondition> {
 
 fn draft_state() -> PolicyState {
     PolicyState::Draft {
-        created_at: Utc::now(),
         author_id: test_person_id(),
         review_status: ReviewStatus::Pending,
     }
@@ -179,7 +178,6 @@ fn test_all_review_statuses() {
 
     for status in statuses {
         let draft = PolicyState::Draft {
-            created_at: Utc::now(),
             author_id: test_person_id(),
             review_status: status.clone(),
         };

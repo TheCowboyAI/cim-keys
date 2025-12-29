@@ -26,7 +26,6 @@ use uuid::Uuid;
 pub enum OrganizationState {
     /// Organization created but not yet operational
     Draft {
-        created_at: DateTime<Utc>,
         created_by: Uuid, // Person ID
     },
 

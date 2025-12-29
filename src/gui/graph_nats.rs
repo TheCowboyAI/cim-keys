@@ -260,7 +260,6 @@ fn create_nats_operator_node(nats_id: Uuid, org: &Organization) -> Result<GraphN
             format!("O_PLACEHOLDER_{}", nats_id), // Placeholder public key
         ),
         name: Some(org.name.clone()),
-        created_at: Utc::now(),
         expires_at: None,
     };
 
@@ -311,7 +310,6 @@ fn create_nats_account_node(
             format!("A_PLACEHOLDER_{}", nats_id),
         ),
         name: Some(unit.name.clone()),
-        created_at: Utc::now(),
         expires_at: None,
     };
 
@@ -368,7 +366,6 @@ fn create_nats_user_node(
             format!("U_PLACEHOLDER_{}", nats_id),
         ),
         name: Some(username.clone()),
-        created_at: Utc::now(),
         expires_at: None,
     };
 
@@ -449,7 +446,6 @@ mod tests {
             description: None,
             parent_id: None,
             units: Vec::new(),
-            created_at: Utc::now(),
             metadata: HashMap::new(),
         };
         graph.add_organization_node(org.clone());
@@ -475,7 +471,6 @@ mod tests {
             description: None,
             parent_id: None,
             units: Vec::new(),
-            created_at: Utc::now(),
             metadata: HashMap::new(),
         }));
 

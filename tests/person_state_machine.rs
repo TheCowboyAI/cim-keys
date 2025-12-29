@@ -28,7 +28,6 @@ fn test_role_ids(count: usize) -> Vec<Uuid> {
 
 fn created_state() -> PersonState {
     PersonState::Created {
-        created_at: Utc::now(),
         created_by: test_admin_id(),
     }
 }

@@ -36,7 +36,6 @@ fn sample_account_created() -> NatsAccountCreatedEvent {
         name: "Test Account".to_string(),
         public_key: "NCAAABBBCCCDDDEEEFFFGGGHHHIIIJJJKKKLLLMMMNNNOOOPPPQQQRRR".to_string(),
         is_system: false,
-        created_at: Utc::now(),
         created_by: "admin".to_string(),
         organization_unit_id: Some(test_org_unit_id()),
         correlation_id: Uuid::now_v7(),

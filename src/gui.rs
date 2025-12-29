@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use crate::{
     aggregate::KeyManagementAggregate,
-    domain::{Person, KeyOwnerRole},
+    domain::{Person, KeyOwnerRole, Organization},
     projections::OfflineKeyProjection,
     // MVI architecture
     mvi::{Intent, Model as MviModel},
@@ -360,7 +360,7 @@ pub enum Message {
     ImportFromSecrets,
     DomainCreated(Result<String, String>),
     DomainLoaded(Result<BootstrapConfig, String>),
-    SecretsImported(Result<(crate::domain::Organization, Vec<crate::domain::Person>, Vec<crate::domain::YubiKeyConfig>, Option<String>), String>),
+    SecretsImported(Result<crate::secrets_loader::BootstrapData, String>),
     ManifestDataLoaded(Result<(crate::projections::OrganizationInfo, Vec<crate::projections::LocationEntry>, Vec<crate::projections::PersonEntry>, Vec<crate::projections::CertificateEntry>, Vec<crate::projections::KeyEntry>), String>),
 
     // Organization form inputs
@@ -536,9 +536,33 @@ pub enum Message {
     ApplyLayout,
 }
 
-/// Bootstrap configuration
+/// Bootstrap configuration - supports both full and simplified formats
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BootstrapConfig {
+#[serde(untagged)]
+pub enum BootstrapConfig {
+    /// Full format with complete Organization struct (from domain-bootstrap.json)
+    Full(FullBootstrapConfig),
+    /// Simplified format with basic info
+    Simple(SimpleBootstrapConfig),
+}
+
+/// Full bootstrap config matching domain-bootstrap.json
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FullBootstrapConfig {
+    pub organization: Organization,
+    #[serde(default)]
+    pub people: Vec<Person>,
+    #[serde(default)]
+    pub locations: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub yubikey_assignments: Vec<YubiKeyAssignmentFull>,
+    #[serde(default)]
+    pub nats_hierarchy: Option<NatsHierarchyFull>,
+}
+
+/// Simplified bootstrap config
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimpleBootstrapConfig {
     pub organization: Option<OrganizationInfo>,
     pub people: Vec<PersonInfo>,
     #[serde(default)]
@@ -553,6 +577,7 @@ pub struct BootstrapConfig {
 pub struct OrganizationInfo {
     pub name: String,
     pub display_name: String,
+    #[serde(default)]
     pub domain: String,
 }
 
@@ -579,9 +604,52 @@ pub struct YubiKeyAssignment {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct YubiKeyAssignmentFull {
+    pub serial: String,
+    pub name: String,
+    pub person_id: Uuid,
+    pub role: String,
+    #[serde(default)]
+    pub pin: Option<String>,
+    #[serde(default)]
+    pub puk: Option<String>,
+    #[serde(default)]
+    pub management_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NatsHierarchy {
     pub operator_name: String,
     pub accounts: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsHierarchyFull {
+    pub operator: NatsOperatorConfig,
+    #[serde(default)]
+    pub accounts: Vec<NatsAccountConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsOperatorConfig {
+    pub name: String,
+    #[serde(default)]
+    pub signing_keys: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsAccountConfig {
+    pub name: String,
+    pub unit_id: Uuid,
+    #[serde(default)]
+    pub users: Vec<NatsUserConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NatsUserConfig {
+    pub person_id: Uuid,
+    #[serde(default)]
+    pub permissions: Option<serde_json::Value>,
 }
 
 /// Serializable graph export format
@@ -891,21 +959,46 @@ impl CimKeysApp {
             }
 
             Message::ImportFromSecrets => {
-                // Import from secrets/cowboyai.json and secrets/secrets.json
+                // Try domain-bootstrap.json first (hierarchical), fall back to cowboyai.json + secrets.json
                 Task::perform(
                     async move {
-                        use crate::secrets_loader::SecretsLoader;
+                        use crate::secrets_loader::{SecretsLoader, BootstrapData};
                         use std::path::PathBuf;
 
+                        // Try domain-bootstrap.json first (recommended by cim-expert)
+                        let bootstrap_path = PathBuf::from("secrets/domain-bootstrap.json");
+                        if bootstrap_path.exists() {
+                            match SecretsLoader::load_from_bootstrap_file(&bootstrap_path) {
+                                Ok(data) => return Ok(data),
+                                Err(e) => {
+                                    // Log but continue to fallback
+                                    eprintln!("Warning: Could not load domain-bootstrap.json: {}", e);
+                                }
+                            }
+                        }
+
+                        // Fallback to legacy format
                         let secrets_path = PathBuf::from("secrets/secrets.json");
                         let cowboyai_path = PathBuf::from("secrets/cowboyai.json");
 
                         if !secrets_path.exists() || !cowboyai_path.exists() {
-                            return Err("Secrets files not found. Please ensure secrets/secrets.json and secrets/cowboyai.json exist.".to_string());
+                            return Err("Secrets files not found. Please ensure secrets/domain-bootstrap.json or (secrets/secrets.json and secrets/cowboyai.json) exist.".to_string());
                         }
 
                         match SecretsLoader::load_from_files(&secrets_path, &cowboyai_path) {
-                            Ok(data) => Ok(data),
+                            Ok((org, people, yubikey_configs, passphrase)) => {
+                                // Convert to BootstrapData for consistency
+                                let units = org.units.clone();
+                                Ok(BootstrapData {
+                                    organization: org,
+                                    units,
+                                    people,
+                                    yubikey_configs,
+                                    yubikey_assignments: vec![],
+                                    nats_hierarchy: None,
+                                    master_passphrase: passphrase,
+                                })
+                            }
                             Err(e) => Err(format!("Failed to load secrets: {}", e)),
                         }
                     },
@@ -915,7 +1008,15 @@ impl CimKeysApp {
 
             Message::SecretsImported(result) => {
                 match result {
-                    Ok((org, people, yubikey_configs, master_passphrase)) => {
+                    Ok(data) => {
+                        let org = data.organization;
+                        let units = data.units;
+                        let people = data.people;
+                        let yubikey_configs = data.yubikey_configs;
+                        let yubikey_assignments = data.yubikey_assignments;
+                        let nats_hierarchy = data.nats_hierarchy;
+                        let master_passphrase = data.master_passphrase;
+
                         // Set organization info
                         self.organization_name = org.name.clone();
                         self.organization_domain = org.display_name.clone();
@@ -927,7 +1028,18 @@ impl CimKeysApp {
                             self.master_passphrase_confirm = passphrase;
                         }
 
-                        // Populate graph with people
+                        // === BUILD ORGANIZATION GRAPH ===
+                        self.org_graph.clear();
+
+                        // 1. Add Organization node first (root of the graph)
+                        self.org_graph.add_organization_node(org.clone());
+
+                        // 2. Add OrganizationUnit nodes
+                        for unit in &units {
+                            self.org_graph.add_org_unit_node(unit.clone());
+                        }
+
+                        // 3. Add Person nodes
                         for person in &people {
                             // Determine role based on YubiKey configs
                             let role = yubikey_configs
@@ -944,17 +1056,179 @@ impl CimKeysApp {
                             self.org_graph.add_node(person.clone(), role);
                         }
 
+                        // 4. Add edges
+                        // 4a. Organization → OrganizationUnit edges (ParentChild)
+                        for unit in &units {
+                            self.org_graph.add_edge(
+                                org.id,
+                                unit.id,
+                                crate::gui::graph::EdgeType::ParentChild,
+                            );
+
+                            // Unit → Parent Unit edges (if nested units)
+                            if let Some(parent_id) = unit.parent_unit_id {
+                                self.org_graph.add_edge(
+                                    parent_id,
+                                    unit.id,
+                                    crate::gui::graph::EdgeType::ParentChild,
+                                );
+                            }
+                        }
+
+                        // 4b. Person → OrganizationUnit edges (MemberOf)
+                        for person in &people {
+                            for unit_id in &person.unit_ids {
+                                self.org_graph.add_edge(
+                                    person.id,
+                                    *unit_id,
+                                    crate::gui::graph::EdgeType::MemberOf,
+                                );
+                            }
+                        }
+
+                        // 4c. Owner → Service edges (Manages) for service accounts
+                        for person in &people {
+                            if let Some(owner_id) = person.owner_id {
+                                self.org_graph.add_edge(
+                                    owner_id,
+                                    person.id,
+                                    crate::gui::graph::EdgeType::Manages,
+                                );
+                            }
+                        }
+
+                        // 5. Apply hierarchical layout (Org at top, Units middle, People bottom)
+                        self.org_graph.layout_hierarchical();
+
+                        // === BUILD NATS GRAPH ===
+                        self.nats_graph.clear();
+                        if let Some(nats) = &nats_hierarchy {
+                            use std::collections::HashMap;
+
+                            // Parse organization_id from string
+                            let org_uuid = Uuid::parse_str(&nats.operator.organization_id).ok();
+
+                            // Create operator node
+                            let operator_id = Uuid::now_v7();
+                            self.nats_graph.add_nats_operator_simple(
+                                operator_id,
+                                nats.operator.name.clone(),
+                                org_uuid,
+                            );
+
+                            // Create account nodes and track IDs
+                            let mut account_ids: HashMap<String, Uuid> = HashMap::new();
+                            for account in &nats.accounts {
+                                let account_id = Uuid::now_v7();
+                                account_ids.insert(account.name.clone(), account_id);
+
+                                // Parse unit_id from string if present
+                                let unit_uuid = account.unit_id.as_ref().and_then(|id| Uuid::parse_str(id).ok());
+
+                                self.nats_graph.add_nats_account_simple(
+                                    account_id,
+                                    account.name.clone(),
+                                    unit_uuid,
+                                    account.is_system,
+                                );
+
+                                // Operator → Account edge
+                                self.nats_graph.add_edge(
+                                    operator_id,
+                                    account_id,
+                                    crate::gui::graph::EdgeType::ParentChild,
+                                );
+                            }
+
+                            // Create user nodes
+                            for user in &nats.users {
+                                let user_id = Uuid::now_v7();
+                                let parent_account_id = account_ids.get(&user.account).copied();
+
+                                // Parse person_id from string if present
+                                let person_uuid = user.person_id.as_ref().and_then(|id| Uuid::parse_str(id).ok());
+
+                                self.nats_graph.add_nats_user_simple(
+                                    user_id,
+                                    user.name.clone(),
+                                    person_uuid,
+                                    user.account.clone(),
+                                );
+
+                                // Account → User edge
+                                if let Some(account_id) = parent_account_id {
+                                    self.nats_graph.add_edge(
+                                        account_id,
+                                        user_id,
+                                        crate::gui::graph::EdgeType::ParentChild,
+                                    );
+                                }
+                            }
+
+                            self.nats_graph.layout_hierarchical();
+                        }
+
+                        // === BUILD YUBIKEY GRAPH ===
+                        self.yubikey_graph.clear();
+                        for assignment in &yubikey_assignments {
+                            let yubikey_id = Uuid::now_v7();
+
+                            // Add YubiKey node
+                            self.yubikey_graph.add_yubikey_node(
+                                yubikey_id,
+                                assignment.serial.clone(),
+                                "5.x".to_string(),
+                                Some(chrono::Utc::now()),
+                                vec!["9A".to_string(), "9C".to_string(), "9D".to_string(), "9E".to_string()],
+                            );
+
+                            // Add PIV slot nodes
+                            let slots = [
+                                ("9A", "Authentication"),
+                                ("9C", "Digital Signature"),
+                                ("9D", "Key Management"),
+                                ("9E", "Card Authentication"),
+                            ];
+
+                            for (slot_num, slot_desc) in &slots {
+                                let slot_id = Uuid::now_v7();
+                                self.yubikey_graph.add_piv_slot_node(
+                                    slot_id,
+                                    format!("{} - {}", slot_num, slot_desc),
+                                    assignment.serial.clone(),
+                                    true, // Assume slot has key for visualization
+                                    None,
+                                );
+
+                                // YubiKey → Slot edge
+                                self.yubikey_graph.add_edge(
+                                    yubikey_id,
+                                    slot_id,
+                                    crate::gui::graph::EdgeType::HasSlot,
+                                );
+                            }
+                        }
+                        // Use specialized YubiKey layout for better grouping
+                        self.yubikey_graph.layout_yubikey_grouped();
+
                         // Store YubiKey configs
                         self.yubikey_configs = yubikey_configs.clone();
+
+                        // Count items for status
+                        let nats_count = nats_hierarchy.as_ref().map(|n| {
+                            1 + n.accounts.len() + n.users.len()
+                        }).unwrap_or(0);
 
                         self.domain_loaded = true;
                         self.active_tab = Tab::Organization;
                         self.status_message = format!(
-                            "Imported {} ({}) with {} people and {} YubiKeys",
+                            "Imported {} ({}) with {} units, {} people, {} YubiKeys, {} NATS entities",
                             org.display_name,
                             org.name,
+                            units.len(),
                             people.len(),
-                            yubikey_configs.len()
+                            yubikey_assignments.len(),
+                            nats_count
                         );
                     }
                     Err(e) => {
@@ -1009,44 +1283,124 @@ impl CimKeysApp {
             Message::DomainLoaded(result) => {
                 match result {
                     Ok(config) => {
-                        // Update organization info
-                        if let Some(ref org) = config.organization {
-                            self.organization_name = org.name.clone();
-                            self.organization_domain = org.display_name.clone();
+                        // Clear existing graph
+                        self.org_graph = graph::OrganizationGraph::new();
+
+                        match config {
+                            BootstrapConfig::Full(full_config) => {
+                                // Full format: domain-bootstrap.json style
+                                let org = &full_config.organization;
+
+                                // Update organization info
+                                self.organization_name = org.name.clone();
+                                self.organization_domain = org.display_name.clone();
+                                self.organization_id = Some(org.id);
+
+                                // 1. Add Organization node
+                                self.org_graph.add_organization_node(org.clone());
+
+                                // 2. Add OrganizationUnit nodes and edges to org
+                                for unit in &org.units {
+                                    self.org_graph.add_org_unit_node(unit.clone());
+                                    // Edge: Organization -> Unit
+                                    self.org_graph.add_edge(org.id, unit.id, graph::EdgeType::ManagesUnit);
+                                }
+
+                                // 3. Add Person nodes and edges to their units
+                                for person in &full_config.people {
+                                    // Determine role from person's roles
+                                    let role = person.roles.first()
+                                        .map(|r| match r.role_type {
+                                            crate::domain::RoleType::Executive => KeyOwnerRole::RootAuthority,
+                                            crate::domain::RoleType::Administrator => KeyOwnerRole::SecurityAdmin,
+                                            crate::domain::RoleType::Developer => KeyOwnerRole::Developer,
+                                            crate::domain::RoleType::Auditor => KeyOwnerRole::Auditor,
+                                            crate::domain::RoleType::Operator => KeyOwnerRole::ServiceAccount,
+                                            _ => KeyOwnerRole::Developer,
+                                        })
+                                        .unwrap_or(KeyOwnerRole::Developer);
+
+                                    self.org_graph.add_node(person.clone(), role);
+
+                                    // Edge: Unit -> Person (for each unit they belong to)
+                                    for unit_id in &person.unit_ids {
+                                        self.org_graph.add_edge(*unit_id, person.id, graph::EdgeType::MemberOf);
+                                    }
+
+                                    // If no unit, connect directly to org
+                                    if person.unit_ids.is_empty() {
+                                        self.org_graph.add_edge(org.id, person.id, graph::EdgeType::MemberOf);
+                                    }
+                                }
+
+                                // Store config for later use
+                                self.bootstrap_config = Some(BootstrapConfig::Full(full_config.clone()));
+
+                                let node_count = self.org_graph.node_count();
+                                let edge_count = self.org_graph.edges.len();
+                                self.status_message = format!(
+                                    "Loaded full domain: {} nodes, {} relationships (1 org, {} units, {} people)",
+                                    node_count, edge_count,
+                                    full_config.organization.units.len(),
+                                    full_config.people.len()
+                                );
+                            }
+                            BootstrapConfig::Simple(simple_config) => {
+                                // Simple format: basic info only
+                                if let Some(ref org_info) = simple_config.organization {
+                                    self.organization_name = org_info.name.clone();
+                                    self.organization_domain = org_info.display_name.clone();
+                                }
+
+                                // Create synthetic Organization node
+                                let org_id = Uuid::now_v7();
+                                self.organization_id = Some(org_id);
+                                let org = Organization {
+                                    id: org_id,
+                                    name: self.organization_name.clone(),
+                                    display_name: self.organization_domain.clone(),
+                                    description: None,
+                                    parent_id: None,
+                                    units: vec![],
+                                    metadata: std::collections::HashMap::new(),
+                                };
+                                self.org_graph.add_organization_node(org);
+
+                                // Add people
+                                for person_config in &simple_config.people {
+                                    let person = Person {
+                                        id: person_config.person_id,
+                                        name: person_config.name.clone(),
+                                        email: person_config.email.clone(),
+                                        organization_id: org_id,
+                                        unit_ids: vec![],
+                                        roles: vec![],
+                                        nats_permissions: None,
+                                        active: true,
+                                        owner_id: None,
+                                    };
+
+                                    let role = match person_config.role.as_str() {
+                                        "RootAuthority" => KeyOwnerRole::RootAuthority,
+                                        "SecurityAdmin" => KeyOwnerRole::SecurityAdmin,
+                                        "Developer" => KeyOwnerRole::Developer,
+                                        "ServiceAccount" => KeyOwnerRole::ServiceAccount,
+                                        "BackupHolder" => KeyOwnerRole::BackupHolder,
+                                        "Auditor" => KeyOwnerRole::Auditor,
+                                        _ => KeyOwnerRole::Developer,
+                                    };
+
+                                    self.org_graph.add_node(person.clone(), role);
+                                    self.org_graph.add_edge(org_id, person.id, graph::EdgeType::MemberOf);
+                                }
+
+                                self.bootstrap_config = Some(BootstrapConfig::Simple(simple_config));
+                                self.status_message = format!("Loaded {} people from simple configuration", self.org_graph.node_count() - 1);
+                            }
                         }
 
-                        // Populate graph with people from config
-                        for person_config in &config.people {
-                            let person = Person {
-                                id: person_config.person_id,
-                                name: person_config.name.clone(),
-                                email: person_config.email.clone(),
-                                organization_id: Uuid::now_v7(), // TODO: Use actual org ID from config
-                                unit_ids: vec![],
-                                roles: vec![],
-                                nats_permissions: None,
-                                active: true,
-                                created_at: chrono::Utc::now(),
-                            };
-
-                            // Map role string to enum
-                            let role = match person_config.role.as_str() {
-                                "RootAuthority" => KeyOwnerRole::RootAuthority,
-                                "SecurityAdmin" => KeyOwnerRole::SecurityAdmin,
-                                "Developer" => KeyOwnerRole::Developer,
-                                "ServiceAccount" => KeyOwnerRole::ServiceAccount,
-                                "BackupHolder" => KeyOwnerRole::BackupHolder,
-                                "Auditor" => KeyOwnerRole::Auditor,
-                                _ => KeyOwnerRole::Developer,
-                            };
-
-                            self.org_graph.add_node(person, role);
-                        }
-
-                        self.bootstrap_config = Some(config);
                         self.domain_loaded = true;
                         self.active_tab = Tab::Organization;
-                        self.status_message = format!("Loaded {} people from configuration", self.org_graph.node_count());
                     }
                     Err(e) => {
                         self.error_message = Some(format!("Failed to load domain: {}", e));
@@ -1206,7 +1560,7 @@ impl CimKeysApp {
                     roles: vec![],
                     nats_permissions: None,
                     active: true,
-                    created_at: chrono::Utc::now(),
+                    owner_id: None,
                 };
 
                 let role = self.new_person_role.unwrap();
@@ -2092,7 +2446,6 @@ impl CimKeysApp {
                                             responsible_person_id: None,
                                         }
                                     ],
-                                    created_at: chrono::Utc::now(),
                                     metadata: HashMap::new(),
                                 };
 
@@ -2108,9 +2461,9 @@ impl CimKeysApp {
                                     }],
                                     organization_id: org_id,
                                     unit_ids: vec![org_id],  // Assign to default unit
-                                    created_at: p.created_at,
                                     nats_permissions: None,
                                     active: true,
+                                    owner_id: None,
                                 }).collect();
 
                                 // Use NatsProjection to bootstrap the organization
@@ -2543,7 +2896,6 @@ impl CimKeysApp {
                             description: Some("Edit name by clicking node".to_string()),
                             parent_id: None,
                             units: Vec::new(),
-                            created_at: Utc::now(),
                             metadata: std::collections::HashMap::new(),
                         };
 
@@ -2601,9 +2953,9 @@ impl CimKeysApp {
                             roles: Vec::new(),
                             organization_id: org_id,
                             unit_ids: Vec::new(),
-                            created_at: Utc::now(),
                             nats_permissions: None,
                             active: true,
+                            owner_id: None,
                         };
 
                         let node_id = person.id;
@@ -2669,7 +3021,6 @@ impl CimKeysApp {
                             unit_id: None,
                             required_policies: Vec::new(),
                             responsibilities: Vec::new(),
-                            created_at: Utc::now(),
                             created_by: creator_id,
                             active: true,
                         };
@@ -2701,7 +3052,6 @@ impl CimKeysApp {
                             conditions: Vec::new(),
                             priority: 0,
                             enabled: true,
-                            created_at: Utc::now(),
                             created_by: creator_id,
                             metadata: std::collections::HashMap::new(),
                         };
@@ -2963,9 +3313,9 @@ impl CimKeysApp {
                                         roles: vec![],
                                         organization_id: dummy_org_id,
                                         unit_ids: vec![],
-                                        created_at: Utc::now(),
                                         nats_permissions: None,
                                         active: true,
+                                        owner_id: None,
                                     };
                                     use crate::domain::KeyOwnerRole;
                                     (NodeType::Person { person, role: KeyOwnerRole::RootAuthority }, "New Person".to_string(), self.view_model.colors.node_person)
@@ -3040,7 +3390,7 @@ impl CimKeysApp {
                                         person_id: EntityId::new(),
                                         name: PersonName::new(person.name.clone(), "".to_string()),
                                         source: "gui".to_string(),
-                                        created_at: Utc::now(),
+                                        created_at: chrono::Utc::now(),
                                     });
 
                                     // Lift to cim-graph events using GraphProjector
@@ -3100,7 +3450,6 @@ impl CimKeysApp {
                                     description: Some("Edit this organization".to_string()),
                                     parent_id: None,
                                     units: vec![],
-                                    created_at: Utc::now(),
                                     metadata: HashMap::new(),
                                 };
                                 let label = org.name.clone();
@@ -3126,9 +3475,9 @@ impl CimKeysApp {
                                     roles: vec![],
                                     organization_id: dummy_org_id,
                                     unit_ids: vec![],
-                                    created_at: Utc::now(),
                                     nats_permissions: None,
                                     active: true,
+                                    owner_id: None,
                                 };
                                 let label = person.name.clone();
                                 (NodeType::Person { person, role: KeyOwnerRole::Developer }, label, self.view_model.colors.node_person)
@@ -3165,7 +3514,6 @@ impl CimKeysApp {
                                     unit_id: None,
                                     required_policies: vec![],
                                     responsibilities: vec![],
-                                    created_at: Utc::now(),
                                     created_by: dummy_org_id,
                                     active: true,
                                 };
@@ -3181,7 +3529,6 @@ impl CimKeysApp {
                                     conditions: vec![],
                                     priority: 0,
                                     enabled: true,
-                                    created_at: Utc::now(),
                                     created_by: dummy_org_id,
                                     metadata: HashMap::new(),
                                 };
@@ -3276,7 +3623,7 @@ impl CimKeysApp {
                                             person_id: EntityId::new(),
                                             name: PersonName::new(person.name.clone(), "".to_string()),
                                             source: "gui".to_string(),
-                                            created_at: Utc::now(),
+                                            created_at: chrono::Utc::now(),
                                         });
 
                                         match self.graph_projector.lift_person_event(&domain_event) {
@@ -3422,11 +3769,20 @@ impl CimKeysApp {
                                     graph::NodeType::NatsOperator(identity) => {
                                         graph::NodeType::NatsOperator(identity.clone())
                                     }
+                                    graph::NodeType::NatsOperatorSimple { name, organization_id } => {
+                                        graph::NodeType::NatsOperatorSimple { name: name.clone(), organization_id: *organization_id }
+                                    }
                                     graph::NodeType::NatsAccount(identity) => {
                                         graph::NodeType::NatsAccount(identity.clone())
                                     }
+                                    graph::NodeType::NatsAccountSimple { name, unit_id, is_system } => {
+                                        graph::NodeType::NatsAccountSimple { name: name.clone(), unit_id: *unit_id, is_system: *is_system }
+                                    }
                                     graph::NodeType::NatsUser(identity) => {
                                         graph::NodeType::NatsUser(identity.clone())
+                                    }
+                                    graph::NodeType::NatsUserSimple { name, person_id, account_name } => {
+                                        graph::NodeType::NatsUserSimple { name: name.clone(), person_id: *person_id, account_name: account_name.clone() }
                                     }
                                     graph::NodeType::NatsServiceAccount(identity) => {
                                         graph::NodeType::NatsServiceAccount(identity.clone())
@@ -3491,22 +3847,20 @@ impl CimKeysApp {
                                         }
                                     }
                                     // Cryptographic Keys - read-only, return unchanged
-                                    graph::NodeType::Key { key_id, algorithm, purpose, created_at, expires_at } => {
+                                    graph::NodeType::Key { key_id, algorithm, purpose, expires_at } => {
                                         graph::NodeType::Key {
                                             key_id: *key_id,
                                             algorithm: algorithm.clone(),
                                             purpose: purpose.clone(),
-                                            created_at: *created_at,
                                             expires_at: *expires_at,
                                         }
                                     }
                                     // Export and Manifest - read-only, return unchanged
-                                    graph::NodeType::Manifest { manifest_id, name, destination, created_at, checksum } => {
+                                    graph::NodeType::Manifest { manifest_id, name, destination, checksum } => {
                                         graph::NodeType::Manifest {
                                             manifest_id: *manifest_id,
                                             name: name.clone(),
                                             destination: destination.clone(),
-                                            created_at: *created_at,
                                             checksum: checksum.clone(),
                                         }
                                     }
@@ -3890,10 +4244,23 @@ impl CimKeysApp {
                         graph::NodeType::NatsOperator(_) => {
                             "nats operator".contains(&query_lower) || "operator".contains(&query_lower)
                         }
+                        graph::NodeType::NatsOperatorSimple { name, .. } => {
+                            name.to_lowercase().contains(&query_lower) ||
+                            "nats operator".contains(&query_lower) || "operator".contains(&query_lower)
+                        }
                         graph::NodeType::NatsAccount(_) => {
                             "nats account".contains(&query_lower) || "account".contains(&query_lower)
                         }
+                        graph::NodeType::NatsAccountSimple { name, .. } => {
+                            name.to_lowercase().contains(&query_lower) ||
+                            "nats account".contains(&query_lower) || "account".contains(&query_lower)
+                        }
                         graph::NodeType::NatsUser(_) => {
+                            "nats user".contains(&query_lower) || "user".contains(&query_lower)
+                        }
+                        graph::NodeType::NatsUserSimple { name, account_name, .. } => {
+                            name.to_lowercase().contains(&query_lower) ||
+                            account_name.to_lowercase().contains(&query_lower) ||
                             "nats user".contains(&query_lower) || "user".contains(&query_lower)
                         }
                         graph::NodeType::NatsServiceAccount(_) => {
@@ -4996,10 +5363,6 @@ impl CimKeysApp {
                                             text(format!("Address: {}", address_text))
                                                 .size(self.view_model.text_small)
                                                 .color(CowboyTheme::text_secondary()),
-                                            text(format!("Created: {}",
-                                                location.created_at.format("%Y-%m-%d %H:%M UTC")))
-                                                .size(self.view_model.text_small)
-                                                .color(CowboyTheme::text_secondary()),
                                         ]
                                         .spacing(self.view_model.spacing_sm),
                                         horizontal_space(),
@@ -5631,9 +5994,6 @@ impl CimKeysApp {
                                             .spacing(self.view_model.spacing_xs),
                                             horizontal_space(),
                                             column![
-                                                text(format!("Created: {}", key.created_at.format("%Y-%m-%d")))
-                                                    .size(self.view_model.text_tiny)
-                                                    .color(CowboyTheme::text_secondary()),
                                                 if key.revoked {
                                                     text("[WARNING] REVOKED")
                                                         .size(self.view_model.text_tiny)

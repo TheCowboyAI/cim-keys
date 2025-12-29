@@ -474,7 +474,6 @@ mod tests {
             description: Some("Test organization".to_string()),
             parent_id: None,
             units: vec![],
-            created_at: chrono::Utc::now(),
             metadata: std::collections::HashMap::new(),
         };
         let org_id = org.id;
@@ -499,7 +498,6 @@ mod tests {
             roles: vec![],
             organization_id: org_id,
             unit_ids: vec![unit_id],
-            created_at: chrono::Utc::now(),
             active: true,
         };
         let person_id = person.id;

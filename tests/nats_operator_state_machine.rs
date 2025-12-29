@@ -15,7 +15,6 @@ fn test_account_ids(count: usize) -> Vec<Uuid> {
 
 fn created_state() -> NatsOperatorState {
     NatsOperatorState::Created {
-        created_at: Utc::now(),
         created_by: test_person_id(),
         operator_name: "TestOperator".to_string(),
     }

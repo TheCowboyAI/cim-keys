@@ -136,7 +136,6 @@ mod idempotency {
     fn test_manifest_serialization_roundtrip() {
         let manifest = KeyManifest {
             version: "1.0.0".to_string(),
-            created_at: Utc::now(),
             updated_at: Utc::now(),
             organization: OrganizationInfo {
                 name: "Test Org".to_string(),
@@ -171,7 +170,6 @@ mod idempotency {
             algorithm: KeyAlgorithm::Ed25519,
             purpose: KeyPurpose::Signing,
             label: "Test Key".to_string(),
-            created_at: Utc::now(),
             hardware_backed: false,
             yubikey_serial: None,
             yubikey_slot: None,
@@ -217,7 +215,6 @@ mod idempotency {
             email: "test@example.com".to_string(),
             role: "Engineer".to_string(),
             organization_id: Uuid::now_v7(),
-            created_at: Utc::now(),
             state: None,
         };
 
@@ -235,7 +232,6 @@ mod idempotency {
             name: "Test Location".to_string(),
             location_type: "Physical".to_string(),
             organization_id: Uuid::now_v7(),
-            created_at: Utc::now(),
             street: Some("123 Main St".to_string()),
             city: Some("Austin".to_string()),
             region: Some("TX".to_string()),
@@ -275,7 +271,6 @@ mod idempotency {
             name: "test-operator".to_string(),
             public_key: "OABC123".to_string(),
             organization_id: Some(Uuid::now_v7()),
-            created_at: Utc::now(),
             created_by: "admin".to_string(),
         };
 
@@ -295,7 +290,6 @@ mod idempotency {
             public_key: "AABC123".to_string(),
             is_system: false,
             organization_unit_id: None,
-            created_at: Utc::now(),
             created_by: "admin".to_string(),
         };
 
@@ -314,7 +308,6 @@ mod idempotency {
             name: "test-user".to_string(),
             public_key: "UABC123".to_string(),
             person_id: Some(Uuid::now_v7()),
-            created_at: Utc::now(),
             created_by: "admin".to_string(),
         };
 
@@ -331,7 +324,6 @@ mod idempotency {
             hierarchy_name: "test-pki".to_string(),
             root_ca_id: Uuid::now_v7(),
             intermediate_ca_ids: vec![Uuid::now_v7(), Uuid::now_v7()],
-            created_at: Utc::now(),
             directory_path: "/pki/test-pki".to_string(),
         };
 

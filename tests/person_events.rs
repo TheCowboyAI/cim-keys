@@ -27,7 +27,6 @@ fn sample_person_created() -> PersonCreatedEvent {
         title: Some("Software Engineer".to_string()),
         department: Some("Engineering".to_string()),
         organization_id: Uuid::now_v7(),
-        created_at: Utc::now(),
         created_by: Some("admin".to_string()),
         correlation_id: Uuid::now_v7(),
         causation_id: None,
@@ -360,15 +359,7 @@ fn test_uuid_fields_are_valid() {
     assert_ne!(event.correlation_id, Uuid::nil());
 }
 
-#[test]
-fn test_timestamps_are_reasonable() {
-    let event = sample_person_created();
-    let now = Utc::now();
-
-    // Timestamp should be recent (within last second for this test)
-    let diff = now - event.created_at;
-    assert!(diff.num_seconds() < 2);
-}
+// Note: created_at test removed - timestamps are now embedded in UUID v7
 
 #[test]
 fn test_required_fields_are_non_empty() {

@@ -862,7 +862,6 @@ mod yubikey_provisioning {
             description: Some("Test organization for YubiKey provisioning".to_string()),
             parent_id: None,
             units: Vec::new(),
-            created_at: Utc::now(),
             metadata: HashMap::new(),
         }
     }
@@ -875,9 +874,9 @@ mod yubikey_provisioning {
             roles: Vec::new(),
             organization_id: org_id,
             unit_ids: Vec::new(),
-            created_at: Utc::now(),
             active: true,
             nats_permissions: None,
+            owner_id: None,
         }
     }
 
@@ -1028,9 +1027,9 @@ mod yubikey_provisioning {
                 roles: Vec::new(),
                 organization_id: org.id,
                 unit_ids: Vec::new(),
-                created_at: Utc::now(),
                 active: true,
                 nats_permissions: None,
+                owner_id: None,
             };
 
             let correlation_id = Uuid::now_v7();
@@ -1096,7 +1095,6 @@ mod nats_security_bootstrap {
                     nats_account_name: Some("dev".to_string()),
                 },
             ],
-            created_at: Utc::now(),
             metadata: HashMap::new(),
         }
     }
@@ -1211,9 +1209,9 @@ mod nats_security_bootstrap {
             roles: Vec::new(),
             organization_id: org.id,
             unit_ids: vec![unit.id],
-            created_at: Utc::now(),
             active: true,
             nats_permissions: None,
+            owner_id: None,
         };
 
         // Create user for person

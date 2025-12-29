@@ -215,6 +215,25 @@ impl PropertyCard {
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
+            // NATS Infrastructure - Simple variants (visualization only)
+            NodeType::NatsOperatorSimple { name, organization_id } => {
+                self.edit_name = name.clone();
+                self.edit_description = format!("Org: {}", organization_id.map(|id| id.to_string()).unwrap_or_else(|| "N/A".to_string()));
+                self.edit_email = String::new();
+                self.edit_enabled = true;
+            }
+            NodeType::NatsAccountSimple { name, unit_id, is_system } => {
+                self.edit_name = name.clone();
+                self.edit_description = format!("Unit: {}, System: {}", unit_id.map(|id| id.to_string()).unwrap_or_else(|| "N/A".to_string()), is_system);
+                self.edit_email = String::new();
+                self.edit_enabled = true;
+            }
+            NodeType::NatsUserSimple { name, person_id, account_name } => {
+                self.edit_name = name.clone();
+                self.edit_description = format!("Account: {}, Person: {}", account_name, person_id.map(|id| id.to_string()).unwrap_or_else(|| "N/A".to_string()));
+                self.edit_email = String::new();
+                self.edit_enabled = true;
+            }
             // PKI Trust Chain - read-only, no editing
             NodeType::RootCertificate { subject, issuer, .. } => {
                 self.edit_name = format!("Root CA: {}", subject);
@@ -1348,7 +1367,6 @@ mod tests {
             description: Some("A test org".to_string()),
             parent_id: None,
             units: vec![],
-            created_at: Utc::now(),
             metadata: HashMap::new(),
         };
 
@@ -1371,7 +1389,6 @@ mod tests {
             description: Some("A test org".to_string()),
             parent_id: None,
             units: vec![],
-            created_at: Utc::now(),
             metadata: HashMap::new(),
         };
 
@@ -1394,7 +1411,6 @@ mod tests {
             description: Some("A test org".to_string()),
             parent_id: None,
             units: vec![],
-            created_at: Utc::now(),
             metadata: HashMap::new(),
         };
 

@@ -72,4 +72,57 @@
 4. ✅ NATS Security Bootstrap tests (7 tests)
 5. Phase 3: Advanced integration testing
 
+## Production Ready:
+- ✅ CLI bootstrap command working with nested domain-bootstrap.json format
+- ✅ Generated NATS credentials for thecowboy.ai:
+  - 1 Operator (COWBOYAI)
+  - 3 Accounts (engineering, infrastructure, security)
+  - 5 Users (Steele, Ryan, Jace, David, ACME Service)
+- ✅ All JWTs signed with Ed25519
+- ✅ User credential files (.creds) ready for distribution
+
+## Air-Gapped PKI Workflow (cim-keys-gui)
+
+### Available Features:
+1. **Organization Graph View** - Visual representation of org structure
+2. **PKI Trust Chain Generation**:
+   - Organization → Root CA
+   - OrganizationalUnit → Intermediate CAs
+   - Person → Leaf Certificates
+3. **YubiKey Provisioning**:
+   - Detect connected YubiKeys
+   - Role-based slot allocation:
+     - RootAuthority → 9C (Signature)
+     - SecurityAdmin → 9A, 9C, 9D (Auth, Sign, KeyMgmt)
+     - Developer → 9A (Authentication)
+     - ServiceAccount → 9E (Card Auth)
+     - BackupHolder → 9D (Key Management)
+     - Auditor → 9A (Authentication)
+4. **NATS Infrastructure**:
+   - Organization → NATS Operator
+   - OrganizationalUnit → NATS Accounts
+   - Person → NATS Users
+5. **Policy Management**:
+   - Draft → Active → Modified → Suspended → Revoked
+   - Claims-based authorization
+   - Conditions and enforcement tracking
+
+### Workflow Steps:
+1. Preload domain-bootstrap.json onto SD card
+2. Boot air-gapped machine with cim-keys-gui
+3. Load domain configuration
+4. Review/edit organization structure in graph view
+5. Generate PKI from graph (Organization → Root CA → Intermediate CAs → Leaf certs)
+6. Connect and provision YubiKeys per person/role
+7. Generate NATS credentials
+8. Export complete PKI bundle to SD card
+
+### GUI Integration Tests (6 passing):
+- test_user_story_empty_graph_handling
+- test_user_story_analyze_yubikey_requirements
+- test_user_story_role_based_slot_allocation
+- test_user_story_generate_pki_from_simple_org
+- test_user_story_generate_nats_from_simple_org
+- test_user_story_complete_infrastructure_generation
+
 ## Updated: 2025-12-28

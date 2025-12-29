@@ -186,7 +186,6 @@ pub fn handle_export_to_encrypted_storage(
                 keys_count: cmd.keys.len(),
                 certificates_count: cmd.certificates.len(),
                 nats_configs_count: cmd.nats_identities.len(),
-                created_at: Utc::now(),
                 created_by: "system".to_string(),
                 correlation_id: cmd.correlation_id,
                 causation_id: cmd.causation_id,
@@ -515,7 +514,6 @@ mod tests {
             description: None,
             parent_id: None,
             units: vec![],
-            created_at: Utc::now(),
             metadata: Default::default(),
         };
 
@@ -556,7 +554,6 @@ mod tests {
             description: None,
             parent_id: None,
             units: vec![],
-            created_at: Utc::now(),
             metadata: Default::default(),
         };
 

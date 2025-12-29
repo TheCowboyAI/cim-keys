@@ -56,7 +56,6 @@ pub fn handle_create_nats_operator(
         operator_id: identity.nkey.id,
         name: cmd.organization.name.clone(),
         public_key: identity.nkey.public_key_string().to_string(),
-        created_at: Utc::now(),
         created_by: format!("cim-keys-operator-bootstrap"), // System-initiated bootstrap
         organization_id: Some(cmd.organization.id),
         correlation_id: cmd.correlation_id,
@@ -123,7 +122,6 @@ pub fn handle_create_nats_account(
         name: cmd.account.name().to_string(),
         public_key: identity.nkey.public_key_string().to_string(),
         is_system: matches!(cmd.account, AccountIdentity::Organization(_)),
-        created_at: Utc::now(),
         created_by: format!("cim-keys-account-bootstrap"),
         organization_unit_id: match &cmd.account {
             AccountIdentity::OrganizationUnit(unit) => Some(unit.id),
@@ -250,7 +248,6 @@ pub fn handle_create_nats_user(cmd: CreateNatsUser) -> Result<NatsUserCreated, S
                 purpose: sa.purpose.clone(),
                 owning_unit_id: sa.owning_unit_id,
                 responsible_person_id: sa.responsible_person_id,
-                created_at: Utc::now(),
                 correlation_id: Some(cmd.correlation_id),
                 causation_id: cmd.causation_id,
             })));
@@ -266,7 +263,6 @@ pub fn handle_create_nats_user(cmd: CreateNatsUser) -> Result<NatsUserCreated, S
                 agent_type: agent_type_str,
                 responsible_person_id: agent.metadata().owner_id(), // owner_id is the responsible person
                 organization_id: agent.metadata().owner_id(), // Using owner as org for now
-                created_at: Utc::now(),
                 correlation_id: Some(cmd.correlation_id),
                 causation_id: cmd.causation_id,
             })));
@@ -296,7 +292,6 @@ pub fn handle_create_nats_user(cmd: CreateNatsUser) -> Result<NatsUserCreated, S
         account_id: cmd.account_nkey.id,
         name: cmd.user.name().to_string(),
         public_key: identity.nkey.public_key_string().to_string(),
-        created_at: Utc::now(),
         created_by: format!("cim-keys-user-bootstrap"),
         person_id: match &cmd.user {
             UserIdentity::Person(p) => Some(p.id),
@@ -436,7 +431,6 @@ mod tests {
             description: None,
             parent_id: None,
             units: vec![],
-            created_at: Utc::now(),
             metadata: Default::default(),
         };
 
@@ -478,7 +472,6 @@ mod tests {
             description: None,
             parent_id: None,
             units: vec![],
-            created_at: Utc::now(),
             metadata: Default::default(),
         };
 
@@ -540,7 +533,6 @@ mod tests {
             description: None,
             parent_id: None,
             units: vec![],
-            created_at: Utc::now(),
             metadata: Default::default(),
         };
 
@@ -551,9 +543,9 @@ mod tests {
             roles: vec![],
             organization_id: org.id,
             unit_ids: vec![],
-            created_at: Utc::now(),
             active: true,
             nats_permissions: None,
+            owner_id: None,
         };
 
         // Create operator and account first

@@ -28,7 +28,6 @@ use uuid::Uuid;
 pub enum PolicyState {
     /// Policy created but not yet activated (under review)
     Draft {
-        created_at: DateTime<Utc>,
         author_id: Uuid, // Person who created the policy
         review_status: ReviewStatus,
     },

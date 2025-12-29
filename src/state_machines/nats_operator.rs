@@ -27,7 +27,6 @@ use uuid::Uuid;
 pub enum NatsOperatorState {
     /// Operator created but signing keys not yet generated
     Created {
-        created_at: DateTime<Utc>,
         created_by: Uuid, // Person ID
         operator_name: String,
     },

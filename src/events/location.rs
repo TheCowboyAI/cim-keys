@@ -56,7 +56,6 @@ pub struct LocationCreatedEvent {
     pub address: Option<String>,
     pub coordinates: Option<(f64, f64)>,
     pub organization_id: Option<Uuid>,
-    pub created_at: DateTime<Utc>,
     pub created_by: String,
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,

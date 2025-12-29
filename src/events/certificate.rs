@@ -124,7 +124,6 @@ pub struct CertificateExportedEvent {
 pub struct PkiHierarchyCreatedEvent {
     pub root_ca_id: Uuid,
     pub intermediate_cas: Vec<Uuid>,
-    pub created_at: DateTime<Utc>,
     pub created_by: String,
     pub organization_id: Uuid,
     pub correlation_id: Uuid,

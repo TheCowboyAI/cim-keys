@@ -70,14 +70,33 @@ pub enum NodeType {
     Policy(Policy),
 
     // NATS Infrastructure (Phase 1)
-    /// NATS Operator - root of NATS trust hierarchy
+    /// NATS Operator - root of NATS trust hierarchy (with full projection)
     NatsOperator(NatsIdentityProjection),
-    /// NATS Account - corresponds to organizational unit
+    /// NATS Account - corresponds to organizational unit (with full projection)
     NatsAccount(NatsIdentityProjection),
-    /// NATS User - corresponds to person
+    /// NATS User - corresponds to person (with full projection)
     NatsUser(NatsIdentityProjection),
-    /// NATS Service Account - for automated services
+    /// NATS Service Account - for automated services (with full projection)
     NatsServiceAccount(NatsIdentityProjection),
+
+    // NATS Infrastructure - Simple variants for visualization without cryptographic projections
+    /// NATS Operator (visualization only)
+    NatsOperatorSimple {
+        name: String,
+        organization_id: Option<Uuid>,
+    },
+    /// NATS Account (visualization only)
+    NatsAccountSimple {
+        name: String,
+        unit_id: Option<Uuid>,
+        is_system: bool,
+    },
+    /// NATS User (visualization only)
+    NatsUserSimple {
+        name: String,
+        person_id: Option<Uuid>,
+        account_name: String,
+    },
 
     // PKI Trust Chain (Phase 2)
     /// Root CA certificate - trust anchor
@@ -115,7 +134,6 @@ pub enum NodeType {
         key_id: Uuid,
         algorithm: crate::events::KeyAlgorithm,
         purpose: crate::events::KeyPurpose,
-        created_at: chrono::DateTime<chrono::Utc>,
         expires_at: Option<chrono::DateTime<chrono::Utc>>,
     },
 
@@ -150,7 +168,6 @@ pub enum NodeType {
         manifest_id: Uuid,
         name: String,
         destination: Option<std::path::PathBuf>,
-        created_at: chrono::DateTime<chrono::Utc>,
         checksum: Option<String>,
     },
 }
@@ -351,6 +368,16 @@ impl OrganizationGraph {
         }
     }
 
+    /// Clear all nodes and edges from the graph
+    pub fn clear(&mut self) {
+        self.nodes.clear();
+        self.edges.clear();
+        self.selected_node = None;
+        self.selected_edge = None;
+        self.dragging_node = None;
+        self.event_stack.clear();
+    }
+
     /// Add a person node to the graph
     pub fn add_node(&mut self, person: Person, role: KeyOwnerRole) {
         let node_id = person.id;
@@ -503,6 +530,50 @@ impl OrganizationGraph {
             label,
         };
 
+        self.nodes.insert(node_id, node);
+    }
+
+    // ===== Simple NATS Nodes (Visualization Only) =====
+
+    /// Add a simple NATS operator node (visualization without crypto)
+    pub fn add_nats_operator_simple(&mut self, node_id: Uuid, name: String, organization_id: Option<Uuid>) {
+        let node = GraphNode {
+            id: node_id,
+            node_type: NodeType::NatsOperatorSimple { name: name.clone(), organization_id },
+            position: self.calculate_node_position(node_id),
+            color: Color::from_rgb(1.0, 0.2, 0.0), // Bright red (root of trust)
+            label: name,
+        };
+        self.nodes.insert(node_id, node);
+    }
+
+    /// Add a simple NATS account node (visualization without crypto)
+    pub fn add_nats_account_simple(&mut self, node_id: Uuid, name: String, unit_id: Option<Uuid>, is_system: bool) {
+        let color = if is_system {
+            Color::from_rgb(1.0, 0.8, 0.0) // Yellow for system account
+        } else {
+            Color::from_rgb(1.0, 0.5, 0.0) // Orange (intermediate trust)
+        };
+
+        let node = GraphNode {
+            id: node_id,
+            node_type: NodeType::NatsAccountSimple { name: name.clone(), unit_id, is_system },
+            position: self.calculate_node_position(node_id),
+            color,
+            label: name,
+        };
+        self.nodes.insert(node_id, node);
+    }
+
+    /// Add a simple NATS user node (visualization without crypto)
+    pub fn add_nats_user_simple(&mut self, node_id: Uuid, name: String, person_id: Option<Uuid>, account_name: String) {
+        let node = GraphNode {
+            id: node_id,
+            node_type: NodeType::NatsUserSimple { name: name.clone(), person_id, account_name },
+            position: self.calculate_node_position(node_id),
+            color: Color::from_rgb(0.2, 0.8, 1.0), // Cyan (leaf user)
+            label: name,
+        };
         self.nodes.insert(node_id, node);
     }
 
@@ -1090,9 +1161,9 @@ impl OrganizationGraph {
                 NodeType::Role(_) => "Role",
                 NodeType::Policy(_) => "Policy",
                 // NATS Infrastructure
-                NodeType::NatsOperator(_) => "NatsOperator",
-                NodeType::NatsAccount(_) => "NatsAccount",
-                NodeType::NatsUser(_) => "NatsUser",
+                NodeType::NatsOperator(_) | NodeType::NatsOperatorSimple { .. } => "NatsOperator",
+                NodeType::NatsAccount(_) | NodeType::NatsAccountSimple { .. } => "NatsAccount",
+                NodeType::NatsUser(_) | NodeType::NatsUserSimple { .. } => "NatsUser",
                 NodeType::NatsServiceAccount(_) => "NatsServiceAccount",
                 // PKI Trust Chain
                 NodeType::RootCertificate { .. } => "RootCertificate",
@@ -1416,15 +1487,164 @@ impl OrganizationGraph {
     }
 
     fn calculate_node_position(&self, _id: Uuid) -> Point {
-        // Simple circular layout for now
-        let index = self.nodes.len() as f32;
-        let radius = 200.0;
-        let angle = index * 2.0 * std::f32::consts::PI / 10.0;
+        // Default position - will be repositioned by layout_hierarchical()
+        Point::new(400.0, 300.0)
+    }
 
-        Point::new(
-            400.0 + radius * angle.cos(),
-            300.0 + radius * angle.sin(),
-        )
+    /// Calculate position for a node based on its tier and index within that tier
+    fn calculate_tiered_position(&self, tier: usize, index_in_tier: usize, count_in_tier: usize) -> Point {
+        // Tier 0: Organization (top) - Y = 80
+        // Tier 1: Units (middle) - Y = 220
+        // Tier 2: People (bottom) - Y = 360
+        // Tier 3: Infrastructure (NATS, PKI, YubiKey) - Y = 500
+        // Tier 4: Certificates/Keys - Y = 640
+
+        let tier_y = match tier {
+            0 => 80.0,   // Organization
+            1 => 220.0,  // Units
+            2 => 360.0,  // People
+            3 => 500.0,  // Infrastructure (NATS Operator/Accounts, YubiKeys)
+            4 => 640.0,  // Leaf items (NATS Users, Certificates, Keys)
+            _ => 780.0,  // Overflow
+        };
+
+        // Spread nodes horizontally within their tier
+        let canvas_width = 800.0;
+        let margin = 100.0;
+        let usable_width = canvas_width - (2.0 * margin);
+
+        let x = if count_in_tier <= 1 {
+            canvas_width / 2.0  // Center single node
+        } else {
+            let spacing = usable_width / (count_in_tier - 1) as f32;
+            margin + (index_in_tier as f32 * spacing)
+        };
+
+        Point::new(x, tier_y)
+    }
+
+    /// Reorganize all nodes into a hierarchical tiered layout
+    /// Call this after adding all nodes to reposition them properly
+    pub fn layout_hierarchical(&mut self) {
+        // Collect nodes by tier
+        let mut tier_0: Vec<Uuid> = Vec::new(); // Organization
+        let mut tier_1: Vec<Uuid> = Vec::new(); // OrganizationalUnit
+        let mut tier_2: Vec<Uuid> = Vec::new(); // Person, Location
+        let tier_3: Vec<Uuid> = Vec::new(); // NATS Operator/Account, YubiKey (reserved)
+        let tier_4: Vec<Uuid> = Vec::new(); // NATS User, Certificates, Keys, PIV Slots (reserved)
+
+        for (id, node) in &self.nodes {
+            match &node.node_type {
+                NodeType::Organization(_) => tier_0.push(*id),
+                NodeType::OrganizationalUnit(_) => tier_1.push(*id),
+                NodeType::Person { .. } => tier_2.push(*id),
+                NodeType::Location(_) => tier_2.push(*id),
+                NodeType::Role(_) => tier_1.push(*id),
+                NodeType::Policy(_) => tier_1.push(*id),
+                NodeType::NatsOperator(_) | NodeType::NatsOperatorSimple { .. } => tier_0.push(*id),
+                NodeType::NatsAccount(_) | NodeType::NatsAccountSimple { .. } => tier_1.push(*id),
+                NodeType::YubiKey { .. } => tier_0.push(*id),
+                NodeType::NatsUser(_) | NodeType::NatsUserSimple { .. } => tier_2.push(*id),
+                NodeType::NatsServiceAccount(_) => tier_2.push(*id),
+                NodeType::RootCertificate { .. } => tier_0.push(*id),
+                NodeType::IntermediateCertificate { .. } => tier_1.push(*id),
+                NodeType::LeafCertificate { .. } => tier_2.push(*id),
+                NodeType::Key { .. } => tier_2.push(*id),
+                NodeType::PivSlot { .. } => tier_1.push(*id),
+                NodeType::YubiKeyStatus { .. } => tier_0.push(*id),
+                NodeType::Manifest { .. } => tier_2.push(*id),
+            }
+        }
+
+        // Reposition each tier
+        let tiers = [
+            (0, tier_0),
+            (1, tier_1),
+            (2, tier_2),
+            (3, tier_3),
+            (4, tier_4),
+        ];
+
+        // Calculate all positions first (to avoid borrow conflicts)
+        let mut position_updates: Vec<(Uuid, Point)> = Vec::new();
+
+        for (tier_num, tier_nodes) in tiers {
+            let count = tier_nodes.len();
+            for (index, id) in tier_nodes.into_iter().enumerate() {
+                let pos = self.calculate_tiered_position(tier_num, index, count);
+                position_updates.push((id, pos));
+            }
+        }
+
+        // Apply all position updates
+        for (id, pos) in position_updates {
+            if let Some(node) = self.nodes.get_mut(&id) {
+                node.position = pos;
+            }
+        }
+    }
+
+    /// Specialized layout for YubiKey graphs
+    /// Groups PIV slots under their parent YubiKey with better spacing
+    pub fn layout_yubikey_grouped(&mut self) {
+        // Collect YubiKeys and PIV slots
+        let mut yubikeys: Vec<(Uuid, String)> = Vec::new();  // (node_id, serial)
+        let mut piv_slots: Vec<(Uuid, String)> = Vec::new(); // (node_id, yubikey_serial)
+
+        for (id, node) in &self.nodes {
+            match &node.node_type {
+                NodeType::YubiKey { serial, .. } => {
+                    yubikeys.push((*id, serial.clone()));
+                }
+                NodeType::PivSlot { yubikey_serial, .. } => {
+                    piv_slots.push((*id, yubikey_serial.clone()));
+                }
+                _ => {}
+            }
+        }
+
+        // Sort YubiKeys by serial for consistent ordering
+        yubikeys.sort_by(|a, b| a.1.cmp(&b.1));
+
+        // Layout constants - wider spacing for YubiKeys
+        let yubikey_spacing = 220.0;  // Horizontal space per YubiKey column
+        let start_x = 120.0;          // Left margin
+        let yubikey_y = 100.0;        // Y position for YubiKey row
+        let slot_start_y = 200.0;     // Y position for first row of slots
+        let slot_spacing_x = 90.0;    // Horizontal spacing between slots in a group
+        let slot_spacing_y = 80.0;    // Vertical spacing between slot rows
+
+        let mut position_updates: Vec<(Uuid, Point)> = Vec::new();
+
+        // Position YubiKeys horizontally
+        for (idx, (yubikey_id, serial)) in yubikeys.iter().enumerate() {
+            let x = start_x + (idx as f32 * yubikey_spacing);
+            position_updates.push((*yubikey_id, Point::new(x, yubikey_y)));
+
+            // Find PIV slots for this YubiKey
+            let slots_for_yubikey: Vec<Uuid> = piv_slots
+                .iter()
+                .filter(|(_, yk_serial)| yk_serial == serial)
+                .map(|(id, _)| *id)
+                .collect();
+
+            // Position slots in a 2x2 grid under this YubiKey
+            // Centered under the parent YubiKey
+            for (slot_idx, slot_id) in slots_for_yubikey.iter().enumerate() {
+                let col = slot_idx % 2;
+                let row = slot_idx / 2;
+                let slot_x = x - (slot_spacing_x / 2.0) + (col as f32 * slot_spacing_x);
+                let slot_y = slot_start_y + (row as f32 * slot_spacing_y);
+                position_updates.push((*slot_id, Point::new(slot_x, slot_y)));
+            }
+        }
+
+        // Apply all position updates
+        for (id, pos) in position_updates {
+            if let Some(node) = self.nodes.get_mut(&id) {
+                node.position = pos;
+            }
+        }
     }
 
     fn role_to_color(&self, role: &KeyOwnerRole) -> Color {
@@ -1447,7 +1667,9 @@ impl OrganizationGraph {
                 self.filter_show_orgs
             }
             NodeType::NatsOperator(_) | NodeType::NatsAccount(_) |
-            NodeType::NatsUser(_) | NodeType::NatsServiceAccount(_) => {
+            NodeType::NatsUser(_) | NodeType::NatsServiceAccount(_) |
+            NodeType::NatsOperatorSimple { .. } | NodeType::NatsAccountSimple { .. } |
+            NodeType::NatsUserSimple { .. } => {
                 self.filter_show_nats
             }
             NodeType::RootCertificate { .. } | NodeType::IntermediateCertificate { .. } |
@@ -1621,7 +1843,9 @@ impl OrganizationGraph {
                     org_nodes.push(*id);
                 }
                 NodeType::NatsOperator(_) | NodeType::NatsAccount(_) |
-                NodeType::NatsUser(_) | NodeType::NatsServiceAccount(_) => {
+                NodeType::NatsUser(_) | NodeType::NatsServiceAccount(_) |
+                NodeType::NatsOperatorSimple { .. } | NodeType::NatsAccountSimple { .. } |
+                NodeType::NatsUserSimple { .. } => {
                     nats_nodes.push(*id);
                 }
                 NodeType::RootCertificate { .. } | NodeType::IntermediateCertificate { .. } |
@@ -1957,17 +2181,35 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                     "NATS Operator".to_string(),
                     identity.nkey.public_key.public_key()[..8].to_string(), // First 8 chars of NKey
                 ),
+                NodeType::NatsOperatorSimple { name, .. } => (
+                    crate::icons::ICON_CLOUD,
+                    crate::icons::MATERIAL_ICONS,
+                    name.clone(),
+                    "NATS Operator".to_string(),
+                ),
                 NodeType::NatsAccount(identity) => (
                     crate::icons::ICON_ACCOUNT_CIRCLE,
                     crate::icons::MATERIAL_ICONS,
                     "NATS Account".to_string(),
                     identity.nkey.public_key.public_key()[..8].to_string(),
                 ),
+                NodeType::NatsAccountSimple { name, is_system, .. } => (
+                    crate::icons::ICON_ACCOUNT_CIRCLE,
+                    crate::icons::MATERIAL_ICONS,
+                    name.clone(),
+                    if *is_system { "System Account".to_string() } else { "NATS Account".to_string() },
+                ),
                 NodeType::NatsUser(identity) => (
                     crate::icons::ICON_PERSON,
                     crate::icons::MATERIAL_ICONS,
                     "NATS User".to_string(),
                     identity.nkey.public_key.public_key()[..8].to_string(),
+                ),
+                NodeType::NatsUserSimple { name, account_name, .. } => (
+                    crate::icons::ICON_PERSON,
+                    crate::icons::MATERIAL_ICONS,
+                    name.clone(),
+                    format!("Account: {}", account_name),
                 ),
                 NodeType::NatsServiceAccount(identity) => (
                     crate::icons::ICON_SETTINGS,
@@ -2037,14 +2279,14 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                     },
                 ),
                 // Export and Manifest
-                NodeType::Manifest { name, destination, created_at, .. } => (
+                NodeType::Manifest { name, destination, .. } => (
                     crate::icons::ICON_BUSINESS,
                     crate::icons::MATERIAL_ICONS,
                     format!("Manifest: {}", name),
                     if let Some(dest) = destination {
                         format!("→ {}", dest.display())
                     } else {
-                        format!("Created {}", created_at.format("%Y-%m-%d"))
+                        "No destination".to_string()
                     },
                 ),
             };
@@ -2427,17 +2669,37 @@ pub fn view_graph(graph: &OrganizationGraph) -> Element<'_, GraphMessage> {
                     text(format!("JWT Token: {}...", &identity.jwt.token()[..20])),
                     text(format!("Has Credential: {}", identity.credential.is_some())),
                 ],
+                NodeType::NatsOperatorSimple { name, organization_id } => column![
+                    text("Selected NATS Operator:").size(16),
+                    text(format!("Name: {}", name)),
+                    text(format!("Organization: {}", organization_id.map(|id| id.to_string()).unwrap_or_else(|| "N/A".to_string()))),
+                    text("(Visualization only - no crypto keys)"),
+                ],
                 NodeType::NatsAccount(identity) => column![
                     text("Selected NATS Account:").size(16),
                     text(format!("Public Key: {}", identity.nkey.public_key.public_key())),
                     text(format!("JWT Token: {}...", &identity.jwt.token()[..20])),
                     text(format!("Has Credential: {}", identity.credential.is_some())),
                 ],
+                NodeType::NatsAccountSimple { name, unit_id, is_system } => column![
+                    text("Selected NATS Account:").size(16),
+                    text(format!("Name: {}", name)),
+                    text(format!("Unit: {}", unit_id.map(|id| id.to_string()).unwrap_or_else(|| "N/A".to_string()))),
+                    text(format!("System Account: {}", is_system)),
+                    text("(Visualization only - no crypto keys)"),
+                ],
                 NodeType::NatsUser(identity) => column![
                     text("Selected NATS User:").size(16),
                     text(format!("Public Key: {}", identity.nkey.public_key.public_key())),
                     text(format!("JWT Token: {}...", &identity.jwt.token()[..20])),
                     text(format!("Has Credential: {}", identity.credential.is_some())),
+                ],
+                NodeType::NatsUserSimple { name, person_id, account_name } => column![
+                    text("Selected NATS User:").size(16),
+                    text(format!("Name: {}", name)),
+                    text(format!("Account: {}", account_name)),
+                    text(format!("Person: {}", person_id.map(|id| id.to_string()).unwrap_or_else(|| "N/A".to_string()))),
+                    text("(Visualization only - no crypto keys)"),
                 ],
                 NodeType::NatsServiceAccount(identity) => column![
                     text("Selected Service Account:").size(16),
@@ -2494,21 +2756,19 @@ pub fn view_graph(graph: &OrganizationGraph) -> Element<'_, GraphMessage> {
                     text(format!("Needed Slots: {}", slots_needed.len())),
                 ],
                 // Cryptographic Keys
-                NodeType::Key { key_id, algorithm, purpose, created_at, expires_at } => column![
+                NodeType::Key { key_id, algorithm, purpose, expires_at } => column![
                     text("Selected Key:").size(16),
                     text(format!("ID: {}", key_id)),
                     text(format!("Algorithm: {:?}", algorithm)),
                     text(format!("Purpose: {:?}", purpose)),
-                    text(format!("Created: {}", created_at.format("%Y-%m-%d %H:%M:%S UTC"))),
                     text(format!("Expires: {}", expires_at.map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string()).unwrap_or_else(|| "Never".to_string()))),
                 ],
                 // Export and Manifest
-                NodeType::Manifest { manifest_id, name, destination, created_at, checksum } => column![
+                NodeType::Manifest { manifest_id, name, destination, checksum } => column![
                     text("Selected Manifest:").size(16),
                     text(format!("ID: {}", manifest_id)),
                     text(format!("Name: {}", name)),
                     text(format!("Destination: {}", destination.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "None".to_string()))),
-                    text(format!("Created: {}", created_at.format("%Y-%m-%d %H:%M:%S UTC"))),
                     text(format!("Checksum: {}", checksum.clone().unwrap_or_else(|| "None".to_string()))),
                 ],
             };

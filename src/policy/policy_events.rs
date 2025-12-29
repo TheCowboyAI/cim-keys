@@ -162,7 +162,6 @@ pub struct OrganizationPolicyCreated {
     pub policy_description: String,
     pub policy_type: String,
     pub created_by: Person,
-    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -383,7 +383,6 @@ mod tests {
             description: None,
             parent_id: None,
             units: Vec::new(),
-            created_at: Utc::now(),
             metadata: HashMap::new(),
         };
         graph.add_organization_node(org.clone());
@@ -409,7 +408,6 @@ mod tests {
             description: None,
             parent_id: None,
             units: Vec::new(),
-            created_at: Utc::now(),
             metadata: HashMap::new(),
         }));
 

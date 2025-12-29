@@ -302,7 +302,6 @@ impl JwtClaimsProjection {
             permissions: format!("Operator: signing_keys={}", signing_keys.len()),
             not_before: created_at,
             expires_at: None, // Operators don't expire
-            created_at,
             correlation_id,
             causation_id,
         };
@@ -359,7 +358,6 @@ impl JwtClaimsProjection {
             permissions: format!("Account: {} | signing_keys={} | limits={:?}", permissions_json, signing_keys.len(), limits),
             not_before: created_at,
             expires_at: account_nkey.expires_at,
-            created_at,
             correlation_id,
             causation_id,
         };
@@ -414,7 +412,6 @@ impl JwtClaimsProjection {
             permissions: format!("User: {} | {} | limits={:?}", person.name, permissions_json, limits),
             not_before: created_at,
             expires_at: user_nkey.expires_at,
-            created_at,
             correlation_id,
             causation_id,
         };
@@ -467,7 +464,6 @@ impl JwtClaimsProjection {
             permissions: format!("User: {} | {} | limits={:?}", user_name, permissions_json, limits),
             not_before: created_at,
             expires_at: user_nkey.expires_at,
-            created_at,
             correlation_id,
             causation_id,
         };
@@ -1231,7 +1227,6 @@ mod tests {
             description: None,
             parent_id: None,
             units: vec![],
-            created_at: Utc::now(),
             metadata: Default::default(),
         };
 
@@ -1250,7 +1245,6 @@ mod tests {
             description: None,
             parent_id: None,
             units: vec![],
-            created_at: Utc::now(),
             metadata: Default::default(),
         };
 
@@ -1305,7 +1299,6 @@ mod tests {
             description: Some("Test organization for CIM infrastructure".to_string()),
             parent_id: None,
             units: vec![],
-            created_at: Utc::now(),
             metadata: Default::default(),
         };
 
@@ -1342,7 +1335,6 @@ mod tests {
             description: None,
             parent_id: None,
             units: vec![],
-            created_at: Utc::now(),
             metadata: Default::default(),
         };
 

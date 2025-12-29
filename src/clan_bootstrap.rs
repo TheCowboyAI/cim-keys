@@ -3,7 +3,6 @@
 // Loads clan-bootstrap.json configuration and converts it to domain structures
 // for NSC export compatible with CLAN infrastructure.
 
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -130,7 +129,6 @@ impl ClanBootstrapLoader {
             description: config.description.clone(),
             parent_id: None,
             units: Vec::new(), // Will be populated separately
-            created_at: Utc::now(),
             metadata,
         })
     }
@@ -202,9 +200,9 @@ impl ClanBootstrapLoader {
                 }],
                 organization_id: org.id,
                 unit_ids: vec![unit.id],
-                created_at: Utc::now(),
                 active: true,
                 nats_permissions,
+                owner_id: None,
             };
 
             people.push(person);

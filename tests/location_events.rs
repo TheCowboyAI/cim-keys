@@ -27,7 +27,6 @@ fn sample_location_created() -> LocationCreatedEvent {
         address: Some("123 Security St".to_string()),
         coordinates: Some((37.7749, -122.4194)),
         organization_id: Some(test_org_id()),
-        created_at: Utc::now(),
         created_by: "admin".to_string(),
         correlation_id: Uuid::now_v7(),
         causation_id: None,

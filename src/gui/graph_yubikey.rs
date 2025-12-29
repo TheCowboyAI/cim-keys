@@ -283,7 +283,6 @@ mod tests {
             description: None,
             parent_id: None,
             units: Vec::new(),
-            created_at: Utc::now(),
             metadata: HashMap::new(),
         };
         graph.add_organization_node(org);
@@ -296,9 +295,9 @@ mod tests {
             roles: vec![],
             organization_id: org_id,
             unit_ids: vec![],
-            created_at: Utc::now(),
             active: true,
             nats_permissions: None,
+            owner_id: None,
         };
         graph.add_node(person.clone(), KeyOwnerRole::Developer);
 

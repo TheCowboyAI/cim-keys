@@ -35,7 +35,6 @@ pub struct ManifestCreatedEvent {
     pub keys_count: usize,
     pub certificates_count: usize,
     pub nats_configs_count: usize,
-    pub created_at: DateTime<Utc>,
     pub created_by: String,
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
