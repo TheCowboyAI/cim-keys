@@ -3728,16 +3728,16 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                     name.clone(),
                     category.clone(),
                 ),
-                // Policy Categories (progressive disclosure)
-                NodeType::PolicyCategory { name, claim_count, expanded, .. } => (
-                    if *expanded { crate::icons::ICON_FOLDER_OPEN } else { crate::icons::ICON_FOLDER },
+                // Policy Categories (progressive disclosure) - use simple category icon
+                NodeType::PolicyCategory { name, claim_count, .. } => (
+                    crate::icons::ICON_GROUP,  // Category icon
                     crate::icons::MATERIAL_ICONS,
                     name.clone(),
                     format!("{} claims", claim_count),
                 ),
-                // Separation Class Groups (progressive disclosure)
-                NodeType::SeparationClassGroup { name, role_count, expanded, .. } => (
-                    if *expanded { crate::icons::ICON_FOLDER_OPEN } else { crate::icons::ICON_FOLDER },
+                // Separation Class Groups (progressive disclosure) - use security icon
+                NodeType::SeparationClassGroup { name, role_count, .. } => (
+                    crate::icons::ICON_SECURITY,  // Security/shield icon for separation classes
                     crate::icons::MATERIAL_ICONS,
                     name.clone(),
                     format!("{} roles", role_count),
@@ -3777,6 +3777,48 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                 line_height: LineHeight::default(),
                 shaping: Shaping::Advanced,
             });
+
+            // Draw +/- expansion indicator for expandable nodes (SeparationClassGroup, PolicyCategory)
+            let is_expandable = matches!(
+                &node.node_type,
+                NodeType::SeparationClassGroup { .. } | NodeType::PolicyCategory { .. }
+            );
+            if is_expandable {
+                let expanded = match &node.node_type {
+                    NodeType::SeparationClassGroup { expanded, .. } => *expanded,
+                    NodeType::PolicyCategory { expanded, .. } => *expanded,
+                    _ => false,
+                };
+
+                // Position indicator below secondary text
+                let indicator_y = node.position.y + radius + 44.0;
+                let indicator_center = Point::new(node.position.x, indicator_y);
+                let indicator_radius = 10.0;
+
+                // Draw indicator circle (blue background)
+                let indicator_circle = canvas::Path::circle(indicator_center, indicator_radius);
+                frame.fill(&indicator_circle, Color::from_rgb(0.3, 0.5, 0.8));
+
+                // Draw border
+                let border = canvas::Path::circle(indicator_center, indicator_radius);
+                frame.stroke(&border, canvas::Stroke::default()
+                    .with_color(Color::from_rgb(0.5, 0.7, 1.0))
+                    .with_width(1.5));
+
+                // Draw + or - symbol
+                let symbol = if expanded { "−" } else { "+" };
+                frame.fill_text(canvas::Text {
+                    content: symbol.to_string(),
+                    position: indicator_center,
+                    color: Color::WHITE,
+                    size: iced::Pixels(16.0),
+                    font: iced::Font::DEFAULT,
+                    horizontal_alignment: iced::alignment::Horizontal::Center,
+                    vertical_alignment: iced::alignment::Vertical::Center,
+                    line_height: LineHeight::default(),
+                    shaping: Shaping::Advanced,
+                });
+            }
 
             // Draw role badges for Person nodes (compact mode)
             if let NodeType::Person { .. } = &node.node_type {
