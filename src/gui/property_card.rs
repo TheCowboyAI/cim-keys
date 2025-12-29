@@ -534,6 +534,10 @@ impl PropertyCard {
             NodeType::YubiKey { .. } | NodeType::PivSlot { .. } => {
                 return self.view_yubikey_details(node_type);
             }
+            NodeType::PolicyRole { .. } | NodeType::PolicyCategory { .. } |
+            NodeType::SeparationClassGroup { .. } => {
+                return self.view_policy_details(node_type);
+            }
             _ => {}
         }
 
@@ -544,7 +548,23 @@ impl PropertyCard {
             NodeType::Location(_) => "Location",
             NodeType::Role(_) => "Role",
             NodeType::Policy(_) => "Policy",
-            _ => "Unknown",
+            // Policy graph node types
+            NodeType::PolicyRole { .. } => "Role",
+            NodeType::PolicyCategory { .. } => "Claim Category",
+            NodeType::SeparationClassGroup { .. } => "Separation Class",
+            // Certificate types
+            NodeType::RootCertificate { .. } => "Root Certificate",
+            NodeType::IntermediateCertificate { .. } => "Intermediate Certificate",
+            NodeType::LeafCertificate { .. } => "Leaf Certificate",
+            // NATS types
+            NodeType::NatsOperator(_) => "NATS Operator",
+            NodeType::NatsAccount(_) => "NATS Account",
+            NodeType::NatsUser(_) => "NATS User",
+            NodeType::NatsServiceAccount(_) => "NATS Service Account",
+            // YubiKey types
+            NodeType::YubiKey { .. } => "YubiKey",
+            NodeType::PivSlot { .. } => "PIV Slot",
+            _ => "Node",
         };
 
         let header: Row<'_, PropertyCardMessage> = row![
@@ -1354,6 +1374,81 @@ impl PropertyCard {
         )
         .width(Length::Fill)
         .height(Length::Fill)
+        .into()
+    }
+
+    /// Render detailed policy information (read-only)
+    fn view_policy_details<'a>(&self, node_type: &'a NodeType) -> Element<'a, PropertyCardMessage> {
+        use crate::gui::cowboy_theme::CowboyAppTheme as CowboyCustomTheme;
+
+        let (title, details) = match node_type {
+            NodeType::PolicyRole { name, purpose, level, separation_class, claim_count, .. } => (
+                "Role",
+                column![
+                    self.detail_row("Name:", name),
+                    self.detail_row("Purpose:", purpose),
+                    self.detail_row("Level:", &format!("{} ({})", level, match level {
+                        0 => "Entry",
+                        1 => "Junior",
+                        2 => "Mid-level",
+                        3 => "Senior",
+                        4 => "Staff/Principal",
+                        5 => "Executive",
+                        _ => "Custom",
+                    })),
+                    self.detail_row("Separation Class:", &format!("{:?}", separation_class)),
+                    self.detail_row("Claims:", &format!("{} permissions", claim_count)),
+                ].spacing(8)
+            ),
+            NodeType::PolicyCategory { name, claim_count, .. } => (
+                "Claim Category",
+                column![
+                    self.detail_row("Category:", name),
+                    self.detail_row("Total Claims:", &format!("{}", claim_count)),
+                    text("Claim categories group related permissions.").size(11).color(Color::from_rgb(0.6, 0.6, 0.7)),
+                ].spacing(8)
+            ),
+            NodeType::SeparationClassGroup { name, role_count, separation_class, .. } => (
+                "Separation Class",
+                column![
+                    self.detail_row("Class:", name),
+                    self.detail_row("Type:", &format!("{:?}", separation_class)),
+                    self.detail_row("Roles:", &format!("{} roles", role_count)),
+                    text("Separation classes enforce duty segregation.").size(11).color(Color::from_rgb(0.6, 0.6, 0.7)),
+                    text(match separation_class {
+                        crate::policy::SeparationClass::Operational => "Operational roles handle day-to-day tasks.",
+                        crate::policy::SeparationClass::Administrative => "Administrative roles manage users and policies.",
+                        crate::policy::SeparationClass::Audit => "Audit roles monitor and review system activity.",
+                        crate::policy::SeparationClass::Emergency => "Emergency roles provide break-glass access.",
+                        crate::policy::SeparationClass::Financial => "Financial roles manage budgets and spending.",
+                        crate::policy::SeparationClass::Personnel => "Personnel roles handle HR and staffing.",
+                    }).size(10).color(Color::from_rgb(0.5, 0.6, 0.5)),
+                ].spacing(8)
+            ),
+            _ => ("Policy", column![].spacing(8)),
+        };
+
+        container(
+            column![
+                row![
+                    text(title).size(18),
+                    button(icons::icon_sized(ICON_CLOSE, 16))
+                        .on_press(PropertyCardMessage::Close)
+                        .style(|theme: &Theme, _status| {
+                            button::Style {
+                                background: None,
+                                text_color: theme.palette().danger,
+                                border: iced::Border::default(),
+                                shadow: iced::Shadow::default(),
+                            }
+                        }),
+                ].spacing(10).align_y(iced::Alignment::Center),
+                scrollable(details).height(Length::Fill),
+            ].spacing(10).padding(15)
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(CowboyCustomTheme::pastel_coral_card())
         .into()
     }
 
