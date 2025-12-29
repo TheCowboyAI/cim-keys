@@ -7,7 +7,7 @@ use iced::widget::canvas;
 use iced::Color;
 use uuid::Uuid;
 
-use super::graph::OrganizationGraph;
+use super::graph::OrganizationConcept;
 
 /// Edge creation indicator state
 #[derive(Debug, Clone)]
@@ -72,7 +72,7 @@ impl EdgeCreationIndicator {
     }
 
     /// Draw the edge creation indicator on the canvas
-    pub fn draw(&self, frame: &mut canvas::Frame, graph: &OrganizationGraph) {
+    pub fn draw(&self, frame: &mut canvas::Frame, graph: &OrganizationConcept) {
         if !self.active || self.from_node.is_none() {
             return;
         }

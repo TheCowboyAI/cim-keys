@@ -830,7 +830,7 @@ pub fn update(
             (updated, Task::none())
         }
 
-        Intent::UiGraphNodeClicked { node_id } => {
+        Intent::UiConceptEntityClicked { node_id } => {
             let updated = model.with_status_message(format!("Node selected: {}", node_id));
             // TODO: Select node in graph state
             (updated, Task::none())

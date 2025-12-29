@@ -69,7 +69,7 @@ pub mod role_palette;
 #[cfg(test)]
 mod graph_integration_tests;
 
-use graph::{OrganizationGraph, GraphMessage};
+use graph::{OrganizationConcept, OrganizationIntent};
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
 use view_model::ViewModel;
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
@@ -109,14 +109,14 @@ pub struct CimKeysApp {
     _event_subscriber: GuiEventSubscriber,  // Reserved for future NATS integration
 
     // Graph visualization
-    org_graph: OrganizationGraph,
+    org_graph: OrganizationConcept,
     // Filtered graphs for different contexts (cached for performance)
-    pki_graph: OrganizationGraph,
-    nats_graph: OrganizationGraph,
-    yubikey_graph: OrganizationGraph,
-    location_graph: OrganizationGraph,
-    policy_graph: OrganizationGraph,
-    empty_graph: OrganizationGraph,
+    pki_graph: OrganizationConcept,
+    nats_graph: OrganizationConcept,
+    yubikey_graph: OrganizationConcept,
+    location_graph: OrganizationConcept,
+    policy_graph: OrganizationConcept,
+    empty_graph: OrganizationConcept,
     graph_projector: crate::graph_projection::GraphProjector,  // Functorial projection to cim-graph
     selected_person: Option<Uuid>,
     selected_node_type: Option<String>,  // Node type selected in "Add Node" dropdown
@@ -564,7 +564,7 @@ pub enum Message {
     NatsHierarchyGenerated(Result<String, String>),
     NatsBootstrapCreated(Box<crate::domain_projections::OrganizationBootstrap>),
     GenerateNatsFromGraph,  // Graph-first NATS generation
-    NatsFromGraphGenerated(Result<Vec<(graph::GraphNode, Option<Uuid>)>, String>),
+    NatsFromGraphGenerated(Result<Vec<(graph::ConceptEntity, Option<Uuid>)>, String>),
     ExportToNsc,
     NscExported(Result<String, String>),
 
@@ -578,14 +578,14 @@ pub enum Message {
     // PKI operations
     PkiCertificatesLoaded(Vec<crate::projections::CertificateEntry>),
     GeneratePkiFromGraph,  // Graph-first PKI generation
-    PkiGenerated(Result<Vec<(graph::GraphNode, Option<Uuid>)>, String>),
+    PkiGenerated(Result<Vec<(graph::ConceptEntity, Option<Uuid>)>, String>),
     RootCAGenerated(Result<crate::crypto::x509::X509Certificate, String>),
     PersonalKeysGenerated(Result<(crate::crypto::x509::X509Certificate, Vec<String>), String>), // (cert, nats_keys)
 
     // YubiKey operations
     YubiKeyDataLoaded(Vec<crate::projections::YubiKeyEntry>, Vec<crate::projections::PersonEntry>),
     ProvisionYubiKeysFromGraph,  // Graph-first YubiKey provisioning
-    YubiKeysProvisioned(Result<Vec<(graph::GraphNode, Uuid)>, String>),
+    YubiKeysProvisioned(Result<Vec<(graph::ConceptEntity, Uuid)>, String>),
 
     // Root passphrase operations
     RootPassphraseChanged(String),
@@ -612,7 +612,7 @@ pub enum Message {
     ClearError,
 
     // Graph interactions
-    GraphMessage(GraphMessage),
+    OrganizationIntent(OrganizationIntent),
     CreateContextAwareNode,  // SPACE key: show node type selector
     SelectNodeType(OrganizationalNodeType),  // User selects node type from menu
     CancelNodeTypeSelector,  // Escape key cancels selector
@@ -802,12 +802,12 @@ pub struct GraphExport {
     pub version: String,
     pub exported_at: String,
     pub graph_view: String,
-    pub nodes: Vec<GraphNodeExport>,
-    pub edges: Vec<GraphEdgeExport>,
+    pub nodes: Vec<ConceptEntityExport>,
+    pub edges: Vec<ConceptRelationExport>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GraphNodeExport {
+pub struct ConceptEntityExport {
     pub id: Uuid,
     pub node_type: String,
     pub position_x: f32,
@@ -819,7 +819,7 @@ pub struct GraphNodeExport {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GraphEdgeExport {
+pub struct ConceptRelationExport {
     pub from_id: Uuid,
     pub to_id: Uuid,
     pub edge_type: String,
@@ -881,14 +881,14 @@ impl CimKeysApp {
                 config,
                 event_emitter: CimEventEmitter::new(default_org),
                 _event_subscriber: GuiEventSubscriber::new(default_org),
-                org_graph: OrganizationGraph::new(),
+                org_graph: OrganizationConcept::new(),
                 // Initialize filtered graphs (empty initially)
-                pki_graph: OrganizationGraph::new(),
-                nats_graph: OrganizationGraph::new(),
-                yubikey_graph: OrganizationGraph::new(),
-                location_graph: OrganizationGraph::new(),
-                policy_graph: OrganizationGraph::new(),
-                empty_graph: OrganizationGraph::new(),
+                pki_graph: OrganizationConcept::new(),
+                nats_graph: OrganizationConcept::new(),
+                yubikey_graph: OrganizationConcept::new(),
+                location_graph: OrganizationConcept::new(),
+                policy_graph: OrganizationConcept::new(),
+                empty_graph: OrganizationConcept::new(),
                 graph_projector: crate::graph_projection::GraphProjector::new(),
                 selected_person: None,
                 selected_node_type: None,
@@ -1454,7 +1454,7 @@ impl CimKeysApp {
                 match result {
                     Ok(config) => {
                         // Clear existing graph
-                        self.org_graph = graph::OrganizationGraph::new();
+                        self.org_graph = graph::OrganizationConcept::new();
 
                         match config {
                             BootstrapConfig::Full(full_config) => {
@@ -1690,7 +1690,7 @@ impl CimKeysApp {
                     self.status_message = "Edit cancelled".to_string();
                 } else {
                     // No inline edit active - cancel edge creation instead
-                    self.org_graph.handle_message(crate::gui::graph::GraphMessage::CancelEdgeCreation);
+                    self.org_graph.handle_message(crate::gui::graph::OrganizationIntent::CancelEdgeCreation);
                     if self.org_graph.edge_indicator.is_active() {
                         self.status_message = "Edge creation cancelled".to_string();
                     }
@@ -2118,7 +2118,7 @@ impl CimKeysApp {
                         // Create Root CA node in graph
                         let cert_id = Uuid::now_v7();
                         let subject = format!("CN={} Root CA, O={}", self.organization_name, self.organization_name);
-                        let root_ca_node = graph::GraphNode {
+                        let root_ca_node = graph::ConceptEntity {
                             id: cert_id,
                             node_type: graph::NodeType::RootCertificate {
                                 cert_id,
@@ -2161,7 +2161,7 @@ impl CimKeysApp {
                         // Create Leaf Certificate node in graph
                         let cert_id = Uuid::now_v7();
                         let subject = certificate.certificate_pem.lines().nth(0).unwrap_or("Personal Cert").to_string();
-                        let leaf_cert_node = graph::GraphNode {
+                        let leaf_cert_node = graph::ConceptEntity {
                             id: cert_id,
                             node_type: graph::NodeType::LeafCertificate {
                                 cert_id,
@@ -3255,9 +3255,9 @@ impl CimKeysApp {
             // Now using flexible node type selector menu
 
             // Graph interactions
-            Message::GraphMessage(graph_msg) => {
+            Message::OrganizationIntent(graph_msg) => {
                 match &graph_msg {
-                    GraphMessage::NodeClicked(id) => {
+                    OrganizationIntent::NodeClicked(id) => {
                         self.status_message = format!("DEBUG: NodeClicked received for node {:?}", id);
                         // Check if we're in edge creation mode
                         if self.org_graph.edge_indicator.is_active() {
@@ -3323,7 +3323,7 @@ impl CimKeysApp {
                             }
                         }
                     }
-                    GraphMessage::ExpandIndicatorClicked(id) => {
+                    OrganizationIntent::ExpandIndicatorClicked(id) => {
                         // Handle +/- indicator click for expandable nodes
                         if let Some(node) = self.policy_graph.nodes.get(id) {
                             // SeparationClassGroup expansion
@@ -3355,14 +3355,14 @@ impl CimKeysApp {
                             }
                         }
                     }
-                    GraphMessage::NodeDragStarted { node_id, offset } => {
+                    OrganizationIntent::NodeDragStarted { node_id, offset } => {
                         self.org_graph.dragging_node = Some(*node_id);
                         self.org_graph.drag_offset = *offset;
                         if let Some(node) = self.org_graph.nodes.get(node_id) {
                             self.org_graph.drag_start_position = Some(node.position);
                         }
                     }
-                    GraphMessage::NodeDragged(cursor_position) => {
+                    OrganizationIntent::NodeDragged(cursor_position) => {
                         if let Some(node_id) = self.org_graph.dragging_node {
                             if let Some(node) = self.org_graph.nodes.get_mut(&node_id) {
                                 // Update node position based on cursor and drag offset
@@ -3373,7 +3373,7 @@ impl CimKeysApp {
                             }
                         }
                     }
-                    GraphMessage::NodeDragEnded => {
+                    OrganizationIntent::NodeDragEnded => {
                         if let Some(node_id) = self.org_graph.dragging_node {
                             // Check if node actually moved
                             if let (Some(start_pos), Some(node)) = (
@@ -3403,35 +3403,35 @@ impl CimKeysApp {
                         self.org_graph.dragging_node = None;
                         self.org_graph.drag_start_position = None;
                     }
-                    GraphMessage::AutoLayout => {
+                    OrganizationIntent::AutoLayout => {
                         self.org_graph.auto_layout();
                         self.status_message = String::from("Graph layout updated");
                     }
-                    GraphMessage::AddEdge { .. } => {
+                    OrganizationIntent::AddEdge { .. } => {
                         // Handled in graph.handle_message (line 1744)
                         self.status_message = String::from("Relationship added");
                     }
-                    GraphMessage::EdgeSelected(index) => {
+                    OrganizationIntent::EdgeSelected(index) => {
                         if let Some(edge) = self.org_graph.edges.get(*index) {
                             self.property_card.set_edge(*index, edge.from, edge.to, edge.edge_type.clone());
                             self.status_message = format!("Edge selected ({})", *index);
                         }
                     }
-                    GraphMessage::EdgeDeleted(_index) => {
+                    OrganizationIntent::EdgeDeleted(_index) => {
                         // Handled in graph.handle_message
                         self.property_card.clear();
                         self.status_message = String::from("Edge deleted");
                     }
-                    GraphMessage::EdgeTypeChanged { .. } => {
+                    OrganizationIntent::EdgeTypeChanged { .. } => {
                         // Handled in graph.handle_message
                         self.status_message = String::from("Edge type changed");
                     }
-                    GraphMessage::EdgeCreationStarted(_node_id) => {
+                    OrganizationIntent::EdgeCreationStarted(_node_id) => {
                         // Handled in graph.handle_message (starts edge indicator)
                         self.status_message = String::from("Drag to target node to create edge");
                     }
                     // Phase 4: Right-click shows node selector menu (same as SPACE key)
-                    GraphMessage::RightClick(_position) => {
+                    OrganizationIntent::RightClick(_position) => {
                         // Close property card if it's showing (don't stack menu on top of it)
                         if self.property_card.is_editing() {
                             self.property_card.clear();
@@ -3443,20 +3443,20 @@ impl CimKeysApp {
                         self.status_message = "Select node type to create (Esc to cancel)".to_string();
                     }
                     // Phase 4: Update edge indicator position during edge creation
-                    GraphMessage::CursorMoved(position) => {
+                    OrganizationIntent::CursorMoved(position) => {
                         if self.org_graph.edge_indicator.is_active() {
                             self.org_graph.edge_indicator.update_position(*position);
                         }
                     }
                     // Phase 4: Cancel edge creation with Esc key
-                    GraphMessage::CancelEdgeCreation => {
+                    OrganizationIntent::CancelEdgeCreation => {
                         if self.org_graph.edge_indicator.is_active() {
                             self.status_message = "Edge creation cancelled".to_string();
                         }
                         // Cancellation handled in graph.handle_message
                     }
                     // Phase 4: Delete selected node with Delete key
-                    GraphMessage::DeleteSelected => {
+                    OrganizationIntent::DeleteSelected => {
                         if let Some(node_id) = self.org_graph.selected_node {
                             if let Some(node) = self.org_graph.nodes.get(&node_id) {
                                 use crate::gui::graph_events::GraphEvent;
@@ -3485,7 +3485,7 @@ impl CimKeysApp {
                         }
                     }
                     // Phase 4: Undo last action
-                    GraphMessage::Undo => {
+                    OrganizationIntent::Undo => {
                         if let Some(description) = self.org_graph.event_stack.undo_description() {
                             self.status_message = format!("Undo: {}", description);
                         } else {
@@ -3494,7 +3494,7 @@ impl CimKeysApp {
                         // Undo handled in graph.handle_message
                     }
                     // Phase 4: Redo last undone action
-                    GraphMessage::Redo => {
+                    OrganizationIntent::Redo => {
                         if let Some(description) = self.org_graph.event_stack.redo_description() {
                             self.status_message = format!("Redo: {}", description);
                         } else {
@@ -3503,7 +3503,7 @@ impl CimKeysApp {
                         // Redo handled in graph.handle_message
                     }
                     // Canvas clicked - place new node if node type is selected
-                    GraphMessage::CanvasClicked(position) => {
+                    OrganizationIntent::CanvasClicked(position) => {
                         if let Some(ref node_type_str) = self.selected_node_type {
                             use crate::domain::{OrganizationUnit, OrganizationUnitType, Person};
                             use crate::gui::graph::NodeType;
@@ -3915,7 +3915,7 @@ impl CimKeysApp {
                             if edge_index < self.org_graph.edges.len() {
                                 let new_edge_type = self.property_card.edge_type();
                                 // Send EdgeTypeChanged message to graph
-                                self.org_graph.handle_message(GraphMessage::EdgeTypeChanged {
+                                self.org_graph.handle_message(OrganizationIntent::EdgeTypeChanged {
                                     edge_index,
                                     new_type: new_edge_type,
                                 });
@@ -4145,7 +4145,7 @@ impl CimKeysApp {
                     PropertyCardMessage::DeleteEdge => {
                         if let Some(edge_index) = self.property_card.edge_index() {
                             // Send EdgeDeleted message to graph
-                            self.org_graph.handle_message(GraphMessage::EdgeDeleted(edge_index));
+                            self.org_graph.handle_message(OrganizationIntent::EdgeDeleted(edge_index));
                             self.property_card.clear();
                             self.status_message = "Edge deleted".to_string();
                         }
@@ -4621,7 +4621,7 @@ impl CimKeysApp {
                     exported_at: chrono::Utc::now().to_rfc3339(),
                     graph_view: format!("{:?}", self.graph_view),
                     nodes: self.org_graph.nodes.iter().map(|(id, node)| {
-                        GraphNodeExport {
+                        ConceptEntityExport {
                             id: *id,
                             node_type: format!("{:?}", node.node_type).split('(').next().unwrap_or("Unknown").to_string(),
                             position_x: node.position.x,
@@ -4633,7 +4633,7 @@ impl CimKeysApp {
                         }
                     }).collect(),
                     edges: self.org_graph.edges.iter().map(|edge| {
-                        GraphEdgeExport {
+                        ConceptRelationExport {
                             from_id: edge.from,
                             to_id: edge.to,
                             edge_type: format!("{:?}", edge.edge_type),
@@ -5280,12 +5280,12 @@ impl CimKeysApp {
             time::every(Duration::from_millis(33)).map(|_| Message::AnimationTick),
 
             // Graph layout animation subscriptions (only active when animating)
-            self.org_graph.subscription().map(Message::GraphMessage),
-            self.pki_graph.subscription().map(Message::GraphMessage),
-            self.nats_graph.subscription().map(Message::GraphMessage),
-            self.yubikey_graph.subscription().map(Message::GraphMessage),
-            self.location_graph.subscription().map(Message::GraphMessage),
-            self.policy_graph.subscription().map(Message::GraphMessage),
+            self.org_graph.subscription().map(Message::OrganizationIntent),
+            self.pki_graph.subscription().map(Message::OrganizationIntent),
+            self.nats_graph.subscription().map(Message::OrganizationIntent),
+            self.yubikey_graph.subscription().map(Message::OrganizationIntent),
+            self.location_graph.subscription().map(Message::OrganizationIntent),
+            self.policy_graph.subscription().map(Message::OrganizationIntent),
 
             // Mouse movement tracking for role drag-and-drop
             // Only process drag events when a drag is actually in progress
@@ -5333,18 +5333,18 @@ impl CimKeysApp {
                                 }
                                 // Phase 4: Undo/Redo shortcuts
                                 Key::Character(c) if c == "z" && !modifiers.shift() => {
-                                    Some(Message::GraphMessage(
-                                        crate::gui::graph::GraphMessage::Undo
+                                    Some(Message::OrganizationIntent(
+                                        crate::gui::graph::OrganizationIntent::Undo
                                     ))
                                 }
                                 Key::Character(c) if c == "z" && modifiers.shift() => {
-                                    Some(Message::GraphMessage(
-                                        crate::gui::graph::GraphMessage::Redo
+                                    Some(Message::OrganizationIntent(
+                                        crate::gui::graph::OrganizationIntent::Redo
                                     ))
                                 }
                                 Key::Character(c) if c == "y" => {
-                                    Some(Message::GraphMessage(
-                                        crate::gui::graph::GraphMessage::Redo
+                                    Some(Message::OrganizationIntent(
+                                        crate::gui::graph::OrganizationIntent::Redo
                                     ))
                                 }
                                 // Phase 5: Graph export/import shortcuts
@@ -5377,8 +5377,8 @@ impl CimKeysApp {
                                     Some(Message::InlineEditCancel)
                                 }
                                 Key::Named(keyboard::key::Named::Delete) => {
-                                    Some(Message::GraphMessage(
-                                        crate::gui::graph::GraphMessage::DeleteSelected
+                                    Some(Message::OrganizationIntent(
+                                        crate::gui::graph::OrganizationIntent::DeleteSelected
                                     ))
                                 }
                                 Key::Named(keyboard::key::Named::ArrowUp) => {
@@ -5419,7 +5419,7 @@ impl CimKeysApp {
     }
 
     /// Returns a mutable reference to the currently active graph based on graph_view
-    fn active_graph_mut(&mut self) -> &mut graph::OrganizationGraph {
+    fn active_graph_mut(&mut self) -> &mut graph::OrganizationConcept {
         match self.graph_view {
             GraphView::Organization => &mut self.org_graph,
             GraphView::PkiTrustChain => &mut self.pki_graph,
@@ -6029,7 +6029,7 @@ impl CimKeysApp {
                 },
                 // Reset view button
                 button(text("↻").size(14))
-                    .on_press(Message::GraphMessage(graph::GraphMessage::ResetView))
+                    .on_press(Message::OrganizationIntent(graph::OrganizationIntent::ResetView))
                     .style(CowboyCustomTheme::glass_button()),
                 // Role display toggle button
                 button(text(if self.show_role_nodes { "📋" } else { "👤" }).font(EMOJI_FONT).size(14))
@@ -6083,7 +6083,7 @@ impl CimKeysApp {
         // THE GRAPH - this is the primary interface!
         let graph_canvas = {
             // Show appropriate graph based on current context (using cached filtered graphs)
-            let graph_content: Element<'_, graph::GraphMessage> = match self.graph_view {
+            let graph_content: Element<'_, graph::OrganizationIntent> = match self.graph_view {
                 GraphView::Organization => {
                     // Show full organization graph (all nodes)
                     view_graph(&self.org_graph)
@@ -6115,7 +6115,7 @@ impl CimKeysApp {
             };
 
             let graph_base = Container::new(
-                graph_content.map(Message::GraphMessage)
+                graph_content.map(Message::OrganizationIntent)
             )
             .width(Length::Fill)
             .height(Length::Fill)  // FILL ALL SPACE!

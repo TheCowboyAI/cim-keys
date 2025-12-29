@@ -27,7 +27,7 @@
 use crate::gui::frp_integration::{FrpApplication, PipelineResult, FrpAppState};
 use crate::gui::routing::AppMessage;
 use crate::gui::graph_signals::LayoutAlgorithm;
-use crate::gui::graph::OrganizationGraph;
+use crate::gui::graph::OrganizationConcept;
 use iced::Task;
 use uuid::Uuid;
 
@@ -55,8 +55,8 @@ impl MessageAdapter {
     /// ```
     pub fn to_app_message(legacy_message: &LegacyMessage) -> Option<AppMessage> {
         match legacy_message {
-            LegacyMessage::GraphNodeClicked(id) => {
-                Some(AppMessage::GraphNodeClicked(*id))
+            LegacyMessage::ConceptEntityClicked(id) => {
+                Some(AppMessage::ConceptEntityClicked(*id))
             }
             LegacyMessage::SearchQueryChanged(query) => {
                 Some(AppMessage::SearchQueryChanged(query.clone()))
@@ -92,8 +92,8 @@ impl MessageAdapter {
 #[derive(Clone, Debug)]
 pub enum LegacyMessage {
     // Graph interactions
-    GraphNodeClicked(Uuid),
-    GraphNodeDragged { node_id: Uuid, position: (f32, f32) },
+    ConceptEntityClicked(Uuid),
+    ConceptEntityDragged { node_id: Uuid, position: (f32, f32) },
 
     // Search
     SearchQueryChanged(String),
@@ -132,7 +132,7 @@ pub struct FrpIntegrationLayer {
 
 impl FrpIntegrationLayer {
     /// Create new integration layer
-    pub fn new(initial_graph: OrganizationGraph) -> Self {
+    pub fn new(initial_graph: OrganizationConcept) -> Self {
         FrpIntegrationLayer {
             frp_app: FrpApplication::new(initial_graph),
             frp_enabled_features: FrpFeatures::default(),
@@ -198,7 +198,7 @@ impl FrpIntegrationLayer {
             | LegacyMessage::FilterYubikeyToggled(_) => {
                 self.frp_enabled_features.filters
             }
-            LegacyMessage::GraphNodeClicked(_) | LegacyMessage::GraphNodeDragged { .. } => {
+            LegacyMessage::ConceptEntityClicked(_) | LegacyMessage::ConceptEntityDragged { .. } => {
                 self.frp_enabled_features.graph_interaction
             }
             _ => false,
@@ -302,7 +302,7 @@ pub struct LegacyAppState {
 
 impl HybridCimKeysApp {
     /// Create hybrid app (uses both legacy and FRP)
-    pub fn new(initial_graph: OrganizationGraph) -> Self {
+    pub fn new(initial_graph: OrganizationConcept) -> Self {
         let mut frp = FrpIntegrationLayer::new(initial_graph);
 
         // Enable FRP for search and filters (gradual migration)
@@ -450,7 +450,7 @@ mod tests {
 
     #[test]
     fn test_integration_layer_creation() {
-        let graph = OrganizationGraph::new();
+        let graph = OrganizationConcept::new();
         let layer = FrpIntegrationLayer::new(graph);
 
         // Initially no features enabled
@@ -460,7 +460,7 @@ mod tests {
 
     #[test]
     fn test_enable_frp_feature() {
-        let graph = OrganizationGraph::new();
+        let graph = OrganizationConcept::new();
         let mut layer = FrpIntegrationLayer::new(graph);
 
         layer.enable_frp_feature(FrpFeature::Search);
@@ -470,7 +470,7 @@ mod tests {
 
     #[test]
     fn test_handle_message_with_frp_disabled() {
-        let graph = OrganizationGraph::new();
+        let graph = OrganizationConcept::new();
         let mut layer = FrpIntegrationLayer::new(graph);
 
         // Search not enabled yet
@@ -482,7 +482,7 @@ mod tests {
 
     #[test]
     fn test_handle_message_with_frp_enabled() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
         let person = test_person("Alice");
         graph.add_node(person, KeyOwnerRole::Developer);
 
@@ -503,7 +503,7 @@ mod tests {
 
     #[test]
     fn test_hybrid_app_creation() {
-        let graph = OrganizationGraph::new();
+        let graph = OrganizationConcept::new();
         let app = HybridCimKeysApp::new(graph);
 
         // Search and filters should be FRP-enabled
@@ -513,7 +513,7 @@ mod tests {
 
     #[test]
     fn test_hybrid_app_frp_message() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
         let person = test_person("Bob");
         graph.add_node(person, KeyOwnerRole::Developer);
 
@@ -530,7 +530,7 @@ mod tests {
 
     #[test]
     fn test_hybrid_app_legacy_message() {
-        let graph = OrganizationGraph::new();
+        let graph = OrganizationConcept::new();
         let mut app = HybridCimKeysApp::new(graph);
 
         // YubiKey detection not migrated to FRP yet
@@ -543,7 +543,7 @@ mod tests {
 
     #[test]
     fn test_integration_cache() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
         let person = test_person("Charlie");
         graph.add_node(person, KeyOwnerRole::Developer);
 
@@ -561,7 +561,7 @@ mod tests {
 
     #[test]
     fn test_cache_invalidation() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
         let person = test_person("Dave");
         graph.add_node(person, KeyOwnerRole::Developer);
 
@@ -583,7 +583,7 @@ mod tests {
 
     #[test]
     fn test_animation_update() {
-        let graph = OrganizationGraph::new();
+        let graph = OrganizationConcept::new();
         let mut layer = FrpIntegrationLayer::new(graph);
         layer.enable_frp_feature(FrpFeature::Animations);
 

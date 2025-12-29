@@ -37,7 +37,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::domain::Location;
-use crate::gui::graph::{OrganizationGraph, NodeType, EdgeType};
+use crate::gui::graph::{OrganizationConcept, NodeType, EdgeType};
 
 /// Location-centric analysis of the organizational graph
 #[derive(Debug, Clone)]
@@ -64,7 +64,7 @@ pub struct LocationAnalysis {
 
 impl LocationAnalysis {
     /// Analyze a location node in the graph
-    pub fn analyze(graph: &OrganizationGraph, location_id: Uuid) -> Option<Self> {
+    pub fn analyze(graph: &OrganizationConcept, location_id: Uuid) -> Option<Self> {
         // Find the location node
         let node = graph.nodes.get(&location_id)?;
         let location = match &node.node_type {

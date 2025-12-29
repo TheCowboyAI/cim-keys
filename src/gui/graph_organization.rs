@@ -47,7 +47,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::domain::{Organization, OrganizationUnit, Person, KeyOwnerRole};
-use crate::gui::graph::{OrganizationGraph, NodeType, EdgeType};
+use crate::gui::graph::{OrganizationConcept, NodeType, EdgeType};
 
 /// Organization-centric analysis of the organizational graph
 #[derive(Debug, Clone)]
@@ -77,7 +77,7 @@ pub struct OrganizationAnalysis {
 
 impl OrganizationAnalysis {
     /// Analyze an organization node in the graph
-    pub fn analyze(graph: &OrganizationGraph, organization_id: Uuid) -> Option<Self> {
+    pub fn analyze(graph: &OrganizationConcept, organization_id: Uuid) -> Option<Self> {
         // Find the organization node
         let node = graph.nodes.get(&organization_id)?;
         let organization = match &node.node_type {
@@ -210,7 +210,7 @@ pub struct OrganizationalUnitAnalysis {
 
 impl OrganizationalUnitAnalysis {
     /// Analyze an organizational unit node in the graph
-    pub fn analyze(graph: &OrganizationGraph, unit_id: Uuid) -> Option<Self> {
+    pub fn analyze(graph: &OrganizationConcept, unit_id: Uuid) -> Option<Self> {
         // Find the unit node
         let node = graph.nodes.get(&unit_id)?;
         let unit = match &node.node_type {

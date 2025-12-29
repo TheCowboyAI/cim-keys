@@ -169,7 +169,7 @@ pub enum Intent {
     UiGraphCreateEdgeCancelled,
 
     /// User clicked on a node to select it
-    UiGraphNodeClicked {
+    UiConceptEntityClicked {
         node_id: String,
     },
 
@@ -416,7 +416,7 @@ impl Intent {
                 | Intent::UiGraphCreateEdgeStarted { .. }
                 | Intent::UiGraphCreateEdgeCompleted { .. }
                 | Intent::UiGraphCreateEdgeCancelled
-                | Intent::UiGraphNodeClicked { .. }
+                | Intent::UiConceptEntityClicked { .. }
                 | Intent::UiGraphDeleteNode { .. }
                 | Intent::UiGraphDeleteEdge { .. }
                 | Intent::UiGraphEditNodeProperties { .. }
@@ -715,7 +715,7 @@ mod tests {
         }.is_step_signal());
 
         // Graph node clicks are events
-        assert!(Intent::UiGraphNodeClicked {
+        assert!(Intent::UiConceptEntityClicked {
             node_id: "node1".into(),
         }.is_event_signal());
     }

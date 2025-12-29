@@ -41,7 +41,7 @@ use uuid::Uuid;
 use chrono::Utc;
 
 use crate::domain::{Organization, OrganizationUnit, Person, KeyOwnerRole};
-use crate::gui::graph::{OrganizationGraph, NodeType, GraphNode, GraphEdge, EdgeType};
+use crate::gui::graph::{OrganizationConcept, NodeType, ConceptEntity, ConceptRelation, EdgeType};
 use iced::{Color, Point};
 
 /// Result of analyzing the organizational graph for NATS generation
@@ -74,7 +74,7 @@ impl NatsHierarchy {
 }
 
 /// Analyze the organizational graph to determine NATS hierarchy
-pub fn analyze_graph_for_nats(graph: &OrganizationGraph) -> NatsHierarchy {
+pub fn analyze_graph_for_nats(graph: &OrganizationConcept) -> NatsHierarchy {
     let mut hierarchy = NatsHierarchy::new();
 
     // Step 1: Find the root organization
@@ -159,8 +159,8 @@ pub fn determine_generation_order(hierarchy: &NatsHierarchy) -> Vec<NatsGenerati
 /// Generate NATS hierarchy from organizational graph
 /// Returns list of (NATS node, parent NATS entity ID) to add to graph
 pub fn generate_nats_from_graph(
-    graph: &OrganizationGraph,
-) -> Result<Vec<(GraphNode, Option<Uuid>)>, String> {
+    graph: &OrganizationConcept,
+) -> Result<Vec<(ConceptEntity, Option<Uuid>)>, String> {
     // Step 1: Analyze graph structure
     let hierarchy = analyze_graph_for_nats(graph);
 
@@ -241,7 +241,7 @@ pub fn generate_nats_from_graph(
 }
 
 /// Create NATS Operator node from Organization
-fn create_nats_operator_node(nats_id: Uuid, org: &Organization) -> Result<GraphNode, String> {
+fn create_nats_operator_node(nats_id: Uuid, org: &Organization) -> Result<ConceptEntity, String> {
     // Create a simplified identity projection for visualization
     // TODO: Generate actual NKeys and JWTs using NatsProjection when NSC integration is complete
     use crate::value_objects::{NKeyPair, NatsJwt, NKeyType, NKeySeed, NKeyPublic};
@@ -279,7 +279,7 @@ fn create_nats_operator_node(nats_id: Uuid, org: &Organization) -> Result<GraphN
         events: Vec::new(), // US-021: GUI placeholder (events collected during projection)
     };
 
-    Ok(GraphNode {
+    Ok(ConceptEntity {
         id: nats_id,
         node_type: NodeType::NatsOperator(identity),
         position: Point::new(400.0, 100.0), // Top center
@@ -293,7 +293,7 @@ fn create_nats_account_node(
     nats_id: Uuid,
     unit: &OrganizationUnit,
     _parent_nats_id: &Uuid,
-) -> Result<GraphNode, String> {
+) -> Result<ConceptEntity, String> {
     use crate::value_objects::{NKeyPair, NatsJwt, NKeyType, NKeySeed, NKeyPublic};
     use crate::domain_projections::NatsIdentityProjection;
 
@@ -332,7 +332,7 @@ fn create_nats_account_node(
         events: Vec::new(), // US-021: GUI placeholder (events collected during projection)
     };
 
-    Ok(GraphNode {
+    Ok(ConceptEntity {
         id: nats_id,
         node_type: NodeType::NatsAccount(identity),
         position: Point::new(400.0, 250.0), // Middle
@@ -347,7 +347,7 @@ fn create_nats_user_node(
     person: &Person,
     _role: &KeyOwnerRole,
     _parent_nats_id: &Uuid,
-) -> Result<GraphNode, String> {
+) -> Result<ConceptEntity, String> {
     use crate::value_objects::{NKeyPair, NatsJwt, NatsCredential, NKeyType, NKeySeed, NKeyPublic};
     use crate::domain_projections::NatsIdentityProjection;
 
@@ -395,7 +395,7 @@ fn create_nats_user_node(
         events: Vec::new(), // US-021: GUI placeholder (events collected during projection)
     };
 
-    Ok(GraphNode {
+    Ok(ConceptEntity {
         id: nats_id,
         node_type: NodeType::NatsUser(identity),
         position: Point::new(400.0, 400.0), // Bottom
@@ -406,8 +406,8 @@ fn create_nats_user_node(
 
 /// Add NATS nodes and edges to the organizational graph
 pub fn add_nats_to_graph(
-    graph: &mut OrganizationGraph,
-    nats_nodes: Vec<(GraphNode, Option<Uuid>)>,
+    graph: &mut OrganizationConcept,
+    nats_nodes: Vec<(ConceptEntity, Option<Uuid>)>,
 ) {
     for (nats_node, parent_nats_id) in nats_nodes {
         let nats_id = nats_node.id;
@@ -417,7 +417,7 @@ pub fn add_nats_to_graph(
 
         // Add "manages" edge from parent NATS entity
         if let Some(parent_id) = parent_nats_id {
-            graph.edges.push(GraphEdge {
+            graph.edges.push(ConceptRelation {
                 from: parent_id,
                 to: nats_id,
                 edge_type: EdgeType::ManagesUnit, // NATS hierarchy relationship
@@ -436,7 +436,7 @@ mod tests {
 
     #[test]
     fn test_analyze_simple_org_for_nats() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
 
         // Create organization
         let org = Organization {

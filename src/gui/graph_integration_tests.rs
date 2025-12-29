@@ -6,7 +6,7 @@
 #[cfg(test)]
 mod graph_first_integration_tests {
     use crate::domain::{Organization, OrganizationUnit, Person, KeyOwnerRole, OrganizationUnitType};
-    use crate::gui::graph::{OrganizationGraph, NodeType};
+    use crate::gui::graph::{OrganizationConcept, NodeType};
     use crate::gui::{graph_pki, graph_nats, graph_yubikey};
     use chrono::Utc;
     use std::collections::HashMap;
@@ -58,7 +58,7 @@ mod graph_first_integration_tests {
         // so that certificates follow my org structure
         //
         // Given: An organization with one unit and one person
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
 
         let org = create_test_org("TestCorp");
         let org_id = org.id;
@@ -93,7 +93,7 @@ mod graph_first_integration_tests {
         // so that authentication follows my org structure
         //
         // Given: An organization with one unit and one person
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
 
         let org = create_test_org("TestCorp");
         let org_id = org.id;
@@ -128,7 +128,7 @@ mod graph_first_integration_tests {
         // so I know which hardware tokens to provision
         //
         // Given: An organization with people in different roles
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
 
         let org = create_test_org("TestCorp");
         let org_id = org.id;
@@ -172,7 +172,7 @@ mod graph_first_integration_tests {
         // so I can bootstrap my entire security infrastructure at once
         //
         // Given: A complex organization with multiple units and people
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
 
         let org = create_test_org("GlobalCorp");
         let org_id = org.id;
@@ -254,7 +254,7 @@ mod graph_first_integration_tests {
         // from an incomplete organizational graph
         //
         // Given: An empty graph
-        let graph = OrganizationGraph::new();
+        let graph = OrganizationConcept::new();
 
         // When: I try to generate PKI
         let pki_result = graph_pki::generate_pki_from_graph(&graph, "test-pass");

@@ -6,19 +6,19 @@
 //! - Type-safe node/edge operations
 
 use crate::signals::{Signal, EventKind, StepKind, ContinuousKind, Time};
-use crate::gui::graph::{GraphNode, GraphEdge, OrganizationGraph, NodeType, EdgeType};
+use crate::gui::graph::{ConceptEntity, ConceptRelation, OrganizationConcept, NodeType, EdgeType};
 use std::collections::HashMap;
 use uuid::Uuid;
 use iced::Point;
 
 /// Node signal - discrete node events (add/remove/select)
-pub type NodeSignal = Signal<EventKind, GraphNode>;
+pub type NodeSignal = Signal<EventKind, ConceptEntity>;
 
 /// Edge signal - discrete edge events (create/delete)
-pub type EdgeSignal = Signal<EventKind, GraphEdge>;
+pub type EdgeSignal = Signal<EventKind, ConceptRelation>;
 
 /// Graph state signal - current graph structure (piecewise constant)
-pub type GraphStateSignal = Signal<StepKind, OrganizationGraph>;
+pub type GraphStateSignal = Signal<StepKind, OrganizationConcept>;
 
 /// Filter state for controlling node/edge visibility
 #[derive(Clone, Debug, PartialEq)]
@@ -48,9 +48,9 @@ impl Default for FilterState {
 ///
 /// This is a pure function that can be used as a signal transformation
 pub fn visible_nodes(
-    graph: &OrganizationGraph,
+    graph: &OrganizationConcept,
     filters: &FilterState,
-) -> Vec<GraphNode> {
+) -> Vec<ConceptEntity> {
     graph.nodes.values()
         .filter(|node| {
             // Apply category filters
@@ -81,7 +81,7 @@ pub fn visible_nodes(
 ///
 /// Returns node IDs that should be emphasized in the visualization
 pub fn highlighted_nodes(
-    graph: &OrganizationGraph,
+    graph: &OrganizationConcept,
     search_query: &str,
 ) -> Vec<Uuid> {
     if search_query.is_empty() {
@@ -101,7 +101,7 @@ pub fn highlighted_nodes(
 ///
 /// This can be used as a continuous signal for animated layout transitions
 pub fn compute_node_positions(
-    graph: &OrganizationGraph,
+    graph: &OrganizationConcept,
     layout: LayoutAlgorithm,
 ) -> HashMap<Uuid, Point> {
     match layout {
@@ -133,7 +133,7 @@ pub enum LayoutAlgorithm {
 }
 
 /// Compute hierarchical layout (tree-like)
-fn compute_hierarchical_layout(graph: &OrganizationGraph) -> HashMap<Uuid, Point> {
+fn compute_hierarchical_layout(graph: &OrganizationConcept) -> HashMap<Uuid, Point> {
     let mut positions = HashMap::new();
 
     // Find root nodes (no incoming edges)
@@ -180,7 +180,7 @@ fn compute_hierarchical_layout(graph: &OrganizationGraph) -> HashMap<Uuid, Point
 }
 
 /// Compute force-directed layout (Fruchterman-Reingold)
-fn compute_force_directed_layout(graph: &OrganizationGraph) -> HashMap<Uuid, Point> {
+fn compute_force_directed_layout(graph: &OrganizationConcept) -> HashMap<Uuid, Point> {
     // Simplified force-directed layout
     // In production, this would iterate to minimize energy
     let mut positions = HashMap::new();
@@ -200,7 +200,7 @@ fn compute_force_directed_layout(graph: &OrganizationGraph) -> HashMap<Uuid, Poi
 }
 
 /// Compute circular layout
-fn compute_circular_layout(graph: &OrganizationGraph) -> HashMap<Uuid, Point> {
+fn compute_circular_layout(graph: &OrganizationConcept) -> HashMap<Uuid, Point> {
     let mut positions = HashMap::new();
 
     let center = Point::new(400.0, 300.0);
@@ -218,14 +218,14 @@ fn compute_circular_layout(graph: &OrganizationGraph) -> HashMap<Uuid, Point> {
 }
 
 /// Create a step signal for graph state
-pub fn create_graph_state_signal(initial_graph: OrganizationGraph) -> GraphStateSignal {
-    Signal::<StepKind, OrganizationGraph>::step(initial_graph)
+pub fn create_graph_state_signal(initial_graph: OrganizationConcept) -> GraphStateSignal {
+    Signal::<StepKind, OrganizationConcept>::step(initial_graph)
 }
 
 /// Update graph state signal with new graph
 pub fn update_graph_state(
     signal: GraphStateSignal,
-    new_graph: OrganizationGraph,
+    new_graph: OrganizationConcept,
 ) -> GraphStateSignal {
     signal.with_value(new_graph)
 }
@@ -261,7 +261,7 @@ mod tests {
 
     #[test]
     fn test_visible_nodes_all_enabled() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
         let person = test_person("Alice");
         let org = test_org("Acme Corp");
 
@@ -276,7 +276,7 @@ mod tests {
 
     #[test]
     fn test_visible_nodes_people_only() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
         let person = test_person("Alice");
         let person_id = person.id;
         let org = test_org("Acme Corp");
@@ -295,7 +295,7 @@ mod tests {
 
     #[test]
     fn test_search_filter() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
         graph.add_node(test_person("Alice"), KeyOwnerRole::Developer);
         graph.add_node(test_person("Bob"), KeyOwnerRole::Developer);
 
@@ -310,7 +310,7 @@ mod tests {
 
     #[test]
     fn test_highlighted_nodes() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
         let alice = test_person("Alice");
         let alice_id = alice.id;
         let bob = test_person("Bob");
@@ -326,7 +326,7 @@ mod tests {
 
     #[test]
     fn test_graph_state_signal() {
-        let graph = OrganizationGraph::new();
+        let graph = OrganizationConcept::new();
         let signal = create_graph_state_signal(graph.clone());
 
         let sampled = signal.sample(0.0);
@@ -335,7 +335,7 @@ mod tests {
 
     #[test]
     fn test_layout_algorithms() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
         let alice = test_person("Alice");
         let bob = test_person("Bob");
         let id1 = alice.id;

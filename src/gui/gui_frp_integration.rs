@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 use iced::Point;
 
-use crate::gui::graph::{OrganizationGraph, GraphNode};
+use crate::gui::graph::{OrganizationConcept, ConceptEntity};
 use crate::gui::graph_signals::{FilterState, visible_nodes, LayoutAlgorithm, compute_node_positions};
 use crate::gui::feedback::{GraphFilterAppState, GraphFilterIntent, update_graph_filter_state};
 use crate::gui::routing::{AppMessage, Route, filter_router, search_router, compose_routes};
@@ -40,7 +40,7 @@ pub struct GuiFrpIntegration {
 
 impl GuiFrpIntegration {
     /// Create new FRP integration with initial graph
-    pub fn new(graph: OrganizationGraph) -> Self {
+    pub fn new(graph: OrganizationConcept) -> Self {
         // Create composable router
         let filter = filter_router();
         let search = search_router();
@@ -62,7 +62,7 @@ impl GuiFrpIntegration {
     ///
     /// Returns Some(visible_nodes) if the message was handled,
     /// None if the message is not recognized by the router.
-    pub fn process_message(&mut self, message: AppMessage) -> Option<Vec<GraphNode>> {
+    pub fn process_message(&mut self, message: AppMessage) -> Option<Vec<ConceptEntity>> {
 
         // Step 1: Route message to intent
         let intent = match self.router.route(&message) {
@@ -87,7 +87,7 @@ impl GuiFrpIntegration {
     }
 
     /// Update the organization graph
-    pub fn update_graph(&mut self, graph: OrganizationGraph) {
+    pub fn update_graph(&mut self, graph: OrganizationConcept) {
         self.state = self.state.clone().with_graph(graph);
     }
 
@@ -141,7 +141,7 @@ impl GuiFrpIntegration {
     }
 
     /// Get visible nodes (cached from last message processing)
-    pub fn get_visible_nodes(&self) -> Vec<GraphNode> {
+    pub fn get_visible_nodes(&self) -> Vec<ConceptEntity> {
         visible_nodes(&self.state.graph, &self.state.filter_state.filters)
     }
 
@@ -241,7 +241,7 @@ mod tests {
 
     #[test]
     fn test_gui_frp_integration_creation() {
-        let graph = OrganizationGraph::new();
+        let graph = OrganizationConcept::new();
         let frp = GuiFrpIntegration::new(graph);
 
         assert_eq!(frp.get_animation_progress(), 0.0);
@@ -249,7 +249,7 @@ mod tests {
 
     #[test]
     fn test_search_message_processing() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
         let person = test_person("Alice");
         graph.add_node(person, KeyOwnerRole::Developer);
 
@@ -267,7 +267,7 @@ mod tests {
 
     #[test]
     fn test_filter_message_processing() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
         let person = test_person("Bob");
         graph.add_node(person, KeyOwnerRole::Developer);
 
@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn test_layout_change() {
-        let graph = OrganizationGraph::new();
+        let graph = OrganizationConcept::new();
         let mut frp = GuiFrpIntegration::new(graph);
 
         // Change layout
@@ -319,7 +319,7 @@ mod tests {
 
     #[test]
     fn test_workflow_generation() {
-        let graph = OrganizationGraph::new();
+        let graph = OrganizationConcept::new();
         let frp = GuiFrpIntegration::new(graph);
 
         // Generate workflows

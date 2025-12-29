@@ -38,7 +38,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::domain::{Person, KeyOwnerRole};
-use crate::gui::graph::{OrganizationGraph, NodeType, GraphNode};
+use crate::gui::graph::{OrganizationConcept, NodeType, ConceptEntity};
 use iced::{Color, Point};
 
 /// PIV slot assignments based on role
@@ -142,7 +142,7 @@ pub fn slots_for_role(role: &KeyOwnerRole) -> Vec<PIVSlot> {
 }
 
 /// Analyze the organizational graph to determine YubiKey provisioning needs
-pub fn analyze_graph_for_yubikey(graph: &OrganizationGraph) -> YubiKeyProvisionHierarchy {
+pub fn analyze_graph_for_yubikey(graph: &OrganizationConcept) -> YubiKeyProvisionHierarchy {
     let mut hierarchy = YubiKeyProvisionHierarchy::new();
 
     // Find all people in the graph and determine their YubiKey needs
@@ -168,8 +168,8 @@ pub fn analyze_graph_for_yubikey(graph: &OrganizationGraph) -> YubiKeyProvisionH
 
 /// Generate YubiKey provisioning commands (placeholder for actual provisioning)
 pub fn generate_yubikey_provision_from_graph(
-    graph: &OrganizationGraph,
-) -> Result<Vec<(GraphNode, Uuid)>, String> {
+    graph: &OrganizationConcept,
+) -> Result<Vec<(ConceptEntity, Uuid)>, String> {
     // Step 1: Analyze graph structure
     let hierarchy = analyze_graph_for_yubikey(graph);
 
@@ -196,7 +196,7 @@ pub fn generate_yubikey_provision_from_graph(
             Color::from_rgb(0.9, 0.6, 0.2) // Orange for pending
         };
 
-        let provision_node = GraphNode {
+        let provision_node = ConceptEntity {
             id: provision_node_id,
             node_type: NodeType::YubiKeyStatus {
                 person_id,
@@ -224,10 +224,10 @@ pub fn generate_yubikey_provision_from_graph(
 
 /// Add YubiKey provision status nodes to the organizational graph
 pub fn add_yubikey_status_to_graph(
-    graph: &mut OrganizationGraph,
-    provision_nodes: Vec<(GraphNode, Uuid)>,
+    graph: &mut OrganizationConcept,
+    provision_nodes: Vec<(ConceptEntity, Uuid)>,
 ) {
-    use crate::gui::graph::{GraphEdge, EdgeType};
+    use crate::gui::graph::{ConceptRelation, EdgeType};
 
     for (provision_node, person_id) in provision_nodes {
         let provision_node_id = provision_node.id;
@@ -236,7 +236,7 @@ pub fn add_yubikey_status_to_graph(
         graph.nodes.insert(provision_node_id, provision_node);
 
         // Add "requires" edge from person to YubiKey status
-        graph.edges.push(GraphEdge {
+        graph.edges.push(ConceptRelation {
             from: person_id,
             to: provision_node_id,
             edge_type: EdgeType::Requires, // Person requires YubiKey
@@ -272,7 +272,7 @@ mod tests {
 
     #[test]
     fn test_analyze_graph_for_yubikey() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
 
         // Create organization
         let org_id = Uuid::now_v7();

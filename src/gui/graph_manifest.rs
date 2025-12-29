@@ -50,7 +50,7 @@ use std::path::PathBuf;
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
-use crate::gui::graph::{OrganizationGraph, NodeType, EdgeType};
+use crate::gui::graph::{OrganizationConcept, NodeType, EdgeType};
 
 /// Export format type
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,7 +103,7 @@ pub struct ManifestAnalysis {
 
 impl ManifestAnalysis {
     /// Analyze a manifest node in the graph
-    pub fn analyze(graph: &OrganizationGraph, manifest_id: Uuid) -> Option<Self> {
+    pub fn analyze(graph: &OrganizationConcept, manifest_id: Uuid) -> Option<Self> {
         // Find the manifest node
         let node = graph.nodes.get(&manifest_id)?;
 

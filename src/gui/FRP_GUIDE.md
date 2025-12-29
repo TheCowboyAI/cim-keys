@@ -29,7 +29,7 @@ pub struct CimKeysApp {
     filter_show_orgs: bool,
     search_query: String,
     animation_progress: f32,
-    graph_nodes: HashMap<Uuid, GraphNode>,
+    graph_nodes: HashMap<Uuid, ConceptEntity>,
     // ... many more fields
 }
 
@@ -302,8 +302,8 @@ Wrap state in signals instead of storing directly:
 **Before:**
 ```rust
 struct App {
-    graph: OrganizationGraph,
-    visible_nodes: Vec<GraphNode>,
+    graph: OrganizationConcept,
+    visible_nodes: Vec<ConceptEntity>,
 }
 ```
 
@@ -370,10 +370,10 @@ let view = app.render(app.current_time);
 ```rust
 use cim_keys::gui::frp_integration::FrpApplication;
 use cim_keys::gui::routing::AppMessage;
-use cim_keys::gui::graph::OrganizationGraph;
+use cim_keys::gui::graph::OrganizationConcept;
 
 // Create application
-let mut app = FrpApplication::new(OrganizationGraph::new());
+let mut app = FrpApplication::new(OrganizationConcept::new());
 
 // User types in search box
 app.handle_message(AppMessage::SearchQueryChanged("alice".to_string()));
@@ -392,7 +392,7 @@ println!("Visible nodes: {}", view.visible_nodes.len());
 ```rust
 use cim_keys::gui::frp_integration::FrpApplication;
 use cim_keys::gui::graph_signals::LayoutAlgorithm;
-use cim_keys::gui::graph::OrganizationGraph;
+use cim_keys::gui::graph::OrganizationConcept;
 
 let mut app = FrpApplication::new(graph);
 
@@ -413,9 +413,9 @@ for frame in 0..60 {
 
 ```rust
 use cim_keys::gui::frp_integration::FrpApplication;
-use cim_keys::gui::graph::OrganizationGraph;
+use cim_keys::gui::graph::OrganizationConcept;
 
-let mut graph = OrganizationGraph::new();
+let mut graph = OrganizationConcept::new();
 // Add organization, people, etc.
 
 let app = FrpApplication::new(graph);
@@ -438,7 +438,7 @@ for (i, event) in infrastructure.pki_workflow.operations.events().iter().enumera
 use cim_keys::gui::frp_integration::FrpApplication;
 use cim_keys::gui::routing::AppMessage;
 use cim_keys::gui::graph_signals::LayoutAlgorithm;
-use cim_keys::gui::graph::OrganizationGraph;
+use cim_keys::gui::graph::OrganizationConcept;
 
 // 1. Create application
 let mut app = FrpApplication::new(graph);

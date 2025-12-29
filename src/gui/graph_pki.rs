@@ -41,7 +41,7 @@ use uuid::Uuid;
 use chrono::Utc;
 
 use crate::domain::{Organization, OrganizationUnit, Person, KeyOwnerRole};
-use crate::gui::graph::{OrganizationGraph, NodeType, GraphNode, GraphEdge, EdgeType};
+use crate::gui::graph::{OrganizationConcept, NodeType, ConceptEntity, ConceptRelation, EdgeType};
 use iced::{Color, Point};
 
 /// Result of analyzing the organizational graph for PKI generation
@@ -74,7 +74,7 @@ impl PkiHierarchy {
 }
 
 /// Analyze the organizational graph to determine PKI hierarchy
-pub fn analyze_graph_for_pki(graph: &OrganizationGraph) -> PkiHierarchy {
+pub fn analyze_graph_for_pki(graph: &OrganizationConcept) -> PkiHierarchy {
     let mut hierarchy = PkiHierarchy::new();
 
     // Step 1: Find the root organization
@@ -161,9 +161,9 @@ pub fn determine_generation_order(hierarchy: &PkiHierarchy) -> Vec<CertificateOr
 /// Generate PKI hierarchy from organizational graph
 /// Returns list of (certificate node, parent certificate ID) to add to graph
 pub fn generate_pki_from_graph(
-    graph: &OrganizationGraph,
+    graph: &OrganizationConcept,
     _root_passphrase: &str,
-) -> Result<Vec<(GraphNode, Option<Uuid>)>, String> {
+) -> Result<Vec<(ConceptEntity, Option<Uuid>)>, String> {
     // Step 1: Analyze graph structure
     let hierarchy = analyze_graph_for_pki(graph);
 
@@ -244,14 +244,14 @@ pub fn generate_pki_from_graph(
 }
 
 /// Create Root CA certificate node from Organization
-fn create_root_ca_node(cert_id: Uuid, org: &Organization) -> Result<GraphNode, String> {
+fn create_root_ca_node(cert_id: Uuid, org: &Organization) -> Result<ConceptEntity, String> {
     let now = Utc::now();
     let valid_until = now + chrono::Duration::days(3650); // 10 years
 
     let subject = format!("CN={} Root CA, O={}", org.name, org.name);
     let issuer = subject.clone(); // Self-signed
 
-    Ok(GraphNode {
+    Ok(ConceptEntity {
         id: cert_id,
         node_type: NodeType::RootCertificate {
             cert_id,
@@ -275,14 +275,14 @@ fn create_intermediate_ca_node(
     cert_id: Uuid,
     unit: &OrganizationUnit,
     parent_cert_id: &Uuid,
-) -> Result<GraphNode, String> {
+) -> Result<ConceptEntity, String> {
     let now = Utc::now();
     let valid_until = now + chrono::Duration::days(1825); // 5 years
 
     let subject = format!("CN={} CA, OU={}", unit.name, unit.name);
     let issuer = format!("Parent CA {}", parent_cert_id); // Simplified
 
-    Ok(GraphNode {
+    Ok(ConceptEntity {
         id: cert_id,
         node_type: NodeType::IntermediateCertificate {
             cert_id,
@@ -307,7 +307,7 @@ fn create_leaf_certificate_node(
     person: &Person,
     role: &KeyOwnerRole,
     parent_cert_id: &Uuid,
-) -> Result<GraphNode, String> {
+) -> Result<ConceptEntity, String> {
     let now = Utc::now();
     let valid_until = now + chrono::Duration::days(365); // 1 year
 
@@ -324,7 +324,7 @@ fn create_leaf_certificate_node(
         KeyOwnerRole::Auditor => vec!["Digital Signature".to_string()],
     };
 
-    Ok(GraphNode {
+    Ok(ConceptEntity {
         id: cert_id,
         node_type: NodeType::LeafCertificate {
             cert_id,
@@ -343,8 +343,8 @@ fn create_leaf_certificate_node(
 
 /// Add PKI nodes and edges to the organizational graph
 pub fn add_pki_to_graph(
-    graph: &mut OrganizationGraph,
-    certificate_nodes: Vec<(GraphNode, Option<Uuid>)>,
+    graph: &mut OrganizationConcept,
+    certificate_nodes: Vec<(ConceptEntity, Option<Uuid>)>,
 ) {
     for (cert_node, parent_cert_id) in certificate_nodes {
         let cert_id = cert_node.id;
@@ -354,7 +354,7 @@ pub fn add_pki_to_graph(
 
         // Add "signs" edge from parent certificate
         if let Some(parent_id) = parent_cert_id {
-            graph.edges.push(GraphEdge {
+            graph.edges.push(ConceptRelation {
                 from: parent_id,
                 to: cert_id,
                 edge_type: EdgeType::Signs, // Certificate signing relationship
@@ -373,7 +373,7 @@ mod tests {
 
     #[test]
     fn test_analyze_simple_org_structure() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
 
         // Create organization
         let org = Organization {

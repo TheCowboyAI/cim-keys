@@ -44,7 +44,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::domain::KeyDelegation;
-use crate::gui::graph::{OrganizationGraph, EdgeType};
+use crate::gui::graph::{OrganizationConcept, EdgeType};
 
 /// Relationship analysis of the organizational graph
 #[derive(Debug, Clone)]
@@ -70,7 +70,7 @@ pub struct RelationshipAnalysis {
 
 impl RelationshipAnalysis {
     /// Analyze all relationships in the graph
-    pub fn analyze(graph: &OrganizationGraph) -> Self {
+    pub fn analyze(graph: &OrganizationConcept) -> Self {
         let mut trust_relationships: HashMap<Uuid, Vec<(Uuid, String)>> = HashMap::new();
         let mut key_delegations: HashMap<Uuid, Vec<KeyDelegation>> = HashMap::new();
         let mut role_assignments: HashMap<Uuid, Vec<Uuid>> = HashMap::new();

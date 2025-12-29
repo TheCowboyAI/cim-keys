@@ -45,7 +45,7 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
 use crate::events::KeyAlgorithm;
-use crate::gui::graph::{OrganizationGraph, NodeType, EdgeType};
+use crate::gui::graph::{OrganizationConcept, NodeType, EdgeType};
 
 /// Certificate type classification
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,7 +93,7 @@ pub struct CertificateAnalysis {
 
 impl CertificateAnalysis {
     /// Analyze a certificate node in the graph
-    pub fn analyze(graph: &OrganizationGraph, certificate_id: Uuid) -> Option<Self> {
+    pub fn analyze(graph: &OrganizationConcept, certificate_id: Uuid) -> Option<Self> {
         // Find the certificate node
         let node = graph.nodes.get(&certificate_id)?;
 

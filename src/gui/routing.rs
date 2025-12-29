@@ -10,8 +10,8 @@
 //! ```ignore
 //! fn update(&mut self, message: Message) -> Task<Message> {
 //!     match message {
-//!         Message::GraphNodeClicked(id) => { ... }      // 10 lines
-//!         Message::GraphNodeDragged(id, pos) => { ... } // 15 lines
+//!         Message::ConceptEntityClicked(id) => { ... }      // 10 lines
+//!         Message::ConceptEntityDragged(id, pos) => { ... } // 15 lines
 //!         Message::FilterToggled(filter) => { ... }      // 8 lines
 //!         Message::SearchQueryChanged(q) => { ... }      // 12 lines
 //!         Message::ExportClicked => { ... }              // 50 lines
@@ -46,9 +46,9 @@ use uuid::Uuid;
 #[derive(Clone, Debug, PartialEq)]
 pub enum AppMessage {
     // Graph interaction messages
-    GraphNodeClicked(Uuid),
-    GraphNodeDragged { node_id: Uuid, position: (f32, f32) },
-    GraphEdgeCreated { from: Uuid, to: Uuid },
+    ConceptEntityClicked(Uuid),
+    ConceptEntityDragged { node_id: Uuid, position: (f32, f32) },
+    ConceptRelationCreated { from: Uuid, to: Uuid },
     GraphLayoutChanged(LayoutType),
 
     // Filter messages
@@ -142,14 +142,14 @@ impl<M, I> Route<M, I> {
 /// Router for graph-related messages
 pub fn graph_router() -> Route<AppMessage, GraphIntent> {
     Route::new(|msg| match msg {
-        AppMessage::GraphNodeClicked(id) => Some(GraphIntent::NodeClicked(*id)),
-        AppMessage::GraphNodeDragged { node_id, position } => {
+        AppMessage::ConceptEntityClicked(id) => Some(GraphIntent::NodeClicked(*id)),
+        AppMessage::ConceptEntityDragged { node_id, position } => {
             Some(GraphIntent::NodeDragged {
                 node_id: *node_id,
                 position: *position,
             })
         }
-        AppMessage::GraphEdgeCreated { from, to } => {
+        AppMessage::ConceptRelationCreated { from, to } => {
             Some(GraphIntent::EdgeCreated { from: *from, to: *to })
         }
         AppMessage::GraphLayoutChanged(layout) => {
@@ -319,7 +319,7 @@ pub fn parallel_route<M, I>(
 /// ```rust
 /// use cim_keys::gui::routing::*;
 ///
-/// let msg = AppMessage::GraphNodeClicked(uuid::Uuid::now_v7());
+/// let msg = AppMessage::ConceptEntityClicked(uuid::Uuid::now_v7());
 ///
 /// // Route to graph handler AND log it
 /// let graph_intent = graph_router().route(&msg);
@@ -366,9 +366,9 @@ impl IntentClassifier {
     /// Classify a message into a category
     pub fn classify(&self, message: &AppMessage) -> MessageCategory {
         match message {
-            AppMessage::GraphNodeClicked(_)
-            | AppMessage::GraphNodeDragged { .. }
-            | AppMessage::GraphEdgeCreated { .. }
+            AppMessage::ConceptEntityClicked(_)
+            | AppMessage::ConceptEntityDragged { .. }
+            | AppMessage::ConceptRelationCreated { .. }
             | AppMessage::GraphLayoutChanged(_) => MessageCategory::Graph,
 
             AppMessage::FilterPeopleToggled(_)
@@ -419,7 +419,7 @@ mod tests {
         let router = graph_router();
         let node_id = Uuid::now_v7();
 
-        let msg = AppMessage::GraphNodeClicked(node_id);
+        let msg = AppMessage::ConceptEntityClicked(node_id);
         let intent = router.route(&msg);
 
         assert_eq!(intent, Some(GraphIntent::NodeClicked(node_id)));
@@ -501,7 +501,7 @@ mod tests {
         assert!(combined.route(&search_msg).is_some());
 
         // Should reject unhandled messages
-        let graph_msg = AppMessage::GraphNodeClicked(Uuid::now_v7());
+        let graph_msg = AppMessage::ConceptEntityClicked(Uuid::now_v7());
         assert!(combined.route(&graph_msg).is_none());
     }
 
@@ -509,7 +509,7 @@ mod tests {
     fn test_intent_classifier() {
         let classifier = IntentClassifier::new("TestClassifier");
 
-        let graph_msg = AppMessage::GraphNodeClicked(Uuid::now_v7());
+        let graph_msg = AppMessage::ConceptEntityClicked(Uuid::now_v7());
         assert_eq!(classifier.classify(&graph_msg), MessageCategory::Graph);
 
         let filter_msg = AppMessage::FilterPeopleToggled(true);

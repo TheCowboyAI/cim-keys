@@ -44,7 +44,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::domain::{Person, KeyOwnerRole, KeyDelegation};
-use crate::gui::graph::{OrganizationGraph, NodeType, EdgeType};
+use crate::gui::graph::{OrganizationConcept, NodeType, EdgeType};
 
 /// Person-centric analysis of the organizational graph
 #[derive(Debug, Clone)]
@@ -78,7 +78,7 @@ pub struct PersonAnalysis {
 
 impl PersonAnalysis {
     /// Analyze a person node in the graph
-    pub fn analyze(graph: &OrganizationGraph, person_id: Uuid) -> Option<Self> {
+    pub fn analyze(graph: &OrganizationConcept, person_id: Uuid) -> Option<Self> {
         // Find the person node
         let node = graph.nodes.get(&person_id)?;
         let (person, role) = match &node.node_type {

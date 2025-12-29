@@ -40,7 +40,7 @@
 use uuid::Uuid;
 
 use crate::events::{KeyAlgorithm, KeyPurpose};
-use crate::gui::graph::{OrganizationGraph, NodeType, EdgeType};
+use crate::gui::graph::{OrganizationConcept, NodeType, EdgeType};
 
 /// Key-centric analysis of the organizational graph
 #[derive(Debug, Clone)]
@@ -72,7 +72,7 @@ pub struct KeyAnalysis {
 
 impl KeyAnalysis {
     /// Analyze a key node in the graph
-    pub fn analyze(graph: &OrganizationGraph, key_id: Uuid) -> Option<Self> {
+    pub fn analyze(graph: &OrganizationConcept, key_id: Uuid) -> Option<Self> {
         // Find the key node
         let node = graph.nodes.get(&key_id)?;
         let (algorithm, purpose) = match &node.node_type {

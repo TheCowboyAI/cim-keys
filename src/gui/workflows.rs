@@ -44,7 +44,7 @@
 
 use crate::signals::{Signal, StepKind, ContinuousKind};
 use crate::causality::{CausalChain, CausalEvent};
-use crate::gui::graph::{OrganizationGraph, NodeType};
+use crate::gui::graph::{OrganizationConcept, NodeType};
 use crate::gui::graph_causality::GraphOperation;
 use uuid::Uuid;
 use iced::Point;
@@ -87,7 +87,7 @@ pub struct WorkflowMetadata {
 ///
 /// **Note**: This is a demonstration of the pattern. In production,
 /// you would also update the graph state and create actual certificate nodes.
-pub fn build_pki_workflow(graph: &OrganizationGraph) -> WorkflowStep {
+pub fn build_pki_workflow(graph: &OrganizationConcept) -> WorkflowStep {
     let mut chain = CausalChain::new();
 
     // Find organization nodes
@@ -235,7 +235,7 @@ pub fn build_pki_workflow(graph: &OrganizationGraph) -> WorkflowStep {
 /// 3. Create NATS Users for each person
 ///
 /// Returns a workflow step with causal chain of operations.
-pub fn build_nats_workflow(graph: &OrganizationGraph) -> WorkflowStep {
+pub fn build_nats_workflow(graph: &OrganizationConcept) -> WorkflowStep {
     let mut chain = CausalChain::new();
 
     // Find organization nodes
@@ -383,7 +383,7 @@ pub fn build_nats_workflow(graph: &OrganizationGraph) -> WorkflowStep {
 /// This demonstrates signal composition where multiple workflows
 /// are chained together.
 pub fn build_complete_infrastructure_workflow(
-    graph: &OrganizationGraph,
+    graph: &OrganizationConcept,
 ) -> Vec<WorkflowStep> {
     vec![
         build_pki_workflow(graph),
@@ -399,9 +399,9 @@ pub fn build_complete_infrastructure_workflow(
 ///
 /// ```rust
 /// use cim_keys::gui::workflows::create_pki_pipeline;
-/// use cim_keys::gui::graph::OrganizationGraph;
+/// use cim_keys::gui::graph::OrganizationConcept;
 ///
-/// let org_graph = OrganizationGraph::new();
+/// let org_graph = OrganizationConcept::new();
 /// let pki_signal = create_pki_pipeline(org_graph);
 ///
 /// // Sample at different times
@@ -409,7 +409,7 @@ pub fn build_complete_infrastructure_workflow(
 /// println!("{}", step.description);
 /// ```
 pub fn create_pki_pipeline(
-    graph: OrganizationGraph,
+    graph: OrganizationConcept,
 ) -> Signal<StepKind, WorkflowStep> {
     let workflow_step = build_pki_workflow(&graph);
     Signal::<StepKind, WorkflowStep>::step(workflow_step)
@@ -417,7 +417,7 @@ pub fn create_pki_pipeline(
 
 /// Create a signal pipeline for NATS workflow
 pub fn create_nats_pipeline(
-    graph: OrganizationGraph,
+    graph: OrganizationConcept,
 ) -> Signal<StepKind, WorkflowStep> {
     let workflow_step = build_nats_workflow(&graph);
     Signal::<StepKind, WorkflowStep>::step(workflow_step)
@@ -467,7 +467,7 @@ mod tests {
 
     #[test]
     fn test_pki_workflow_empty_graph() {
-        let graph = OrganizationGraph::new();
+        let graph = OrganizationConcept::new();
         let step = build_pki_workflow(&graph);
 
         assert_eq!(step.metadata.total_operations, 0);
@@ -475,7 +475,7 @@ mod tests {
 
     #[test]
     fn test_pki_workflow_with_org() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
         let org = test_org("Acme Corp");
         graph.add_organization_node(org);
 
@@ -488,7 +488,7 @@ mod tests {
 
     #[test]
     fn test_nats_workflow_empty_graph() {
-        let graph = OrganizationGraph::new();
+        let graph = OrganizationConcept::new();
         let step = build_nats_workflow(&graph);
 
         assert_eq!(step.metadata.total_operations, 0);
@@ -496,7 +496,7 @@ mod tests {
 
     #[test]
     fn test_nats_workflow_with_org() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
         let org = test_org("Acme Corp");
         graph.add_organization_node(org);
 
@@ -509,7 +509,7 @@ mod tests {
 
     #[test]
     fn test_complete_infrastructure_workflow() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
         let org = test_org("Acme Corp");
         graph.add_organization_node(org);
 
@@ -528,7 +528,7 @@ mod tests {
 
     #[test]
     fn test_pki_pipeline_signal() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
         let org = test_org("Acme Corp");
         graph.add_organization_node(org);
 
@@ -542,7 +542,7 @@ mod tests {
 
     #[test]
     fn test_nats_pipeline_signal() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
         let org = test_org("Acme Corp");
         graph.add_organization_node(org);
 
@@ -577,7 +577,7 @@ mod tests {
 
     #[test]
     fn test_workflow_metadata() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
         let org = test_org("Acme Corp");
         let person = test_person("Alice");
 
@@ -599,7 +599,7 @@ mod tests {
 
     #[test]
     fn test_workflow_causality() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
         let org = test_org("Acme Corp");
         graph.add_organization_node(org);
 

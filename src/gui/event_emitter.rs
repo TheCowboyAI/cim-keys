@@ -74,8 +74,8 @@ pub struct GuiContext {
 pub enum InteractionType {
     ButtonClick { button_id: String },
     TextInput { field_id: String },
-    GraphNodeClick { node_id: Uuid },
-    GraphEdgeCreate { from: Uuid, to: Uuid },
+    ConceptEntityClick { node_id: Uuid },
+    ConceptRelationCreate { from: Uuid, to: Uuid },
     FileLoad { filename: String },
     Navigation { from_screen: String, to_screen: String },
 }
@@ -200,7 +200,7 @@ impl GuiEventSubscriber {
                     message: format!("NATS operator '{}' created", e.name),
                 },
 
-                DomainEvent::Relationship(crate::events::RelationshipEvents::TrustEstablished(e)) => GuiUpdateMessage::GraphEdgeAdded {
+                DomainEvent::Relationship(crate::events::RelationshipEvents::TrustEstablished(e)) => GuiUpdateMessage::ConceptRelationAdded {
                     from: e.trustor_id,
                     to: e.trustee_id,
                     edge_type: "trust".to_string(),
@@ -234,11 +234,11 @@ pub enum GuiUpdateMessage {
         key_id: Uuid,
         reason: String,
     },
-    GraphNodeAdded {
+    ConceptEntityAdded {
         person: Person,
         role: KeyOwnerRole,
     },
-    GraphEdgeAdded {
+    ConceptRelationAdded {
         from: Uuid,
         to: Uuid,
         edge_type: String,

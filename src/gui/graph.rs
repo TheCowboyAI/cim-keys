@@ -70,9 +70,9 @@ pub struct PersonRoleBadges {
 
 /// Graph visualization widget for organizational structure
 #[derive(Clone)]
-pub struct OrganizationGraph {
-    pub nodes: HashMap<Uuid, GraphNode>,
-    pub edges: Vec<GraphEdge>,
+pub struct OrganizationConcept {
+    pub nodes: HashMap<Uuid, ConceptEntity>,
+    pub edges: Vec<ConceptRelation>,
     pub selected_node: Option<Uuid>,
     pub selected_edge: Option<usize>,  // Index of selected edge in edges Vec
     pub dragging_node: Option<Uuid>,  // Node currently being dragged
@@ -137,7 +137,7 @@ pub struct DraggingRole {
 
 /// A node in the organization graph (represents any domain entity)
 #[derive(Debug, Clone)]
-pub struct GraphNode {
+pub struct ConceptEntity {
     pub id: Uuid,
     pub node_type: NodeType,
     pub position: Point,
@@ -295,7 +295,7 @@ pub enum NodeType {
 
 /// An edge in the organization graph (represents relationship/delegation)
 #[derive(Debug, Clone)]
-pub struct GraphEdge {
+pub struct ConceptRelation {
     pub from: Uuid,
     pub to: Uuid,
     pub edge_type: EdgeType,
@@ -430,7 +430,7 @@ pub enum LayoutAlgorithm {
 }
 
 #[derive(Debug, Clone)]
-pub enum GraphMessage {
+pub enum OrganizationIntent {
     NodeClicked(Uuid),
     /// Click on +/- expansion indicator (separate from node click)
     ExpandIndicatorClicked(Uuid),
@@ -476,7 +476,7 @@ pub enum GraphMessage {
     RoleRemoved { person_id: Uuid, role_name: String },
 }
 
-impl Default for OrganizationGraph {
+impl Default for OrganizationConcept {
     fn default() -> Self {
         Self::new()
     }
@@ -544,7 +544,7 @@ fn distance_to_line_segment(point: Point, line_start: Point, line_end: Point) ->
     ((px - closest_x).powi(2) + (py - closest_y).powi(2)).sqrt()
 }
 
-impl OrganizationGraph {
+impl OrganizationConcept {
     pub fn new() -> Self {
         Self {
             nodes: HashMap::new(),
@@ -681,7 +681,7 @@ impl OrganizationGraph {
         let label = person.name.clone();
         let color = self.role_to_color(&role);
 
-        let node = GraphNode {
+        let node = ConceptEntity {
             id: node_id,
             node_type: NodeType::Person {
                 person: person.clone(),
@@ -700,7 +700,7 @@ impl OrganizationGraph {
         let node_id = org.id;
         let label = org.name.clone();
 
-        let node = GraphNode {
+        let node = ConceptEntity {
             id: node_id,
             node_type: NodeType::Organization(org),
             position: self.calculate_node_position(node_id),
@@ -716,7 +716,7 @@ impl OrganizationGraph {
         let node_id = unit.id;
         let label = unit.name.clone();
 
-        let node = GraphNode {
+        let node = ConceptEntity {
             id: node_id,
             node_type: NodeType::OrganizationalUnit(unit),
             position: self.calculate_node_position(node_id),
@@ -733,7 +733,7 @@ impl OrganizationGraph {
         let node_id = *location.id().as_uuid();
         let label = location.name.clone();
 
-        let node = GraphNode {
+        let node = ConceptEntity {
             id: node_id,
             node_type: NodeType::Location(location),
             position: self.calculate_node_position(node_id),
@@ -749,7 +749,7 @@ impl OrganizationGraph {
         let node_id = role.id;
         let label = role.name.clone();
 
-        let node = GraphNode {
+        let node = ConceptEntity {
             id: node_id,
             node_type: NodeType::Role(role),
             position: self.calculate_node_position(node_id),
@@ -788,7 +788,7 @@ impl OrganizationGraph {
             SeparationClass::Personnel => Color::from_rgb(0.8, 0.4, 0.6),      // Rose
         };
 
-        let node = GraphNode {
+        let node = ConceptEntity {
             id: role_id,
             node_type: NodeType::PolicyRole {
                 role_id,
@@ -824,7 +824,7 @@ impl OrganizationGraph {
             _ => Color::from_rgb(0.5, 0.5, 0.5),                // Gray for unknown
         };
 
-        let node = GraphNode {
+        let node = ConceptEntity {
             id: claim_id,
             node_type: NodeType::PolicyClaim {
                 claim_id,
@@ -854,7 +854,7 @@ impl OrganizationGraph {
             Color::from_rgb(0.3, 0.4, 0.5) // Collapsed: neutral
         };
 
-        let node = GraphNode {
+        let node = ConceptEntity {
             id: category_id,
             node_type: NodeType::PolicyCategory {
                 category_id,
@@ -898,7 +898,7 @@ impl OrganizationGraph {
             Color::from_rgb(base_color.r * 0.7, base_color.g * 0.7, base_color.b * 0.7)
         };
 
-        let node = GraphNode {
+        let node = ConceptEntity {
             id: class_id,
             node_type: NodeType::SeparationClassGroup {
                 class_id,
@@ -920,7 +920,7 @@ impl OrganizationGraph {
         let node_id = policy.id;
         let label = policy.name.clone();
 
-        let node = GraphNode {
+        let node = ConceptEntity {
             id: node_id,
             node_type: NodeType::Policy(policy),
             position: self.calculate_node_position(node_id),
@@ -935,7 +935,7 @@ impl OrganizationGraph {
 
     /// Add a NATS operator node to the graph
     pub fn add_nats_operator_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, label: String) {
-        let node = GraphNode {
+        let node = ConceptEntity {
             id: node_id,
             node_type: NodeType::NatsOperator(nats_identity),
             position: self.calculate_node_position(node_id),
@@ -948,7 +948,7 @@ impl OrganizationGraph {
 
     /// Add a NATS account node to the graph
     pub fn add_nats_account_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, label: String) {
-        let node = GraphNode {
+        let node = ConceptEntity {
             id: node_id,
             node_type: NodeType::NatsAccount(nats_identity),
             position: self.calculate_node_position(node_id),
@@ -961,7 +961,7 @@ impl OrganizationGraph {
 
     /// Add a NATS user node to the graph
     pub fn add_nats_user_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, label: String) {
-        let node = GraphNode {
+        let node = ConceptEntity {
             id: node_id,
             node_type: NodeType::NatsUser(nats_identity),
             position: self.calculate_node_position(node_id),
@@ -974,7 +974,7 @@ impl OrganizationGraph {
 
     /// Add a NATS service account node to the graph
     pub fn add_nats_service_account_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, label: String) {
-        let node = GraphNode {
+        let node = ConceptEntity {
             id: node_id,
             node_type: NodeType::NatsServiceAccount(nats_identity),
             position: self.calculate_node_position(node_id),
@@ -989,7 +989,7 @@ impl OrganizationGraph {
 
     /// Add a simple NATS operator node (visualization without crypto)
     pub fn add_nats_operator_simple(&mut self, node_id: Uuid, name: String, organization_id: Option<Uuid>) {
-        let node = GraphNode {
+        let node = ConceptEntity {
             id: node_id,
             node_type: NodeType::NatsOperatorSimple { name: name.clone(), organization_id },
             position: self.calculate_node_position(node_id),
@@ -1007,7 +1007,7 @@ impl OrganizationGraph {
             Color::from_rgb(1.0, 0.5, 0.0) // Orange (intermediate trust)
         };
 
-        let node = GraphNode {
+        let node = ConceptEntity {
             id: node_id,
             node_type: NodeType::NatsAccountSimple { name: name.clone(), unit_id, is_system },
             position: self.calculate_node_position(node_id),
@@ -1019,7 +1019,7 @@ impl OrganizationGraph {
 
     /// Add a simple NATS user node (visualization without crypto)
     pub fn add_nats_user_simple(&mut self, node_id: Uuid, name: String, person_id: Option<Uuid>, account_name: String) {
-        let node = GraphNode {
+        let node = ConceptEntity {
             id: node_id,
             node_type: NodeType::NatsUserSimple { name: name.clone(), person_id, account_name },
             position: self.calculate_node_position(node_id),
@@ -1041,7 +1041,7 @@ impl OrganizationGraph {
         not_after: chrono::DateTime<chrono::Utc>,
         key_usage: Vec<String>,
     ) {
-        let node = GraphNode {
+        let node = ConceptEntity {
             id: cert_id,
             node_type: NodeType::RootCertificate {
                 cert_id,
@@ -1069,7 +1069,7 @@ impl OrganizationGraph {
         not_after: chrono::DateTime<chrono::Utc>,
         key_usage: Vec<String>,
     ) {
-        let node = GraphNode {
+        let node = ConceptEntity {
             id: cert_id,
             node_type: NodeType::IntermediateCertificate {
                 cert_id,
@@ -1098,7 +1098,7 @@ impl OrganizationGraph {
         key_usage: Vec<String>,
         san: Vec<String>,
     ) {
-        let node = GraphNode {
+        let node = ConceptEntity {
             id: cert_id,
             node_type: NodeType::LeafCertificate {
                 cert_id,
@@ -1207,7 +1207,7 @@ impl OrganizationGraph {
         provisioned_at: Option<chrono::DateTime<chrono::Utc>>,
         slots_used: Vec<String>,
     ) {
-        let node = GraphNode {
+        let node = ConceptEntity {
             id: device_id,
             node_type: NodeType::YubiKey {
                 device_id,
@@ -1233,7 +1233,7 @@ impl OrganizationGraph {
         has_key: bool,
         certificate_subject: Option<String>,
     ) {
-        let node = GraphNode {
+        let node = ConceptEntity {
             id: slot_id,
             node_type: NodeType::PivSlot {
                 slot_id,
@@ -1492,7 +1492,7 @@ impl OrganizationGraph {
             EdgeType::Hierarchy => Color::from_rgb(0.3, 0.3, 0.7),
             EdgeType::Trust => Color::from_rgb(0.7, 0.5, 0.3),
         };
-        self.edges.push(GraphEdge {
+        self.edges.push(ConceptRelation {
             from,
             to,
             edge_type,
@@ -1527,7 +1527,7 @@ impl OrganizationGraph {
     pub fn apply_event(&mut self, event: &GraphEvent) {
         match event {
             GraphEvent::NodeCreated { node_id, node_type, position, color, label, .. } => {
-                let node = GraphNode {
+                let node = ConceptEntity {
                     id: *node_id,
                     node_type: node_type.clone(),
                     position: *position,
@@ -1557,7 +1557,7 @@ impl OrganizationGraph {
                 }
             }
             GraphEvent::EdgeCreated { from, to, edge_type, color, .. } => {
-                self.edges.push(GraphEdge {
+                self.edges.push(ConceptRelation {
                     from: *from,
                     to: *to,
                     edge_type: edge_type.clone(),
@@ -2445,21 +2445,21 @@ impl OrganizationGraph {
         }
     }
 
-    pub fn handle_message(&mut self, message: GraphMessage) {
+    pub fn handle_message(&mut self, message: OrganizationIntent) {
         match message {
-            GraphMessage::NodeClicked(id) => {
+            OrganizationIntent::NodeClicked(id) => {
                 self.selected_node = Some(id);
                 // Clear dragging state (click without significant movement)
                 self.dragging_node = None;
                 self.drag_offset = Vector::new(0.0, 0.0);
                 self.drag_start_position = None;
             },
-            GraphMessage::ExpandIndicatorClicked(_id) => {
+            OrganizationIntent::ExpandIndicatorClicked(_id) => {
                 // This is handled at the gui.rs level where we have access to
                 // expanded_separation_classes and expanded_categories
                 // The graph just receives this message for routing
             },
-            GraphMessage::NodeDragStarted { node_id, offset } => {
+            OrganizationIntent::NodeDragStarted { node_id, offset } => {
                 self.dragging_node = Some(node_id);
                 self.drag_offset = offset;
                 // Capture starting position for NodeMoved event
@@ -2467,7 +2467,7 @@ impl OrganizationGraph {
                     self.drag_start_position = Some(node.position);
                 }
             }
-            GraphMessage::NodeDragged(cursor_pos) => {
+            OrganizationIntent::NodeDragged(cursor_pos) => {
                 if let Some(node_id) = self.dragging_node {
                     if let Some(node) = self.nodes.get_mut(&node_id) {
                         // Adjust for zoom and pan transformations
@@ -2482,7 +2482,7 @@ impl OrganizationGraph {
                     }
                 }
             }
-            GraphMessage::NodeDragEnded => {
+            OrganizationIntent::NodeDragEnded => {
                 // Create NodeMoved event when drag completes
                 if let (Some(node_id), Some(old_position)) = (self.dragging_node, self.drag_start_position) {
                     if let Some(node) = self.nodes.get(&node_id) {
@@ -2509,27 +2509,27 @@ impl OrganizationGraph {
                 self.drag_offset = Vector::new(0.0, 0.0);
                 self.drag_start_position = None;
             }
-            GraphMessage::EdgeClicked { from: _, to: _ } => {}
-            GraphMessage::ZoomIn => self.zoom = (self.zoom * 1.2).min(10.0),  // Max zoom 10.0 (zoom in closer)
-            GraphMessage::ZoomOut => self.zoom = (self.zoom / 1.2).max(0.1),  // Min zoom 0.1 (zoom out much further)
-            GraphMessage::ZoomBy(delta) => {
+            OrganizationIntent::EdgeClicked { from: _, to: _ } => {}
+            OrganizationIntent::ZoomIn => self.zoom = (self.zoom * 1.2).min(10.0),  // Max zoom 10.0 (zoom in closer)
+            OrganizationIntent::ZoomOut => self.zoom = (self.zoom / 1.2).max(0.1),  // Min zoom 0.1 (zoom out much further)
+            OrganizationIntent::ZoomBy(delta) => {
                 // Smooth zoom using exponential scaling
                 // delta > 0 = zoom in, delta < 0 = zoom out
                 // 0.01 factor gives good responsiveness on high-res touchpads
                 let zoom_factor = 1.0 + delta * 0.01;
                 self.zoom = (self.zoom * zoom_factor).clamp(0.1, 10.0);
             }
-            GraphMessage::ResetView => {
+            OrganizationIntent::ResetView => {
                 self.zoom = 1.0;  // Reset to 1:1 scale
                 self.pan_offset = Vector::new(0.0, 0.0);
             }
-            GraphMessage::Pan(delta) => {
+            OrganizationIntent::Pan(delta) => {
                 self.pan_offset = self.pan_offset + delta;
             }
-            GraphMessage::AutoLayout => {
+            OrganizationIntent::AutoLayout => {
                 self.auto_layout();
             }
-            GraphMessage::ApplyLayout(algorithm) => {
+            OrganizationIntent::ApplyLayout(algorithm) => {
                 let width = 1200.0;
                 let height = 900.0;
 
@@ -2602,7 +2602,7 @@ impl OrganizationGraph {
                 let crossings = self.count_all_crossings();
                 tracing::info!("Starting animated {:?} layout (will have {} crossings)", algorithm, crossings);
             }
-            GraphMessage::AnimationTick => {
+            OrganizationIntent::AnimationTick => {
                 // Animation duration in seconds (0.7s feels smooth without being slow)
                 const ANIMATION_DURATION: f32 = 0.7;
 
@@ -2642,7 +2642,7 @@ impl OrganizationGraph {
                     }
                 }
             }
-            GraphMessage::AddEdge { from, to, edge_type } => {
+            OrganizationIntent::AddEdge { from, to, edge_type } => {
                 self.add_edge(from, to, edge_type);
                 // Complete edge indicator if it's active
                 if self.edge_indicator.is_active() {
@@ -2650,45 +2650,45 @@ impl OrganizationGraph {
                 }
             }
             // Phase 4: Right-click handled in main GUI (shows context menu)
-            GraphMessage::RightClick(_) => {}
+            OrganizationIntent::RightClick(_) => {}
             // Phase 4: Update edge indicator position during edge creation
-            GraphMessage::CursorMoved(position) => {
+            OrganizationIntent::CursorMoved(position) => {
                 self.edge_indicator.update_position(position);
             }
             // Phase 4: Cancel edge creation with Esc key
-            GraphMessage::CancelEdgeCreation => {
+            OrganizationIntent::CancelEdgeCreation => {
                 self.edge_indicator.cancel();
             }
             // Phase 4: Delete selected node with Delete key
-            GraphMessage::DeleteSelected => {
+            OrganizationIntent::DeleteSelected => {
                 // Deletion now handled via events in GUI layer
                 // The event application will handle node removal and edge cleanup
             }
             // Phase 4: Undo last action
-            GraphMessage::Undo => {
+            OrganizationIntent::Undo => {
                 if let Some(compensating_event) = self.event_stack.undo() {
                     self.apply_event(&compensating_event);
                 }
             }
             // Phase 4: Redo last undone action
-            GraphMessage::Redo => {
+            OrganizationIntent::Redo => {
                 if let Some(compensating_event) = self.event_stack.redo() {
                     self.apply_event(&compensating_event);
                 }
             }
             // Edge editing messages
-            GraphMessage::EdgeSelected(index) => {
+            OrganizationIntent::EdgeSelected(index) => {
                 self.selected_edge = Some(index);
                 // Clear node selection when edge is selected
                 self.selected_node = None;
             }
-            GraphMessage::EdgeCreationStarted(from_node) => {
+            OrganizationIntent::EdgeCreationStarted(from_node) => {
                 // Start edge creation indicator from this node
                 if let Some(node) = self.nodes.get(&from_node) {
                     self.edge_indicator.start(from_node, node.position);
                 }
             }
-            GraphMessage::EdgeDeleted(index) => {
+            OrganizationIntent::EdgeDeleted(index) => {
                 if index < self.edges.len() {
                     let edge = self.edges[index].clone();
                     use chrono::Utc;
@@ -2706,7 +2706,7 @@ impl OrganizationGraph {
                     self.selected_edge = None;
                 }
             }
-            GraphMessage::EdgeTypeChanged { edge_index, new_type } => {
+            OrganizationIntent::EdgeTypeChanged { edge_index, new_type } => {
                 if edge_index < self.edges.len() {
                     let old_type = self.edges[edge_index].edge_type.clone();
                     use chrono::Utc;
@@ -2724,28 +2724,28 @@ impl OrganizationGraph {
                 }
             }
             // Canvas clicked - handled in main GUI layer for node creation
-            GraphMessage::CanvasClicked(_) => {}
+            OrganizationIntent::CanvasClicked(_) => {}
             // Role drag-and-drop operations
-            GraphMessage::RoleDragStarted(source) => {
+            OrganizationIntent::RoleDragStarted(source) => {
                 // Get initial cursor position from current context (will be updated by RoleDragMoved)
                 self.start_role_drag(source, Point::ORIGIN);
             }
-            GraphMessage::RoleDragMoved(position) => {
+            OrganizationIntent::RoleDragMoved(position) => {
                 self.update_role_drag(position);
             }
-            GraphMessage::RoleDragCancelled => {
+            OrganizationIntent::RoleDragCancelled => {
                 self.cancel_role_drag();
             }
-            GraphMessage::RoleDragDropped => {
+            OrganizationIntent::RoleDragDropped => {
                 // Drop is handled in main GUI layer which has access to policy data
                 // for SoD validation and event generation
                 self.cancel_role_drag();
             }
-            GraphMessage::RoleAssigned { person_id, role_name } => {
+            OrganizationIntent::RoleAssigned { person_id, role_name } => {
                 // Role assignment is handled through events, this is just for notification
                 tracing::info!("Role '{}' assigned to person {:?}", role_name, person_id);
             }
-            GraphMessage::RoleRemoved { person_id, role_name } => {
+            OrganizationIntent::RoleRemoved { person_id, role_name } => {
                 // Role removal is handled through events
                 tracing::info!("Role '{}' removed from person {:?}", role_name, person_id);
             }
@@ -3015,7 +3015,7 @@ impl OrganizationGraph {
     }
 
     /// Check if a node should be visible based on current filter settings
-    pub fn should_show_node(&self, node: &GraphNode) -> bool {
+    pub fn should_show_node(&self, node: &ConceptEntity) -> bool {
         match &node.node_type {
             NodeType::Person { .. } => self.filter_show_people,
             NodeType::Organization(_) | NodeType::OrganizationalUnit(_) |
@@ -3258,13 +3258,13 @@ impl OrganizationGraph {
     }
 
     /// Subscription for animation ticks - only active when animating
-    pub fn subscription(&self) -> iced::Subscription<GraphMessage> {
+    pub fn subscription(&self) -> iced::Subscription<OrganizationIntent> {
         use std::time::Duration;
 
         if self.animating {
             // 60fps = ~16.67ms per frame
             iced::time::every(Duration::from_millis(16))
-                .map(|_| GraphMessage::AnimationTick)
+                .map(|_| OrganizationIntent::AnimationTick)
         } else {
             iced::Subscription::none()
         }
@@ -3282,7 +3282,7 @@ pub struct CanvasState {
     last_pan_pos: Option<Point>,
 }
 
-impl canvas::Program<GraphMessage> for OrganizationGraph {
+impl canvas::Program<OrganizationIntent> for OrganizationConcept {
     type State = CanvasState;
 
     fn draw(
@@ -4105,7 +4105,7 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
         event: canvas::Event,
         bounds: Rectangle,  // Canvas widget bounds for coordinate conversion
         cursor: mouse::Cursor,
-    ) -> (canvas::event::Status, Option<GraphMessage>) {
+    ) -> (canvas::event::Status, Option<OrganizationIntent>) {
         if let mouse::Cursor::Available(cursor_position) = cursor {
             // Convert window coordinates to canvas-relative coordinates
             let canvas_relative_x = cursor_position.x - bounds.x;
@@ -4154,7 +4154,7 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                                 // Click on expansion indicator - expand/collapse
                                 return (
                                     canvas::event::Status::Captured,
-                                    Some(GraphMessage::ExpandIndicatorClicked(*node_id)),
+                                    Some(OrganizationIntent::ExpandIndicatorClicked(*node_id)),
                                 );
                             }
                         }
@@ -4174,7 +4174,7 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                                 // Border click - start edge creation
                                 return (
                                     canvas::event::Status::Captured,
-                                    Some(GraphMessage::EdgeCreationStarted(*node_id)),
+                                    Some(OrganizationIntent::EdgeCreationStarted(*node_id)),
                                 );
                             } else {
                                 // Center click - start node drag
@@ -4189,7 +4189,7 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                                 );
                                 return (
                                     canvas::event::Status::Captured,
-                                    Some(GraphMessage::NodeDragStarted {
+                                    Some(OrganizationIntent::NodeDragStarted {
                                         node_id: *node_id,
                                         offset
                                     }),
@@ -4201,7 +4201,7 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                     // Click on empty canvas - emit CanvasClicked for node placement
                     return (
                         canvas::event::Status::Captured,
-                        Some(GraphMessage::CanvasClicked(adjusted_position)),
+                        Some(OrganizationIntent::CanvasClicked(adjusted_position)),
                     );
                 }
                 canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
@@ -4223,7 +4223,7 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                                     // Use MemberOf as default edge type (user can change later)
                                     return (
                                         canvas::event::Status::Captured,
-                                        Some(GraphMessage::AddEdge {
+                                        Some(OrganizationIntent::AddEdge {
                                             from: from_node_id,
                                             to: *node_id,
                                             edge_type: EdgeType::MemberOf,
@@ -4235,7 +4235,7 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                         // Released but not over a target node - cancel edge creation
                         return (
                             canvas::event::Status::Captured,
-                            Some(GraphMessage::CancelEdgeCreation),
+                            Some(OrganizationIntent::CancelEdgeCreation),
                         );
                     }
 
@@ -4257,13 +4257,13 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                             // This was a drag operation
                             return (
                                 canvas::event::Status::Captured,
-                                Some(GraphMessage::NodeDragEnded),
+                                Some(OrganizationIntent::NodeDragEnded),
                             );
                         } else {
                             // This was a click (no significant movement)
                             return (
                                 canvas::event::Status::Captured,
-                                Some(GraphMessage::NodeClicked(node_id)),
+                                Some(OrganizationIntent::NodeClicked(node_id)),
                             );
                         }
                     } else {
@@ -4279,7 +4279,7 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                                 if distance <= EDGE_CLICK_THRESHOLD {
                                     return (
                                         canvas::event::Status::Captured,
-                                        Some(GraphMessage::EdgeSelected(index)),
+                                        Some(OrganizationIntent::EdgeSelected(index)),
                                     );
                                 }
                             }
@@ -4290,7 +4290,7 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                 canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
                     return (
                         canvas::event::Status::Captured,
-                        Some(GraphMessage::RightClick(canvas_relative)),  // Use canvas-relative coords!
+                        Some(OrganizationIntent::RightClick(canvas_relative)),  // Use canvas-relative coords!
                     );
                 }
                 canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
@@ -4305,7 +4305,7 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                             state.last_pan_pos = Some(canvas_relative);
                             return (
                                 canvas::event::Status::Captured,
-                                Some(GraphMessage::Pan(delta)),
+                                Some(OrganizationIntent::Pan(delta)),
                             );
                         }
                     }
@@ -4313,14 +4313,14 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                     if self.edge_indicator.is_active() {
                         return (
                             canvas::event::Status::Captured,
-                            Some(GraphMessage::CursorMoved(adjusted_position)),
+                            Some(OrganizationIntent::CursorMoved(adjusted_position)),
                         );
                     }
                     // Continue dragging if we're dragging a node
                     if state.dragging_node.is_some() {
                         return (
                             canvas::event::Status::Captured,
-                            Some(GraphMessage::NodeDragged(canvas_relative)),  // Use canvas-relative, not window coords!
+                            Some(OrganizationIntent::NodeDragged(canvas_relative)),  // Use canvas-relative, not window coords!
                         );
                     }
                 }
@@ -4331,12 +4331,12 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                             if y > 0.0 {
                                 return (
                                     canvas::event::Status::Captured,
-                                    Some(GraphMessage::ZoomIn),
+                                    Some(OrganizationIntent::ZoomIn),
                                 );
                             } else if y < 0.0 {
                                 return (
                                     canvas::event::Status::Captured,
-                                    Some(GraphMessage::ZoomOut),
+                                    Some(OrganizationIntent::ZoomOut),
                                 );
                             }
                         }
@@ -4354,14 +4354,14 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                                 // Primarily horizontal - pan
                                 return (
                                     canvas::event::Status::Captured,
-                                    Some(GraphMessage::Pan(Vector::new(-x * 1.5, 0.0))),
+                                    Some(OrganizationIntent::Pan(Vector::new(-x * 1.5, 0.0))),
                                 );
                             }
                             if y.abs() > 0.5 {
                                 // Primarily vertical - zoom
                                 return (
                                     canvas::event::Status::Captured,
-                                    Some(GraphMessage::ZoomBy(y)),
+                                    Some(OrganizationIntent::ZoomBy(y)),
                                 );
                             }
                         }
@@ -4377,7 +4377,7 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
 }
 
 /// Create a view element for the graph
-pub fn view_graph(graph: &OrganizationGraph) -> Element<'_, GraphMessage> {
+pub fn view_graph(graph: &OrganizationConcept) -> Element<'_, OrganizationIntent> {
     // Full Canvas-based graph visualization
     let canvas = Canvas::new(graph)
         .width(Length::Fill)
@@ -4385,44 +4385,44 @@ pub fn view_graph(graph: &OrganizationGraph) -> Element<'_, GraphMessage> {
 
     let controls = row![
         button(text("+").size(16).font(crate::icons::FONT_BODY))
-            .on_press(GraphMessage::ZoomIn)
+            .on_press(OrganizationIntent::ZoomIn)
             .style(CowboyCustomTheme::glass_button())
             .padding(6),
         button(text("-").size(16).font(crate::icons::FONT_BODY))
-            .on_press(GraphMessage::ZoomOut)
+            .on_press(OrganizationIntent::ZoomOut)
             .style(CowboyCustomTheme::glass_button())
             .padding(6),
         button(text("🔄").size(14).font(crate::icons::EMOJI_FONT))
-            .on_press(GraphMessage::ResetView)
+            .on_press(OrganizationIntent::ResetView)
             .style(CowboyCustomTheme::glass_button())
             .padding(6),
         button(text("Auto Layout").size(12).font(crate::icons::FONT_BODY))
-            .on_press(GraphMessage::AutoLayout)
+            .on_press(OrganizationIntent::AutoLayout)
             .style(CowboyCustomTheme::glass_button())
             .padding(6),
         // Layout algorithm buttons
         button(text("Tutte").size(11).font(crate::icons::FONT_BODY))
-            .on_press(GraphMessage::ApplyLayout(LayoutAlgorithm::Tutte))
+            .on_press(OrganizationIntent::ApplyLayout(LayoutAlgorithm::Tutte))
             .style(CowboyCustomTheme::glass_button())
             .padding(4),
         button(text("F-R").size(11).font(crate::icons::FONT_BODY))
-            .on_press(GraphMessage::ApplyLayout(LayoutAlgorithm::FruchtermanReingold))
+            .on_press(OrganizationIntent::ApplyLayout(LayoutAlgorithm::FruchtermanReingold))
             .style(CowboyCustomTheme::glass_button())
             .padding(4),
         button(text("Circle").size(11).font(crate::icons::FONT_BODY))
-            .on_press(GraphMessage::ApplyLayout(LayoutAlgorithm::Circular))
+            .on_press(OrganizationIntent::ApplyLayout(LayoutAlgorithm::Circular))
             .style(CowboyCustomTheme::glass_button())
             .padding(4),
         button(text("Tree").size(11).font(crate::icons::FONT_BODY))
-            .on_press(GraphMessage::ApplyLayout(LayoutAlgorithm::Hierarchical))
+            .on_press(OrganizationIntent::ApplyLayout(LayoutAlgorithm::Hierarchical))
             .style(CowboyCustomTheme::glass_button())
             .padding(4),
         button(text("YubiKey").size(11).font(crate::icons::FONT_BODY))
-            .on_press(GraphMessage::ApplyLayout(LayoutAlgorithm::YubiKeyGrouped))
+            .on_press(OrganizationIntent::ApplyLayout(LayoutAlgorithm::YubiKeyGrouped))
             .style(CowboyCustomTheme::glass_button())
             .padding(4),
         button(text("NATS").size(11).font(crate::icons::FONT_BODY))
-            .on_press(GraphMessage::ApplyLayout(LayoutAlgorithm::NatsHierarchical))
+            .on_press(OrganizationIntent::ApplyLayout(LayoutAlgorithm::NatsHierarchical))
             .style(CowboyCustomTheme::glass_button())
             .padding(4),
     ]

@@ -19,7 +19,7 @@
 //! ```
 
 use crate::causality::{CausalChain, CausalEvent};
-use crate::gui::graph::{OrganizationGraph, NodeType, EdgeType};
+use crate::gui::graph::{OrganizationConcept, NodeType, EdgeType};
 use uuid::Uuid;
 use iced::Point;
 
@@ -160,7 +160,7 @@ fn get_edge_type_name(edge_type: &EdgeType) -> &str {
 /// 1. Root CA (from organization)
 /// 2. Intermediate CAs (from organizational units)
 /// 3. Leaf certificates (from people)
-pub fn build_pki_from_graph(graph: &OrganizationGraph) -> CausalChain<GraphOperation> {
+pub fn build_pki_from_graph(graph: &OrganizationConcept) -> CausalChain<GraphOperation> {
     let mut chain = CausalChain::new();
 
     // Step 1: Find organization root nodes
@@ -307,7 +307,7 @@ pub fn build_pki_from_graph(graph: &OrganizationGraph) -> CausalChain<GraphOpera
 /// 1. NATS Operator (from organization)
 /// 2. NATS Accounts (from organizational units)
 /// 3. NATS Users (from people)
-pub fn build_nats_from_graph(graph: &OrganizationGraph) -> CausalChain<GraphOperation> {
+pub fn build_nats_from_graph(graph: &OrganizationConcept) -> CausalChain<GraphOperation> {
     let mut chain = CausalChain::new();
 
     // Find organization root nodes
@@ -464,8 +464,8 @@ mod tests {
     use super::*;
     use crate::domain::{Organization, OrganizationUnit, OrganizationUnitType, Person, KeyOwnerRole};
 
-    fn create_test_graph() -> OrganizationGraph {
-        let mut graph = OrganizationGraph::new();
+    fn create_test_graph() -> OrganizationConcept {
+        let mut graph = OrganizationConcept::new();
 
         // Create org
         let org = Organization {

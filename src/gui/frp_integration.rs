@@ -27,7 +27,7 @@
 
 use crate::signals::{Signal, StepKind, ContinuousKind};
 use crate::causality::CausalChain;
-use crate::gui::graph::{OrganizationGraph, GraphNode};
+use crate::gui::graph::{OrganizationConcept, ConceptEntity};
 use crate::gui::graph_signals::{FilterState, visible_nodes, LayoutAlgorithm, compute_node_positions};
 use crate::gui::graph_causality::GraphOperation;
 use crate::gui::feedback::{GraphFilterAppState, GraphFilterIntent, update_graph_filter_state};
@@ -45,7 +45,7 @@ use std::collections::HashMap;
 #[derive(Clone)]
 pub struct FrpAppState {
     /// The organizational graph (source of truth)
-    pub graph: OrganizationGraph,
+    pub graph: OrganizationConcept,
 
     /// Filter/search state (from feedback.rs)
     pub filter_state: GraphFilterAppState,
@@ -59,7 +59,7 @@ pub struct FrpAppState {
 
 impl FrpAppState {
     /// Create initial state
-    pub fn initial(graph: OrganizationGraph) -> Self {
+    pub fn initial(graph: OrganizationConcept) -> Self {
         FrpAppState {
             graph,
             filter_state: GraphFilterAppState::initial(),
@@ -69,7 +69,7 @@ impl FrpAppState {
     }
 
     /// Update graph (triggers workflows and animations)
-    pub fn with_graph(self, graph: OrganizationGraph) -> Self {
+    pub fn with_graph(self, graph: OrganizationConcept) -> Self {
         FrpAppState {
             graph,
             animation_progress: 0.0, // Start new animation
@@ -123,7 +123,7 @@ pub struct FrpPipeline {
 
 impl FrpPipeline {
     /// Create a new FRP pipeline
-    pub fn new(initial_graph: OrganizationGraph) -> Self {
+    pub fn new(initial_graph: OrganizationConcept) -> Self {
         // Create composable router (from routing.rs)
         let filter = filter_router();
         let search = search_router();
@@ -241,7 +241,7 @@ pub enum PipelineResult {
     /// State was updated
     StateUpdated {
         new_state: FrpAppState,
-        visible_nodes: Vec<GraphNode>,
+        visible_nodes: Vec<ConceptEntity>,
         workflow: Option<WorkflowStep>,
     },
 }
@@ -273,7 +273,7 @@ pub struct FrpViewModel {
     pub animation_signal: Signal<ContinuousKind, f32>,
 
     /// Visible nodes signal (derived from state)
-    pub visible_nodes_signal: Signal<StepKind, Vec<GraphNode>>,
+    pub visible_nodes_signal: Signal<StepKind, Vec<ConceptEntity>>,
 }
 
 impl FrpViewModel {
@@ -287,7 +287,7 @@ impl FrpViewModel {
 
         // Create derived signal for visible nodes
         let state_for_visible = state.clone();
-        let visible_nodes_signal = Signal::<StepKind, Vec<GraphNode>>::step(
+        let visible_nodes_signal = Signal::<StepKind, Vec<ConceptEntity>>::step(
             visible_nodes(&state_for_visible.graph, &state_for_visible.filter_state.filters)
         );
 
@@ -313,7 +313,7 @@ impl FrpViewModel {
 pub struct ViewModelSnapshot {
     pub state: FrpAppState,
     pub animation_progress: f32,
-    pub visible_nodes: Vec<GraphNode>,
+    pub visible_nodes: Vec<ConceptEntity>,
 }
 
 /// Complete FRP Application
@@ -326,10 +326,10 @@ pub struct ViewModelSnapshot {
 /// ```rust
 /// use cim_keys::gui::frp_integration::FrpApplication;
 /// use cim_keys::gui::routing::AppMessage;
-/// use cim_keys::gui::graph::OrganizationGraph;
+/// use cim_keys::gui::graph::OrganizationConcept;
 ///
 /// // Create application
-/// let graph = OrganizationGraph::new();
+/// let graph = OrganizationConcept::new();
 /// let mut app = FrpApplication::new(graph);
 ///
 /// // Process user interaction
@@ -347,7 +347,7 @@ pub struct FrpApplication {
 
 impl FrpApplication {
     /// Create new FRP application
-    pub fn new(initial_graph: OrganizationGraph) -> Self {
+    pub fn new(initial_graph: OrganizationConcept) -> Self {
         let pipeline = FrpPipeline::new(initial_graph.clone());
         let view_model = FrpViewModel::new(FrpAppState::initial(initial_graph));
 
@@ -445,7 +445,7 @@ mod tests {
 
     #[test]
     fn test_frp_app_state_initial() {
-        let graph = OrganizationGraph::new();
+        let graph = OrganizationConcept::new();
         let state = FrpAppState::initial(graph);
 
         assert_eq!(state.animation_progress, 1.0);
@@ -454,7 +454,7 @@ mod tests {
 
     #[test]
     fn test_frp_pipeline_creation() {
-        let graph = OrganizationGraph::new();
+        let graph = OrganizationConcept::new();
         let pipeline = FrpPipeline::new(graph);
 
         assert_eq!(pipeline.state.animation_progress, 1.0);
@@ -462,7 +462,7 @@ mod tests {
 
     #[test]
     fn test_message_processing() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
         let person = test_person("Alice");
         graph.add_node(person, KeyOwnerRole::Developer);
 
@@ -483,7 +483,7 @@ mod tests {
 
     #[test]
     fn test_layout_change_triggers_animation() {
-        let graph = OrganizationGraph::new();
+        let graph = OrganizationConcept::new();
         let mut pipeline = FrpPipeline::new(graph);
 
         let transition = pipeline.change_layout(LayoutAlgorithm::Circular);
@@ -495,7 +495,7 @@ mod tests {
 
     #[test]
     fn test_animated_positions() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
         let person = test_person("Alice");
         graph.add_node(person, KeyOwnerRole::Developer);
 
@@ -517,7 +517,7 @@ mod tests {
 
     #[test]
     fn test_infrastructure_generation() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
         let org = test_org("Acme Corp");
         graph.add_organization_node(org);
 
@@ -531,7 +531,7 @@ mod tests {
 
     #[test]
     fn test_view_model_creation() {
-        let graph = OrganizationGraph::new();
+        let graph = OrganizationConcept::new();
         let state = FrpAppState::initial(graph);
         let view_model = FrpViewModel::new(state.clone());
 
@@ -545,7 +545,7 @@ mod tests {
 
     #[test]
     fn test_complete_application() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
         let person = test_person("Alice");
         graph.add_node(person, KeyOwnerRole::Developer);
 
@@ -569,7 +569,7 @@ mod tests {
 
     #[test]
     fn test_application_update_advances_time() {
-        let graph = OrganizationGraph::new();
+        let graph = OrganizationConcept::new();
         let mut app = FrpApplication::new(graph);
 
         assert_eq!(app.current_time, 0.0);
@@ -583,7 +583,7 @@ mod tests {
 
     #[test]
     fn test_complete_pipeline_flow() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
         let org = test_org("Acme Corp");
         let person = test_person("Alice");
 
@@ -613,7 +613,7 @@ mod tests {
 
     #[test]
     fn test_infrastructure_generation_integration() {
-        let mut graph = OrganizationGraph::new();
+        let mut graph = OrganizationConcept::new();
         let org = test_org("Acme Corp");
         graph.add_organization_node(org);
 

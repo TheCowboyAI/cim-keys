@@ -350,7 +350,7 @@ let new_state = update_graph_filter_state(current_state, intent);
 
 // 4. Visible nodes computed (graph_signals.rs)
 let visible = visible_nodes(&new_state.graph, &new_state.filters);
-// → [GraphNode { label: "Alice", ... }]
+// → [ConceptEntity { label: "Alice", ... }]
 
 // 5. View rendered (frp_integration.rs)
 let view = app.render(current_time);
