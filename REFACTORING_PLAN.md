@@ -123,21 +123,26 @@ cim-domain-organization = { path = "../cim-domain-organization", optional = true
 - `cim-domain-organization` - Organization aggregate
 - `cim-domain-location` - Location aggregate
 - `cim-domain-policy` - Policy/Role/Claims
+- `cim-domain-agent` - Agent (automated actors) aggregate
+- `cim-domain-relationship` - **ADD TO CARGO.TOML** - Relationship modeling
 - `cim-graph` - Graph composition utilities
 
 #### Tasks:
-1. [ ] Enable `cim-domain-person` feature by default
-2. [ ] Enable `cim-domain-organization` feature by default
-3. [ ] Enable `cim-domain-policy` feature by default
-4. [ ] Remove inline `Person` struct from `src/domain.rs` and `src/domain_stubs.rs`
-5. [ ] Remove inline `Organization` struct from `src/domain.rs` and `src/domain_stubs.rs`
-6. [ ] Remove inline `OrganizationUnit` struct from both files
-7. [ ] Replace with imports from cim-domain-* crates
-8. [ ] Use cim-graph for graph composition patterns
-9. [ ] Update all references throughout codebase
-10. [ ] Add mapping functions where API differs
-11. [ ] Verify compilation
-12. [ ] Run existing tests
+1. [ ] Add `cim-domain-relationship` to Cargo.toml
+2. [ ] Enable `cim-domain-person` feature by default
+3. [ ] Enable `cim-domain-organization` feature by default
+4. [ ] Enable `cim-domain-policy` feature by default
+5. [ ] Enable `cim-domain-agent` feature by default
+6. [ ] Remove inline `Person` struct from `src/domain.rs` and `src/domain_stubs.rs`
+7. [ ] Remove inline `Organization` struct from `src/domain.rs` and `src/domain_stubs.rs`
+8. [ ] Remove inline `OrganizationUnit` struct from both files
+9. [ ] Replace with imports from cim-domain-* crates
+10. [ ] Use cim-graph for graph composition patterns
+11. [ ] Use cim-domain-relationship for entity relationships
+12. [ ] Update all references throughout codebase
+13. [ ] Add mapping functions where API differs
+14. [ ] Verify compilation
+15. [ ] Run existing tests
 
 #### Acceptance Criteria:
 - Zero inline domain model definitions in `src/domain.rs`, `src/domain_stubs.rs`, `src/gui/`
