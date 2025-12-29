@@ -188,47 +188,55 @@
   "sprints": {
     "sprint_0": {
       "name": "Foundation & Analysis",
-      "status": "in_progress",
+      "status": "completed",
       "started": "2025-12-29",
-      "completed": null,
-      "retrospective": null,
+      "completed": "2025-12-29",
+      "retrospective": "retrospectives/sprint_0.md",
       "tasks": [
         { "id": "0.1", "description": "Create progress.json tracking file", "status": "completed" },
         { "id": "0.2", "description": "Create REFACTORING_PLAN.md", "status": "completed" },
         { "id": "0.3", "description": "Document current state metrics", "status": "completed" },
-        { "id": "0.4", "description": "Verify all cim-domain-* crates are accessible", "status": "completed", "note": "All 5 crates found: cim-domain, cim-domain-location, cim-domain-person, cim-domain-organization, cim-domain-policy" },
-        { "id": "0.5", "description": "Commit planning documents", "status": "in_progress" },
-        { "id": "0.6", "description": "Get user approval for Sprint 0", "status": "pending" },
-        { "id": "0.7", "description": "Write Sprint 0 retrospective", "status": "pending" }
+        { "id": "0.4", "description": "Verify all cim-domain-* crates are accessible", "status": "completed", "note": "All 7 crates verified: cim-domain, cim-domain-location, cim-domain-person, cim-domain-organization, cim-domain-policy, cim-domain-agent, cim-domain-relationship (needs adding)" },
+        { "id": "0.5", "description": "Commit planning documents", "status": "completed" },
+        { "id": "0.6", "description": "Get user approval for Sprint 0", "status": "completed" },
+        { "id": "0.7", "description": "Consult ACT expert for categorical foundations", "status": "completed", "note": "Added coproduct, functor, Kan extension, monad structures" },
+        { "id": "0.8", "description": "Write Sprint 0 retrospective", "status": "completed" }
       ],
       "deliverables": [
         "progress.json initialized",
-        "REFACTORING_PLAN.md created",
-        "Baseline metrics documented",
+        "REFACTORING_PLAN.md created with 7 expert consultations",
+        "Baseline metrics documented (8058 LOC, 21 NodeType variants, 6 inline models)",
+        "Categorical foundations documented (ACT expert)",
         "Sprint 0 retrospective written"
       ]
     },
     "sprint_1": {
       "name": "Extract Domain Layer",
-      "status": "not_started",
-      "started": null,
+      "status": "in_progress",
+      "started": "2025-12-29",
       "completed": null,
       "retrospective": null,
       "tasks": [
-        { "id": "1.1", "description": "Enable cim-domain-person feature by default", "status": "pending" },
-        { "id": "1.2", "description": "Enable cim-domain-organization feature by default", "status": "pending" },
-        { "id": "1.3", "description": "Remove inline Person struct from gui.rs", "status": "pending" },
-        { "id": "1.4", "description": "Remove inline Organization struct from gui.rs", "status": "pending" },
-        { "id": "1.5", "description": "Remove inline OrganizationUnit struct from gui.rs", "status": "pending" },
-        { "id": "1.6", "description": "Replace with imports from cim-domain-* crates", "status": "pending" },
-        { "id": "1.7", "description": "Update all references throughout codebase", "status": "pending" },
-        { "id": "1.8", "description": "Add mapping functions where API differs", "status": "pending" },
-        { "id": "1.9", "description": "Verify compilation", "status": "pending" },
-        { "id": "1.10", "description": "Run existing tests", "status": "pending" }
+        { "id": "1.1", "description": "Add cim-domain-relationship to Cargo.toml", "status": "pending" },
+        { "id": "1.2", "description": "Enable cim-domain-person feature by default", "status": "pending" },
+        { "id": "1.3", "description": "Enable cim-domain-organization feature by default", "status": "pending" },
+        { "id": "1.4", "description": "Enable cim-domain-policy feature by default", "status": "pending" },
+        { "id": "1.5", "description": "Enable cim-domain-agent feature by default", "status": "pending" },
+        { "id": "1.6", "description": "Remove inline Person struct from domain.rs and domain_stubs.rs", "status": "pending" },
+        { "id": "1.7", "description": "Remove inline Organization struct from domain.rs and domain_stubs.rs", "status": "pending" },
+        { "id": "1.8", "description": "Remove inline OrganizationUnit struct from both files", "status": "pending" },
+        { "id": "1.9", "description": "Replace with imports from cim-domain-* crates", "status": "pending" },
+        { "id": "1.10", "description": "Use cim-graph for graph composition patterns", "status": "pending" },
+        { "id": "1.11", "description": "Use cim-domain-relationship for entity relationships", "status": "pending" },
+        { "id": "1.12", "description": "Update all references throughout codebase", "status": "pending" },
+        { "id": "1.13", "description": "Add mapping functions where API differs", "status": "pending" },
+        { "id": "1.14", "description": "Verify compilation", "status": "pending" },
+        { "id": "1.15", "description": "Run existing tests", "status": "pending" }
       ],
       "acceptance_criteria": [
-        "Zero inline domain model definitions in src/gui/",
+        "Zero inline domain model definitions in src/domain.rs, src/domain_stubs.rs, src/gui/",
         "All domain types imported from cim-domain-*",
+        "Graph operations use cim-graph patterns",
         "All existing tests pass",
         "Compilation without warnings"
       ]
