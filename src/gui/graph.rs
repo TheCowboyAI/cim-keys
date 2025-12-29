@@ -3299,9 +3299,25 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                     to_node.position,
                 );
 
-                let stroke = canvas::Stroke::default()
-                    .with_color(edge.color)
-                    .with_width(2.0);
+                // Use dashed line for IncompatibleWith (SoD) edges
+                let stroke = if matches!(edge.edge_type, EdgeType::IncompatibleWith) {
+                    // Create base stroke with color and width
+                    let base = canvas::Stroke::default()
+                        .with_color(edge.color)
+                        .with_width(2.5);
+                    // Use struct update syntax to add dashed line pattern
+                    canvas::Stroke {
+                        line_dash: canvas::LineDash {
+                            segments: &[8.0, 4.0], // 8px dash, 4px gap
+                            offset: 0,
+                        },
+                        ..base
+                    }
+                } else {
+                    canvas::Stroke::default()
+                        .with_color(edge.color)
+                        .with_width(2.0)
+                };
 
                 frame.stroke(&edge_path, stroke);
 
