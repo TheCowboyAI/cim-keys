@@ -1,0 +1,412 @@
+{
+  "project": "cim-keys-architectural-refactoring",
+  "version": "2.0.0",
+  "created": "2025-12-28",
+  "last_updated": "2025-12-29",
+  "backward_compatibility": false,
+  "notes": "User confirmed: NO backward compatibility required. Overwrite existing APIs freely.",
+
+  "previous_work": {
+    "phase": "GUI Domain Import Fix",
+    "status": "completed",
+    "summary": "Fixed Import from Secrets to build full graph with org, units, people, and edges",
+    "completed_date": "2025-12-29"
+  },
+
+  "expert_consultations": {
+    "prior_consultations": {
+      "elm-architecture-expert": {
+        "key_points": [
+          "Intent types prefixed by origin: Ui*, Port*, Domain*, Error*",
+          "Model must have pure with_* update methods",
+          "Update function: (Model, Intent) → (Model, Command)",
+          "Graph building is pure function - no I/O"
+        ]
+      },
+      "iced-ui-expert": {
+        "key_points": [
+          "File I/O is async → use Task::perform",
+          "Graph building is synchronous in update()",
+          "Order matters: Orgs → Units → Locations → People → Edges"
+        ]
+      },
+      "cim-expert-prior": {
+        "key_points": [
+          "Use domain-bootstrap.json as canonical format",
+          "Relationships are first-class with RelationshipType enum",
+          "Validate PKI prerequisites before generation"
+        ]
+      }
+    },
+    "refactoring_consultations": {
+      "ddd_expert": {
+        "agent_id": "a996ff8",
+        "date": "2025-12-29",
+        "critical_findings": [
+          "OrganizationGraph → OrganizationConcept (Graph is implementation, not domain)",
+          "GraphNode → ConceptEntity (Technical term, not ubiquitous language)",
+          "NodeType enum violates DDD - Person IS a Person, not 'type of node'",
+          "GraphMessage → OrganizationIntent (conflates UI events with domain ops)"
+        ],
+        "validation_checklist": {
+          "uses_ubiquitous_language": false,
+          "domain_expert_understands": false,
+          "is_concept_not_graph": false,
+          "implements_liftable_domain": false,
+          "entities_preserved": false
+        }
+      },
+      "conceptual_spaces_expert": {
+        "agent_id": "a4d2f1b",
+        "date": "2025-12-29",
+        "critical_findings": [
+          "Position should be Point3<f64> on unit sphere, not 2D screen Point",
+          "Need KnowledgeLevel (Unknown/Suspected/KnownUnknown/Known)",
+          "Need evidence_cids: Vec<String> and confidence: f64",
+          "Boundaries should use Voronoi tessellation, not manual edges",
+          "Topology needs evolution state machine"
+        ],
+        "key_insight": "The graph should be a projection of semantic reality, not a data structure"
+      },
+      "cim_expert": {
+        "agent_id": "ad36a3b",
+        "date": "2025-12-29",
+        "critical_findings": [
+          "CRITICAL: Domain models embedded in GUI instead of using cim-domain-*",
+          "2,847-line gui.rs mixing UI, domain, PKI, NATS concerns",
+          "NodeType hardcoded to cim-keys specific types",
+          "Missing LiftableDomain trait implementation",
+          "cim-domain-person and cim-domain-organization are OPTIONAL and NOT USED"
+        ]
+      },
+      "frp_iced_expert": {
+        "agent_id": "a1ec441",
+        "date": "2025-12-29",
+        "frp_compliance": "40%",
+        "critical_findings": [
+          "Direct mutation in update function",
+          "Side effects (port calls) in update logic",
+          "Mixed Message types without categorization",
+          "No referential transparency",
+          "No composability"
+        ]
+      },
+      "tdd_expert": {
+        "agent_id": "a999cc2",
+        "date": "2025-12-29",
+        "critical_findings": [
+          "48 tests exist but no GUI/MVI tests",
+          "No pure function tests",
+          "No property-based tests",
+          "Limited event algebra tests",
+          "No projection tests"
+        ]
+      },
+      "bdd_expert": {
+        "agent_id": "abf0f69",
+        "date": "2025-12-29",
+        "critical_findings": [
+          "No .feature files",
+          "No Gherkin scenarios",
+          "No executable specifications"
+        ]
+      }
+    }
+  },
+
+  "metrics": {
+    "baseline": {
+      "date": "2025-12-29",
+      "ddd_validation_checks": "0/5",
+      "frp_compliance": "40%",
+      "inline_domain_models": 6,
+      "inline_locations": [
+        "src/domain.rs (Organization, OrganizationUnit, Person)",
+        "src/domain_stubs.rs (Organization, OrganizationUnit, Person - DUPLICATE)"
+      ],
+      "test_count": "26 passed, 46 ignored",
+      "test_coverage_gui": "~10%",
+      "bdd_scenarios": 0,
+      "nodetype_variants": 21,
+      "gui_rs_lines": 8058,
+      "cim_domain_crates": {
+        "available": ["cim-domain", "cim-domain-location", "cim-domain-person", "cim-domain-organization", "cim-domain-policy"],
+        "actually_used": false,
+        "note": "In Cargo.toml as dependencies but code defines own inline versions"
+      }
+    },
+    "target": {
+      "ddd_validation_checks": "5/5",
+      "frp_compliance": "95%",
+      "inline_domain_models": 0,
+      "test_coverage_gui": ">80%",
+      "bdd_scenarios": "18+",
+      "nodetype_variants": 0,
+      "gui_rs_lines": "<500"
+    },
+    "current": {
+      "date": "2025-12-29",
+      "ddd_validation_checks": "0/5",
+      "frp_compliance": "40%",
+      "inline_domain_models": 6,
+      "test_count": "26 passed, 46 ignored",
+      "test_coverage_gui": "~10%",
+      "bdd_scenarios": 0,
+      "nodetype_variants": 21,
+      "gui_rs_lines": 8058
+    }
+  },
+
+  "sprints": {
+    "sprint_0": {
+      "name": "Foundation & Analysis",
+      "status": "in_progress",
+      "started": "2025-12-29",
+      "completed": null,
+      "retrospective": null,
+      "tasks": [
+        { "id": "0.1", "description": "Create progress.json tracking file", "status": "completed" },
+        { "id": "0.2", "description": "Create REFACTORING_PLAN.md", "status": "completed" },
+        { "id": "0.3", "description": "Document current state metrics", "status": "completed" },
+        { "id": "0.4", "description": "Verify all cim-domain-* crates are accessible", "status": "completed", "note": "All 5 crates found: cim-domain, cim-domain-location, cim-domain-person, cim-domain-organization, cim-domain-policy" },
+        { "id": "0.5", "description": "Commit planning documents", "status": "in_progress" },
+        { "id": "0.6", "description": "Get user approval for Sprint 0", "status": "pending" },
+        { "id": "0.7", "description": "Write Sprint 0 retrospective", "status": "pending" }
+      ],
+      "deliverables": [
+        "progress.json initialized",
+        "REFACTORING_PLAN.md created",
+        "Baseline metrics documented",
+        "Sprint 0 retrospective written"
+      ]
+    },
+    "sprint_1": {
+      "name": "Extract Domain Layer",
+      "status": "not_started",
+      "started": null,
+      "completed": null,
+      "retrospective": null,
+      "tasks": [
+        { "id": "1.1", "description": "Enable cim-domain-person feature by default", "status": "pending" },
+        { "id": "1.2", "description": "Enable cim-domain-organization feature by default", "status": "pending" },
+        { "id": "1.3", "description": "Remove inline Person struct from gui.rs", "status": "pending" },
+        { "id": "1.4", "description": "Remove inline Organization struct from gui.rs", "status": "pending" },
+        { "id": "1.5", "description": "Remove inline OrganizationUnit struct from gui.rs", "status": "pending" },
+        { "id": "1.6", "description": "Replace with imports from cim-domain-* crates", "status": "pending" },
+        { "id": "1.7", "description": "Update all references throughout codebase", "status": "pending" },
+        { "id": "1.8", "description": "Add mapping functions where API differs", "status": "pending" },
+        { "id": "1.9", "description": "Verify compilation", "status": "pending" },
+        { "id": "1.10", "description": "Run existing tests", "status": "pending" }
+      ],
+      "acceptance_criteria": [
+        "Zero inline domain model definitions in src/gui/",
+        "All domain types imported from cim-domain-*",
+        "All existing tests pass",
+        "Compilation without warnings"
+      ]
+    },
+    "sprint_2": {
+      "name": "Rename Graph → Concept",
+      "status": "not_started",
+      "started": null,
+      "completed": null,
+      "retrospective": null,
+      "tasks": [
+        { "id": "2.1", "description": "Rename OrganizationGraph → OrganizationConcept", "status": "pending" },
+        { "id": "2.2", "description": "Rename GraphNode → ConceptEntity", "status": "pending" },
+        { "id": "2.3", "description": "Rename GraphEdge → ConceptRelation", "status": "pending" },
+        { "id": "2.4", "description": "Rename GraphMessage → OrganizationIntent", "status": "pending" },
+        { "id": "2.5", "description": "Rename graph.rs → concept.rs", "status": "pending" },
+        { "id": "2.6", "description": "Rename src/gui/graph/ → src/gui/concept/", "status": "pending" },
+        { "id": "2.7", "description": "Update all imports and references", "status": "pending" },
+        { "id": "2.8", "description": "Update documentation", "status": "pending" },
+        { "id": "2.9", "description": "Verify compilation", "status": "pending" },
+        { "id": "2.10", "description": "Run tests", "status": "pending" }
+      ],
+      "acceptance_criteria": [
+        "No 'Graph' terminology in domain-facing code",
+        "All references updated",
+        "Documentation reflects new names"
+      ]
+    },
+    "sprint_3": {
+      "name": "Remove NodeType Enum",
+      "status": "not_started",
+      "started": null,
+      "completed": null,
+      "retrospective": null,
+      "tasks": [
+        { "id": "3.1", "description": "Analyze all NodeType usages", "status": "pending" },
+        { "id": "3.2", "description": "Create ConceptMember enum that wraps EntityIds", "status": "pending" },
+        { "id": "3.3", "description": "Replace NodeType::Person with ConceptMember::Person(PersonId)", "status": "pending" },
+        { "id": "3.4", "description": "Replace NodeType::Organization with ConceptMember::Organization(OrganizationId)", "status": "pending" },
+        { "id": "3.5", "description": "Update rendering code to dispatch on actual types", "status": "pending" },
+        { "id": "3.6", "description": "Implement GraphRenderable trait", "status": "pending" },
+        { "id": "3.7", "description": "Have domain types implement GraphRenderable", "status": "pending" },
+        { "id": "3.8", "description": "Remove NodeType enum", "status": "pending" },
+        { "id": "3.9", "description": "Verify compilation", "status": "pending" },
+        { "id": "3.10", "description": "Run tests", "status": "pending" }
+      ],
+      "acceptance_criteria": [
+        "NodeType enum removed",
+        "ConceptMember preserves domain identity",
+        "GraphRenderable trait implemented"
+      ]
+    },
+    "sprint_4": {
+      "name": "Implement MVI Intent Layer",
+      "status": "not_started",
+      "started": null,
+      "completed": null,
+      "retrospective": null,
+      "tasks": [
+        { "id": "4.1", "description": "Create src/gui/intent.rs", "status": "pending" },
+        { "id": "4.2", "description": "Define Intent enum with Ui/Port/Domain/System categories", "status": "pending" },
+        { "id": "4.3", "description": "Migrate Message variants to appropriate Intent types", "status": "pending" },
+        { "id": "4.4", "description": "Update update function signature", "status": "pending" },
+        { "id": "4.5", "description": "Route intents to specialized handlers", "status": "pending" },
+        { "id": "4.6", "description": "Verify compilation", "status": "pending" },
+        { "id": "4.7", "description": "Run tests", "status": "pending" }
+      ],
+      "acceptance_criteria": [
+        "Intent enum properly categorized",
+        "All messages routed through Intent",
+        "Clear separation of concerns"
+      ]
+    },
+    "sprint_5": {
+      "name": "Pure Update Functions",
+      "status": "not_started",
+      "started": null,
+      "completed": null,
+      "retrospective": null,
+      "tasks": [
+        { "id": "5.1", "description": "Extract update_pure function that returns (Model, Command)", "status": "pending" },
+        { "id": "5.2", "description": "Remove direct mutations - use with_* methods", "status": "pending" },
+        { "id": "5.3", "description": "Remove port calls from update - return Commands instead", "status": "pending" },
+        { "id": "5.4", "description": "Implement Command enum for side effects", "status": "pending" },
+        { "id": "5.5", "description": "Create Model with immutable with_* transformation methods", "status": "pending" },
+        { "id": "5.6", "description": "Update Iced Application to call pure function", "status": "pending" },
+        { "id": "5.7", "description": "Verify no side effects in update logic", "status": "pending" },
+        { "id": "5.8", "description": "Add property tests for update purity", "status": "pending" },
+        { "id": "5.9", "description": "Run tests", "status": "pending" }
+      ],
+      "acceptance_criteria": [
+        "Update function is pure",
+        "All side effects via Commands",
+        "Model uses immutable transformations"
+      ]
+    },
+    "sprint_6": {
+      "name": "Conceptual Spaces Integration",
+      "status": "not_started",
+      "started": null,
+      "completed": null,
+      "retrospective": null,
+      "tasks": [
+        { "id": "6.1", "description": "Add cim-domain-spaces dependency", "status": "pending" },
+        { "id": "6.2", "description": "Replace 2D Point with Point3<f64> semantic positions", "status": "pending" },
+        { "id": "6.3", "description": "Implement stereographic projection for 2D rendering", "status": "pending" },
+        { "id": "6.4", "description": "Add KnowledgeLevel to entities", "status": "pending" },
+        { "id": "6.5", "description": "Add confidence scoring", "status": "pending" },
+        { "id": "6.6", "description": "Add evidence_cids tracking", "status": "pending" },
+        { "id": "6.7", "description": "Implement Fibonacci sphere layout", "status": "pending" },
+        { "id": "6.8", "description": "Add Voronoi cell visualization (optional)", "status": "pending" },
+        { "id": "6.9", "description": "Create visual encoding for knowledge levels", "status": "pending" },
+        { "id": "6.10", "description": "Run tests", "status": "pending" }
+      ],
+      "acceptance_criteria": [
+        "3D semantic positions used internally",
+        "Stereographic projection renders to 2D",
+        "Knowledge levels visualized"
+      ]
+    },
+    "sprint_7": {
+      "name": "LiftableDomain Implementation",
+      "status": "not_started",
+      "started": null,
+      "completed": null,
+      "retrospective": null,
+      "tasks": [
+        { "id": "7.1", "description": "Define LiftableDomain trait (or import from cim-domain)", "status": "pending" },
+        { "id": "7.2", "description": "Implement LiftableDomain for OrganizationConcept", "status": "pending" },
+        { "id": "7.3", "description": "Create Entity monad wrapper", "status": "pending" },
+        { "id": "7.4", "description": "Implement lifting for Person, Organization, Location", "status": "pending" },
+        { "id": "7.5", "description": "Create unified graph from lifted domains", "status": "pending" },
+        { "id": "7.6", "description": "Test composition with mock domain", "status": "pending" },
+        { "id": "7.7", "description": "Document composition pattern", "status": "pending" }
+      ],
+      "acceptance_criteria": [
+        "LiftableDomain trait implemented",
+        "Domains compose correctly",
+        "Pattern documented"
+      ]
+    },
+    "sprint_8": {
+      "name": "Test Infrastructure",
+      "status": "not_started",
+      "started": null,
+      "completed": null,
+      "retrospective": null,
+      "tasks": [
+        { "id": "8.1", "description": "Create tests/unit/gui/ directory structure", "status": "pending" },
+        { "id": "8.2", "description": "Add property-based testing with proptest", "status": "pending" },
+        { "id": "8.3", "description": "Write pure update function tests", "status": "pending" },
+        { "id": "8.4", "description": "Write model immutability tests", "status": "pending" },
+        { "id": "8.5", "description": "Write event sourcing property tests", "status": "pending" },
+        { "id": "8.6", "description": "Write FRP axiom compliance tests", "status": "pending" },
+        { "id": "8.7", "description": "Achieve >80% coverage on src/gui/", "status": "pending" }
+      ],
+      "acceptance_criteria": [
+        "Property tests for update purity",
+        "Model immutability verified",
+        ">80% test coverage on GUI"
+      ]
+    },
+    "sprint_9": {
+      "name": "BDD Specifications",
+      "status": "not_started",
+      "started": null,
+      "completed": null,
+      "retrospective": null,
+      "tasks": [
+        { "id": "9.1", "description": "Create doc/qa/features/ directory", "status": "pending" },
+        { "id": "9.2", "description": "Write domain_bootstrap.feature", "status": "pending" },
+        { "id": "9.3", "description": "Write person_management.feature", "status": "pending" },
+        { "id": "9.4", "description": "Write key_generation.feature", "status": "pending" },
+        { "id": "9.5", "description": "Write yubikey_provisioning.feature", "status": "pending" },
+        { "id": "9.6", "description": "Write nats_security_bootstrap.feature", "status": "pending" },
+        { "id": "9.7", "description": "Write export_manifest.feature", "status": "pending" },
+        { "id": "9.8", "description": "Implement step definitions in tests/bdd/", "status": "pending" },
+        { "id": "9.9", "description": "Verify all scenarios pass", "status": "pending" }
+      ],
+      "acceptance_criteria": [
+        "Feature files created",
+        "Step definitions implemented",
+        "All scenarios pass"
+      ]
+    },
+    "sprint_10": {
+      "name": "Final Integration & Documentation",
+      "status": "not_started",
+      "started": null,
+      "completed": null,
+      "retrospective": null,
+      "tasks": [
+        { "id": "10.1", "description": "Final code review", "status": "pending" },
+        { "id": "10.2", "description": "Update CLAUDE.md with new patterns", "status": "pending" },
+        { "id": "10.3", "description": "Update README.md", "status": "pending" },
+        { "id": "10.4", "description": "Create architecture diagram", "status": "pending" },
+        { "id": "10.5", "description": "Write migration guide for other cim-* modules", "status": "pending" },
+        { "id": "10.6", "description": "Final retrospective", "status": "pending" }
+      ],
+      "acceptance_criteria": [
+        "All documentation updated",
+        "Architecture diagram created",
+        "Migration guide written"
+      ]
+    }
+  },
+
+  "retrospectives": {}
+}

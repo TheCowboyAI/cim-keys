@@ -15,5 +15,4 @@ remote-leaves/
 # Local configuration
 .mcp.json
 
-# Progress tracking (local state)
-progress.json
+# Note: progress.json is NOW tracked for sprint-by-sprint refactoring
