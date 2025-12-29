@@ -65,6 +65,10 @@ pub const ICON_CLOUD: char = '☁';
 pub const ICON_ACCOUNT_CIRCLE: char = '👤';
 pub const ICON_SETTINGS: char = '⚙';
 
+// Progressive disclosure icons (folder metaphor)
+pub const ICON_FOLDER: char = '📁';
+pub const ICON_FOLDER_OPEN: char = '📂';
+
 /// Render an icon with default size and emoji font
 pub fn icon<'a, Message: 'a>(icon_char: char) -> Element<'a, Message> {
     text(icon_char)

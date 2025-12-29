@@ -99,7 +99,7 @@ impl PersonAnalysis {
             if edge.from == person_id {
                 // Outgoing edges
                 match edge.edge_type {
-                    EdgeType::HasRole => {
+                    EdgeType::HasRole { .. } => {
                         roles.push(edge.to);
                     }
                     EdgeType::OwnsKey => {

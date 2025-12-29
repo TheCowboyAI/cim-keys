@@ -24,6 +24,50 @@ use super::graph_events::{EventStack, GraphEvent};
 use super::GraphLayout;
 use super::cowboy_theme::CowboyAppTheme as CowboyCustomTheme;
 
+/// Role badge for compact display mode (shown on person nodes)
+#[derive(Debug, Clone)]
+pub struct RoleBadge {
+    pub name: String,
+    pub separation_class: crate::policy::SeparationClass,
+    pub level: u8,
+}
+
+impl RoleBadge {
+    /// Get the badge color based on separation class
+    pub fn color(&self) -> Color {
+        match self.separation_class {
+            crate::policy::SeparationClass::Operational => Color::from_rgb(0.3, 0.6, 0.9), // Blue
+            crate::policy::SeparationClass::Administrative => Color::from_rgb(0.6, 0.4, 0.8), // Purple
+            crate::policy::SeparationClass::Audit => Color::from_rgb(0.2, 0.7, 0.5), // Teal
+            crate::policy::SeparationClass::Emergency => Color::from_rgb(0.9, 0.3, 0.2), // Red
+            crate::policy::SeparationClass::Financial => Color::from_rgb(0.9, 0.7, 0.2), // Gold
+            crate::policy::SeparationClass::Personnel => Color::from_rgb(0.8, 0.4, 0.6), // Rose
+        }
+    }
+
+    /// Get abbreviated name (max 3 chars)
+    pub fn abbrev(&self) -> String {
+        if self.name.len() <= 3 {
+            self.name.clone()
+        } else {
+            // Take first letters of each word or first 3 chars
+            let words: Vec<&str> = self.name.split_whitespace().collect();
+            if words.len() >= 2 {
+                words.iter().take(3).map(|w| w.chars().next().unwrap_or(' ')).collect()
+            } else {
+                self.name.chars().take(3).collect()
+            }
+        }
+    }
+}
+
+/// Person role badges storage (for compact mode)
+#[derive(Debug, Clone, Default)]
+pub struct PersonRoleBadges {
+    pub badges: Vec<RoleBadge>,
+    pub has_more: bool, // True if there are more roles than shown
+}
+
 /// Graph visualization widget for organizational structure
 #[derive(Clone)]
 pub struct OrganizationGraph {
@@ -47,6 +91,48 @@ pub struct OrganizationGraph {
     pub filter_show_nats: bool,
     pub filter_show_pki: bool,
     pub filter_show_yubikey: bool,
+    // Animation state for smooth layout transitions
+    pub animation_targets: HashMap<Uuid, Point>,
+    pub animation_start: HashMap<Uuid, Point>,
+    pub animation_progress: f32,  // 0.0 to 1.0
+    pub animating: bool,
+    pub animation_start_time: Option<std::time::Instant>,
+    // Role badges for compact mode (person_id -> badges)
+    pub role_badges: HashMap<Uuid, PersonRoleBadges>,
+    // Role drag-and-drop state
+    pub dragging_role: Option<DraggingRole>,
+}
+
+/// Source of the role being dragged
+#[derive(Debug, Clone)]
+pub enum DragSource {
+    /// Dragging FROM the role palette TO a person
+    RoleFromPalette {
+        role_name: String,
+        separation_class: crate::policy::SeparationClass,
+    },
+    /// Dragging FROM a person's existing role badge TO remove/reassign
+    RoleFromPerson {
+        person_id: Uuid,
+        role_name: String,
+        separation_class: crate::policy::SeparationClass,
+    },
+}
+
+/// SoD (Separation of Duties) conflict during drag
+#[derive(Debug, Clone)]
+pub struct SoDConflict {
+    pub conflicting_role: String,
+    pub reason: String,
+}
+
+/// State for dragging a role onto or from a person
+#[derive(Debug, Clone)]
+pub struct DraggingRole {
+    pub source: DragSource,
+    pub cursor_position: Point,
+    pub hover_person: Option<Uuid>,  // Person node we're hovering over
+    pub sod_conflicts: Vec<SoDConflict>,  // Real-time SoD validation
 }
 
 /// A node in the organization graph (represents any domain entity)
@@ -170,6 +256,41 @@ pub enum NodeType {
         destination: Option<std::path::PathBuf>,
         checksum: Option<String>,
     },
+
+    // Policy Roles (Phase 5)
+    /// Policy-based role from policy-bootstrap.json
+    PolicyRole {
+        role_id: Uuid,
+        name: String,
+        purpose: String,
+        level: u8,
+        separation_class: crate::policy::SeparationClass,
+        claim_count: usize,
+    },
+
+    /// Policy claim - individual permission/capability
+    PolicyClaim {
+        claim_id: Uuid,
+        name: String,
+        category: String,
+    },
+
+    /// Policy category - grouping of claims for progressive disclosure
+    PolicyCategory {
+        category_id: Uuid,
+        name: String,
+        claim_count: usize,
+        expanded: bool,
+    },
+
+    /// Separation class - grouping of roles for progressive disclosure
+    SeparationClassGroup {
+        class_id: Uuid,
+        name: String,
+        separation_class: crate::policy::SeparationClass,
+        role_count: usize,
+        expanded: bool,
+    },
 }
 
 /// An edge in the organization graph (represents relationship/delegation)
@@ -214,8 +335,19 @@ pub enum EdgeType {
     StoredInYubiKeySlot(String),
 
     // Policy relationships
-    /// Role assignment (Person → Role)
-    HasRole,
+    /// Role assignment (Person → Role) with temporal validity
+    HasRole {
+        valid_from: chrono::DateTime<chrono::Utc>,
+        valid_until: Option<chrono::DateTime<chrono::Utc>>,
+    },
+    /// Separation of duties - roles that cannot be held simultaneously
+    IncompatibleWith,
+    /// Role contains claim (Role → Claim)
+    RoleContainsClaim,
+    /// Category contains claim (PolicyCategory → PolicyClaim)
+    CategoryContainsClaim,
+    /// Separation class contains role (SeparationClassGroup → PolicyRole)
+    ClassContainsRole,
     /// Policy requirement (Role → Policy)
     RoleRequiresPolicy,
     /// Policy governance (Policy → Entity)
@@ -278,7 +410,25 @@ pub enum EdgeType {
     Trust,
 }
 
-/// Messages for graph interactions
+/// Available graph layout algorithms
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayoutAlgorithm {
+    /// Tutte's barycentric embedding (1963) - best for planar graphs
+    Tutte,
+    /// Fruchterman-Reingold force-directed (1991) - general purpose
+    FruchtermanReingold,
+    /// Circular layout - nodes on a circle
+    Circular,
+    /// Hierarchical/Sugiyama - for DAGs
+    Hierarchical,
+    /// Combined: Tutte + F-R refinement
+    TuttePlusFR,
+    /// YubiKey grouped - bipartite layout with slots grouped under YubiKeys
+    YubiKeyGrouped,
+    /// NATS hierarchical - Operator at top, Accounts in middle, Users at bottom
+    NatsHierarchical,
+}
+
 #[derive(Debug, Clone)]
 pub enum GraphMessage {
     NodeClicked(Uuid),
@@ -295,6 +445,10 @@ pub enum GraphMessage {
     ResetView,
     Pan(Vector),
     AutoLayout,
+    /// Apply a specific layout algorithm
+    ApplyLayout(LayoutAlgorithm),
+    /// Animation tick (called ~60fps during animation)
+    AnimationTick,
     AddEdge { from: Uuid, to: Uuid, edge_type: EdgeType },
     // Phase 4: Context menu trigger
     RightClick(Point),  // Right-click position (adjusted for zoom/pan)
@@ -307,12 +461,54 @@ pub enum GraphMessage {
     Redo,                // Ctrl+Y or Ctrl+Shift+Z - redo last undone action
     // Canvas interaction
     CanvasClicked(Point),  // Click on empty canvas (not on a node)
+    // Role drag-and-drop (from palette or from person's badge)
+    RoleDragStarted(DragSource),
+    RoleDragMoved(Point),  // Cursor position during drag
+    RoleDragCancelled,
+    RoleDragDropped,  // Drop at current hover position
+    /// Role successfully assigned to person
+    RoleAssigned { person_id: Uuid, role_name: String },
+    /// Role removed from person
+    RoleRemoved { person_id: Uuid, role_name: String },
 }
 
 impl Default for OrganizationGraph {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Check if two line segments intersect
+/// Returns true if segment (p1, p2) crosses segment (p3, p4)
+fn segments_intersect(p1: Point, p2: Point, p3: Point, p4: Point) -> bool {
+    // Cross product helper
+    fn cross(o: Point, a: Point, b: Point) -> f32 {
+        (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
+    }
+
+    let d1 = cross(p3, p4, p1);
+    let d2 = cross(p3, p4, p2);
+    let d3 = cross(p1, p2, p3);
+    let d4 = cross(p1, p2, p4);
+
+    if ((d1 > 0.0 && d2 < 0.0) || (d1 < 0.0 && d2 > 0.0)) &&
+       ((d3 > 0.0 && d4 < 0.0) || (d3 < 0.0 && d4 > 0.0)) {
+        return true;
+    }
+
+    // Collinear cases (endpoints touch)
+    if d1.abs() < 0.0001 && on_segment(p3, p1, p4) { return true; }
+    if d2.abs() < 0.0001 && on_segment(p3, p2, p4) { return true; }
+    if d3.abs() < 0.0001 && on_segment(p1, p3, p2) { return true; }
+    if d4.abs() < 0.0001 && on_segment(p1, p4, p2) { return true; }
+
+    false
+}
+
+/// Check if point q lies on segment pr
+fn on_segment(p: Point, q: Point, r: Point) -> bool {
+    q.x <= p.x.max(r.x) && q.x >= p.x.min(r.x) &&
+    q.y <= p.y.max(r.y) && q.y >= p.y.min(r.y)
 }
 
 // Helper function to calculate distance from point to line segment
@@ -365,6 +561,16 @@ impl OrganizationGraph {
             filter_show_nats: true,
             filter_show_pki: true,
             filter_show_yubikey: true,
+            // Animation state
+            animation_targets: HashMap::new(),
+            animation_start: HashMap::new(),
+            animation_progress: 1.0,  // Start fully complete (no animation)
+            animating: false,
+            animation_start_time: None,
+            // Role badges for compact mode
+            role_badges: HashMap::new(),
+            // Role drag state
+            dragging_role: None,
         }
     }
 
@@ -376,6 +582,93 @@ impl OrganizationGraph {
         self.selected_edge = None;
         self.dragging_node = None;
         self.event_stack.clear();
+        self.role_badges.clear();
+    }
+
+    /// Set role badges for a person (compact mode display)
+    pub fn set_person_role_badges(&mut self, person_id: Uuid, badges: Vec<RoleBadge>, has_more: bool) {
+        self.role_badges.insert(person_id, PersonRoleBadges { badges, has_more });
+    }
+
+    /// Get role badges for a person (for compact mode rendering)
+    pub fn get_person_role_badges(&self, person_id: &Uuid) -> Option<&PersonRoleBadges> {
+        self.role_badges.get(person_id)
+    }
+
+    /// Clear all role badges
+    pub fn clear_role_badges(&mut self) {
+        self.role_badges.clear();
+    }
+
+    /// Start dragging a role
+    pub fn start_role_drag(&mut self, source: DragSource, cursor_position: Point) {
+        self.dragging_role = Some(DraggingRole {
+            source,
+            cursor_position,
+            hover_person: None,
+            sod_conflicts: Vec::new(),
+        });
+    }
+
+    /// Update drag position and find hover target
+    pub fn update_role_drag(&mut self, cursor_position: Point) {
+        // Compute hover person before mutable borrow (borrow checker fix)
+        let hover_person = self.find_person_at_position(cursor_position);
+        if let Some(ref mut drag) = self.dragging_role {
+            drag.cursor_position = cursor_position;
+            drag.hover_person = hover_person;
+        }
+    }
+
+    /// Cancel the drag operation
+    pub fn cancel_role_drag(&mut self) {
+        self.dragging_role = None;
+    }
+
+    /// Find person node at the given position (within node radius)
+    pub fn find_person_at_position(&self, position: Point) -> Option<Uuid> {
+        let node_radius = 25.0;  // Standard node radius
+
+        for (id, node) in &self.nodes {
+            if let NodeType::Person { .. } = node.node_type {
+                let dx = position.x - node.position.x;
+                let dy = position.y - node.position.y;
+                let distance = (dx * dx + dy * dy).sqrt();
+
+                if distance <= node_radius {
+                    return Some(*id);
+                }
+            }
+        }
+        None
+    }
+
+    /// Get the role name from current drag source
+    pub fn get_dragging_role_name(&self) -> Option<&str> {
+        self.dragging_role.as_ref().map(|drag| {
+            match &drag.source {
+                DragSource::RoleFromPalette { role_name, .. } => role_name.as_str(),
+                DragSource::RoleFromPerson { role_name, .. } => role_name.as_str(),
+            }
+        })
+    }
+
+    /// Get the separation class color for the dragging role
+    pub fn get_dragging_role_color(&self) -> Option<Color> {
+        self.dragging_role.as_ref().map(|drag| {
+            let sep_class = match &drag.source {
+                DragSource::RoleFromPalette { separation_class, .. } => separation_class,
+                DragSource::RoleFromPerson { separation_class, .. } => separation_class,
+            };
+            match sep_class {
+                crate::policy::SeparationClass::Operational => Color::from_rgb(0.3, 0.6, 0.9),
+                crate::policy::SeparationClass::Administrative => Color::from_rgb(0.6, 0.4, 0.8),
+                crate::policy::SeparationClass::Audit => Color::from_rgb(0.2, 0.7, 0.5),
+                crate::policy::SeparationClass::Emergency => Color::from_rgb(0.9, 0.3, 0.2),
+                crate::policy::SeparationClass::Financial => Color::from_rgb(0.9, 0.7, 0.2),
+                crate::policy::SeparationClass::Personnel => Color::from_rgb(0.8, 0.4, 0.6),
+            }
+        })
     }
 
     /// Add a person node to the graph
@@ -447,8 +740,8 @@ impl OrganizationGraph {
         self.nodes.insert(node_id, node);
     }
 
-    /// Add a role node to the graph
-    pub fn add_role_node(&mut self, role: Role) {
+    /// Add a role node to the graph (domain Role type)
+    pub fn add_domain_role_node(&mut self, role: Role) {
         let node_id = role.id;
         let label = role.name.clone();
 
@@ -461,6 +754,161 @@ impl OrganizationGraph {
         };
 
         self.nodes.insert(node_id, node);
+    }
+
+    /// Add a policy-based role node to the graph
+    /// Color is based on separation class:
+    /// - Operational: Blue (0.3, 0.6, 0.9)
+    /// - Administrative: Purple (0.6, 0.4, 0.8)
+    /// - Audit: Teal (0.2, 0.7, 0.5)
+    /// - Emergency: Red (0.9, 0.3, 0.2)
+    /// - Financial: Gold (0.9, 0.7, 0.2)
+    /// - Personnel: Rose (0.8, 0.4, 0.6)
+    pub fn add_role_node(
+        &mut self,
+        role_id: Uuid,
+        name: String,
+        purpose: String,
+        level: u8,
+        separation_class: crate::policy::SeparationClass,
+        claim_count: usize,
+    ) {
+        use crate::policy::SeparationClass;
+
+        let color = match separation_class {
+            SeparationClass::Operational => Color::from_rgb(0.3, 0.6, 0.9),    // Blue
+            SeparationClass::Administrative => Color::from_rgb(0.6, 0.4, 0.8), // Purple
+            SeparationClass::Audit => Color::from_rgb(0.2, 0.7, 0.5),          // Teal
+            SeparationClass::Emergency => Color::from_rgb(0.9, 0.3, 0.2),      // Red
+            SeparationClass::Financial => Color::from_rgb(0.9, 0.7, 0.2),      // Gold
+            SeparationClass::Personnel => Color::from_rgb(0.8, 0.4, 0.6),      // Rose
+        };
+
+        let node = GraphNode {
+            id: role_id,
+            node_type: NodeType::PolicyRole {
+                role_id,
+                name: name.clone(),
+                purpose,
+                level,
+                separation_class,
+                claim_count,
+            },
+            position: self.calculate_node_position(role_id),
+            color,
+            label: name,
+        };
+
+        self.nodes.insert(role_id, node);
+    }
+
+    /// Add a claim node to the graph
+    pub fn add_claim_node(
+        &mut self,
+        claim_id: Uuid,
+        name: String,
+        category: String,
+    ) {
+        // Color claims by category
+        let color = match category.as_str() {
+            "security" => Color::from_rgb(0.9, 0.3, 0.2),      // Red
+            "infrastructure" => Color::from_rgb(0.3, 0.6, 0.9), // Blue
+            "development" => Color::from_rgb(0.2, 0.7, 0.5),    // Teal
+            "operations" => Color::from_rgb(0.6, 0.4, 0.8),     // Purple
+            "compliance" => Color::from_rgb(0.9, 0.7, 0.2),     // Gold
+            "hr" | "personnel" => Color::from_rgb(0.8, 0.4, 0.6), // Rose
+            _ => Color::from_rgb(0.5, 0.5, 0.5),                // Gray for unknown
+        };
+
+        let node = GraphNode {
+            id: claim_id,
+            node_type: NodeType::PolicyClaim {
+                claim_id,
+                name: name.clone(),
+                category: category.clone(),
+            },
+            position: self.calculate_node_position(claim_id),
+            color,
+            label: name,
+        };
+
+        self.nodes.insert(claim_id, node);
+    }
+
+    /// Add a policy category node to the graph (for progressive disclosure)
+    pub fn add_category_node(
+        &mut self,
+        category_id: Uuid,
+        name: String,
+        claim_count: usize,
+        expanded: bool,
+    ) {
+        // Color categories with a neutral tone
+        let color = if expanded {
+            Color::from_rgb(0.4, 0.5, 0.6) // Expanded: slightly brighter
+        } else {
+            Color::from_rgb(0.3, 0.4, 0.5) // Collapsed: neutral
+        };
+
+        let node = GraphNode {
+            id: category_id,
+            node_type: NodeType::PolicyCategory {
+                category_id,
+                name: name.clone(),
+                claim_count,
+                expanded,
+            },
+            position: self.calculate_node_position(category_id),
+            color,
+            label: name,
+        };
+
+        self.nodes.insert(category_id, node);
+    }
+
+    /// Add a separation class group node to the graph (for progressive disclosure)
+    pub fn add_separation_class_node(
+        &mut self,
+        class_id: Uuid,
+        name: String,
+        separation_class: crate::policy::SeparationClass,
+        role_count: usize,
+        expanded: bool,
+    ) {
+        use crate::policy::SeparationClass;
+
+        // Color by separation class
+        let base_color = match separation_class {
+            SeparationClass::Operational => Color::from_rgb(0.3, 0.6, 0.9),    // Blue
+            SeparationClass::Administrative => Color::from_rgb(0.6, 0.4, 0.8), // Purple
+            SeparationClass::Audit => Color::from_rgb(0.2, 0.7, 0.5),          // Teal
+            SeparationClass::Emergency => Color::from_rgb(0.9, 0.3, 0.2),      // Red
+            SeparationClass::Financial => Color::from_rgb(0.9, 0.7, 0.2),      // Gold
+            SeparationClass::Personnel => Color::from_rgb(0.8, 0.4, 0.6),      // Rose
+        };
+
+        // Slightly darken if collapsed
+        let color = if expanded {
+            base_color
+        } else {
+            Color::from_rgb(base_color.r * 0.7, base_color.g * 0.7, base_color.b * 0.7)
+        };
+
+        let node = GraphNode {
+            id: class_id,
+            node_type: NodeType::SeparationClassGroup {
+                class_id,
+                name: name.clone(),
+                separation_class,
+                role_count,
+                expanded,
+            },
+            position: self.calculate_node_position(class_id),
+            color,
+            label: name,
+        };
+
+        self.nodes.insert(class_id, node);
     }
 
     /// Add a policy node to the graph
@@ -998,7 +1446,11 @@ impl OrganizationGraph {
             EdgeType::StoredInYubiKeySlot(_) => Color::from_rgb(0.7, 0.4, 0.7),
 
             // Policy relationships - gold/yellow
-            EdgeType::HasRole => Color::from_rgb(0.6, 0.3, 0.8),
+            EdgeType::HasRole { .. } => Color::from_rgb(0.6, 0.3, 0.8),
+            EdgeType::IncompatibleWith => Color::from_rgb(0.9, 0.2, 0.2), // Red for conflicts
+            EdgeType::RoleContainsClaim => Color::from_rgb(0.5, 0.7, 0.3), // Green for role→claim
+            EdgeType::CategoryContainsClaim => Color::from_rgb(0.4, 0.6, 0.4), // Muted green
+            EdgeType::ClassContainsRole => Color::from_rgb(0.5, 0.5, 0.7), // Purple-gray
             EdgeType::RoleRequiresPolicy => Color::from_rgb(0.9, 0.7, 0.2),
             EdgeType::PolicyGovernsEntity => Color::from_rgb(0.9, 0.7, 0.2),
             EdgeType::DefinesRole => Color::from_rgb(0.8, 0.6, 0.2),
@@ -1130,16 +1582,395 @@ impl OrganizationGraph {
             return;
         }
 
-        // Use hierarchical layout based on roles if we have few nodes
-        // Otherwise use force-directed layout
-        if node_count <= 10 {
-            self.hierarchical_layout();
-        } else {
-            self.force_directed_layout();
+        // Always use crossing-aware force-directed layout for best results
+        self.crossing_aware_layout();
+    }
+
+    /// Main crossing-aware layout - applies Tutte's barycentric embedding
+    /// followed by Fruchterman-Reingold refinement
+    fn crossing_aware_layout(&mut self) {
+        let width = 1200.0;
+        let height = 900.0;
+
+        let node_ids: Vec<Uuid> = self.nodes.keys().copied().collect();
+        let n = node_ids.len();
+        if n == 0 {
+            return;
+        }
+
+        // Apply Tutte's barycentric embedding (produces planar layout if graph is planar)
+        self.tutte_barycentric_layout(width, height);
+
+        // Refine with Fruchterman-Reingold to optimize aesthetics while preserving planarity
+        self.fruchterman_reingold_layout(width, height, 50);
+
+        let final_crossings = self.count_all_crossings();
+        tracing::info!("Layout complete with {} crossings (Tutte + F-R)", final_crossings);
+    }
+
+    /// Tutte's Barycentric Embedding (1963)
+    /// For a 3-connected planar graph, fixes outer face vertices on a convex polygon
+    /// and places interior vertices at the barycenter of their neighbors.
+    /// This is guaranteed to produce a planar, crossing-free drawing for planar graphs.
+    fn tutte_barycentric_layout(&mut self, width: f32, height: f32) {
+        let center = Point { x: width / 2.0, y: height / 2.0 };
+        let node_ids: Vec<Uuid> = self.nodes.keys().copied().collect();
+        let n = node_ids.len();
+
+        if n == 0 {
+            return;
+        }
+
+        // Create node index mapping
+        let id_to_idx: HashMap<Uuid, usize> = node_ids.iter()
+            .enumerate()
+            .map(|(i, &id)| (id, i))
+            .collect();
+
+        // Build adjacency list
+        let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+        for edge in &self.edges {
+            if let (Some(&i), Some(&j)) = (id_to_idx.get(&edge.from), id_to_idx.get(&edge.to)) {
+                if !adj[i].contains(&j) {
+                    adj[i].push(j);
+                }
+                if !adj[j].contains(&i) {
+                    adj[j].push(i);
+                }
+            }
+        }
+
+        // Find boundary nodes (nodes with highest degree, or use all for small graphs)
+        // For Tutte's method, we fix some nodes on a convex boundary
+        let num_boundary = (n / 3).max(3).min(n);
+        let mut degrees: Vec<(usize, usize)> = adj.iter()
+            .enumerate()
+            .map(|(i, neighbors)| (i, neighbors.len()))
+            .collect();
+        degrees.sort_by(|a, b| b.1.cmp(&a.1));  // Sort by degree descending
+
+        let boundary_indices: Vec<usize> = degrees.iter()
+            .take(num_boundary)
+            .map(|(i, _)| *i)
+            .collect();
+
+        let is_boundary: Vec<bool> = (0..n)
+            .map(|i| boundary_indices.contains(&i))
+            .collect();
+
+        // Place boundary nodes on a circle (convex polygon)
+        let radius = (width.min(height) / 2.0 - 100.0).max(100.0);
+        for (bi, &idx) in boundary_indices.iter().enumerate() {
+            let angle = 2.0 * std::f32::consts::PI * (bi as f32) / (num_boundary as f32);
+            if let Some(node) = self.nodes.get_mut(&node_ids[idx]) {
+                node.position = Point {
+                    x: center.x + radius * angle.cos(),
+                    y: center.y + radius * angle.sin(),
+                };
+            }
+        }
+
+        // Solve for interior nodes using barycentric coordinates
+        // Each interior node is placed at the average position of its neighbors
+        // This is an iterative relaxation (Jacobi iteration)
+        for _iteration in 0..100 {
+            let mut max_move = 0.0_f32;
+
+            for i in 0..n {
+                if is_boundary[i] || adj[i].is_empty() {
+                    continue;
+                }
+
+                // Calculate barycenter of neighbors
+                let mut sum_x = 0.0;
+                let mut sum_y = 0.0;
+                let neighbor_count = adj[i].len() as f32;
+
+                for &j in &adj[i] {
+                    let neighbor_pos = self.nodes[&node_ids[j]].position;
+                    sum_x += neighbor_pos.x;
+                    sum_y += neighbor_pos.y;
+                }
+
+                let new_x = sum_x / neighbor_count;
+                let new_y = sum_y / neighbor_count;
+
+                if let Some(node) = self.nodes.get_mut(&node_ids[i]) {
+                    let dx = new_x - node.position.x;
+                    let dy = new_y - node.position.y;
+                    max_move = max_move.max((dx * dx + dy * dy).sqrt());
+
+                    node.position.x = new_x;
+                    node.position.y = new_y;
+                }
+            }
+
+            // Converged if movement is small
+            if max_move < 0.1 {
+                break;
+            }
         }
     }
 
-    /// Hierarchical layout: organize nodes by type and role
+    /// Fruchterman-Reingold Force-Directed Layout (1991)
+    /// Uses attractive spring forces along edges and repulsive forces between all node pairs.
+    /// Formula: f_a(d) = d²/k, f_r(d) = k²/d where k = sqrt(area/|V|)
+    fn fruchterman_reingold_layout(&mut self, width: f32, height: f32, iterations: usize) {
+        let node_ids: Vec<Uuid> = self.nodes.keys().copied().collect();
+        let n = node_ids.len();
+        if n == 0 {
+            return;
+        }
+
+        let area = width * height;
+        let k = (area / n as f32).sqrt();  // Optimal distance between nodes
+
+        let mut temperature = width / 10.0;  // Initial temperature for simulated annealing
+
+        for _iter in 0..iterations {
+            let mut displacements: HashMap<Uuid, (f32, f32)> = HashMap::new();
+            for &id in &node_ids {
+                displacements.insert(id, (0.0, 0.0));
+            }
+
+            // Calculate repulsive forces: f_r(d) = k²/d
+            for i in 0..n {
+                for j in (i + 1)..n {
+                    let id_i = node_ids[i];
+                    let id_j = node_ids[j];
+
+                    let pos_i = self.nodes[&id_i].position;
+                    let pos_j = self.nodes[&id_j].position;
+
+                    let dx = pos_i.x - pos_j.x;
+                    let dy = pos_i.y - pos_j.y;
+                    let dist = (dx * dx + dy * dy).sqrt().max(0.01);
+
+                    // Repulsive force: k²/d
+                    let force = (k * k) / dist;
+                    let fx = (dx / dist) * force;
+                    let fy = (dy / dist) * force;
+
+                    let (dxi, dyi) = displacements[&id_i];
+                    displacements.insert(id_i, (dxi + fx, dyi + fy));
+
+                    let (dxj, dyj) = displacements[&id_j];
+                    displacements.insert(id_j, (dxj - fx, dyj - fy));
+                }
+            }
+
+            // Calculate attractive forces: f_a(d) = d²/k
+            for edge in &self.edges {
+                let pos_from = self.nodes[&edge.from].position;
+                let pos_to = self.nodes[&edge.to].position;
+
+                let dx = pos_to.x - pos_from.x;
+                let dy = pos_to.y - pos_from.y;
+                let dist = (dx * dx + dy * dy).sqrt().max(0.01);
+
+                // Attractive force: d²/k (but we use d/k to get displacement)
+                let force = dist / k;
+                let fx = (dx / dist) * force;
+                let fy = (dy / dist) * force;
+
+                let (dx_from, dy_from) = displacements[&edge.from];
+                displacements.insert(edge.from, (dx_from + fx, dy_from + fy));
+
+                let (dx_to, dy_to) = displacements[&edge.to];
+                displacements.insert(edge.to, (dx_to - fx, dy_to - fy));
+            }
+
+            // Apply displacements with temperature limiting
+            for &id in &node_ids {
+                let (dx, dy) = displacements[&id];
+                let mag = (dx * dx + dy * dy).sqrt();
+
+                if mag > 0.0 {
+                    let capped_mag = mag.min(temperature);
+                    let ratio = capped_mag / mag;
+
+                    if let Some(node) = self.nodes.get_mut(&id) {
+                        node.position.x += dx * ratio;
+                        node.position.y += dy * ratio;
+
+                        // Keep within bounds
+                        node.position.x = node.position.x.max(50.0).min(width - 50.0);
+                        node.position.y = node.position.y.max(50.0).min(height - 50.0);
+                    }
+                }
+            }
+
+            // Cool down (annealing schedule)
+            temperature *= 0.95;
+        }
+    }
+
+    /// Circular layout - place all nodes evenly on a circle
+    fn circular_layout(&mut self, width: f32, height: f32) {
+        let center = Point { x: width / 2.0, y: height / 2.0 };
+        let node_ids: Vec<Uuid> = self.nodes.keys().copied().collect();
+        let n = node_ids.len();
+
+        if n == 0 {
+            return;
+        }
+
+        let radius = (width.min(height) / 2.0 - 80.0).max(100.0);
+
+        for (i, &id) in node_ids.iter().enumerate() {
+            if let Some(node) = self.nodes.get_mut(&id) {
+                let angle = 2.0 * std::f32::consts::PI * (i as f32) / (n as f32);
+                node.position = Point {
+                    x: center.x + radius * angle.cos(),
+                    y: center.y + radius * angle.sin(),
+                };
+            }
+        }
+    }
+
+    /// Count all edge crossings in the graph
+    fn count_all_crossings(&self) -> usize {
+        let mut count = 0;
+        for i in 0..self.edges.len() {
+            for j in (i + 1)..self.edges.len() {
+                let e1 = &self.edges[i];
+                let e2 = &self.edges[j];
+
+                // Skip if edges share a node
+                if e1.from == e2.from || e1.from == e2.to ||
+                   e1.to == e2.from || e1.to == e2.to {
+                    continue;
+                }
+
+                if let (Some(n1), Some(n2), Some(n3), Some(n4)) = (
+                    self.nodes.get(&e1.from),
+                    self.nodes.get(&e1.to),
+                    self.nodes.get(&e2.from),
+                    self.nodes.get(&e2.to),
+                ) {
+                    if segments_intersect(n1.position, n2.position, n3.position, n4.position) {
+                        count += 1;
+                    }
+                }
+            }
+        }
+        count
+    }
+
+    /// Count crossings involving edges connected to a specific node
+    #[allow(dead_code)]
+    fn count_crossings_for_node(&self, node_id: Uuid) -> usize {
+        let mut count = 0;
+        let connected_edges: Vec<usize> = self.edges.iter()
+            .enumerate()
+            .filter(|(_, e)| e.from == node_id || e.to == node_id)
+            .map(|(i, _)| i)
+            .collect();
+
+        for &edge_idx in &connected_edges {
+            let e1 = &self.edges[edge_idx];
+            for (j, e2) in self.edges.iter().enumerate() {
+                if edge_idx >= j {
+                    continue;
+                }
+                if e1.from == e2.from || e1.from == e2.to ||
+                   e1.to == e2.from || e1.to == e2.to {
+                    continue;
+                }
+
+                if let (Some(n1), Some(n2), Some(n3), Some(n4)) = (
+                    self.nodes.get(&e1.from),
+                    self.nodes.get(&e1.to),
+                    self.nodes.get(&e2.from),
+                    self.nodes.get(&e2.to),
+                ) {
+                    if segments_intersect(n1.position, n2.position, n3.position, n4.position) {
+                        count += 1;
+                    }
+                }
+            }
+        }
+        count
+    }
+
+    /// Find all pairs of crossing edges
+    #[allow(dead_code)]
+    fn find_crossing_edges(&self) -> Vec<(usize, usize)> {
+        let mut crossings = Vec::new();
+        for i in 0..self.edges.len() {
+            for j in (i + 1)..self.edges.len() {
+                let e1 = &self.edges[i];
+                let e2 = &self.edges[j];
+
+                if e1.from == e2.from || e1.from == e2.to ||
+                   e1.to == e2.from || e1.to == e2.to {
+                    continue;
+                }
+
+                if let (Some(n1), Some(n2), Some(n3), Some(n4)) = (
+                    self.nodes.get(&e1.from),
+                    self.nodes.get(&e1.to),
+                    self.nodes.get(&e2.from),
+                    self.nodes.get(&e2.to),
+                ) {
+                    if segments_intersect(n1.position, n2.position, n3.position, n4.position) {
+                        crossings.push((i, j));
+                    }
+                }
+            }
+        }
+        crossings
+    }
+
+    /// Detect if graph contains cycles using DFS
+    #[allow(dead_code)]
+    fn detect_cycles(&self) -> bool {
+        use std::collections::HashSet;
+
+        let mut visited: HashSet<Uuid> = HashSet::new();
+
+        // Build adjacency list (treat as undirected for cycle detection)
+        let mut adj: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+        for edge in &self.edges {
+            adj.entry(edge.from).or_default().push(edge.to);
+            adj.entry(edge.to).or_default().push(edge.from);
+        }
+
+        fn has_cycle_dfs(
+            node: Uuid,
+            parent: Option<Uuid>,
+            adj: &HashMap<Uuid, Vec<Uuid>>,
+            visited: &mut HashSet<Uuid>,
+        ) -> bool {
+            visited.insert(node);
+
+            if let Some(neighbors) = adj.get(&node) {
+                for &neighbor in neighbors {
+                    if !visited.contains(&neighbor) {
+                        if has_cycle_dfs(neighbor, Some(node), adj, visited) {
+                            return true;
+                        }
+                    } else if parent != Some(neighbor) {
+                        // Found a back edge (cycle)
+                        return true;
+                    }
+                }
+            }
+            false
+        }
+
+        for &node_id in self.nodes.keys() {
+            if !visited.contains(&node_id) {
+                if has_cycle_dfs(node_id, None, &adj, &mut visited) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Hierarchical layout: organize nodes by type and role with crossing minimization
+    #[allow(dead_code)]
     fn hierarchical_layout(&mut self) {
         let center = Point { x: 400.0, y: 300.0 };
 
@@ -1177,16 +2008,27 @@ impl OrganizationGraph {
                 NodeType::YubiKeyStatus { .. } => "YubiKeyStatus",
                 // Export and Manifest
                 NodeType::Manifest { .. } => "Manifest",
+                // Policy Roles from policy-bootstrap.json
+                NodeType::PolicyRole { .. } => "PolicyRole",
+                // Policy Claims
+                NodeType::PolicyClaim { .. } => "PolicyClaim",
+                // Policy Categories (progressive disclosure)
+                NodeType::PolicyCategory { .. } => "PolicyCategory",
+                // Separation Class Groups (progressive disclosure)
+                NodeType::SeparationClassGroup { .. } => "SeparationClassGroup",
             };
             type_groups.entry(type_key.to_string()).or_insert_with(Vec::new).push(*id);
         }
 
         // Define node type hierarchy (top to bottom)
+        // Includes all node types for proper tiered layout
         let type_order = vec![
+            // Organization hierarchy
             "Organization",
             "OrganizationalUnit",
             "Role",
             "Policy",
+            // Person roles (by authority level)
             "Person_RootAuthority",
             "Person_SecurityAdmin",
             "Person_BackupHolder",
@@ -1194,32 +2036,251 @@ impl OrganizationGraph {
             "Person_Developer",
             "Person_ServiceAccount",
             "Location",
+            // NATS infrastructure hierarchy
+            "NatsOperator",
+            "NatsAccount",
+            "NatsUser",
+            "NatsServiceAccount",
+            // PKI trust chain hierarchy
+            "RootCertificate",
+            "IntermediateCertificate",
+            "LeafCertificate",
+            "Key",
+            // YubiKey hierarchy
+            "YubiKey",
+            "PivSlot",
+            "YubiKeyStatus",
+            // Manifest
+            "Manifest",
         ];
 
-        let mut y_offset = 100.0;
+        // Build ordered tiers for crossing minimization
+        let mut tiers: Vec<Vec<Uuid>> = Vec::new();
+        for type_name in &type_order {
+            if let Some(node_ids) = type_groups.get(*type_name) {
+                if !node_ids.is_empty() {
+                    tiers.push(node_ids.clone());
+                }
+            }
+        }
+
+        // Build node-to-tier index for quick lookup
+        let mut node_tier: HashMap<Uuid, usize> = HashMap::new();
+        for (tier_idx, tier) in tiers.iter().enumerate() {
+            for &node_id in tier {
+                node_tier.insert(node_id, tier_idx);
+            }
+        }
+
+        // Initial positioning to calculate barycenters
         let y_spacing = 120.0;
+        let x_spacing = 150.0;
+        let mut y_offset = 100.0;
+        for tier in &tiers {
+            let total_width = (tier.len() as f32 - 1.0) * x_spacing;
+            let start_x = center.x - total_width / 2.0;
+            for (i, &node_id) in tier.iter().enumerate() {
+                if let Some(node) = self.nodes.get_mut(&node_id) {
+                    node.position = Point {
+                        x: start_x + (i as f32) * x_spacing,
+                        y: y_offset,
+                    };
+                }
+            }
+            y_offset += y_spacing;
+        }
 
-        for type_name in type_order {
-            if let Some(node_ids) = type_groups.get(type_name) {
-                let x_spacing = 150.0;
-                let total_width = (node_ids.len() as f32 - 1.0) * x_spacing;
-                let start_x = center.x - total_width / 2.0;
+        // Multi-pass barycenter ordering considering ALL connected neighbors
+        for _ in 0..8 {
+            // Forward pass
+            for tier_idx in 0..tiers.len() {
+                self.order_tier_by_global_barycenter(&mut tiers, tier_idx, &node_tier);
+            }
+            // Backward pass
+            for tier_idx in (0..tiers.len()).rev() {
+                self.order_tier_by_global_barycenter(&mut tiers, tier_idx, &node_tier);
+            }
+        }
 
-                for (i, &node_id) in node_ids.iter().enumerate() {
-                    if let Some(node) = self.nodes.get_mut(&node_id) {
-                        node.position = Point {
-                            x: start_x + (i as f32) * x_spacing,
-                            y: y_offset,
-                        };
-                    }
+        // Update positions after barycenter ordering
+        y_offset = 100.0;
+        for tier in &tiers {
+            let total_width = (tier.len() as f32 - 1.0) * x_spacing;
+            let start_x = center.x - total_width / 2.0;
+            for (i, &node_id) in tier.iter().enumerate() {
+                if let Some(node) = self.nodes.get_mut(&node_id) {
+                    node.position = Point {
+                        x: start_x + (i as f32) * x_spacing,
+                        y: y_offset,
+                    };
+                }
+            }
+            y_offset += y_spacing;
+        }
+
+        // Local swap optimization - swap adjacent nodes if it reduces crossings
+        let mut improved = true;
+        let mut iterations = 0;
+        while improved && iterations < 20 {
+            improved = false;
+            iterations += 1;
+
+            for tier_idx in 0..tiers.len() {
+                let tier_len = tiers[tier_idx].len();
+                if tier_len < 2 {
+                    continue;
                 }
 
-                y_offset += y_spacing;
+                for i in 0..(tier_len - 1) {
+                    // Count crossings with current order
+                    let crossings_before = self.count_crossings_for_pair(&tiers, tier_idx, i, i + 1);
+
+                    // Swap and count again
+                    tiers[tier_idx].swap(i, i + 1);
+                    let crossings_after = self.count_crossings_for_pair(&tiers, tier_idx, i, i + 1);
+
+                    if crossings_after < crossings_before {
+                        // Keep the swap
+                        improved = true;
+                    } else {
+                        // Revert
+                        tiers[tier_idx].swap(i, i + 1);
+                    }
+                }
             }
+        }
+
+        // Final positioning
+        y_offset = 100.0;
+        for tier in &tiers {
+            let total_width = (tier.len() as f32 - 1.0) * x_spacing;
+            let start_x = center.x - total_width / 2.0;
+            for (i, &node_id) in tier.iter().enumerate() {
+                if let Some(node) = self.nodes.get_mut(&node_id) {
+                    node.position = Point {
+                        x: start_x + (i as f32) * x_spacing,
+                        y: y_offset,
+                    };
+                }
+            }
+            y_offset += y_spacing;
         }
     }
 
+    /// Order nodes in a tier by barycenter considering ALL connected neighbors
+    fn order_tier_by_global_barycenter(&self, tiers: &mut [Vec<Uuid>], tier_idx: usize, node_tier: &HashMap<Uuid, usize>) {
+        if tier_idx >= tiers.len() {
+            return;
+        }
+
+        // Build position map for ALL nodes based on their current tier position
+        let mut all_positions: HashMap<Uuid, f32> = HashMap::new();
+        for tier in tiers.iter() {
+            for (i, &node_id) in tier.iter().enumerate() {
+                all_positions.insert(node_id, i as f32);
+            }
+        }
+
+        // Calculate weighted barycenter for each node
+        let mut barycenters: Vec<(Uuid, f32)> = Vec::new();
+        for &node_id in &tiers[tier_idx] {
+            let mut sum = 0.0;
+            let mut weight_sum = 0.0;
+
+            for edge in &self.edges {
+                let neighbor_id = if edge.from == node_id {
+                    Some(edge.to)
+                } else if edge.to == node_id {
+                    Some(edge.from)
+                } else {
+                    None
+                };
+
+                if let Some(neighbor) = neighbor_id {
+                    if let Some(&pos) = all_positions.get(&neighbor) {
+                        // Weight by tier distance (closer tiers have more influence)
+                        let neighbor_tier = node_tier.get(&neighbor).copied().unwrap_or(tier_idx);
+                        let tier_dist = (tier_idx as i32 - neighbor_tier as i32).abs() as f32;
+                        let weight = 1.0 / (1.0 + tier_dist);
+                        sum += pos * weight;
+                        weight_sum += weight;
+                    }
+                }
+            }
+
+            let barycenter = if weight_sum > 0.0 {
+                sum / weight_sum
+            } else {
+                // No neighbors - keep current position
+                all_positions.get(&node_id).copied().unwrap_or(0.0)
+            };
+
+            barycenters.push((node_id, barycenter));
+        }
+
+        // Sort by barycenter
+        barycenters.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        tiers[tier_idx] = barycenters.into_iter().map(|(id, _)| id).collect();
+    }
+
+    /// Count edge crossings involving nodes at positions i and i+1 in a tier
+    fn count_crossings_for_pair(&self, tiers: &[Vec<Uuid>], tier_idx: usize, i: usize, j: usize) -> usize {
+        let node_a = tiers[tier_idx][i];
+        let node_b = tiers[tier_idx][j];
+
+        // Get temporary positions based on tier ordering
+        let mut positions: HashMap<Uuid, (f32, f32)> = HashMap::new();
+        let x_spacing = 150.0;
+        let y_spacing = 120.0;
+        let center_x = 400.0;
+        let mut y = 100.0;
+
+        for tier in tiers {
+            let total_width = (tier.len() as f32 - 1.0) * x_spacing;
+            let start_x = center_x - total_width / 2.0;
+            for (idx, &node_id) in tier.iter().enumerate() {
+                positions.insert(node_id, (start_x + (idx as f32) * x_spacing, y));
+            }
+            y += y_spacing;
+        }
+
+        // Count crossings for edges connected to node_a or node_b
+        let mut crossings = 0;
+        let relevant_edges: Vec<_> = self.edges.iter()
+            .filter(|e| e.from == node_a || e.to == node_a || e.from == node_b || e.to == node_b)
+            .collect();
+
+        for edge1 in relevant_edges.iter() {
+            for edge2 in self.edges.iter() {
+                // Skip same edge or edges sharing a node
+                if edge1.from == edge2.from || edge1.from == edge2.to ||
+                   edge1.to == edge2.from || edge1.to == edge2.to {
+                    continue;
+                }
+
+                if let (Some(&p1), Some(&p2), Some(&p3), Some(&p4)) = (
+                    positions.get(&edge1.from),
+                    positions.get(&edge1.to),
+                    positions.get(&edge2.from),
+                    positions.get(&edge2.to),
+                ) {
+                    let pt1 = Point::new(p1.0, p1.1);
+                    let pt2 = Point::new(p2.0, p2.1);
+                    let pt3 = Point::new(p3.0, p3.1);
+                    let pt4 = Point::new(p4.0, p4.1);
+
+                    if segments_intersect(pt1, pt2, pt3, pt4) {
+                        crossings += 1;
+                    }
+                }
+            }
+        }
+
+        crossings
+    }
+
     /// Force-directed layout: physics-based layout for larger graphs
+    #[allow(dead_code)]
     fn force_directed_layout(&mut self) {
         // Fruchterman-Reingold algorithm
         let width = 800.0;
@@ -1304,6 +2365,58 @@ impl OrganizationGraph {
                         *displacements.get(&edge.from).unwrap() + force;
                     *displacements.get_mut(&edge.to).unwrap() =
                         *displacements.get(&edge.to).unwrap() - force;
+                }
+            }
+
+            // Edge crossing penalty - push nodes apart when their edges cross
+            let crossing_strength = k * 0.5;  // Strength of crossing avoidance
+            for i in 0..self.edges.len() {
+                for j in (i + 1)..self.edges.len() {
+                    let edge1 = &self.edges[i];
+                    let edge2 = &self.edges[j];
+
+                    // Skip if edges share a node
+                    if edge1.from == edge2.from || edge1.from == edge2.to ||
+                       edge1.to == edge2.from || edge1.to == edge2.to {
+                        continue;
+                    }
+
+                    if let (Some(n1), Some(n2), Some(n3), Some(n4)) = (
+                        self.nodes.get(&edge1.from),
+                        self.nodes.get(&edge1.to),
+                        self.nodes.get(&edge2.from),
+                        self.nodes.get(&edge2.to),
+                    ) {
+                        // Check if edges cross
+                        if segments_intersect(n1.position, n2.position, n3.position, n4.position) {
+                            // Push edge midpoints apart
+                            let mid1 = Point::new(
+                                (n1.position.x + n2.position.x) / 2.0,
+                                (n1.position.y + n2.position.y) / 2.0,
+                            );
+                            let mid2 = Point::new(
+                                (n3.position.x + n4.position.x) / 2.0,
+                                (n3.position.y + n4.position.y) / 2.0,
+                            );
+
+                            let delta = Vector::new(mid1.x - mid2.x, mid1.y - mid2.y);
+                            let dist = (delta.x * delta.x + delta.y * delta.y).sqrt().max(0.01);
+                            let push = crossing_strength / dist;
+
+                            // Push edge1 nodes away from edge2 midpoint
+                            let force1 = Vector::new((delta.x / dist) * push, (delta.y / dist) * push);
+                            *displacements.get_mut(&edge1.from).unwrap() =
+                                *displacements.get(&edge1.from).unwrap() + force1;
+                            *displacements.get_mut(&edge1.to).unwrap() =
+                                *displacements.get(&edge1.to).unwrap() + force1;
+
+                            // Push edge2 nodes opposite direction
+                            *displacements.get_mut(&edge2.from).unwrap() =
+                                *displacements.get(&edge2.from).unwrap() - force1;
+                            *displacements.get_mut(&edge2.to).unwrap() =
+                                *displacements.get(&edge2.to).unwrap() - force1;
+                        }
+                    }
                 }
             }
 
@@ -1400,6 +2513,119 @@ impl OrganizationGraph {
             GraphMessage::AutoLayout => {
                 self.auto_layout();
             }
+            GraphMessage::ApplyLayout(algorithm) => {
+                let width = 1200.0;
+                let height = 900.0;
+
+                // Store CURRENT visual positions as animation start (before any changes)
+                // This captures mid-animation positions if animation is in progress
+                let current_positions: HashMap<Uuid, Point> = self.nodes.iter()
+                    .map(|(id, node)| (*id, node.position))
+                    .collect();
+
+                // If animation was in progress, set nodes to their TARGET positions
+                // so the layout algorithm has stable positions to work with
+                if self.animating {
+                    for (id, target) in &self.animation_targets {
+                        if let Some(node) = self.nodes.get_mut(id) {
+                            node.position = *target;
+                        }
+                    }
+                    self.animation_targets.clear();
+                    self.animation_start.clear();
+                    self.animating = false;
+                    self.animation_start_time = None;
+                }
+
+                // Calculate target positions based on algorithm
+                // (layout algorithms modify node.position directly)
+                match algorithm {
+                    LayoutAlgorithm::Tutte => {
+                        self.tutte_barycentric_layout(width, height);
+                    }
+                    LayoutAlgorithm::FruchtermanReingold => {
+                        self.fruchterman_reingold_layout(width, height, 100);
+                    }
+                    LayoutAlgorithm::Circular => {
+                        self.circular_layout(width, height);
+                    }
+                    LayoutAlgorithm::Hierarchical => {
+                        self.hierarchical_layout();
+                    }
+                    LayoutAlgorithm::TuttePlusFR => {
+                        self.tutte_barycentric_layout(width, height);
+                        self.fruchterman_reingold_layout(width, height, 50);
+                    }
+                    LayoutAlgorithm::YubiKeyGrouped => {
+                        self.layout_yubikey_grouped();
+                    }
+                    LayoutAlgorithm::NatsHierarchical => {
+                        self.layout_nats_hierarchical();
+                    }
+                }
+
+                // Store new layout positions as animation targets
+                self.animation_targets = self.nodes.iter()
+                    .map(|(id, node)| (*id, node.position))
+                    .collect();
+
+                // Restore the CURRENT visual positions (including mid-animation positions)
+                // so animation starts from where nodes visually are, not where they would end up
+                self.animation_start = current_positions.clone();
+                for (id, pos) in &current_positions {
+                    if let Some(node) = self.nodes.get_mut(id) {
+                        node.position = *pos;
+                    }
+                }
+
+                // Start animation with time-based progress
+                self.animation_progress = 0.0;
+                self.animating = true;
+                self.animation_start_time = Some(std::time::Instant::now());
+
+                let crossings = self.count_all_crossings();
+                tracing::info!("Starting animated {:?} layout (will have {} crossings)", algorithm, crossings);
+            }
+            GraphMessage::AnimationTick => {
+                // Animation duration in seconds (0.7s feels smooth without being slow)
+                const ANIMATION_DURATION: f32 = 0.7;
+
+                if let Some(start_time) = self.animation_start_time {
+                    let elapsed = start_time.elapsed().as_secs_f32();
+                    let raw_progress = elapsed / ANIMATION_DURATION;
+
+                    if raw_progress >= 1.0 {
+                        // Animation complete - set final positions
+                        for (id, target) in &self.animation_targets {
+                            if let Some(node) = self.nodes.get_mut(id) {
+                                node.position = *target;
+                            }
+                        }
+                        self.animation_targets.clear();
+                        self.animation_start.clear();
+                        self.animating = false;
+                        self.animation_start_time = None;
+                        self.animation_progress = 1.0;
+                    } else {
+                        // Apply ease-out cubic: 1 - (1-t)^3
+                        let eased = 1.0 - (1.0 - raw_progress).powi(3);
+                        self.animation_progress = raw_progress;
+
+                        // Interpolate positions
+                        for (id, target) in &self.animation_targets {
+                            if let (Some(start), Some(node)) = (
+                                self.animation_start.get(id),
+                                self.nodes.get_mut(id)
+                            ) {
+                                node.position = Point::new(
+                                    start.x + (target.x - start.x) * eased,
+                                    start.y + (target.y - start.y) * eased,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
             GraphMessage::AddEdge { from, to, edge_type } => {
                 self.add_edge(from, to, edge_type);
                 // Complete edge indicator if it's active
@@ -1483,6 +2709,30 @@ impl OrganizationGraph {
             }
             // Canvas clicked - handled in main GUI layer for node creation
             GraphMessage::CanvasClicked(_) => {}
+            // Role drag-and-drop operations
+            GraphMessage::RoleDragStarted(source) => {
+                // Get initial cursor position from current context (will be updated by RoleDragMoved)
+                self.start_role_drag(source, Point::ORIGIN);
+            }
+            GraphMessage::RoleDragMoved(position) => {
+                self.update_role_drag(position);
+            }
+            GraphMessage::RoleDragCancelled => {
+                self.cancel_role_drag();
+            }
+            GraphMessage::RoleDragDropped => {
+                // Drop is handled in main GUI layer which has access to policy data
+                // for SoD validation and event generation
+                self.cancel_role_drag();
+            }
+            GraphMessage::RoleAssigned { person_id, role_name } => {
+                // Role assignment is handled through events, this is just for notification
+                tracing::info!("Role '{}' assigned to person {:?}", role_name, person_id);
+            }
+            GraphMessage::RoleRemoved { person_id, role_name } => {
+                // Role removal is handled through events
+                tracing::info!("Role '{}' removed from person {:?}", role_name, person_id);
+            }
         }
     }
 
@@ -1553,6 +2803,14 @@ impl OrganizationGraph {
                 NodeType::PivSlot { .. } => tier_1.push(*id),
                 NodeType::YubiKeyStatus { .. } => tier_0.push(*id),
                 NodeType::Manifest { .. } => tier_2.push(*id),
+                // Policy roles go in tier 1 (same as Role/Policy)
+                NodeType::PolicyRole { .. } => tier_1.push(*id),
+                // Policy claims go in tier 2 (below roles)
+                NodeType::PolicyClaim { .. } => tier_2.push(*id),
+                // Separation class groups go in tier 0 (top level)
+                NodeType::SeparationClassGroup { .. } => tier_0.push(*id),
+                // Policy categories go in tier 1 (same level as roles)
+                NodeType::PolicyCategory { .. } => tier_1.push(*id),
             }
         }
 
@@ -1647,6 +2905,88 @@ impl OrganizationGraph {
         }
     }
 
+    /// Specialized layout for NATS infrastructure graphs
+    /// Arranges: Operator (top) -> Accounts (middle row) -> Users (bottom rows under their accounts)
+    pub fn layout_nats_hierarchical(&mut self) {
+        // Collect NATS nodes by type
+        let mut operators: Vec<Uuid> = Vec::new();
+        let mut accounts: Vec<(Uuid, String)> = Vec::new(); // (id, name)
+        let mut users: Vec<(Uuid, String)> = Vec::new();    // (id, account_name)
+
+        for (id, node) in &self.nodes {
+            match &node.node_type {
+                NodeType::NatsOperator(_) | NodeType::NatsOperatorSimple { .. } => {
+                    operators.push(*id);
+                }
+                NodeType::NatsAccount(_) => {
+                    accounts.push((*id, node.label.clone()));
+                }
+                NodeType::NatsAccountSimple { name, .. } => {
+                    accounts.push((*id, name.clone()));
+                }
+                NodeType::NatsUser(_) => {
+                    // Get account from label or use default
+                    users.push((*id, String::new()));
+                }
+                NodeType::NatsUserSimple { account_name, .. } => {
+                    users.push((*id, account_name.clone()));
+                }
+                NodeType::NatsServiceAccount(_) => {
+                    users.push((*id, String::new()));
+                }
+                _ => {}
+            }
+        }
+
+        // Layout constants
+        let center_x = 500.0;
+        let operator_y = 80.0;
+        let account_y = 220.0;
+        let user_start_y = 360.0;
+        let account_spacing = 250.0;
+        let user_spacing_x = 120.0;
+        let user_spacing_y = 100.0;
+
+        let mut position_updates: Vec<(Uuid, Point)> = Vec::new();
+
+        // Position operators at top center
+        let op_count = operators.len();
+        for (idx, op_id) in operators.iter().enumerate() {
+            let x = center_x + ((idx as f32) - (op_count as f32 - 1.0) / 2.0) * 200.0;
+            position_updates.push((*op_id, Point::new(x, operator_y)));
+        }
+
+        // Position accounts in a row
+        let account_count = accounts.len();
+        let accounts_start_x = center_x - ((account_count as f32 - 1.0) / 2.0) * account_spacing;
+
+        for (idx, (account_id, account_name)) in accounts.iter().enumerate() {
+            let x = accounts_start_x + (idx as f32) * account_spacing;
+            position_updates.push((*account_id, Point::new(x, account_y)));
+
+            // Find users for this account and position them below
+            let account_users: Vec<Uuid> = users.iter()
+                .filter(|(_, acct)| acct == account_name || acct.is_empty())
+                .map(|(id, _)| *id)
+                .collect();
+
+            for (user_idx, user_id) in account_users.iter().enumerate() {
+                let col = user_idx % 3;
+                let row = user_idx / 3;
+                let user_x = x - user_spacing_x + (col as f32) * user_spacing_x;
+                let user_y = user_start_y + (row as f32) * user_spacing_y;
+                position_updates.push((*user_id, Point::new(user_x, user_y)));
+            }
+        }
+
+        // Apply all position updates
+        for (id, pos) in position_updates {
+            if let Some(node) = self.nodes.get_mut(&id) {
+                node.position = pos;
+            }
+        }
+    }
+
     fn role_to_color(&self, role: &KeyOwnerRole) -> Color {
         match role {
             KeyOwnerRole::RootAuthority => Color::from_rgb(0.8, 0.2, 0.2),
@@ -1663,7 +3003,9 @@ impl OrganizationGraph {
         match &node.node_type {
             NodeType::Person { .. } => self.filter_show_people,
             NodeType::Organization(_) | NodeType::OrganizationalUnit(_) |
-            NodeType::Location(_) | NodeType::Role(_) | NodeType::Policy(_) => {
+            NodeType::Location(_) | NodeType::Role(_) | NodeType::Policy(_) |
+            NodeType::PolicyRole { .. } | NodeType::PolicyClaim { .. } |
+            NodeType::PolicyCategory { .. } | NodeType::SeparationClassGroup { .. } => {
                 self.filter_show_orgs
             }
             NodeType::NatsOperator(_) | NodeType::NatsAccount(_) |
@@ -1859,6 +3201,14 @@ impl OrganizationGraph {
                 NodeType::Key { .. } => pki_nodes.push(*id),
                 // Export and Manifest
                 NodeType::Manifest { .. } => org_nodes.push(*id),
+                // Policy Roles from policy-bootstrap.json
+                NodeType::PolicyRole { .. } => org_nodes.push(*id),
+                // Policy Claims
+                NodeType::PolicyClaim { .. } => org_nodes.push(*id),
+                // Policy Categories (progressive disclosure)
+                NodeType::PolicyCategory { .. } => org_nodes.push(*id),
+                // Separation Class Groups (progressive disclosure)
+                NodeType::SeparationClassGroup { .. } => org_nodes.push(*id),
             }
         }
 
@@ -1888,6 +3238,19 @@ impl OrganizationGraph {
                     radius * angle.sin(),
                 );
             }
+        }
+    }
+
+    /// Subscription for animation ticks - only active when animating
+    pub fn subscription(&self) -> iced::Subscription<GraphMessage> {
+        use std::time::Duration;
+
+        if self.animating {
+            // 60fps = ~16.67ms per frame
+            iced::time::every(Duration::from_millis(16))
+                .map(|_| GraphMessage::AnimationTick)
+        } else {
+            iced::Subscription::none()
         }
     }
 }
@@ -1979,7 +3342,11 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                     EdgeType::StoredAt => "stored at",
 
                     // Policy relationships
-                    EdgeType::HasRole => "has role",
+                    EdgeType::HasRole { .. } => "has role",
+                    EdgeType::IncompatibleWith => "incompatible with",
+                    EdgeType::RoleContainsClaim => "grants",
+                    EdgeType::CategoryContainsClaim => "contains",
+                    EdgeType::ClassContainsRole => "includes",
                     EdgeType::RoleRequiresPolicy => "requires",
                     EdgeType::PolicyGovernsEntity => "governs",
 
@@ -2289,6 +3656,34 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                         "No destination".to_string()
                     },
                 ),
+                // Policy Roles from policy-bootstrap.json
+                NodeType::PolicyRole { name, purpose, level, claim_count, .. } => (
+                    crate::icons::ICON_SECURITY,
+                    crate::icons::MATERIAL_ICONS,
+                    name.clone(),
+                    format!("L{} | {} claims | {}", level, claim_count, purpose),
+                ),
+                // Policy Claims
+                NodeType::PolicyClaim { name, category, .. } => (
+                    crate::icons::ICON_VERIFIED,
+                    crate::icons::MATERIAL_ICONS,
+                    name.clone(),
+                    category.clone(),
+                ),
+                // Policy Categories (progressive disclosure)
+                NodeType::PolicyCategory { name, claim_count, expanded, .. } => (
+                    if *expanded { crate::icons::ICON_FOLDER_OPEN } else { crate::icons::ICON_FOLDER },
+                    crate::icons::MATERIAL_ICONS,
+                    name.clone(),
+                    format!("{} claims", claim_count),
+                ),
+                // Separation Class Groups (progressive disclosure)
+                NodeType::SeparationClassGroup { name, role_count, expanded, .. } => (
+                    if *expanded { crate::icons::ICON_FOLDER_OPEN } else { crate::icons::ICON_FOLDER },
+                    crate::icons::MATERIAL_ICONS,
+                    name.clone(),
+                    format!("{} roles", role_count),
+                ),
             };
 
             // Primary text (below node)
@@ -2325,6 +3720,54 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                 shaping: Shaping::Advanced,
             });
 
+            // Draw role badges for Person nodes (compact mode)
+            if let NodeType::Person { .. } = &node.node_type {
+                if let Some(badges) = self.role_badges.get(&node.id) {
+                    let badge_y = node.position.y + radius + 42.0;
+                    let badge_spacing = 24.0;
+                    let total_width = (badges.badges.len() as f32) * badge_spacing;
+                    let start_x = node.position.x - total_width / 2.0 + badge_spacing / 2.0;
+
+                    for (i, badge) in badges.badges.iter().enumerate() {
+                        let badge_x = start_x + (i as f32) * badge_spacing;
+                        let badge_center = Point::new(badge_x, badge_y);
+
+                        // Draw badge circle
+                        let badge_circle = canvas::Path::circle(badge_center, 8.0);
+                        frame.fill(&badge_circle, badge.color());
+
+                        // Draw badge abbreviation
+                        frame.fill_text(canvas::Text {
+                            content: badge.abbrev(),
+                            position: badge_center,
+                            color: Color::WHITE,
+                            size: iced::Pixels(7.0),
+                            font: iced::Font::DEFAULT,
+                            horizontal_alignment: iced::alignment::Horizontal::Center,
+                            vertical_alignment: iced::alignment::Vertical::Center,
+                            line_height: LineHeight::default(),
+                            shaping: Shaping::Advanced,
+                        });
+                    }
+
+                    // Draw "+N more" indicator if there are more roles
+                    if badges.has_more {
+                        let more_x = start_x + (badges.badges.len() as f32) * badge_spacing;
+                        frame.fill_text(canvas::Text {
+                            content: "+".to_string(),
+                            position: Point::new(more_x, badge_y),
+                            color: Color::from_rgb(0.6, 0.6, 0.7),
+                            size: iced::Pixels(9.0),
+                            font: iced::Font::DEFAULT,
+                            horizontal_alignment: iced::alignment::Horizontal::Center,
+                            vertical_alignment: iced::alignment::Vertical::Center,
+                            line_height: LineHeight::default(),
+                            shaping: Shaping::Advanced,
+                        });
+                    }
+                }
+            }
+
             // Type icon (above node)
             let icon_position = Point::new(
                 node.position.x,
@@ -2345,6 +3788,96 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
 
         // Phase 4: Draw edge creation indicator (if active)
         self.edge_indicator.draw(&mut frame, self);
+
+        // Draw ghost node during role drag
+        if let Some(ref drag) = self.dragging_role {
+            let ghost_pos = drag.cursor_position;
+            let role_name = match &drag.source {
+                DragSource::RoleFromPalette { role_name, .. } => role_name,
+                DragSource::RoleFromPerson { role_name, .. } => role_name,
+            };
+            let role_color = self.get_dragging_role_color().unwrap_or(Color::from_rgb(0.5, 0.5, 0.5));
+
+            // Determine ghost node border color based on SoD conflicts and hover state
+            let (border_color, border_width) = if drag.hover_person.is_some() {
+                if drag.sod_conflicts.is_empty() {
+                    (Color::from_rgb(0.2, 0.8, 0.3), 3.0) // Green - valid drop
+                } else {
+                    (Color::from_rgb(0.9, 0.3, 0.2), 3.0) // Red - conflicts
+                }
+            } else {
+                (Color::from_rgb(0.6, 0.6, 0.7), 2.0) // Gray - no target
+            };
+
+            // Draw ghost node circle with transparency
+            let ghost_radius = 20.0;
+            let ghost_circle = canvas::Path::circle(ghost_pos, ghost_radius);
+            frame.fill(&ghost_circle, Color::from_rgba8(
+                (role_color.r * 255.0) as u8,
+                (role_color.g * 255.0) as u8,
+                (role_color.b * 255.0) as u8,
+                180.0, // Semi-transparent (alpha as f32, 0.0-255.0 range)
+            ));
+
+            // Draw border
+            let border_stroke = canvas::Stroke::default()
+                .with_color(border_color)
+                .with_width(border_width);
+            frame.stroke(&ghost_circle, border_stroke);
+
+            // Draw role name abbreviation
+            let abbrev: String = if role_name.len() <= 3 {
+                role_name.clone()
+            } else {
+                let words: Vec<&str> = role_name.split_whitespace().collect();
+                if words.len() >= 2 {
+                    words.iter().take(3).filter_map(|w| w.chars().next()).collect()
+                } else {
+                    role_name.chars().take(3).collect()
+                }
+            };
+
+            frame.fill_text(canvas::Text {
+                content: abbrev,
+                position: ghost_pos,
+                color: Color::WHITE,
+                size: iced::Pixels(10.0),
+                font: iced::Font::DEFAULT,
+                horizontal_alignment: iced::alignment::Horizontal::Center,
+                vertical_alignment: iced::alignment::Vertical::Center,
+                line_height: LineHeight::default(),
+                shaping: Shaping::Advanced,
+            });
+
+            // Draw conflict indicator if hovering over person with conflicts
+            if drag.hover_person.is_some() && !drag.sod_conflicts.is_empty() {
+                // Draw X mark
+                frame.fill_text(canvas::Text {
+                    content: "✗".to_string(),
+                    position: Point::new(ghost_pos.x + ghost_radius - 2.0, ghost_pos.y - ghost_radius + 2.0),
+                    color: Color::from_rgb(0.9, 0.2, 0.2),
+                    size: iced::Pixels(14.0),
+                    font: iced::Font::DEFAULT,
+                    horizontal_alignment: iced::alignment::Horizontal::Center,
+                    vertical_alignment: iced::alignment::Vertical::Center,
+                    line_height: LineHeight::default(),
+                    shaping: Shaping::Advanced,
+                });
+            }
+
+            // Highlight the hovered person node
+            if let Some(hover_id) = drag.hover_person {
+                if let Some(hover_node) = self.nodes.get(&hover_id) {
+                    let highlight_color = if drag.sod_conflicts.is_empty() {
+                        Color::from_rgba(0.2, 0.8, 0.3, 0.3) // Green glow
+                    } else {
+                        Color::from_rgba(0.9, 0.3, 0.2, 0.3) // Red glow
+                    };
+                    let highlight_circle = canvas::Path::circle(hover_node.position, 35.0);
+                    frame.fill(&highlight_circle, highlight_color);
+                }
+            }
+        }
 
         vec![frame.into_geometry()]
     }
@@ -2611,6 +4144,31 @@ pub fn view_graph(graph: &OrganizationGraph) -> Element<'_, GraphMessage> {
             .on_press(GraphMessage::AutoLayout)
             .style(CowboyCustomTheme::glass_button())
             .padding(6),
+        // Layout algorithm buttons
+        button(text("Tutte").size(11).font(crate::icons::FONT_BODY))
+            .on_press(GraphMessage::ApplyLayout(LayoutAlgorithm::Tutte))
+            .style(CowboyCustomTheme::glass_button())
+            .padding(4),
+        button(text("F-R").size(11).font(crate::icons::FONT_BODY))
+            .on_press(GraphMessage::ApplyLayout(LayoutAlgorithm::FruchtermanReingold))
+            .style(CowboyCustomTheme::glass_button())
+            .padding(4),
+        button(text("Circle").size(11).font(crate::icons::FONT_BODY))
+            .on_press(GraphMessage::ApplyLayout(LayoutAlgorithm::Circular))
+            .style(CowboyCustomTheme::glass_button())
+            .padding(4),
+        button(text("Tree").size(11).font(crate::icons::FONT_BODY))
+            .on_press(GraphMessage::ApplyLayout(LayoutAlgorithm::Hierarchical))
+            .style(CowboyCustomTheme::glass_button())
+            .padding(4),
+        button(text("YubiKey").size(11).font(crate::icons::FONT_BODY))
+            .on_press(GraphMessage::ApplyLayout(LayoutAlgorithm::YubiKeyGrouped))
+            .style(CowboyCustomTheme::glass_button())
+            .padding(4),
+        button(text("NATS").size(11).font(crate::icons::FONT_BODY))
+            .on_press(GraphMessage::ApplyLayout(LayoutAlgorithm::NatsHierarchical))
+            .style(CowboyCustomTheme::glass_button())
+            .padding(4),
     ]
     .spacing(8);
 
@@ -2637,12 +4195,47 @@ pub fn view_graph(graph: &OrganizationGraph) -> Element<'_, GraphMessage> {
                     text(format!("Name: {}", unit.name)),
                     text(format!("Type: {:?}", unit.unit_type)),
                 ],
-                NodeType::Person { person, role } => column![
-                    text("Selected Person:").size(16),
-                    text(format!("Name: {}", person.name)),
-                    text(format!("Email: {}", person.email)),
-                    text(format!("Role: {:?}", role)),
-                ],
+                NodeType::Person { person, role } => {
+                    let mut person_details = column![
+                        text("Selected Person:").size(16),
+                        text(format!("Name: {}", person.name)),
+                        text(format!("Email: {}", person.email)),
+                        text(format!("Active: {}", if person.active { "✓" } else { "✗" })),
+                        text(format!("Key Role: {:?}", role)),
+                    ];
+
+                    // Show assigned policy roles from role_badges
+                    if let Some(badges) = graph.role_badges.get(&selected_id) {
+                        person_details = person_details.push(text("").size(6)); // Spacer
+                        person_details = person_details.push(text("ASSIGNED ROLES:").size(14));
+
+                        for badge in &badges.badges {
+                            let level_indicator = "●".repeat(badge.level as usize).chars().take(5).collect::<String>();
+                            let empty_indicator = "○".repeat(5_usize.saturating_sub(badge.level as usize));
+                            person_details = person_details.push(
+                                text(format!("  {} {} {}{}",
+                                    match badge.separation_class {
+                                        crate::policy::SeparationClass::Operational => "🔵",
+                                        crate::policy::SeparationClass::Administrative => "🟣",
+                                        crate::policy::SeparationClass::Audit => "🟢",
+                                        crate::policy::SeparationClass::Emergency => "🔴",
+                                        crate::policy::SeparationClass::Financial => "🟡",
+                                        crate::policy::SeparationClass::Personnel => "🟠",
+                                    },
+                                    badge.name,
+                                    level_indicator,
+                                    empty_indicator,
+                                )).size(12)
+                            );
+                        }
+
+                        if badges.has_more {
+                            person_details = person_details.push(text("  (+more roles...)").size(11));
+                        }
+                    }
+
+                    person_details
+                },
                 NodeType::Location(loc) => column![
                     text("Selected Location:").size(16),
                     text(format!("Name: {}", loc.name)),
@@ -2770,6 +4363,42 @@ pub fn view_graph(graph: &OrganizationGraph) -> Element<'_, GraphMessage> {
                     text(format!("Name: {}", name)),
                     text(format!("Destination: {}", destination.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "None".to_string()))),
                     text(format!("Checksum: {}", checksum.clone().unwrap_or_else(|| "None".to_string()))),
+                ],
+                // Policy Roles from policy-bootstrap.json
+                NodeType::PolicyRole { role_id, name, purpose, level, separation_class, claim_count } => column![
+                    text("Selected Policy Role:").size(16),
+                    text(format!("ID: {}", role_id)),
+                    text(format!("Name: {}", name)),
+                    text(format!("Purpose: {}", purpose)),
+                    text(format!("Level: {}", level)),
+                    text(format!("Separation Class: {:?}", separation_class)),
+                    text(format!("Claims: {}", claim_count)),
+                ],
+                // Policy Claims
+                NodeType::PolicyClaim { claim_id, name, category } => column![
+                    text("Selected Claim:").size(16),
+                    text(format!("ID: {}", claim_id)),
+                    text(format!("Name: {}", name)),
+                    text(format!("Category: {}", category)),
+                ],
+                // Policy Categories (progressive disclosure)
+                NodeType::PolicyCategory { category_id, name, claim_count, expanded } => column![
+                    text("Selected Category:").size(16),
+                    text(format!("ID: {}", category_id)),
+                    text(format!("Name: {}", name)),
+                    text(format!("Claims: {}", claim_count)),
+                    text(format!("Expanded: {}", if *expanded { "Yes" } else { "No" })),
+                    text("Click to toggle expansion").size(12),
+                ],
+                // Separation Class Groups (progressive disclosure)
+                NodeType::SeparationClassGroup { class_id, name, separation_class, role_count, expanded } => column![
+                    text("Selected Separation Class:").size(16),
+                    text(format!("ID: {}", class_id)),
+                    text(format!("Name: {}", name)),
+                    text(format!("Class: {:?}", separation_class)),
+                    text(format!("Roles: {}", role_count)),
+                    text(format!("Expanded: {}", if *expanded { "Yes" } else { "No" })),
+                    text("Click to toggle expansion").size(12),
                 ],
             };
             items = items.push(details.spacing(5));

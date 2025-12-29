@@ -93,7 +93,7 @@ impl RelationshipAnalysis {
                         .or_insert_with(Vec::new)
                         .push(delegation.clone());
                 }
-                EdgeType::HasRole => {
+                EdgeType::HasRole { .. } => {
                     role_assignments
                         .entry(edge.from)
                         .or_insert_with(Vec::new)

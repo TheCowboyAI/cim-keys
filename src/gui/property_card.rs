@@ -293,6 +293,34 @@ impl PropertyCard {
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
+            // Policy Roles from policy-bootstrap.json - read-only
+            NodeType::PolicyRole { name, purpose, level, separation_class, claim_count, .. } => {
+                self.edit_name = name.clone();
+                self.edit_description = format!("L{} {:?} | {} claims | {}", level, separation_class, claim_count, purpose);
+                self.edit_email = String::new();
+                self.edit_enabled = true;
+            }
+            // Policy Claims - read-only
+            NodeType::PolicyClaim { name, category, .. } => {
+                self.edit_name = name.clone();
+                self.edit_description = format!("Category: {}", category);
+                self.edit_email = String::new();
+                self.edit_enabled = true;
+            }
+            // Policy Categories - clickable to expand/collapse
+            NodeType::PolicyCategory { name, claim_count, expanded, .. } => {
+                self.edit_name = name.clone();
+                self.edit_description = format!("{} claims | {}", claim_count, if *expanded { "Expanded" } else { "Collapsed" });
+                self.edit_email = String::new();
+                self.edit_enabled = true;
+            }
+            // Separation Class Groups - clickable to expand/collapse
+            NodeType::SeparationClassGroup { name, role_count, expanded, .. } => {
+                self.edit_name = name.clone();
+                self.edit_description = format!("{} roles | {}", role_count, if *expanded { "Expanded" } else { "Collapsed" });
+                self.edit_email = String::new();
+                self.edit_enabled = true;
+            }
         }
     }
 
@@ -962,7 +990,7 @@ impl PropertyCard {
             ("Member Of", EdgeType::MemberOf),
             ("Owns Key", EdgeType::OwnsKey),
             ("Stored At", EdgeType::StoredAt),
-            ("Has Role", EdgeType::HasRole),
+            ("Has Role", EdgeType::HasRole { valid_from: chrono::Utc::now(), valid_until: None }),
             ("Hierarchy", EdgeType::Hierarchy),
             ("Trust", EdgeType::Trust),
         ];
@@ -975,7 +1003,7 @@ impl PropertyCard {
                 (EdgeType::MemberOf, EdgeType::MemberOf) |
                 (EdgeType::OwnsKey, EdgeType::OwnsKey) |
                 (EdgeType::StoredAt, EdgeType::StoredAt) |
-                (EdgeType::HasRole, EdgeType::HasRole) |
+                (EdgeType::HasRole { .. }, EdgeType::HasRole { .. }) |
                 (EdgeType::Hierarchy, EdgeType::Hierarchy) |
                 (EdgeType::Trust, EdgeType::Trust)
             );

@@ -64,6 +64,7 @@ pub mod property_card;
 pub mod passphrase_dialog;
 pub mod view_model;
 pub mod edge_indicator;
+pub mod role_palette;
 
 #[cfg(test)]
 mod graph_integration_tests;
@@ -262,6 +263,132 @@ pub struct CimKeysApp {
     filter_show_yubikey: bool,
     // Phase 9: Graph layout options
     current_layout: GraphLayout,
+
+    // Phase 10: Policy visualization
+    policy_data: Option<crate::policy_loader::PolicyBootstrapData>,
+    show_role_nodes: bool,  // Toggle between expanded (role nodes) and compact (badges) view
+
+    // Role palette for drag-and-drop assignment
+    role_palette: role_palette::RolePalette,
+
+    // Progressive disclosure state for policy graph
+    policy_expansion_level: PolicyExpansionLevel,
+    expanded_separation_classes: std::collections::HashSet<crate::policy::SeparationClass>,
+    expanded_categories: std::collections::HashSet<String>,
+}
+
+/// Expansion level for progressive disclosure in policy graph
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PolicyExpansionLevel {
+    /// Show only separation class groups (6 nodes)
+    #[default]
+    Classes,
+    /// Show separation classes + roles (26+ nodes)
+    Roles,
+    /// Show roles + claims (294+ nodes)
+    Claims,
+}
+
+/// Export readiness status - tracks what's needed for PKI export
+#[derive(Debug, Clone, Default)]
+pub struct ExportReadiness {
+    /// Core requirements
+    pub has_organization: bool,
+    pub has_root_ca: bool,
+    pub has_people: bool,
+    pub has_locations: bool,
+
+    /// Key infrastructure
+    pub root_ca_count: usize,
+    pub intermediate_ca_count: usize,
+    pub leaf_cert_count: usize,
+    pub key_count: usize,
+
+    /// NATS infrastructure (optional)
+    pub has_nats_operator: bool,
+    pub nats_account_count: usize,
+    pub nats_user_count: usize,
+
+    /// Policy assignments (optional)
+    pub has_policy_data: bool,
+    pub role_assignment_count: usize,
+    pub people_with_roles: usize,
+
+    /// YubiKey provisioning (optional)
+    pub yubikey_count: usize,
+    pub provisioned_yubikeys: usize,
+
+    /// Missing items list for display
+    pub missing_items: Vec<ExportMissingItem>,
+    pub warnings: Vec<String>,
+}
+
+/// A missing item required for export
+#[derive(Debug, Clone)]
+pub struct ExportMissingItem {
+    pub category: &'static str,
+    pub description: String,
+    pub severity: MissingSeverity,
+    pub action: Option<String>,
+}
+
+/// Severity of missing item
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MissingSeverity {
+    /// Export cannot proceed without this
+    Required,
+    /// Export can proceed but functionality is limited
+    Recommended,
+    /// Nice to have but not essential
+    Optional,
+}
+
+impl ExportReadiness {
+    /// Check if all required items are present
+    pub fn is_ready(&self) -> bool {
+        self.has_organization && self.has_root_ca && self.has_people
+    }
+
+    /// Get the overall readiness percentage (0-100)
+    pub fn readiness_percentage(&self) -> u8 {
+        let mut score = 0u8;
+        let mut total = 0u8;
+
+        // Required items (weighted heavily)
+        total += 30;
+        if self.has_organization { score += 10; }
+        if self.has_root_ca { score += 10; }
+        if self.has_people { score += 10; }
+
+        // Recommended items
+        total += 30;
+        if self.has_locations { score += 10; }
+        if self.intermediate_ca_count > 0 { score += 10; }
+        if self.key_count > 0 { score += 10; }
+
+        // Optional items
+        total += 40;
+        if self.has_nats_operator { score += 10; }
+        if self.has_policy_data { score += 10; }
+        if self.people_with_roles > 0 { score += 10; }
+        if self.provisioned_yubikeys > 0 { score += 10; }
+
+        ((score as f32 / total as f32) * 100.0) as u8
+    }
+
+    /// Get count of required items missing
+    pub fn required_missing_count(&self) -> usize {
+        self.missing_items.iter()
+            .filter(|item| matches!(item.severity, MissingSeverity::Required))
+            .count()
+    }
+
+    /// Get count of recommended items missing
+    pub fn recommended_missing_count(&self) -> usize {
+        self.missing_items.iter()
+            .filter(|item| matches!(item.severity, MissingSeverity::Recommended))
+            .count()
+    }
 }
 
 /// Types of nodes in organizational context graph
@@ -329,8 +456,8 @@ pub enum GraphView {
     PkiTrustChain,
     /// YubiKey provisioning and PIV slots
     YubiKeyDetails,
-    /// Timeline view - Event sourcing audit trail (temporal visualization)
-    Timeline,
+    /// Policies - Roles, claims, and separation of duties
+    Policies,
     /// Aggregate state machines - State diagrams for each aggregate type
     Aggregates,
     /// Command history - CQRS write audit trail
@@ -534,6 +661,23 @@ pub enum Message {
     // Graph layout options
     ChangeLayout(GraphLayout),
     ApplyLayout,
+
+    // Policy visualization
+    PolicyDataLoaded(Result<crate::policy_loader::PolicyBootstrapData, String>),
+    ToggleRoleDisplay,  // Toggle between expanded (role nodes) and compact (badges) view
+    // Progressive disclosure for policy graph
+    SetPolicyExpansionLevel(PolicyExpansionLevel),
+    ToggleSeparationClassExpansion(crate::policy::SeparationClass),
+    ToggleCategoryExpansion(String),
+
+    // Role palette messages
+    RolePaletteMessage(role_palette::RolePaletteMessage),
+    ToggleRolePalette,  // Toggle palette visibility
+
+    // Role drag-and-drop subscription messages
+    RoleDragMove(Point),   // Mouse moved during drag
+    RoleDragDrop,          // Mouse button released (drop)
+    RoleDragCancel,        // Escape pressed (cancel)
 }
 
 /// Bootstrap configuration - supports both full and simplified formats
@@ -851,6 +995,17 @@ impl CimKeysApp {
                 filter_show_yubikey: true,
                 // Phase 9: Graph layout options
                 current_layout: GraphLayout::Manual,
+                // Phase 10: Policy visualization
+                policy_data: None,
+                show_role_nodes: false,  // Default to compact badge view
+
+                // Role palette for drag-and-drop assignment
+                role_palette: role_palette::RolePalette::new(),
+
+                // Progressive disclosure state - start at collapsed (Classes) level
+                policy_expansion_level: PolicyExpansionLevel::default(),
+                expanded_separation_classes: std::collections::HashSet::new(),
+                expanded_categories: std::collections::HashSet::new(),
             },
             load_task,
         )
@@ -1165,7 +1320,7 @@ impl CimKeysApp {
                                 }
                             }
 
-                            self.nats_graph.layout_hierarchical();
+                            self.nats_graph.layout_nats_hierarchical();
                         }
 
                         // === BUILD YUBIKEY GRAPH ===
@@ -1229,6 +1384,21 @@ impl CimKeysApp {
                             people.len(),
                             yubikey_assignments.len(),
                             nats_count
+                        );
+
+                        // Trigger policy loading after domain data is loaded
+                        return Task::perform(
+                            async {
+                                use crate::policy_loader::PolicyLoader;
+                                let path = PolicyLoader::default_path();
+                                if path.exists() {
+                                    PolicyLoader::load_from_file(&path)
+                                        .map_err(|e| e.to_string())
+                                } else {
+                                    Err("Policy bootstrap file not found (secrets/policy-bootstrap.json)".to_string())
+                                }
+                            },
+                            Message::PolicyDataLoaded
                         );
                     }
                     Err(e) => {
@@ -2842,7 +3012,7 @@ impl CimKeysApp {
                             EdgeType::Manages,
                             EdgeType::ResponsibleFor,
                             EdgeType::ParentChild,
-                            EdgeType::HasRole,
+                            EdgeType::HasRole { valid_from: chrono::Utc::now(), valid_until: None },
                             EdgeType::DefinesRole,
                             EdgeType::DefinesPolicy,
                             EdgeType::Hierarchy,
@@ -3421,7 +3591,8 @@ impl CimKeysApp {
                     }
                     _ => {}
                 }
-                self.org_graph.handle_message(graph_msg);
+                // Route to the active graph based on current view
+                self.active_graph_mut().handle_message(graph_msg);
                 Task::none()
             }
 
@@ -3864,6 +4035,44 @@ impl CimKeysApp {
                                             checksum: checksum.clone(),
                                         }
                                     }
+                                    // Policy Roles from policy-bootstrap.json - read-only, return unchanged
+                                    graph::NodeType::PolicyRole { role_id, name, purpose, level, separation_class, claim_count } => {
+                                        graph::NodeType::PolicyRole {
+                                            role_id: *role_id,
+                                            name: name.clone(),
+                                            purpose: purpose.clone(),
+                                            level: *level,
+                                            separation_class: separation_class.clone(),
+                                            claim_count: *claim_count,
+                                        }
+                                    }
+                                    // Policy Claims - read-only, return unchanged
+                                    graph::NodeType::PolicyClaim { claim_id, name, category } => {
+                                        graph::NodeType::PolicyClaim {
+                                            claim_id: *claim_id,
+                                            name: name.clone(),
+                                            category: category.clone(),
+                                        }
+                                    }
+                                    // Policy Categories - read-only, return unchanged
+                                    graph::NodeType::PolicyCategory { category_id, name, claim_count, expanded } => {
+                                        graph::NodeType::PolicyCategory {
+                                            category_id: *category_id,
+                                            name: name.clone(),
+                                            claim_count: *claim_count,
+                                            expanded: *expanded,
+                                        }
+                                    }
+                                    // Separation Class Groups - read-only, return unchanged
+                                    graph::NodeType::SeparationClassGroup { class_id, name, separation_class, role_count, expanded } => {
+                                        graph::NodeType::SeparationClassGroup {
+                                            class_id: *class_id,
+                                            name: name.clone(),
+                                            separation_class: separation_class.clone(),
+                                            role_count: *role_count,
+                                            expanded: *expanded,
+                                        }
+                                    }
                                 };
 
                                 // Create and apply NodePropertiesChanged event
@@ -4300,6 +4509,28 @@ impl CimKeysApp {
                             "manifest".contains(&query_lower) || "export".contains(&query_lower) ||
                             name.to_lowercase().contains(&query_lower)
                         }
+                        // Policy Roles from policy-bootstrap.json
+                        graph::NodeType::PolicyRole { name, purpose, .. } => {
+                            "role".contains(&query_lower) || "policy".contains(&query_lower) ||
+                            name.to_lowercase().contains(&query_lower) ||
+                            purpose.to_lowercase().contains(&query_lower)
+                        }
+                        // Policy Claims
+                        graph::NodeType::PolicyClaim { name, category, .. } => {
+                            "claim".contains(&query_lower) ||
+                            name.to_lowercase().contains(&query_lower) ||
+                            category.to_lowercase().contains(&query_lower)
+                        }
+                        // Policy Categories
+                        graph::NodeType::PolicyCategory { name, .. } => {
+                            "category".contains(&query_lower) ||
+                            name.to_lowercase().contains(&query_lower)
+                        }
+                        // Separation Class Groups
+                        graph::NodeType::SeparationClassGroup { name, .. } => {
+                            "class".contains(&query_lower) || "separation".contains(&query_lower) ||
+                            name.to_lowercase().contains(&query_lower)
+                        }
                     };
 
                     if matches {
@@ -4522,6 +4753,219 @@ impl CimKeysApp {
                 // Apply the selected layout algorithm
                 self.org_graph.apply_layout(self.current_layout);
                 self.status_message = "Layout applied successfully".to_string();
+                Task::none()
+            }
+
+            // Policy visualization
+            Message::PolicyDataLoaded(result) => {
+                match result {
+                    Ok(data) => {
+                        let role_count = data.standard_roles.len();
+                        let assignment_count = data.role_assignments.len();
+                        let c_level_count = data.get_c_level_list().iter().filter(|(_, p)| p.is_some()).count();
+
+                        self.policy_data = Some(data);
+
+                        // Populate roles in the graph if show_role_nodes is true
+                        if self.show_role_nodes {
+                            self.populate_role_nodes();
+                        }
+
+                        // Populate the policy graph for the Policies view
+                        self.populate_policy_graph();
+
+                        self.status_message = format!(
+                            "Loaded policy: {} roles, {} assignments, {} C-Level executives",
+                            role_count, assignment_count, c_level_count
+                        );
+                    }
+                    Err(e) => {
+                        // Policy loading is optional, just log it
+                        tracing::warn!("Could not load policy bootstrap: {}", e);
+                    }
+                }
+                Task::none()
+            }
+
+            Message::ToggleRoleDisplay => {
+                self.show_role_nodes = !self.show_role_nodes;
+
+                if self.show_role_nodes {
+                    // Expand: create role nodes and edges
+                    self.populate_role_nodes();
+                    self.status_message = "Role nodes expanded".to_string();
+                } else {
+                    // Collapse: remove role nodes (keep badges on person nodes)
+                    self.remove_role_nodes();
+                    self.status_message = "Role nodes collapsed (showing badges)".to_string();
+                }
+
+                Task::none()
+            }
+
+            // Progressive disclosure handlers
+            Message::SetPolicyExpansionLevel(level) => {
+                self.policy_expansion_level = level;
+                self.populate_policy_graph();
+                self.status_message = format!("Policy view: {:?} level", level);
+                Task::none()
+            }
+
+            Message::ToggleSeparationClassExpansion(class) => {
+                if self.expanded_separation_classes.contains(&class) {
+                    self.expanded_separation_classes.remove(&class);
+                } else {
+                    self.expanded_separation_classes.insert(class);
+                }
+                self.populate_policy_graph();
+                Task::none()
+            }
+
+            Message::ToggleCategoryExpansion(category) => {
+                if self.expanded_categories.contains(&category) {
+                    self.expanded_categories.remove(&category);
+                } else {
+                    self.expanded_categories.insert(category.clone());
+                }
+                self.populate_policy_graph();
+                Task::none()
+            }
+
+            Message::RolePaletteMessage(palette_msg) => {
+                match palette_msg {
+                    role_palette::RolePaletteMessage::ToggleCategory(class) => {
+                        self.role_palette.toggle_category(class);
+                    }
+                    role_palette::RolePaletteMessage::StartDrag { role_name, separation_class } => {
+                        // Start drag operation on the graph
+                        let source = graph::DragSource::RoleFromPalette {
+                            role_name: role_name.clone(),
+                            separation_class,
+                        };
+                        self.org_graph.start_role_drag(source, Point::ORIGIN);
+                        self.status_message = format!("Dragging role: {}", role_name);
+                    }
+                    role_palette::RolePaletteMessage::CancelDrag => {
+                        self.org_graph.cancel_role_drag();
+                        self.status_message = "Drag cancelled".to_string();
+                    }
+                }
+                Task::none()
+            }
+
+            Message::ToggleRolePalette => {
+                self.role_palette.toggle_collapsed();
+                Task::none()
+            }
+
+            Message::RoleDragMove(position) => {
+                // Only process if a drag is in progress
+                if self.org_graph.dragging_role.is_some() {
+                    self.org_graph.update_role_drag(position);
+
+                    // Perform SoD validation if hovering over a person
+                    if let Some(ref mut drag) = self.org_graph.dragging_role {
+                        if let Some(person_id) = drag.hover_person {
+                            // Get the role being dragged
+                            let dragged_role_name = match &drag.source {
+                                graph::DragSource::RoleFromPalette { role_name, .. } => role_name.clone(),
+                                graph::DragSource::RoleFromPerson { role_name, .. } => role_name.clone(),
+                            };
+
+                            // Check for SoD conflicts
+                            drag.sod_conflicts.clear();
+                            if let Some(ref policy_data) = self.policy_data {
+                                // Get the person's current roles
+                                let current_roles = policy_data.get_roles_for_person(person_id);
+
+                                // Check each current role for incompatibility with the dragged role
+                                for current_role in current_roles {
+                                    if policy_data.are_roles_incompatible(&dragged_role_name, &current_role.name) {
+                                        // Find the separation rule for the reason
+                                        let reason = policy_data.separation_of_duties_rules.iter()
+                                            .find(|rule| {
+                                                (rule.role_a == dragged_role_name && rule.conflicts_with.contains(&current_role.name)) ||
+                                                (rule.role_a == current_role.name && rule.conflicts_with.contains(&dragged_role_name))
+                                            })
+                                            .and_then(|rule| rule.reason.clone())
+                                            .unwrap_or_else(|| "Separation of duties violation".to_string());
+
+                                        drag.sod_conflicts.push(graph::SoDConflict {
+                                            conflicting_role: current_role.name.clone(),
+                                            reason,
+                                        });
+                                    }
+                                }
+                            }
+                        } else {
+                            // Not hovering over anyone - clear conflicts
+                            drag.sod_conflicts.clear();
+                        }
+                    }
+                }
+                Task::none()
+            }
+
+            Message::RoleDragDrop => {
+                // Handle drop - assign role to person if hovering over one
+                if let Some(ref drag) = self.org_graph.dragging_role.clone() {
+                    if let Some(person_id) = drag.hover_person {
+                        if drag.sod_conflicts.is_empty() {
+                            // No conflicts - assign the role
+                            let role_name = match &drag.source {
+                                graph::DragSource::RoleFromPalette { role_name, .. } => role_name.clone(),
+                                graph::DragSource::RoleFromPerson { role_name, .. } => role_name.clone(),
+                            };
+
+                            // Find person name for status message
+                            let person_name = self.org_graph.nodes.get(&person_id)
+                                .map(|n| n.label.clone())
+                                .unwrap_or_else(|| "Unknown".to_string());
+
+                            // Get role details from policy data for badge
+                            let separation_class = match &drag.source {
+                                graph::DragSource::RoleFromPalette { separation_class, .. } => *separation_class,
+                                graph::DragSource::RoleFromPerson { separation_class, .. } => *separation_class,
+                            };
+
+                            let level = self.policy_data.as_ref()
+                                .and_then(|p| p.get_role_by_name(&role_name))
+                                .map(|r| r.level)
+                                .unwrap_or(0);
+
+                            // Add badge to person's role badges
+                            let badge = graph::RoleBadge {
+                                name: role_name.clone(),
+                                separation_class,
+                                level,
+                            };
+
+                            self.org_graph.role_badges
+                                .entry(person_id)
+                                .or_insert_with(|| graph::PersonRoleBadges::default())
+                                .badges.push(badge);
+
+                            self.status_message = format!("Assigned role '{}' to {}", role_name, person_name);
+                            tracing::info!("Role '{}' assigned to person {:?}", role_name, person_id);
+                        } else {
+                            // Has conflicts - show warning
+                            let conflict_names: Vec<_> = drag.sod_conflicts.iter()
+                                .map(|c| c.conflicting_role.as_str())
+                                .collect();
+                            self.status_message = format!(
+                                "Cannot assign: SoD conflict with {:?}",
+                                conflict_names
+                            );
+                        }
+                    }
+                }
+                self.org_graph.cancel_role_drag();
+                Task::none()
+            }
+
+            Message::RoleDragCancel => {
+                self.org_graph.cancel_role_drag();
+                self.status_message = "Drag cancelled".to_string();
                 Task::none()
             }
         }
@@ -4793,6 +5237,39 @@ impl CimKeysApp {
             // Update animation at 30 FPS instead of 60 to reduce resource usage
             time::every(Duration::from_millis(33)).map(|_| Message::AnimationTick),
 
+            // Graph layout animation subscriptions (only active when animating)
+            self.org_graph.subscription().map(Message::GraphMessage),
+            self.pki_graph.subscription().map(Message::GraphMessage),
+            self.nats_graph.subscription().map(Message::GraphMessage),
+            self.yubikey_graph.subscription().map(Message::GraphMessage),
+            self.location_graph.subscription().map(Message::GraphMessage),
+            self.policy_graph.subscription().map(Message::GraphMessage),
+
+            // Mouse movement tracking for role drag-and-drop
+            // Only process drag events when a drag is actually in progress
+            // This avoids flooding the message queue with mouse moves
+            if self.org_graph.dragging_role.is_some() {
+                event::listen_with(|event, _status, _window| {
+                    match event {
+                        iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
+                            Some(Message::RoleDragMove(position))
+                        }
+                        iced::Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left)) => {
+                            Some(Message::RoleDragDrop)
+                        }
+                        iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                            key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
+                            ..
+                        }) => {
+                            Some(Message::RoleDragCancel)
+                        }
+                        _ => None,
+                    }
+                })
+            } else {
+                Subscription::none()
+            },
+
             // Keyboard shortcuts for UI scaling
             event::listen_with(|event, _status, _window| {
                 match event {
@@ -4897,6 +5374,341 @@ impl CimKeysApp {
     /// Returns the Cowboy AI theme for the application
     fn theme(&self) -> Theme {
         CowboyCustomTheme::dark()
+    }
+
+    /// Returns a mutable reference to the currently active graph based on graph_view
+    fn active_graph_mut(&mut self) -> &mut graph::OrganizationGraph {
+        match self.graph_view {
+            GraphView::Organization => &mut self.org_graph,
+            GraphView::PkiTrustChain => &mut self.pki_graph,
+            GraphView::NatsInfrastructure => &mut self.nats_graph,
+            GraphView::YubiKeyDetails => &mut self.yubikey_graph,
+            GraphView::Policies => &mut self.policy_graph,
+            GraphView::Aggregates => &mut self.location_graph,  // Reuse location_graph for aggregates (placeholder)
+            GraphView::CommandHistory | GraphView::CausalityChains => &mut self.empty_graph,
+        }
+    }
+
+    /// Populate role nodes and edges from policy data
+    fn populate_role_nodes(&mut self) {
+        if let Some(ref policy_data) = self.policy_data {
+            // Track role nodes that we add
+            let mut role_node_ids: std::collections::HashMap<String, Uuid> = std::collections::HashMap::new();
+
+            // Add role nodes for each assigned role (only roles that are actually assigned)
+            for role_name in policy_data.get_assigned_role_names() {
+                if let Some(role_entry) = policy_data.get_role_by_name(role_name) {
+                    let role_id = Uuid::now_v7();
+                    role_node_ids.insert(role_name.to_string(), role_id);
+
+                    // Add role node to the org graph
+                    self.org_graph.add_role_node(
+                        role_id,
+                        role_entry.name.clone(),
+                        role_entry.purpose.clone(),
+                        role_entry.level,
+                        role_entry.separation_class_enum(),
+                        role_entry.claims.len(),
+                    );
+                }
+            }
+
+            // Add HasRole edges from people to their roles
+            for assignment in &policy_data.role_assignments {
+                for role_name in &assignment.roles {
+                    if let Some(&role_id) = role_node_ids.get(role_name) {
+                        self.org_graph.add_edge(
+                            assignment.person_id,
+                            role_id,
+                            crate::gui::graph::EdgeType::HasRole {
+                                valid_from: assignment.valid_from.unwrap_or_else(chrono::Utc::now),
+                                valid_until: assignment.valid_until,
+                            },
+                        );
+                    }
+                }
+            }
+
+            // Also add edges for roles defined in people entries
+            for person in &policy_data.people {
+                for role_name in &person.assigned_roles {
+                    if let Some(&role_id) = role_node_ids.get(role_name) {
+                        self.org_graph.add_edge(
+                            person.id,
+                            role_id,
+                            crate::gui::graph::EdgeType::HasRole {
+                                valid_from: chrono::Utc::now(),
+                                valid_until: None,
+                            },
+                        );
+                    }
+                }
+            }
+
+            // Add IncompatibleWith edges between roles (separation of duties)
+            for rule in &policy_data.separation_of_duties_rules {
+                if let Some(&role_a_id) = role_node_ids.get(&rule.role_a) {
+                    for conflicting_role in &rule.conflicts_with {
+                        if let Some(&role_b_id) = role_node_ids.get(conflicting_role) {
+                            self.org_graph.add_edge(
+                                role_a_id,
+                                role_b_id,
+                                crate::gui::graph::EdgeType::IncompatibleWith,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Remove role nodes from the graph (collapse to badges)
+    fn remove_role_nodes(&mut self) {
+        // Remove all PolicyRole nodes and their edges
+        self.org_graph.nodes.retain(|_, node| {
+            !matches!(node.node_type, crate::gui::graph::NodeType::PolicyRole { .. })
+        });
+
+        // Remove edges that connect to role nodes (HasRole, IncompatibleWith)
+        self.org_graph.edges.retain(|edge| {
+            !matches!(edge.edge_type, crate::gui::graph::EdgeType::HasRole { .. })
+                && !matches!(edge.edge_type, crate::gui::graph::EdgeType::IncompatibleWith)
+        });
+
+        // Populate role badges for compact mode display
+        self.populate_role_badges();
+    }
+
+    /// Populate role badges on person nodes for compact display mode
+    fn populate_role_badges(&mut self) {
+        if let Some(ref policy_data) = self.policy_data {
+            // Build role badges for each person
+            for (person_id, roles) in policy_data.get_all_person_roles() {
+                let badges: Vec<crate::gui::graph::RoleBadge> = roles
+                    .iter()
+                    .take(3) // Max 3 badges visible
+                    .map(|role| crate::gui::graph::RoleBadge {
+                        name: role.name.clone(),
+                        separation_class: role.separation_class_enum(),
+                        level: role.level,
+                    })
+                    .collect();
+                let has_more = roles.len() > 3;
+                self.org_graph.set_person_role_badges(person_id, badges, has_more);
+            }
+        }
+    }
+
+    /// Get roles for a person from policy data
+    pub fn get_person_roles(&self, person_id: Uuid) -> Vec<&crate::policy_loader::StandardRoleEntry> {
+        if let Some(ref policy_data) = self.policy_data {
+            policy_data.get_roles_for_person(person_id)
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Populate the policy graph with progressive disclosure
+    /// - Classes level: Show only 6 SeparationClassGroup nodes
+    /// - Roles level: Show roles in expanded classes, or all if level is Roles
+    /// - Claims level: Show roles + claims for expanded categories
+    fn populate_policy_graph(&mut self) {
+        // Clear existing policy graph
+        self.policy_graph.nodes.clear();
+        self.policy_graph.edges.clear();
+
+        if let Some(ref policy_data) = self.policy_data {
+            let class_order = [
+                crate::policy::SeparationClass::Operational,
+                crate::policy::SeparationClass::Administrative,
+                crate::policy::SeparationClass::Financial,
+                crate::policy::SeparationClass::Audit,
+                crate::policy::SeparationClass::Personnel,
+                crate::policy::SeparationClass::Emergency,
+            ];
+
+            // Group roles by separation class
+            let mut roles_by_class: std::collections::HashMap<crate::policy::SeparationClass, Vec<&crate::policy_loader::StandardRoleEntry>> = std::collections::HashMap::new();
+            for role in &policy_data.standard_roles {
+                let class = role.separation_class_enum();
+                roles_by_class.entry(class).or_default().push(role);
+            }
+
+            let base_x = 100.0;
+            let base_y = 100.0;
+            let class_spacing_x = 300.0;
+            let role_spacing_y = 80.0;
+
+            let mut class_node_ids: std::collections::HashMap<crate::policy::SeparationClass, Uuid> = std::collections::HashMap::new();
+            let mut role_node_ids: std::collections::HashMap<String, Uuid> = std::collections::HashMap::new();
+            let mut category_node_ids: std::collections::HashMap<String, Uuid> = std::collections::HashMap::new();
+            let mut claim_node_ids: std::collections::HashMap<String, Uuid> = std::collections::HashMap::new();
+
+            // Always show separation class groups at the top level
+            for (class_idx, class) in class_order.iter().enumerate() {
+                let role_count = roles_by_class.get(class).map(|r| r.len()).unwrap_or(0);
+                let class_id = Uuid::now_v7();
+                class_node_ids.insert(*class, class_id);
+                let is_expanded = self.expanded_separation_classes.contains(class)
+                    || matches!(self.policy_expansion_level, PolicyExpansionLevel::Roles | PolicyExpansionLevel::Claims);
+
+                let class_name = match class {
+                    crate::policy::SeparationClass::Operational => "Operational",
+                    crate::policy::SeparationClass::Administrative => "Administrative",
+                    crate::policy::SeparationClass::Financial => "Financial",
+                    crate::policy::SeparationClass::Audit => "Audit",
+                    crate::policy::SeparationClass::Personnel => "Personnel",
+                    crate::policy::SeparationClass::Emergency => "Emergency",
+                };
+
+                // Add separation class group node
+                self.policy_graph.add_separation_class_node(
+                    class_id,
+                    class_name.to_string(),
+                    *class,
+                    role_count,
+                    is_expanded,
+                );
+
+                // Position at top
+                let x = base_x + (class_idx as f32) * class_spacing_x;
+                if let Some(node) = self.policy_graph.nodes.get_mut(&class_id) {
+                    node.position = Point::new(x, base_y);
+                }
+
+                // If expanded, show roles in this class
+                if is_expanded {
+                    if let Some(roles) = roles_by_class.get(class) {
+                        let mut sorted_roles = roles.clone();
+                        sorted_roles.sort_by(|a, b| b.level.cmp(&a.level).then(a.name.cmp(&b.name)));
+
+                        for (role_idx, role) in sorted_roles.iter().enumerate() {
+                            let role_id = Uuid::now_v7();
+                            role_node_ids.insert(role.name.clone(), role_id);
+
+                            let x = base_x + (class_idx as f32) * class_spacing_x;
+                            let y = base_y + 100.0 + (role_idx as f32) * role_spacing_y;
+
+                            self.policy_graph.add_role_node(
+                                role_id,
+                                role.name.clone(),
+                                role.purpose.clone(),
+                                role.level,
+                                role.separation_class_enum(),
+                                role.claims.len(),
+                            );
+
+                            if let Some(node) = self.policy_graph.nodes.get_mut(&role_id) {
+                                node.position = Point::new(x, y);
+                            }
+
+                            // Add edge from class to role
+                            self.policy_graph.add_edge(
+                                class_id,
+                                role_id,
+                                crate::gui::graph::EdgeType::ClassContainsRole,
+                            );
+                        }
+                    }
+                }
+            }
+
+            // Add IncompatibleWith edges between roles (only if roles are visible)
+            if matches!(self.policy_expansion_level, PolicyExpansionLevel::Roles | PolicyExpansionLevel::Claims)
+                || !self.expanded_separation_classes.is_empty()
+            {
+                for rule in &policy_data.separation_of_duties_rules {
+                    if let Some(&role_a_id) = role_node_ids.get(&rule.role_a) {
+                        for conflicting_role in &rule.conflicts_with {
+                            if let Some(&role_b_id) = role_node_ids.get(conflicting_role) {
+                                self.policy_graph.add_edge(
+                                    role_a_id,
+                                    role_b_id,
+                                    crate::gui::graph::EdgeType::IncompatibleWith,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            // At Claims level, show category nodes and their claims
+            if matches!(self.policy_expansion_level, PolicyExpansionLevel::Claims) {
+                let claim_base_y = base_y + 600.0;
+                let category_spacing_x = 200.0;
+                let claim_spacing_y = 40.0;
+
+                for (cat_idx, (category, claims)) in policy_data.claim_categories.iter().enumerate() {
+                    let category_id = Uuid::now_v7();
+                    category_node_ids.insert(category.clone(), category_id);
+                    let is_cat_expanded = self.expanded_categories.contains(category);
+
+                    // Add category node
+                    self.policy_graph.add_category_node(
+                        category_id,
+                        category.clone(),
+                        claims.len(),
+                        is_cat_expanded,
+                    );
+
+                    let x = base_x + (cat_idx as f32) * category_spacing_x;
+                    if let Some(node) = self.policy_graph.nodes.get_mut(&category_id) {
+                        node.position = Point::new(x, claim_base_y);
+                    }
+
+                    // If category is expanded, show individual claims
+                    if is_cat_expanded {
+                        for (claim_idx, claim_name) in claims.iter().enumerate() {
+                            let claim_id = Uuid::now_v7();
+                            claim_node_ids.insert(claim_name.clone(), claim_id);
+
+                            let y = claim_base_y + 60.0 + (claim_idx as f32) * claim_spacing_y;
+
+                            self.policy_graph.add_claim_node(
+                                claim_id,
+                                claim_name.clone(),
+                                category.clone(),
+                            );
+
+                            if let Some(node) = self.policy_graph.nodes.get_mut(&claim_id) {
+                                node.position = Point::new(x, y);
+                            }
+
+                            // Add edge from category to claim
+                            self.policy_graph.add_edge(
+                                category_id,
+                                claim_id,
+                                crate::gui::graph::EdgeType::CategoryContainsClaim,
+                            );
+                        }
+                    }
+                }
+
+                // Add RoleContainsClaim edges for expanded claims
+                for role in &policy_data.standard_roles {
+                    if let Some(&role_id) = role_node_ids.get(&role.name) {
+                        for claim_name in &role.claims {
+                            if let Some(&claim_id) = claim_node_ids.get(claim_name) {
+                                self.policy_graph.add_edge(
+                                    role_id,
+                                    claim_id,
+                                    crate::gui::graph::EdgeType::RoleContainsClaim,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            let node_count = self.policy_graph.nodes.len();
+            let edge_count = self.policy_graph.edges.len();
+            tracing::info!(
+                "Policy graph populated with {} nodes and {} edges (level: {:?})",
+                node_count,
+                edge_count,
+                self.policy_expansion_level
+            );
+        }
     }
 
     fn tab_button_style(&self, _theme: &Theme, is_active: bool) -> button::Style {
@@ -5022,14 +5834,14 @@ impl CimKeysApp {
                         .padding(8)
                         .style(CowboyCustomTheme::glass_menu_button(self.graph_view == GraphView::NatsInfrastructure)),
 
-                    // Location context - mapping locations to organizations and people
-                    button(text("📍").font(EMOJI_FONT).size(16))
-                        .on_press(Message::GraphViewSelected(GraphView::Timeline))
-                        .padding(8)
-                        .style(CowboyCustomTheme::glass_menu_button(self.graph_view == GraphView::Timeline)),
-
-                    // Organization Policies context - composing policy use within organization
+                    // Policies context - roles, claims, separation of duties
                     button(text("📜").font(EMOJI_FONT).size(16))
+                        .on_press(Message::GraphViewSelected(GraphView::Policies))
+                        .padding(8)
+                        .style(CowboyCustomTheme::glass_menu_button(self.graph_view == GraphView::Policies)),
+
+                    // Aggregates context - domain aggregate state machines (placeholder)
+                    button(text("⚙️").font(EMOJI_FONT).size(16))
                         .on_press(Message::GraphViewSelected(GraphView::Aggregates))
                         .padding(8)
                         .style(CowboyCustomTheme::glass_menu_button(self.graph_view == GraphView::Aggregates)),
@@ -5055,7 +5867,7 @@ impl CimKeysApp {
                         GraphView::NatsInfrastructure => vec!["Account", "User", "Service"],
                         GraphView::PkiTrustChain => vec!["Root CA", "Inter CA", "Leaf Cert", "CSR"],
                         GraphView::YubiKeyDetails => vec!["YubiKey", "PIV Slot"],
-                        GraphView::Timeline => vec![], // Timeline is read-only (events from event store)
+                        GraphView::Policies => vec!["Role", "Claim", "SoD Rule"], // Compose policies from claims, define separation rules
                         GraphView::Aggregates => vec![], // Aggregates are read-only (state machines)
                         GraphView::CommandHistory => vec![], // Command history is read-only
                         GraphView::CausalityChains => vec![], // Causality is read-only (derived from events)
@@ -5079,6 +5891,44 @@ impl CimKeysApp {
                 button(text("↻").size(14))
                     .on_press(Message::GraphMessage(graph::GraphMessage::ResetView))
                     .style(CowboyCustomTheme::glass_button()),
+                // Role display toggle button
+                button(text(if self.show_role_nodes { "📋" } else { "👤" }).font(EMOJI_FONT).size(14))
+                    .on_press(Message::ToggleRoleDisplay)
+                    .padding(6)
+                    .style(CowboyCustomTheme::glass_menu_button(self.show_role_nodes)),
+                // Progressive disclosure level buttons (only visible in Policies view)
+                {
+                    let disclosure_buttons: Element<'_, Message> = if matches!(self.graph_view, GraphView::Policies) {
+                        row![
+                            // Classes level (collapsed, 6 nodes)
+                            button(text("📁").font(EMOJI_FONT).size(14))
+                                .on_press(Message::SetPolicyExpansionLevel(PolicyExpansionLevel::Classes))
+                                .padding(6)
+                                .style(CowboyCustomTheme::glass_menu_button(
+                                    matches!(self.policy_expansion_level, PolicyExpansionLevel::Classes)
+                                )),
+                            // Roles level (26+ nodes)
+                            button(text("📋").font(EMOJI_FONT).size(14))
+                                .on_press(Message::SetPolicyExpansionLevel(PolicyExpansionLevel::Roles))
+                                .padding(6)
+                                .style(CowboyCustomTheme::glass_menu_button(
+                                    matches!(self.policy_expansion_level, PolicyExpansionLevel::Roles)
+                                )),
+                            // Claims level (full disclosure, 294+ nodes)
+                            button(text("📑").font(EMOJI_FONT).size(14))
+                                .on_press(Message::SetPolicyExpansionLevel(PolicyExpansionLevel::Claims))
+                                .padding(6)
+                                .style(CowboyCustomTheme::glass_menu_button(
+                                    matches!(self.policy_expansion_level, PolicyExpansionLevel::Claims)
+                                )),
+                        ]
+                        .spacing(2)
+                        .into()
+                    } else {
+                        Space::with_width(0).into()
+                    };
+                    disclosure_buttons
+                },
             ]
             .spacing(self.view_model.spacing_sm)
             .align_y(Alignment::Center)
@@ -5110,13 +5960,13 @@ impl CimKeysApp {
                     // Show only YubiKey hardware and keys
                     view_graph(&self.yubikey_graph)
                 }
-                GraphView::Timeline => {
-                    // Show only locations (temporal/spatial context)
-                    view_graph(&self.location_graph)
+                GraphView::Policies => {
+                    // Show policy roles, claims, and SoD relationships
+                    view_graph(&self.policy_graph)
                 }
                 GraphView::Aggregates => {
-                    // Show only policies
-                    view_graph(&self.policy_graph)
+                    // Show aggregate state machines (placeholder)
+                    view_graph(&self.location_graph)
                 }
                 GraphView::CommandHistory | GraphView::CausalityChains => {
                     // Empty graph for read-only derived views
@@ -5234,13 +6084,31 @@ impl CimKeysApp {
         };
 
         // Simple two-row layout: tiny toolbar + massive graph
+        // Role palette visible in views where policies apply (Organization for assignment, Policies for composition)
+        let show_role_palette = matches!(self.graph_view, GraphView::Organization | GraphView::Policies)
+            && self.policy_data.is_some();
+
+        let graph_row: Element<'_, Message> = if show_role_palette {
+            // Show role palette on the left side
+            row![
+                self.role_palette.view(self.policy_data.as_ref())
+                    .map(Message::RolePaletteMessage),
+                graph_canvas,
+            ]
+            .spacing(4)
+            .height(Length::Fill)
+            .into()
+        } else {
+            // Other views: just the graph canvas
+            graph_canvas.into()
+        };
+
         let content = column![
             toolbar,
-            graph_canvas,
+            graph_row,
         ]
         .spacing(0)
         .height(Length::Fill);
-
 
         container(content)
             .width(Length::Fill)
@@ -6252,10 +7120,320 @@ impl CimKeysApp {
         scrollable(content).into()
     }
 
+    /// Compute export readiness status from current app state
+    fn compute_export_readiness(&self) -> ExportReadiness {
+        let mut readiness = ExportReadiness::default();
+
+        // Check organization
+        readiness.has_organization = self.domain_loaded && !self.organization_name.is_empty();
+        if !readiness.has_organization {
+            readiness.missing_items.push(ExportMissingItem {
+                category: "Organization",
+                description: "No organization defined".to_string(),
+                severity: MissingSeverity::Required,
+                action: Some("Load domain or create new organization".to_string()),
+            });
+        }
+
+        // Check people
+        let people_count = self.loaded_people.len();
+        readiness.has_people = people_count > 0;
+        if !readiness.has_people {
+            readiness.missing_items.push(ExportMissingItem {
+                category: "People",
+                description: "No people defined in domain".to_string(),
+                severity: MissingSeverity::Required,
+                action: Some("Add people via Organization graph".to_string()),
+            });
+        }
+
+        // Check certificates - use is_ca and issuer to determine certificate type
+        // Root CA: is_ca=true and no issuer (self-signed)
+        // Intermediate CA: is_ca=true and has issuer (signed by root)
+        // Leaf: is_ca=false
+        let root_ca_count = self.loaded_certificates.iter()
+            .filter(|c| c.is_ca && c.issuer.is_none())
+            .count();
+        let intermediate_count = self.loaded_certificates.iter()
+            .filter(|c| c.is_ca && c.issuer.is_some())
+            .count();
+        let leaf_count = self.loaded_certificates.iter()
+            .filter(|c| !c.is_ca)
+            .count();
+
+        readiness.root_ca_count = root_ca_count;
+        readiness.intermediate_ca_count = intermediate_count;
+        readiness.leaf_cert_count = leaf_count;
+        readiness.has_root_ca = root_ca_count > 0;
+
+        if !readiness.has_root_ca {
+            readiness.missing_items.push(ExportMissingItem {
+                category: "PKI",
+                description: "No Root CA certificate generated".to_string(),
+                severity: MissingSeverity::Required,
+                action: Some("Generate Root CA in Keys tab".to_string()),
+            });
+        }
+
+        if intermediate_count == 0 && readiness.has_root_ca {
+            readiness.missing_items.push(ExportMissingItem {
+                category: "PKI",
+                description: "No Intermediate CA certificates".to_string(),
+                severity: MissingSeverity::Recommended,
+                action: Some("Generate Intermediate CAs for departments".to_string()),
+            });
+        }
+
+        // Check keys
+        readiness.key_count = self.loaded_keys.len();
+        if readiness.key_count == 0 && readiness.has_people {
+            readiness.missing_items.push(ExportMissingItem {
+                category: "Keys",
+                description: "No cryptographic keys generated".to_string(),
+                severity: MissingSeverity::Recommended,
+                action: Some("Generate keys for people".to_string()),
+            });
+        }
+
+        // Check locations
+        readiness.has_locations = !self.loaded_locations.is_empty();
+        if !readiness.has_locations {
+            readiness.missing_items.push(ExportMissingItem {
+                category: "Locations",
+                description: "No storage locations defined".to_string(),
+                severity: MissingSeverity::Recommended,
+                action: Some("Add locations for key storage".to_string()),
+            });
+        }
+
+        // Check NATS infrastructure
+        readiness.has_nats_operator = self.nats_operator_id.is_some() || self.nats_hierarchy_generated;
+        if self.include_nats_config && !readiness.has_nats_operator {
+            readiness.missing_items.push(ExportMissingItem {
+                category: "NATS",
+                description: "NATS hierarchy not generated".to_string(),
+                severity: MissingSeverity::Recommended,
+                action: Some("Generate NATS hierarchy in Identity tab".to_string()),
+            });
+        }
+
+        // Count NATS entities from graph
+        for node in self.org_graph.nodes.values() {
+            match &node.node_type {
+                graph::NodeType::NatsAccount(_) | graph::NodeType::NatsAccountSimple { .. } => {
+                    readiness.nats_account_count += 1;
+                }
+                graph::NodeType::NatsUser(_) | graph::NodeType::NatsUserSimple { .. } => {
+                    readiness.nats_user_count += 1;
+                }
+                _ => {}
+            }
+        }
+
+        // Check policy data
+        readiness.has_policy_data = self.policy_data.is_some();
+        if let Some(ref policy) = self.policy_data {
+            readiness.role_assignment_count = policy.role_assignments.len();
+            // Count unique people with role assignments
+            let people_with_roles: std::collections::HashSet<_> = policy.role_assignments.iter()
+                .map(|a| a.person_id)
+                .collect();
+            readiness.people_with_roles = people_with_roles.len();
+
+            if readiness.role_assignment_count == 0 && readiness.has_people {
+                readiness.missing_items.push(ExportMissingItem {
+                    category: "Policy",
+                    description: "No role assignments defined".to_string(),
+                    severity: MissingSeverity::Optional,
+                    action: Some("Assign roles to people via drag-drop".to_string()),
+                });
+            }
+        } else if readiness.has_people {
+            readiness.missing_items.push(ExportMissingItem {
+                category: "Policy",
+                description: "Policy bootstrap not loaded".to_string(),
+                severity: MissingSeverity::Optional,
+                action: Some("Load policy-bootstrap.json".to_string()),
+            });
+        }
+
+        // Check YubiKeys - consider provisioned if PIN has been changed from default
+        readiness.yubikey_count = self.yubikey_configs.len();
+        readiness.provisioned_yubikeys = self.yubikey_configs.iter()
+            .filter(|yk| yk.piv.pin != yk.piv.default_pin)
+            .count();
+
+        if readiness.yubikey_count > 0 && readiness.provisioned_yubikeys == 0 {
+            readiness.missing_items.push(ExportMissingItem {
+                category: "YubiKey",
+                description: format!("{} YubiKeys configured but none provisioned", readiness.yubikey_count),
+                severity: MissingSeverity::Optional,
+                action: Some("Provision YubiKeys with keys".to_string()),
+            });
+        }
+
+        // Add warnings for optional but recommended items
+        if people_count > 0 && readiness.key_count < people_count {
+            readiness.warnings.push(format!(
+                "Only {} keys for {} people - some people have no keys",
+                readiness.key_count, people_count
+            ));
+        }
+
+        if self.include_private_keys && self.export_password.is_empty() {
+            readiness.warnings.push("Private key export selected but no password set".to_string());
+        }
+
+        readiness
+    }
+
     fn view_export(&self) -> Element<'_, Message> {
+        // Compute readiness status
+        let readiness = self.compute_export_readiness();
+        let is_ready = readiness.is_ready();
+        let percentage = readiness.readiness_percentage();
+
+        // Build status content separately to avoid opaque type conflicts
+        let status_content = column![
+            row![
+                text(if is_ready { "✅" } else { "⚠️" }).font(EMOJI_FONT).size(20),
+                text(format!("Export Readiness: {}%", percentage))
+                    .size(self.view_model.text_large)
+                    .color(if is_ready {
+                        Color::from_rgb(0.2, 0.8, 0.2)
+                    } else {
+                        Color::from_rgb(0.9, 0.7, 0.2)
+                    }),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center),
+
+            // Progress bar
+            progress_bar(0.0..=100.0, percentage as f32)
+                .height(8)
+                .style(move |_theme| progress_bar::Style {
+                    background: Background::Color(Color::from_rgba(0.2, 0.2, 0.3, 0.8)),
+                    bar: Background::Color(if is_ready {
+                        Color::from_rgb(0.2, 0.8, 0.2)
+                    } else {
+                        Color::from_rgb(0.9, 0.7, 0.2)
+                    }),
+                    border: Border::default(),
+                }),
+
+            // Summary stats
+            row![
+                text(format!("📜 {} certs", readiness.root_ca_count + readiness.intermediate_ca_count + readiness.leaf_cert_count))
+                    .size(self.view_model.text_small),
+                text(format!("🔑 {} keys", readiness.key_count))
+                    .size(self.view_model.text_small),
+                text(format!("👥 {} people", self.loaded_people.len()))
+                    .size(self.view_model.text_small),
+                if readiness.has_nats_operator {
+                    text(format!("🌐 NATS: {} accounts", readiness.nats_account_count))
+                        .size(self.view_model.text_small)
+                } else {
+                    text("🌐 NATS: none")
+                        .size(self.view_model.text_small)
+                        .color(self.view_model.colors.text_tertiary)
+                },
+            ]
+            .spacing(16),
+        ]
+        .spacing(8);
+
+        // Readiness status card - use conditional rendering to avoid opaque type conflict
+        let readiness_card: Element<'_, Message> = if is_ready {
+            container(status_content)
+                .padding(self.view_model.padding_lg)
+                .style(CowboyCustomTheme::pastel_mint_card())
+                .into()
+        } else {
+            container(status_content)
+                .padding(self.view_model.padding_lg)
+                .style(CowboyCustomTheme::pastel_coral_card())
+                .into()
+        };
+
         let content = column![
             text("Export Domain Configuration").size(self.view_model.text_xlarge),
             text("Export your domain configuration to encrypted storage").size(self.view_model.text_normal),
+
+            readiness_card,
+
+            // Missing items list (if any)
+            if !readiness.missing_items.is_empty() {
+                container(
+                    column![
+                        text(format!("Missing Items ({})", readiness.missing_items.len()))
+                            .size(self.view_model.text_medium)
+                            .color(CowboyTheme::text_primary()),
+                        {
+                            let mut missing_column = column![].spacing(6);
+                            for item in &readiness.missing_items {
+                                let (icon, color) = match item.severity {
+                                    MissingSeverity::Required => ("🔴", Color::from_rgb(0.9, 0.3, 0.3)),
+                                    MissingSeverity::Recommended => ("🟡", Color::from_rgb(0.9, 0.7, 0.2)),
+                                    MissingSeverity::Optional => ("🔵", Color::from_rgb(0.4, 0.6, 0.9)),
+                                };
+                                let mut item_row = row![
+                                    text(icon).font(EMOJI_FONT).size(14),
+                                    text(format!("[{}] {}", item.category, item.description))
+                                        .size(self.view_model.text_small)
+                                        .color(color),
+                                ]
+                                .spacing(8)
+                                .align_y(Alignment::Center);
+
+                                if let Some(ref action) = item.action {
+                                    item_row = item_row.push(
+                                        text(format!("→ {}", action))
+                                            .size(self.view_model.text_tiny)
+                                            .color(self.view_model.colors.text_tertiary)
+                                    );
+                                }
+                                missing_column = missing_column.push(item_row);
+                            }
+                            missing_column
+                        }
+                    ]
+                    .spacing(self.view_model.spacing_md)
+                )
+                .padding(self.view_model.padding_lg)
+                .style(CowboyCustomTheme::pastel_cream_card())
+            } else {
+                container(
+                    text("All requirements met - ready for export!")
+                        .size(self.view_model.text_normal)
+                        .color(Color::from_rgb(0.2, 0.8, 0.2))
+                )
+                .padding(self.view_model.padding_md)
+            },
+
+            // Warnings (if any)
+            if !readiness.warnings.is_empty() {
+                container(
+                    column![
+                        text("⚠️ Warnings").size(self.view_model.text_medium),
+                        {
+                            let mut warn_column = column![].spacing(4);
+                            for warning in &readiness.warnings {
+                                warn_column = warn_column.push(
+                                    text(format!("• {}", warning))
+                                        .size(self.view_model.text_small)
+                                        .color(Color::from_rgb(0.9, 0.7, 0.2))
+                                );
+                            }
+                            warn_column
+                        }
+                    ]
+                    .spacing(self.view_model.spacing_sm)
+                )
+                .padding(self.view_model.padding_md)
+                .style(CowboyCustomTheme::pastel_cream_card())
+            } else {
+                container(Space::with_height(0))
+            },
 
             container(
                 column![
@@ -6722,7 +7900,9 @@ async fn export_domain(
 }
 
 /// Run the GUI application
-pub async fn run(output_dir: String, config: Option<crate::config::Config>) -> iced::Result {
+/// Note: This is synchronous because iced's run_with() blocks until window closes
+/// and manages its own async runtime internally
+pub fn run(output_dir: String, config: Option<crate::config::Config>) -> iced::Result {
     // Load all 4 custom fonts:
     // 1. Rec Mono Linear - body text (monospace)
     // 2. Poller One - headings (display)

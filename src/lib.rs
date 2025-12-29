@@ -106,6 +106,9 @@ pub mod secrets_loader;
 // CLAN bootstrap loader for clan-bootstrap.json configuration
 pub mod clan_bootstrap;
 
+// Policy bootstrap loader for policy-bootstrap.json configuration
+pub mod policy_loader;
+
 // Certificate generation service
 pub mod certificate_service;
 
