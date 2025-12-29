@@ -251,23 +251,19 @@ fn create_root_ca_node(cert_id: Uuid, org: &Organization) -> Result<ConceptEntit
     let subject = format!("CN={} Root CA, O={}", org.name, org.name);
     let issuer = subject.clone(); // Self-signed
 
-    Ok(ConceptEntity {
-        id: cert_id,
-        node_type: NodeType::RootCertificate {
-            cert_id,
-            subject,
-            issuer,
-            not_before: now,
-            not_after: valid_until,
-            key_usage: vec![
-                "Certificate Sign".to_string(),
-                "CRL Sign".to_string(),
-            ],
-        },
-        position: Point::new(400.0, 100.0), // Top center
-        color: Color::from_rgb(0.8, 0.2, 0.2), // Red for root CA
-        label: format!("{} Root CA", org.name),
-    })
+    let node_type = NodeType::RootCertificate {
+        cert_id,
+        subject,
+        issuer,
+        not_before: now,
+        not_after: valid_until,
+        key_usage: vec![
+            "Certificate Sign".to_string(),
+            "CRL Sign".to_string(),
+        ],
+    };
+    let position = Point::new(400.0, 100.0); // Top center
+    Ok(ConceptEntity::from_node_type(cert_id, node_type, position))
 }
 
 /// Create Intermediate CA certificate node from OrganizationalUnit
@@ -282,23 +278,19 @@ fn create_intermediate_ca_node(
     let subject = format!("CN={} CA, OU={}", unit.name, unit.name);
     let issuer = format!("Parent CA {}", parent_cert_id); // Simplified
 
-    Ok(ConceptEntity {
-        id: cert_id,
-        node_type: NodeType::IntermediateCertificate {
-            cert_id,
-            subject,
-            issuer,
-            not_before: now,
-            not_after: valid_until,
-            key_usage: vec![
-                "Certificate Sign".to_string(),
-                "CRL Sign".to_string(),
-            ],
-        },
-        position: Point::new(400.0, 250.0), // Middle
-        color: Color::from_rgb(0.9, 0.6, 0.2), // Orange for intermediate CA
-        label: format!("{} CA", unit.name),
-    })
+    let node_type = NodeType::IntermediateCertificate {
+        cert_id,
+        subject,
+        issuer,
+        not_before: now,
+        not_after: valid_until,
+        key_usage: vec![
+            "Certificate Sign".to_string(),
+            "CRL Sign".to_string(),
+        ],
+    };
+    let position = Point::new(400.0, 250.0); // Middle
+    Ok(ConceptEntity::from_node_type(cert_id, node_type, position))
 }
 
 /// Create Leaf certificate node from Person
@@ -324,21 +316,17 @@ fn create_leaf_certificate_node(
         KeyOwnerRole::Auditor => vec!["Digital Signature".to_string()],
     };
 
-    Ok(ConceptEntity {
-        id: cert_id,
-        node_type: NodeType::LeafCertificate {
-            cert_id,
-            subject,
-            issuer,
-            not_before: now,
-            not_after: valid_until,
-            key_usage,
-            san: vec![person.email.clone()], // Subject Alternative Name
-        },
-        position: Point::new(400.0, 400.0), // Bottom
-        color: Color::from_rgb(0.2, 0.8, 0.2), // Green for leaf certificate
-        label: format!("{} (Cert)", person.name),
-    })
+    let node_type = NodeType::LeafCertificate {
+        cert_id,
+        subject,
+        issuer,
+        not_before: now,
+        not_after: valid_until,
+        key_usage,
+        san: vec![person.email.clone()], // Subject Alternative Name
+    };
+    let position = Point::new(400.0, 400.0); // Bottom
+    Ok(ConceptEntity::from_node_type(cert_id, node_type, position))
 }
 
 /// Add PKI nodes and edges to the organizational graph

@@ -2246,20 +2246,18 @@ impl CimKeysApp {
                         // Create Root CA node in graph
                         let cert_id = Uuid::now_v7();
                         let subject = format!("CN={} Root CA, O={}", self.organization_name, self.organization_name);
-                        let root_ca_node = graph::ConceptEntity {
-                            id: cert_id,
-                            node_type: graph::NodeType::RootCertificate {
-                                cert_id,
-                                subject: subject.clone(),
-                                issuer: subject.clone(), // Self-signed
-                                not_before: chrono::Utc::now(),
-                                not_after: chrono::Utc::now() + chrono::Duration::days(365 * 20), // 20 years
-                                key_usage: vec!["keyCertSign".to_string(), "cRLSign".to_string()],
-                            },
-                            position: iced::Point::new(400.0, 100.0), // Center top of graph
-                            color: iced::Color::from_rgb(0.2, 0.8, 0.2), // Green for Root CA
-                            label: format!("{} Root CA", self.organization_name),
+                        let node_type = graph::NodeType::RootCertificate {
+                            cert_id,
+                            subject: subject.clone(),
+                            issuer: subject.clone(), // Self-signed
+                            not_before: chrono::Utc::now(),
+                            not_after: chrono::Utc::now() + chrono::Duration::days(365 * 20), // 20 years
+                            key_usage: vec!["keyCertSign".to_string(), "cRLSign".to_string()],
                         };
+                        let position = iced::Point::new(400.0, 100.0); // Center top of graph
+                        let mut root_ca_node = graph::ConceptEntity::from_node_type(cert_id, node_type, position);
+                        root_ca_node.color = iced::Color::from_rgb(0.2, 0.8, 0.2); // Green for Root CA
+                        root_ca_node.label = format!("{} Root CA", self.organization_name);
 
                         // Add to graph
                         self.org_graph.nodes.insert(cert_id, root_ca_node);
@@ -2289,21 +2287,19 @@ impl CimKeysApp {
                         // Create Leaf Certificate node in graph
                         let cert_id = Uuid::now_v7();
                         let subject = certificate.certificate_pem.lines().nth(0).unwrap_or("Personal Cert").to_string();
-                        let leaf_cert_node = graph::ConceptEntity {
-                            id: cert_id,
-                            node_type: graph::NodeType::LeafCertificate {
-                                cert_id,
-                                subject,
-                                issuer: "Self-Signed (Temporary)".to_string(),
-                                not_before: chrono::Utc::now(),
-                                not_after: chrono::Utc::now() + chrono::Duration::days(365),
-                                key_usage: vec!["digitalSignature".to_string(), "keyEncipherment".to_string()],
-                                san: vec![],
-                            },
-                            position: iced::Point::new(400.0, 300.0), // Below Root CA
-                            color: iced::Color::from_rgb(0.4, 0.6, 0.8), // Blue for Leaf
-                            label: "Personal Certificate".to_string(),
+                        let node_type = graph::NodeType::LeafCertificate {
+                            cert_id,
+                            subject,
+                            issuer: "Self-Signed (Temporary)".to_string(),
+                            not_before: chrono::Utc::now(),
+                            not_after: chrono::Utc::now() + chrono::Duration::days(365),
+                            key_usage: vec!["digitalSignature".to_string(), "keyEncipherment".to_string()],
+                            san: vec![],
                         };
+                        let position = iced::Point::new(400.0, 300.0); // Below Root CA
+                        let mut leaf_cert_node = graph::ConceptEntity::from_node_type(cert_id, node_type, position);
+                        leaf_cert_node.color = iced::Color::from_rgb(0.4, 0.6, 0.8); // Blue for Leaf
+                        leaf_cert_node.label = "Personal Certificate".to_string();
 
                         // Add to graph
                         self.org_graph.nodes.insert(cert_id, leaf_cert_node);

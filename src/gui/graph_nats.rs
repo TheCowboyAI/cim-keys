@@ -279,13 +279,9 @@ fn create_nats_operator_node(nats_id: Uuid, org: &Organization) -> Result<Concep
         events: Vec::new(), // US-021: GUI placeholder (events collected during projection)
     };
 
-    Ok(ConceptEntity {
-        id: nats_id,
-        node_type: NodeType::NatsOperator(identity),
-        position: Point::new(400.0, 100.0), // Top center
-        color: Color::from_rgb(0.4, 0.2, 0.8), // Purple for operator
-        label: format!("{} Operator", org.name),
-    })
+    let node_type = NodeType::NatsOperator(identity);
+    let position = Point::new(400.0, 100.0); // Top center
+    Ok(ConceptEntity::from_node_type(nats_id, node_type, position))
 }
 
 /// Create NATS Account node from OrganizationalUnit
@@ -332,13 +328,9 @@ fn create_nats_account_node(
         events: Vec::new(), // US-021: GUI placeholder (events collected during projection)
     };
 
-    Ok(ConceptEntity {
-        id: nats_id,
-        node_type: NodeType::NatsAccount(identity),
-        position: Point::new(400.0, 250.0), // Middle
-        color: Color::from_rgb(0.2, 0.6, 0.8), // Blue for account
-        label: format!("{} Account", unit.name),
-    })
+    let node_type = NodeType::NatsAccount(identity);
+    let position = Point::new(400.0, 250.0); // Middle
+    Ok(ConceptEntity::from_node_type(nats_id, node_type, position))
 }
 
 /// Create NATS User node from Person
@@ -395,13 +387,9 @@ fn create_nats_user_node(
         events: Vec::new(), // US-021: GUI placeholder (events collected during projection)
     };
 
-    Ok(ConceptEntity {
-        id: nats_id,
-        node_type: NodeType::NatsUser(identity),
-        position: Point::new(400.0, 400.0), // Bottom
-        color: Color::from_rgb(0.2, 0.8, 0.6), // Teal for user
-        label: format!("{} (NATS)", username),
-    })
+    let node_type = NodeType::NatsUser(identity);
+    let position = Point::new(400.0, 400.0); // Bottom
+    Ok(ConceptEntity::from_node_type(nats_id, node_type, position))
 }
 
 /// Add NATS nodes and edges to the organizational graph

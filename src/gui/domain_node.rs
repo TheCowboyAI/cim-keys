@@ -705,6 +705,109 @@ impl DomainNode {
         }
     }
 
+    /// Convert DomainNode back to NodeType (for backward compatibility during migration)
+    ///
+    /// This enables code that still uses NodeType to work with DomainNode.
+    /// Once migration is complete, this method can be removed.
+    pub fn to_node_type(&self) -> super::graph::NodeType {
+        use super::graph::NodeType;
+        match &self.data {
+            DomainNodeData::Person { person, role } => {
+                NodeType::Person { person: person.clone(), role: role.clone() }
+            }
+            DomainNodeData::Organization(org) => NodeType::Organization(org.clone()),
+            DomainNodeData::OrganizationUnit(unit) => NodeType::OrganizationalUnit(unit.clone()),
+            DomainNodeData::Location(loc) => NodeType::Location(loc.clone()),
+            DomainNodeData::Role(role) => NodeType::Role(role.clone()),
+            DomainNodeData::Policy(policy) => NodeType::Policy(policy.clone()),
+
+            DomainNodeData::NatsOperator(proj) => NodeType::NatsOperator(proj.clone()),
+            DomainNodeData::NatsAccount(proj) => NodeType::NatsAccount(proj.clone()),
+            DomainNodeData::NatsUser(proj) => NodeType::NatsUser(proj.clone()),
+            DomainNodeData::NatsServiceAccount(proj) => NodeType::NatsServiceAccount(proj.clone()),
+
+            DomainNodeData::NatsOperatorSimple { name, organization_id } => {
+                NodeType::NatsOperatorSimple { name: name.clone(), organization_id: *organization_id }
+            }
+            DomainNodeData::NatsAccountSimple { name, unit_id, is_system } => {
+                NodeType::NatsAccountSimple { name: name.clone(), unit_id: *unit_id, is_system: *is_system }
+            }
+            DomainNodeData::NatsUserSimple { name, person_id, account_name } => {
+                NodeType::NatsUserSimple { name: name.clone(), person_id: *person_id, account_name: account_name.clone() }
+            }
+
+            DomainNodeData::RootCertificate { cert_id, subject, issuer, not_before, not_after, key_usage } => {
+                NodeType::RootCertificate {
+                    cert_id: *cert_id, subject: subject.clone(), issuer: issuer.clone(),
+                    not_before: *not_before, not_after: *not_after, key_usage: key_usage.clone(),
+                }
+            }
+            DomainNodeData::IntermediateCertificate { cert_id, subject, issuer, not_before, not_after, key_usage } => {
+                NodeType::IntermediateCertificate {
+                    cert_id: *cert_id, subject: subject.clone(), issuer: issuer.clone(),
+                    not_before: *not_before, not_after: *not_after, key_usage: key_usage.clone(),
+                }
+            }
+            DomainNodeData::LeafCertificate { cert_id, subject, issuer, not_before, not_after, key_usage, san } => {
+                NodeType::LeafCertificate {
+                    cert_id: *cert_id, subject: subject.clone(), issuer: issuer.clone(),
+                    not_before: *not_before, not_after: *not_after, key_usage: key_usage.clone(), san: san.clone(),
+                }
+            }
+
+            DomainNodeData::Key { key_id, algorithm, purpose, expires_at } => {
+                NodeType::Key { key_id: *key_id, algorithm: algorithm.clone(), purpose: *purpose, expires_at: *expires_at }
+            }
+
+            DomainNodeData::YubiKey { device_id, serial, version, provisioned_at, slots_used } => {
+                NodeType::YubiKey {
+                    device_id: *device_id, serial: serial.clone(), version: version.clone(),
+                    provisioned_at: *provisioned_at, slots_used: slots_used.clone(),
+                }
+            }
+            DomainNodeData::PivSlot { slot_id, slot_name, yubikey_serial, has_key, certificate_subject } => {
+                NodeType::PivSlot {
+                    slot_id: *slot_id, slot_name: slot_name.clone(), yubikey_serial: yubikey_serial.clone(),
+                    has_key: *has_key, certificate_subject: certificate_subject.clone(),
+                }
+            }
+            DomainNodeData::YubiKeyStatus { person_id, yubikey_serial, slots_provisioned, slots_needed } => {
+                NodeType::YubiKeyStatus {
+                    person_id: *person_id, yubikey_serial: yubikey_serial.clone(),
+                    slots_provisioned: slots_provisioned.clone(), slots_needed: slots_needed.clone(),
+                }
+            }
+
+            DomainNodeData::Manifest { manifest_id, name, destination, checksum } => {
+                NodeType::Manifest {
+                    manifest_id: *manifest_id, name: name.clone(),
+                    destination: destination.clone(), checksum: checksum.clone(),
+                }
+            }
+
+            DomainNodeData::PolicyRole { role_id, name, purpose, level, separation_class, claim_count } => {
+                NodeType::PolicyRole {
+                    role_id: *role_id, name: name.clone(), purpose: purpose.clone(),
+                    level: *level, separation_class: *separation_class, claim_count: *claim_count,
+                }
+            }
+            DomainNodeData::PolicyClaim { claim_id, name, category } => {
+                NodeType::PolicyClaim { claim_id: *claim_id, name: name.clone(), category: category.clone() }
+            }
+            DomainNodeData::PolicyCategory { category_id, name, claim_count, expanded } => {
+                NodeType::PolicyCategory {
+                    category_id: *category_id, name: name.clone(), claim_count: *claim_count, expanded: *expanded,
+                }
+            }
+            DomainNodeData::PolicyGroup { class_id, name, separation_class, role_count, expanded } => {
+                NodeType::PolicyGroup {
+                    class_id: *class_id, name: name.clone(), separation_class: *separation_class,
+                    role_count: *role_count, expanded: *expanded,
+                }
+            }
+        }
+    }
+
     // ========================================================================
     // Universal Property: fold
     // ========================================================================

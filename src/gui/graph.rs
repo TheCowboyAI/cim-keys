@@ -136,13 +136,82 @@ pub struct DraggingRole {
 }
 
 /// A node in the organization graph (represents any domain entity)
+///
+/// ## Migration Note (Sprint 5)
+///
+/// This struct is being migrated from `node_type: NodeType` to `domain_node: DomainNode`.
+/// During migration:
+/// - `node_type` is deprecated but still present for backward compatibility
+/// - `domain_node` is the new field that uses the categorical coproduct pattern
+/// - Use `visualization()` method to get color/label/icon from domain_node
 #[derive(Debug, Clone)]
 pub struct ConceptEntity {
     pub id: Uuid,
+    /// DEPRECATED: Use domain_node instead. Kept for backward compatibility during migration.
     pub node_type: NodeType,
+    /// New: Domain node using categorical coproduct pattern
+    pub domain_node: super::domain_node::DomainNode,
     pub position: Point,
+    /// DEPRECATED: Computed from domain_node.fold(&FoldVisualization).color
     pub color: Color,
+    /// DEPRECATED: Computed from domain_node.fold(&FoldVisualization).primary_text
     pub label: String,
+}
+
+impl ConceptEntity {
+    /// Create a new ConceptEntity from a NodeType (backward compatible constructor)
+    ///
+    /// This constructor creates both `node_type` and `domain_node` fields,
+    /// deriving color/label from the DomainNode's FoldVisualization.
+    pub fn from_node_type(id: Uuid, node_type: NodeType, position: Point) -> Self {
+        use super::domain_node::{DomainNode, FoldVisualization};
+
+        let domain_node = DomainNode::from_node_type(&node_type);
+        let viz = domain_node.fold(&FoldVisualization);
+
+        Self {
+            id,
+            node_type,
+            domain_node,
+            position,
+            color: viz.color,
+            label: viz.primary_text,
+        }
+    }
+
+    /// Create a new ConceptEntity directly from a DomainNode (preferred)
+    ///
+    /// This is the preferred constructor for new code. It creates the entity
+    /// directly from a DomainNode, deriving NodeType for backward compatibility.
+    pub fn from_domain_node(id: Uuid, domain_node: super::domain_node::DomainNode, position: Point) -> Self {
+        use super::domain_node::FoldVisualization;
+
+        let viz = domain_node.fold(&FoldVisualization);
+        let node_type = domain_node.to_node_type();
+
+        Self {
+            id,
+            node_type,
+            domain_node,
+            position,
+            color: viz.color,
+            label: viz.primary_text,
+        }
+    }
+
+    /// Get visualization data from the domain node
+    ///
+    /// This is the preferred way to get color, label, icon, etc.
+    /// Instead of matching on node_type, use this method.
+    pub fn visualization(&self) -> super::domain_node::VisualizationData {
+        use super::domain_node::FoldVisualization;
+        self.domain_node.fold(&FoldVisualization)
+    }
+
+    /// Get the injection type (what kind of domain entity this is)
+    pub fn injection(&self) -> super::domain_node::Injection {
+        self.domain_node.injection()
+    }
 }
 
 /// Type of node in the graph
@@ -678,19 +747,12 @@ impl OrganizationConcept {
     /// Add a person node to the graph
     pub fn add_node(&mut self, person: Person, role: KeyOwnerRole) {
         let node_id = person.id;
-        let label = person.name.clone();
-        let color = self.role_to_color(&role);
-
-        let node = ConceptEntity {
-            id: node_id,
-            node_type: NodeType::Person {
-                person: person.clone(),
-                role
-            },
-            position: self.calculate_node_position(node_id),
-            color,
-            label,
+        let node_type = NodeType::Person {
+            person: person.clone(),
+            role,
         };
+        let position = self.calculate_node_position(node_id);
+        let node = ConceptEntity::from_node_type(node_id, node_type, position);
 
         self.nodes.insert(node_id, node);
     }
@@ -698,15 +760,9 @@ impl OrganizationConcept {
     /// Add an organization node to the graph
     pub fn add_organization_node(&mut self, org: Organization) {
         let node_id = org.id;
-        let label = org.name.clone();
-
-        let node = ConceptEntity {
-            id: node_id,
-            node_type: NodeType::Organization(org),
-            position: self.calculate_node_position(node_id),
-            color: Color::from_rgb(0.2, 0.3, 0.6), // Dark blue
-            label,
-        };
+        let node_type = NodeType::Organization(org);
+        let position = self.calculate_node_position(node_id);
+        let node = ConceptEntity::from_node_type(node_id, node_type, position);
 
         self.nodes.insert(node_id, node);
     }
@@ -714,15 +770,9 @@ impl OrganizationConcept {
     /// Add an organizational unit node to the graph
     pub fn add_org_unit_node(&mut self, unit: OrganizationUnit) {
         let node_id = unit.id;
-        let label = unit.name.clone();
-
-        let node = ConceptEntity {
-            id: node_id,
-            node_type: NodeType::OrganizationalUnit(unit),
-            position: self.calculate_node_position(node_id),
-            color: Color::from_rgb(0.4, 0.5, 0.8), // Light blue
-            label,
-        };
+        let node_type = NodeType::OrganizationalUnit(unit);
+        let position = self.calculate_node_position(node_id);
+        let node = ConceptEntity::from_node_type(node_id, node_type, position);
 
         self.nodes.insert(node_id, node);
     }
@@ -731,15 +781,9 @@ impl OrganizationConcept {
     pub fn add_location_node(&mut self, location: Location) {
         use cim_domain::AggregateRoot;
         let node_id = *location.id().as_uuid();
-        let label = location.name.clone();
-
-        let node = ConceptEntity {
-            id: node_id,
-            node_type: NodeType::Location(location),
-            position: self.calculate_node_position(node_id),
-            color: Color::from_rgb(0.6, 0.5, 0.4), // Brown/gray
-            label,
-        };
+        let node_type = NodeType::Location(location);
+        let position = self.calculate_node_position(node_id);
+        let node = ConceptEntity::from_node_type(node_id, node_type, position);
 
         self.nodes.insert(node_id, node);
     }
@@ -747,27 +791,15 @@ impl OrganizationConcept {
     /// Add a role node to the graph (domain Role type)
     pub fn add_domain_role_node(&mut self, role: Role) {
         let node_id = role.id;
-        let label = role.name.clone();
-
-        let node = ConceptEntity {
-            id: node_id,
-            node_type: NodeType::Role(role),
-            position: self.calculate_node_position(node_id),
-            color: Color::from_rgb(0.6, 0.3, 0.8), // Purple
-            label,
-        };
+        let node_type = NodeType::Role(role);
+        let position = self.calculate_node_position(node_id);
+        let node = ConceptEntity::from_node_type(node_id, node_type, position);
 
         self.nodes.insert(node_id, node);
     }
 
     /// Add a policy-based role node to the graph
-    /// Color is based on separation class:
-    /// - Operational: Blue (0.3, 0.6, 0.9)
-    /// - Administrative: Purple (0.6, 0.4, 0.8)
-    /// - Audit: Teal (0.2, 0.7, 0.5)
-    /// - Emergency: Red (0.9, 0.3, 0.2)
-    /// - Financial: Gold (0.9, 0.7, 0.2)
-    /// - Personnel: Rose (0.8, 0.4, 0.6)
+    /// Color is derived from FoldVisualization based on separation class
     pub fn add_role_node(
         &mut self,
         role_id: Uuid,
@@ -777,64 +809,35 @@ impl OrganizationConcept {
         separation_class: crate::policy::SeparationClass,
         claim_count: usize,
     ) {
-        use crate::policy::SeparationClass;
-
-        let color = match separation_class {
-            SeparationClass::Operational => Color::from_rgb(0.3, 0.6, 0.9),    // Blue
-            SeparationClass::Administrative => Color::from_rgb(0.6, 0.4, 0.8), // Purple
-            SeparationClass::Audit => Color::from_rgb(0.2, 0.7, 0.5),          // Teal
-            SeparationClass::Emergency => Color::from_rgb(0.9, 0.3, 0.2),      // Red
-            SeparationClass::Financial => Color::from_rgb(0.9, 0.7, 0.2),      // Gold
-            SeparationClass::Personnel => Color::from_rgb(0.8, 0.4, 0.6),      // Rose
+        let node_type = NodeType::PolicyRole {
+            role_id,
+            name,
+            purpose,
+            level,
+            separation_class,
+            claim_count,
         };
-
-        let node = ConceptEntity {
-            id: role_id,
-            node_type: NodeType::PolicyRole {
-                role_id,
-                name: name.clone(),
-                purpose,
-                level,
-                separation_class,
-                claim_count,
-            },
-            position: self.calculate_node_position(role_id),
-            color,
-            label: name,
-        };
+        let position = self.calculate_node_position(role_id);
+        let node = ConceptEntity::from_node_type(role_id, node_type, position);
 
         self.nodes.insert(role_id, node);
     }
 
     /// Add a claim node to the graph
+    /// Color is derived from FoldVisualization based on category
     pub fn add_claim_node(
         &mut self,
         claim_id: Uuid,
         name: String,
         category: String,
     ) {
-        // Color claims by category
-        let color = match category.as_str() {
-            "security" => Color::from_rgb(0.9, 0.3, 0.2),      // Red
-            "infrastructure" => Color::from_rgb(0.3, 0.6, 0.9), // Blue
-            "development" => Color::from_rgb(0.2, 0.7, 0.5),    // Teal
-            "operations" => Color::from_rgb(0.6, 0.4, 0.8),     // Purple
-            "compliance" => Color::from_rgb(0.9, 0.7, 0.2),     // Gold
-            "hr" | "personnel" => Color::from_rgb(0.8, 0.4, 0.6), // Rose
-            _ => Color::from_rgb(0.5, 0.5, 0.5),                // Gray for unknown
+        let node_type = NodeType::PolicyClaim {
+            claim_id,
+            name,
+            category,
         };
-
-        let node = ConceptEntity {
-            id: claim_id,
-            node_type: NodeType::PolicyClaim {
-                claim_id,
-                name: name.clone(),
-                category: category.clone(),
-            },
-            position: self.calculate_node_position(claim_id),
-            color,
-            label: name,
-        };
+        let position = self.calculate_node_position(claim_id);
+        let node = ConceptEntity::from_node_type(claim_id, node_type, position);
 
         self.nodes.insert(claim_id, node);
     }
@@ -847,25 +850,14 @@ impl OrganizationConcept {
         claim_count: usize,
         expanded: bool,
     ) {
-        // Color categories with a neutral tone
-        let color = if expanded {
-            Color::from_rgb(0.4, 0.5, 0.6) // Expanded: slightly brighter
-        } else {
-            Color::from_rgb(0.3, 0.4, 0.5) // Collapsed: neutral
+        let node_type = NodeType::PolicyCategory {
+            category_id,
+            name,
+            claim_count,
+            expanded,
         };
-
-        let node = ConceptEntity {
-            id: category_id,
-            node_type: NodeType::PolicyCategory {
-                category_id,
-                name: name.clone(),
-                claim_count,
-                expanded,
-            },
-            position: self.calculate_node_position(category_id),
-            color,
-            label: name,
-        };
+        let position = self.calculate_node_position(category_id);
+        let node = ConceptEntity::from_node_type(category_id, node_type, position);
 
         self.nodes.insert(category_id, node);
     }
@@ -879,38 +871,15 @@ impl OrganizationConcept {
         role_count: usize,
         expanded: bool,
     ) {
-        use crate::policy::SeparationClass;
-
-        // Color by separation class
-        let base_color = match separation_class {
-            SeparationClass::Operational => Color::from_rgb(0.3, 0.6, 0.9),    // Blue
-            SeparationClass::Administrative => Color::from_rgb(0.6, 0.4, 0.8), // Purple
-            SeparationClass::Audit => Color::from_rgb(0.2, 0.7, 0.5),          // Teal
-            SeparationClass::Emergency => Color::from_rgb(0.9, 0.3, 0.2),      // Red
-            SeparationClass::Financial => Color::from_rgb(0.9, 0.7, 0.2),      // Gold
-            SeparationClass::Personnel => Color::from_rgb(0.8, 0.4, 0.6),      // Rose
+        let node_type = NodeType::PolicyGroup {
+            class_id,
+            name,
+            separation_class,
+            role_count,
+            expanded,
         };
-
-        // Slightly darken if collapsed
-        let color = if expanded {
-            base_color
-        } else {
-            Color::from_rgb(base_color.r * 0.7, base_color.g * 0.7, base_color.b * 0.7)
-        };
-
-        let node = ConceptEntity {
-            id: class_id,
-            node_type: NodeType::PolicyGroup {
-                class_id,
-                name: name.clone(),
-                separation_class,
-                role_count,
-                expanded,
-            },
-            position: self.calculate_node_position(class_id),
-            color,
-            label: name,
-        };
+        let position = self.calculate_node_position(class_id);
+        let node = ConceptEntity::from_node_type(class_id, node_type, position);
 
         self.nodes.insert(class_id, node);
     }
@@ -918,15 +887,9 @@ impl OrganizationConcept {
     /// Add a policy node to the graph
     pub fn add_policy_node(&mut self, policy: Policy) {
         let node_id = policy.id;
-        let label = policy.name.clone();
-
-        let node = ConceptEntity {
-            id: node_id,
-            node_type: NodeType::Policy(policy),
-            position: self.calculate_node_position(node_id),
-            color: Color::from_rgb(0.9, 0.7, 0.2), // Gold/yellow
-            label,
-        };
+        let node_type = NodeType::Policy(policy);
+        let position = self.calculate_node_position(node_id);
+        let node = ConceptEntity::from_node_type(node_id, node_type, position);
 
         self.nodes.insert(node_id, node);
     }
@@ -934,53 +897,37 @@ impl OrganizationConcept {
     // ===== NATS Infrastructure Nodes (Phase 1) =====
 
     /// Add a NATS operator node to the graph
-    pub fn add_nats_operator_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, label: String) {
-        let node = ConceptEntity {
-            id: node_id,
-            node_type: NodeType::NatsOperator(nats_identity),
-            position: self.calculate_node_position(node_id),
-            color: Color::from_rgb(1.0, 0.2, 0.0), // Bright red (root of trust)
-            label,
-        };
+    pub fn add_nats_operator_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, _label: String) {
+        let node_type = NodeType::NatsOperator(nats_identity);
+        let position = self.calculate_node_position(node_id);
+        let node = ConceptEntity::from_node_type(node_id, node_type, position);
 
         self.nodes.insert(node_id, node);
     }
 
     /// Add a NATS account node to the graph
-    pub fn add_nats_account_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, label: String) {
-        let node = ConceptEntity {
-            id: node_id,
-            node_type: NodeType::NatsAccount(nats_identity),
-            position: self.calculate_node_position(node_id),
-            color: Color::from_rgb(1.0, 0.5, 0.0), // Orange (intermediate trust)
-            label,
-        };
+    pub fn add_nats_account_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, _label: String) {
+        let node_type = NodeType::NatsAccount(nats_identity);
+        let position = self.calculate_node_position(node_id);
+        let node = ConceptEntity::from_node_type(node_id, node_type, position);
 
         self.nodes.insert(node_id, node);
     }
 
     /// Add a NATS user node to the graph
-    pub fn add_nats_user_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, label: String) {
-        let node = ConceptEntity {
-            id: node_id,
-            node_type: NodeType::NatsUser(nats_identity),
-            position: self.calculate_node_position(node_id),
-            color: Color::from_rgb(0.2, 0.8, 1.0), // Cyan (leaf user)
-            label,
-        };
+    pub fn add_nats_user_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, _label: String) {
+        let node_type = NodeType::NatsUser(nats_identity);
+        let position = self.calculate_node_position(node_id);
+        let node = ConceptEntity::from_node_type(node_id, node_type, position);
 
         self.nodes.insert(node_id, node);
     }
 
     /// Add a NATS service account node to the graph
-    pub fn add_nats_service_account_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, label: String) {
-        let node = ConceptEntity {
-            id: node_id,
-            node_type: NodeType::NatsServiceAccount(nats_identity),
-            position: self.calculate_node_position(node_id),
-            color: Color::from_rgb(0.8, 0.2, 0.8), // Magenta (service account)
-            label,
-        };
+    pub fn add_nats_service_account_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, _label: String) {
+        let node_type = NodeType::NatsServiceAccount(nats_identity);
+        let position = self.calculate_node_position(node_id);
+        let node = ConceptEntity::from_node_type(node_id, node_type, position);
 
         self.nodes.insert(node_id, node);
     }
@@ -989,43 +936,25 @@ impl OrganizationConcept {
 
     /// Add a simple NATS operator node (visualization without crypto)
     pub fn add_nats_operator_simple(&mut self, node_id: Uuid, name: String, organization_id: Option<Uuid>) {
-        let node = ConceptEntity {
-            id: node_id,
-            node_type: NodeType::NatsOperatorSimple { name: name.clone(), organization_id },
-            position: self.calculate_node_position(node_id),
-            color: Color::from_rgb(1.0, 0.2, 0.0), // Bright red (root of trust)
-            label: name,
-        };
+        let node_type = NodeType::NatsOperatorSimple { name, organization_id };
+        let position = self.calculate_node_position(node_id);
+        let node = ConceptEntity::from_node_type(node_id, node_type, position);
         self.nodes.insert(node_id, node);
     }
 
     /// Add a simple NATS account node (visualization without crypto)
     pub fn add_nats_account_simple(&mut self, node_id: Uuid, name: String, unit_id: Option<Uuid>, is_system: bool) {
-        let color = if is_system {
-            Color::from_rgb(1.0, 0.8, 0.0) // Yellow for system account
-        } else {
-            Color::from_rgb(1.0, 0.5, 0.0) // Orange (intermediate trust)
-        };
-
-        let node = ConceptEntity {
-            id: node_id,
-            node_type: NodeType::NatsAccountSimple { name: name.clone(), unit_id, is_system },
-            position: self.calculate_node_position(node_id),
-            color,
-            label: name,
-        };
+        let node_type = NodeType::NatsAccountSimple { name, unit_id, is_system };
+        let position = self.calculate_node_position(node_id);
+        let node = ConceptEntity::from_node_type(node_id, node_type, position);
         self.nodes.insert(node_id, node);
     }
 
     /// Add a simple NATS user node (visualization without crypto)
     pub fn add_nats_user_simple(&mut self, node_id: Uuid, name: String, person_id: Option<Uuid>, account_name: String) {
-        let node = ConceptEntity {
-            id: node_id,
-            node_type: NodeType::NatsUserSimple { name: name.clone(), person_id, account_name },
-            position: self.calculate_node_position(node_id),
-            color: Color::from_rgb(0.2, 0.8, 1.0), // Cyan (leaf user)
-            label: name,
-        };
+        let node_type = NodeType::NatsUserSimple { name, person_id, account_name };
+        let position = self.calculate_node_position(node_id);
+        let node = ConceptEntity::from_node_type(node_id, node_type, position);
         self.nodes.insert(node_id, node);
     }
 
@@ -1041,20 +970,16 @@ impl OrganizationConcept {
         not_after: chrono::DateTime<chrono::Utc>,
         key_usage: Vec<String>,
     ) {
-        let node = ConceptEntity {
-            id: cert_id,
-            node_type: NodeType::RootCertificate {
-                cert_id,
-                subject: subject.clone(),
-                issuer,
-                not_before,
-                not_after,
-                key_usage,
-            },
-            position: self.calculate_node_position(cert_id),
-            color: Color::from_rgb(0.0, 0.6, 0.4), // Dark teal (root trust)
-            label: format!("Root CA: {}", subject),
+        let node_type = NodeType::RootCertificate {
+            cert_id,
+            subject,
+            issuer,
+            not_before,
+            not_after,
+            key_usage,
         };
+        let position = self.calculate_node_position(cert_id);
+        let node = ConceptEntity::from_node_type(cert_id, node_type, position);
 
         self.nodes.insert(cert_id, node);
     }
@@ -1069,20 +994,16 @@ impl OrganizationConcept {
         not_after: chrono::DateTime<chrono::Utc>,
         key_usage: Vec<String>,
     ) {
-        let node = ConceptEntity {
-            id: cert_id,
-            node_type: NodeType::IntermediateCertificate {
-                cert_id,
-                subject: subject.clone(),
-                issuer,
-                not_before,
-                not_after,
-                key_usage,
-            },
-            position: self.calculate_node_position(cert_id),
-            color: Color::from_rgb(0.2, 0.8, 0.6), // Medium teal (intermediate trust)
-            label: format!("Intermediate CA: {}", subject),
+        let node_type = NodeType::IntermediateCertificate {
+            cert_id,
+            subject,
+            issuer,
+            not_before,
+            not_after,
+            key_usage,
         };
+        let position = self.calculate_node_position(cert_id);
+        let node = ConceptEntity::from_node_type(cert_id, node_type, position);
 
         self.nodes.insert(cert_id, node);
     }
@@ -1098,21 +1019,17 @@ impl OrganizationConcept {
         key_usage: Vec<String>,
         san: Vec<String>,
     ) {
-        let node = ConceptEntity {
-            id: cert_id,
-            node_type: NodeType::LeafCertificate {
-                cert_id,
-                subject: subject.clone(),
-                issuer,
-                not_before,
-                not_after,
-                key_usage,
-                san,
-            },
-            position: self.calculate_node_position(cert_id),
-            color: Color::from_rgb(0.4, 1.0, 0.8), // Light teal (leaf certificate)
-            label: format!("Certificate: {}", subject),
+        let node_type = NodeType::LeafCertificate {
+            cert_id,
+            subject,
+            issuer,
+            not_before,
+            not_after,
+            key_usage,
+            san,
         };
+        let position = self.calculate_node_position(cert_id);
+        let node = ConceptEntity::from_node_type(cert_id, node_type, position);
 
         self.nodes.insert(cert_id, node);
     }
@@ -1207,19 +1124,15 @@ impl OrganizationConcept {
         provisioned_at: Option<chrono::DateTime<chrono::Utc>>,
         slots_used: Vec<String>,
     ) {
-        let node = ConceptEntity {
-            id: device_id,
-            node_type: NodeType::YubiKey {
-                device_id,
-                serial: serial.clone(),
-                version: version.clone(),
-                provisioned_at,
-                slots_used: slots_used.clone(),
-            },
-            position: self.calculate_node_position(device_id),
-            color: Color::from_rgb(0.8, 0.3, 0.8), // Magenta (hardware)
-            label: format!("YubiKey {}", serial),
+        let node_type = NodeType::YubiKey {
+            device_id,
+            serial,
+            version,
+            provisioned_at,
+            slots_used,
         };
+        let position = self.calculate_node_position(device_id);
+        let node = ConceptEntity::from_node_type(device_id, node_type, position);
 
         self.nodes.insert(device_id, node);
     }
@@ -1233,19 +1146,15 @@ impl OrganizationConcept {
         has_key: bool,
         certificate_subject: Option<String>,
     ) {
-        let node = ConceptEntity {
-            id: slot_id,
-            node_type: NodeType::PivSlot {
-                slot_id,
-                slot_name: slot_name.clone(),
-                yubikey_serial,
-                has_key,
-                certificate_subject,
-            },
-            position: self.calculate_node_position(slot_id),
-            color: Color::from_rgb(0.9, 0.5, 0.9), // Light magenta (slot)
-            label: slot_name,
+        let node_type = NodeType::PivSlot {
+            slot_id,
+            slot_name,
+            yubikey_serial,
+            has_key,
+            certificate_subject,
         };
+        let position = self.calculate_node_position(slot_id);
+        let node = ConceptEntity::from_node_type(slot_id, node_type, position);
 
         self.nodes.insert(slot_id, node);
     }
@@ -1527,13 +1436,11 @@ impl OrganizationConcept {
     pub fn apply_event(&mut self, event: &GraphEvent) {
         match event {
             GraphEvent::NodeCreated { node_id, node_type, position, color, label, .. } => {
-                let node = ConceptEntity {
-                    id: *node_id,
-                    node_type: node_type.clone(),
-                    position: *position,
-                    color: *color,
-                    label: label.clone(),
-                };
+                // Use from_node_type but override color/label if provided by event
+                // This preserves event-sourced state while maintaining the domain_node field
+                let mut node = ConceptEntity::from_node_type(*node_id, node_type.clone(), *position);
+                node.color = *color;
+                node.label = label.clone();
                 self.nodes.insert(*node_id, node);
             }
             GraphEvent::NodeDeleted { node_id, .. } => {
@@ -1547,6 +1454,8 @@ impl OrganizationConcept {
             }
             GraphEvent::NodePropertiesChanged { node_id, new_node_type, new_label, .. } => {
                 if let Some(node) = self.nodes.get_mut(node_id) {
+                    // Update both node_type and domain_node for consistency
+                    node.domain_node = super::domain_node::DomainNode::from_node_type(new_node_type);
                     node.node_type = new_node_type.clone();
                     node.label = new_label.clone();
                 }

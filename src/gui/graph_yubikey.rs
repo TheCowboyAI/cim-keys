@@ -190,24 +190,22 @@ pub fn generate_yubikey_provision_from_graph(
             format!("⏳ {} YubiKey ({} slots needed)", plan.person.name, plan.slots.len())
         };
 
-        let color = if plan.already_provisioned {
+        let node_type = NodeType::YubiKeyStatus {
+            person_id,
+            yubikey_serial: plan.yubikey_serial.clone(),
+            slots_provisioned: if plan.already_provisioned { plan.slots.clone() } else { vec![] },
+            slots_needed: plan.slots.clone(),
+        };
+        let position = Point::new(400.0, 500.0); // Below person nodes
+        let mut provision_node = ConceptEntity::from_node_type(provision_node_id, node_type, position);
+
+        // Override color based on provisioning status
+        provision_node.color = if plan.already_provisioned {
             Color::from_rgb(0.2, 0.8, 0.2) // Green for provisioned
         } else {
             Color::from_rgb(0.9, 0.6, 0.2) // Orange for pending
         };
-
-        let provision_node = ConceptEntity {
-            id: provision_node_id,
-            node_type: NodeType::YubiKeyStatus {
-                person_id,
-                yubikey_serial: plan.yubikey_serial.clone(),
-                slots_provisioned: if plan.already_provisioned { plan.slots.clone() } else { vec![] },
-                slots_needed: plan.slots.clone(),
-            },
-            position: Point::new(400.0, 500.0), // Below person nodes
-            color,
-            label: status_label,
-        };
+        provision_node.label = status_label;
 
         provision_nodes.push((provision_node, person_id));
 
