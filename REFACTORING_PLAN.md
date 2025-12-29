@@ -91,6 +91,51 @@ cim-domain-organization = { path = "../cim-domain-organization", optional = true
 - No Gherkin scenarios
 - No executable specifications
 
+### 7. Applied Category Theory Expert Findings (Agent: a58ea29)
+
+**Critical Categorical Structures Required**:
+
+| Structure | Purpose | Implementation |
+|-----------|---------|----------------|
+| **Coproduct** | Replace NodeType enum | `DomainNode` with proper injections (ι_person, ι_org, etc.) |
+| **Faithful Functor** | LiftableDomain trait | `lift()`, `unlift()`, `lift_event()` preserving identity/composition |
+| **Kan Extension** | Universal graph lifting | `Lan_D G` for domain → graph projection |
+| **Monad** | Composition of lifting | unit, bind, join with monad laws |
+
+**Key Traits from ACT Analysis**:
+```rust
+// 1. DomainEntity - Object in Domain Category
+trait DomainEntity { type Id; type Event; fn id(&self) -> Self::Id; }
+
+// 2. LiftableDomain - Faithful Functor to Graph
+trait LiftableDomain: DomainEntity {
+    type Lifted: GraphElement;
+    fn lift(&self) -> Self::Lifted;
+    fn unlift(lifted: &Self::Lifted) -> Option<Self>;
+}
+
+// 3. DomainNodeFolder - Coproduct Universal Property
+trait DomainNodeFolder {
+    type Output;
+    fn fold_person(&self, p: &Person) -> Self::Output;
+    fn fold_organization(&self, o: &Organization) -> Self::Output;
+    // ... one method per domain type
+}
+
+// 4. GraphProjectionFunctor - Colimit-preserving
+trait GraphProjectionFunctor {
+    fn project_object<E: LiftableDomain>(&self, e: &E) -> GraphNode;
+    fn project_morphism(&self, rel: &Relationship) -> GraphEdge;
+}
+```
+
+**Categorical Laws to Verify**:
+1. **Functor Laws**: `F(id) = id`, `F(g ∘ f) = F(g) ∘ F(f)`
+2. **Coproduct**: `[f,g] ∘ ι_A = f` (universal property)
+3. **Monad Laws**: Left/Right identity, Associativity
+
+**Key Insight**: "The graph is a categorically correct projection of domain structure. Use proper coproducts, Kan extensions, and faithful functors to preserve all domain semantics."
+
 ---
 
 ## Refactoring Sprints
@@ -180,38 +225,65 @@ cim-domain-organization = { path = "../cim-domain-organization", optional = true
 
 ---
 
-### Sprint 3: Remove NodeType Enum
+### Sprint 3: Replace NodeType with Categorical Coproduct
 **Duration**: 3-5 days
-**Goal**: Preserve domain entity identity instead of flattening
+**Goal**: Use proper coproduct with injections and universal property (per ACT expert)
+
+#### Categorical Foundation:
+The current `NodeType` enum violates categorical principles because it loses identity and doesn't preserve injections. We replace it with a proper coproduct that satisfies the universal property.
 
 #### Tasks:
-1. [ ] Analyze all `NodeType` usages
-2. [ ] Create `ConceptMember` enum that wraps EntityIds
-3. [ ] Replace `NodeType::Person` with `ConceptMember::Person(PersonId)`
-4. [ ] Replace `NodeType::Organization` with `ConceptMember::Organization(OrganizationId)`
-5. [ ] Update rendering code to dispatch on actual types
-6. [ ] Implement `GraphRenderable` trait
-7. [ ] Have domain types implement `GraphRenderable`
+1. [ ] Analyze all `NodeType` usages (21 variants currently)
+2. [ ] Create `DomainNode` coproduct with injection functions
+3. [ ] Implement `DomainNodeFolder` trait for universal property
+4. [ ] Create injection functions: `inject_person()`, `inject_organization()`, etc.
+5. [ ] Implement `fold()` method satisfying `[f,g] ∘ ι_A = f`
+6. [ ] Create `VisualizationFolder` for rendering (separates concerns)
+7. [ ] Update rendering code to use `fold()` pattern
 8. [ ] Remove `NodeType` enum
-9. [ ] Verify compilation
-10. [ ] Run tests
+9. [ ] Add property tests for coproduct laws
+10. [ ] Verify compilation
+11. [ ] Run tests
 
-#### New Structure:
+#### New Structure (per ACT Expert):
 ```rust
-/// A member of an organization concept - preserves domain type identity
-pub enum ConceptMember {
-    Person(PersonId),
-    Organization(OrganizationId),
-    Unit(OrganizationUnitId),
-    Location(LocationId),
-    Device(DeviceId),  // YubiKey
+/// Coproduct of domain types - preserves injections and universal property
+pub struct DomainNode {
+    inner: Box<dyn DomainEntity>,
+    injection: Injection,
+    type_id: TypeId,
 }
 
-pub trait GraphRenderable {
-    fn node_id(&self) -> Uuid;
-    fn node_label(&self) -> String;
-    fn node_color(&self) -> Color;
-    fn node_shape(&self) -> NodeShape;
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Injection {
+    Person, Organization, OrganizationUnit, Location,
+    Policy, Agent, Relationship, Key, Certificate,
+    NatsOperator, NatsAccount, NatsUser, YubiKey,
+}
+
+impl DomainNode {
+    /// Injection ι_Person: Person → DomainNode
+    pub fn inject_person(person: Person) -> Self { /* ... */ }
+
+    /// Universal property: fold with cases
+    pub fn fold<X, F: DomainNodeFolder<Output = X>>(&self, cases: F) -> X { /* ... */ }
+}
+
+/// Universal property: For any X with morphisms from each component
+pub trait DomainNodeFolder {
+    type Output;
+    fn fold_person(&self, p: &Person) -> Self::Output;
+    fn fold_organization(&self, o: &Organization) -> Self::Output;
+    fn fold_location(&self, l: &Location) -> Self::Output;
+    // ... one method per domain type
+}
+
+/// Visualization as a separate functor (separation of concerns)
+pub struct VisualizationFolder;
+impl DomainNodeFolder for VisualizationFolder {
+    type Output = VisualizationData;
+    fn fold_person(&self, p: &Person) -> VisualizationData { /* ... */ }
+    // ...
 }
 ```
 
@@ -313,18 +385,53 @@ impl Model {
 
 ---
 
-### Sprint 7: LiftableDomain Implementation
+### Sprint 7: LiftableDomain as Faithful Functor + Monad
 **Duration**: 3-5 days
-**Goal**: Enable composition with other CIM domains
+**Goal**: Enable composition with proper categorical structure (per ACT expert)
+
+#### Categorical Foundation:
+`LiftableDomain` is a **faithful functor** from Domain categories to Graph category, with **monad structure** for composition (unit, bind, join).
 
 #### Tasks:
-1. [ ] Define `LiftableDomain` trait (or import from cim-domain)
-2. [ ] Implement `LiftableDomain` for `OrganizationConcept`
-3. [ ] Create `Entity` monad wrapper
-4. [ ] Implement lifting for Person, Organization, Location
-5. [ ] Create unified graph from lifted domains
-6. [ ] Test composition with mock domain
-7. [ ] Document composition pattern
+1. [ ] Define `LiftableDomain` trait as faithful functor
+2. [ ] Implement functor laws: `lift(id) = id`, `lift(g ∘ f) = lift(g) ∘ lift(f)`
+3. [ ] Implement `lift_event()` for morphism mapping
+4. [ ] Add `unlift()` for partial inverse (faithfulness)
+5. [ ] Create `LiftedEntity<T>` monad wrapper
+6. [ ] Implement monad operations: `unit()`, `bind()`, `join()`
+7. [ ] Add property tests for monad laws (left/right identity, associativity)
+8. [ ] Implement for Person, Organization, Location, Policy, Agent, Relationship
+9. [ ] Create `GraphProjectionFunctor` for colimit-preserving projection
+10. [ ] Test composition with Kan extension pattern
+11. [ ] Document categorical laws and composition pattern
+
+#### New Structure (per ACT Expert):
+```rust
+/// Faithful functor from Domain to Graph
+pub trait LiftableDomain: DomainEntity + Sized {
+    type Lifted: GraphElement;
+
+    fn lift(&self) -> Self::Lifted;
+    fn unlift(lifted: &Self::Lifted) -> Option<Self>;
+    fn lift_event(event: Self::Event) -> GraphEvent;
+
+    // Functor law verification
+    fn verify_identity_preservation(&self) -> bool;
+    fn verify_composition_preservation(f: Self::Event, g: Self::Event) -> bool;
+}
+
+/// Monad for composing liftings
+pub struct LiftedEntity<T: LiftableDomain> {
+    lifted: T::Lifted,
+    original: Option<T>,
+}
+
+impl<T: LiftableDomain> LiftedEntity<T> {
+    pub fn unit(entity: T) -> Self { /* monad unit */ }
+    pub fn bind<B, F>(self, f: F) -> LiftedEntity<B> where B: LiftableDomain, F: FnOnce(T) -> LiftedEntity<B>;
+    pub fn join(nested: LiftedEntity<LiftedEntity<T>>) -> LiftedEntity<T>;
+}
+```
 
 ---
 
