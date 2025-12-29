@@ -104,10 +104,8 @@ fn main() -> iced::Result {
     println!("⚠️  [WARNING] Ensure this computer is air-gapped for secure key generation!");
     println!();
 
-    // Run the GUI with configuration
-    tokio::runtime::Runtime::new()
-        .unwrap()
-        .block_on(gui::run(output_dir, config))
+    // Run the GUI (iced manages its own async runtime internally)
+    gui::run(output_dir, config)
 }
 
 #[cfg(target_arch = "wasm32")]

@@ -121,10 +121,14 @@ pub enum RoleScope {
 pub enum Permission {
     CreateKeys,
     SignCertificates,
+    SignContract,
     RevokeKeys,
     ManageInfrastructure,
     ViewAuditLogs,
     ModifyConfiguration,
+    ConfigureCompliancePolicy,
+    InitiateHold,
+    ManageDataRetention,
 }
 
 /// NATS permissions for publish/subscribe operations
