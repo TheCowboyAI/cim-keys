@@ -5700,6 +5700,11 @@ impl CimKeysApp {
                 }
             }
 
+            // Apply barycenter ordering to claims to minimize edge crossings
+            if matches!(self.policy_expansion_level, PolicyExpansionLevel::Claims) {
+                self.order_claims_by_barycenter(&category_node_ids, &claim_node_ids, &role_node_ids);
+            }
+
             let node_count = self.policy_graph.nodes.len();
             let edge_count = self.policy_graph.edges.len();
             tracing::info!(
@@ -5709,6 +5714,99 @@ impl CimKeysApp {
                 self.policy_expansion_level
             );
         }
+    }
+
+    /// Order claims within each category by barycenter to minimize edge crossings with roles
+    /// Barycenter = average x-position of connected role nodes
+    fn order_claims_by_barycenter(
+        &mut self,
+        category_node_ids: &std::collections::HashMap<String, Uuid>,
+        claim_node_ids: &std::collections::HashMap<String, Uuid>,
+        role_node_ids: &std::collections::HashMap<String, Uuid>,
+    ) {
+        // Get policy data for claim-to-role mapping
+        let policy_data = match &self.policy_data {
+            Some(pd) => pd.clone(),
+            None => return,
+        };
+
+        // Build reverse mapping: claim -> roles that contain it
+        let mut claim_to_roles: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+        for role in &policy_data.standard_roles {
+            for claim in &role.claims {
+                claim_to_roles.entry(claim.clone()).or_default().push(role.name.clone());
+            }
+        }
+
+        // For each category, reorder claims by barycenter
+        for (category, claims) in &policy_data.claim_categories {
+            // Skip if category is not expanded
+            if !self.expanded_categories.contains(category) {
+                continue;
+            }
+
+            // Calculate barycenter for each claim
+            let mut claim_barycenters: Vec<(String, f32)> = Vec::new();
+            for claim_name in claims {
+                if let Some(&claim_id) = claim_node_ids.get(claim_name) {
+                    // Get x positions of all connected roles
+                    let connected_roles = claim_to_roles.get(claim_name);
+                    let mut x_sum = 0.0;
+                    let mut count = 0;
+
+                    if let Some(roles) = connected_roles {
+                        for role_name in roles {
+                            if let Some(&role_id) = role_node_ids.get(role_name) {
+                                if let Some(role_node) = self.policy_graph.nodes.get(&role_id) {
+                                    x_sum += role_node.position.x;
+                                    count += 1;
+                                }
+                            }
+                        }
+                    }
+
+                    // Barycenter is average x, or original position if no connections
+                    let barycenter = if count > 0 {
+                        x_sum / count as f32
+                    } else if let Some(node) = self.policy_graph.nodes.get(&claim_id) {
+                        node.position.x // Keep original position
+                    } else {
+                        0.0
+                    };
+
+                    claim_barycenters.push((claim_name.clone(), barycenter));
+                }
+            }
+
+            // Sort claims by barycenter
+            claim_barycenters.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+            // Get category position for base x
+            let category_x = category_node_ids.get(category)
+                .and_then(|id| self.policy_graph.nodes.get(id))
+                .map(|n| n.position.x)
+                .unwrap_or(100.0);
+
+            let category_y = category_node_ids.get(category)
+                .and_then(|id| self.policy_graph.nodes.get(id))
+                .map(|n| n.position.y)
+                .unwrap_or(700.0);
+
+            // Reposition claims in sorted order
+            let claim_spacing_y = 40.0;
+            for (idx, (claim_name, _barycenter)) in claim_barycenters.iter().enumerate() {
+                if let Some(&claim_id) = claim_node_ids.get(claim_name) {
+                    if let Some(node) = self.policy_graph.nodes.get_mut(&claim_id) {
+                        node.position = Point::new(
+                            category_x,
+                            category_y + 60.0 + (idx as f32) * claim_spacing_y,
+                        );
+                    }
+                }
+            }
+        }
+
+        tracing::debug!("Applied barycenter ordering to claims");
     }
 
     fn tab_button_style(&self, _theme: &Theme, is_active: bool) -> button::Style {

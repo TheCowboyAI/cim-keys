@@ -3437,6 +3437,48 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
             }
         }
 
+        // Draw drop target indicators for ALL person nodes when dragging a role
+        // This provides visual feedback about valid drop targets
+        if self.dragging_role.is_some() {
+            for (node_id, node) in &self.nodes {
+                if !self.should_show_node(node) {
+                    continue;
+                }
+                // Only highlight Person nodes as valid drop targets
+                if let NodeType::Person { .. } = &node.node_type {
+                    let is_hovered = self.dragging_role.as_ref()
+                        .map(|d| d.hover_person == Some(*node_id))
+                        .unwrap_or(false);
+
+                    // Skip the hovered node - it gets special highlighting later
+                    if is_hovered {
+                        continue;
+                    }
+
+                    // Draw a subtle pulsing ring around valid drop targets
+                    let indicator_radius = 30.0;
+                    let indicator_circle = canvas::Path::circle(node.position, indicator_radius);
+                    let indicator_stroke = canvas::Stroke::default()
+                        .with_color(Color::from_rgba(0.4, 0.7, 0.9, 0.4)) // Light blue, semi-transparent
+                        .with_width(2.0);
+                    frame.stroke(&indicator_circle, indicator_stroke);
+
+                    // Draw small "+" indicator to show this is a drop target
+                    frame.fill_text(canvas::Text {
+                        content: "+".to_string(),
+                        position: Point::new(node.position.x + 25.0, node.position.y - 20.0),
+                        color: Color::from_rgba(0.4, 0.7, 0.9, 0.7),
+                        size: iced::Pixels(12.0),
+                        font: iced::Font::DEFAULT,
+                        horizontal_alignment: iced::alignment::Horizontal::Center,
+                        vertical_alignment: iced::alignment::Vertical::Center,
+                        line_height: LineHeight::default(),
+                        shaping: Shaping::Advanced,
+                    });
+                }
+            }
+        }
+
         // Draw nodes with 3D disc effect (tiddlywinks/necco wafer style)
         for (node_id, node) in &self.nodes {
             // Only draw node if it matches current filter settings
@@ -3876,6 +3918,108 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                     let highlight_circle = canvas::Path::circle(hover_node.position, 35.0);
                     frame.fill(&highlight_circle, highlight_color);
                 }
+            }
+
+            // Draw tooltip overlay with role details and conflicts
+            let tooltip_pos = Point::new(ghost_pos.x + 30.0, ghost_pos.y - 20.0);
+            let tooltip_width = 180.0;
+            let tooltip_line_height = 14.0;
+
+            // Calculate tooltip height based on content
+            let conflict_count = drag.sod_conflicts.len();
+            let tooltip_height = if conflict_count > 0 {
+                30.0 + (conflict_count.min(3) as f32) * tooltip_line_height + 10.0
+            } else if drag.hover_person.is_some() {
+                40.0 // "Drop to assign" message
+            } else {
+                30.0 // Just role name
+            };
+
+            // Draw tooltip background
+            let tooltip_bg = canvas::Path::rectangle(
+                tooltip_pos,
+                iced::Size::new(tooltip_width, tooltip_height),
+            );
+            frame.fill(&tooltip_bg, Color::from_rgba(0.1, 0.1, 0.15, 0.95));
+            frame.stroke(&tooltip_bg, canvas::Stroke::default()
+                .with_color(Color::from_rgba(0.5, 0.5, 0.6, 0.8))
+                .with_width(1.0));
+
+            // Draw role name header
+            frame.fill_text(canvas::Text {
+                content: format!("📋 {}", role_name),
+                position: Point::new(tooltip_pos.x + 8.0, tooltip_pos.y + 12.0),
+                color: Color::WHITE,
+                size: iced::Pixels(11.0),
+                font: iced::Font::DEFAULT,
+                horizontal_alignment: iced::alignment::Horizontal::Left,
+                vertical_alignment: iced::alignment::Vertical::Center,
+                line_height: LineHeight::default(),
+                shaping: Shaping::Advanced,
+            });
+
+            // Show action hint or conflicts
+            if !drag.sod_conflicts.is_empty() {
+                // Show "SoD Violation" warning
+                frame.fill_text(canvas::Text {
+                    content: "⚠️ SoD Conflicts:".to_string(),
+                    position: Point::new(tooltip_pos.x + 8.0, tooltip_pos.y + 26.0),
+                    color: Color::from_rgb(0.9, 0.6, 0.2),
+                    size: iced::Pixels(10.0),
+                    font: iced::Font::DEFAULT,
+                    horizontal_alignment: iced::alignment::Horizontal::Left,
+                    vertical_alignment: iced::alignment::Vertical::Center,
+                    line_height: LineHeight::default(),
+                    shaping: Shaping::Advanced,
+                });
+
+                // List conflicting roles (max 3)
+                for (idx, conflict) in drag.sod_conflicts.iter().take(3).enumerate() {
+                    frame.fill_text(canvas::Text {
+                        content: format!("• {}", conflict.conflicting_role),
+                        position: Point::new(
+                            tooltip_pos.x + 12.0,
+                            tooltip_pos.y + 40.0 + (idx as f32) * tooltip_line_height,
+                        ),
+                        color: Color::from_rgb(0.9, 0.4, 0.3),
+                        size: iced::Pixels(9.0),
+                        font: iced::Font::DEFAULT,
+                        horizontal_alignment: iced::alignment::Horizontal::Left,
+                        vertical_alignment: iced::alignment::Vertical::Center,
+                        line_height: LineHeight::default(),
+                        shaping: Shaping::Advanced,
+                    });
+                }
+
+                if drag.sod_conflicts.len() > 3 {
+                    frame.fill_text(canvas::Text {
+                        content: format!("  +{} more...", drag.sod_conflicts.len() - 3),
+                        position: Point::new(
+                            tooltip_pos.x + 12.0,
+                            tooltip_pos.y + 40.0 + 3.0 * tooltip_line_height,
+                        ),
+                        color: Color::from_rgb(0.7, 0.5, 0.4),
+                        size: iced::Pixels(9.0),
+                        font: iced::Font::DEFAULT,
+                        horizontal_alignment: iced::alignment::Horizontal::Left,
+                        vertical_alignment: iced::alignment::Vertical::Center,
+                        line_height: LineHeight::default(),
+                        shaping: Shaping::Advanced,
+                    });
+                }
+            } else if drag.hover_person.is_some() {
+                // Show "Drop to assign" hint
+                frame.fill_text(canvas::Text {
+                    content: "✓ Drop to assign role".to_string(),
+                    position: Point::new(tooltip_pos.x + 8.0, tooltip_pos.y + 26.0),
+                    color: Color::from_rgb(0.3, 0.8, 0.4),
+                    size: iced::Pixels(10.0),
+                    font: iced::Font::DEFAULT,
+                    horizontal_alignment: iced::alignment::Horizontal::Left,
+                    vertical_alignment: iced::alignment::Vertical::Center,
+                    line_height: LineHeight::default(),
+                    shaping: Shaping::Advanced,
+                });
             }
         }
 
