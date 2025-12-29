@@ -130,9 +130,14 @@
       "nodetype_variants": 21,
       "gui_rs_lines": 8058,
       "cim_domain_crates": {
-        "available": ["cim-domain", "cim-domain-location", "cim-domain-person", "cim-domain-organization", "cim-domain-policy"],
+        "in_cargo_toml": ["cim-domain", "cim-domain-location", "cim-domain-person", "cim-domain-organization", "cim-domain-policy", "cim-graph"],
+        "missing_from_cargo_toml": ["cim-domain-spaces"],
         "actually_used": false,
-        "note": "In Cargo.toml as dependencies but code defines own inline versions"
+        "note": "Dependencies listed but code defines own inline versions. cim-domain-spaces needs to be added for Conceptual Spaces integration."
+      },
+      "cim_graph": {
+        "status": "in_cargo_toml",
+        "used": "partially - for graph structure, but not for domain composition"
       }
     },
     "target": {

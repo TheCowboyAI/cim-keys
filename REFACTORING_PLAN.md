@@ -115,23 +115,34 @@ cim-domain-organization = { path = "../cim-domain-organization", optional = true
 
 ### Sprint 1: Extract Domain Layer
 **Duration**: 3-5 days
-**Goal**: Remove inline domain models, use cim-domain-* crates
+**Goal**: Remove inline domain models, use cim-domain-* and cim-graph crates
+
+#### Available Crates (to use):
+- `cim-domain` - Core domain primitives
+- `cim-domain-person` - Person aggregate
+- `cim-domain-organization` - Organization aggregate
+- `cim-domain-location` - Location aggregate
+- `cim-domain-policy` - Policy/Role/Claims
+- `cim-graph` - Graph composition utilities
 
 #### Tasks:
 1. [ ] Enable `cim-domain-person` feature by default
 2. [ ] Enable `cim-domain-organization` feature by default
-3. [ ] Remove inline `Person` struct from `gui.rs`
-4. [ ] Remove inline `Organization` struct from `gui.rs`
-5. [ ] Remove inline `OrganizationUnit` struct from `gui.rs`
-6. [ ] Replace with imports from cim-domain-* crates
-7. [ ] Update all references throughout codebase
-8. [ ] Add mapping functions where API differs
-9. [ ] Verify compilation
-10. [ ] Run existing tests
+3. [ ] Enable `cim-domain-policy` feature by default
+4. [ ] Remove inline `Person` struct from `src/domain.rs` and `src/domain_stubs.rs`
+5. [ ] Remove inline `Organization` struct from `src/domain.rs` and `src/domain_stubs.rs`
+6. [ ] Remove inline `OrganizationUnit` struct from both files
+7. [ ] Replace with imports from cim-domain-* crates
+8. [ ] Use cim-graph for graph composition patterns
+9. [ ] Update all references throughout codebase
+10. [ ] Add mapping functions where API differs
+11. [ ] Verify compilation
+12. [ ] Run existing tests
 
 #### Acceptance Criteria:
-- Zero inline domain model definitions in `src/gui/`
+- Zero inline domain model definitions in `src/domain.rs`, `src/domain_stubs.rs`, `src/gui/`
 - All domain types imported from `cim-domain-*`
+- Graph operations use `cim-graph` patterns
 - All existing tests pass
 - Compilation without warnings
 
