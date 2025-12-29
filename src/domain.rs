@@ -1,19 +1,35 @@
 //! Master domain model for CIM key infrastructure
 //!
-//! This module defines the foundational domain entities for CIM:
-//! - Organizations and their structure
-//! - People and their roles
-//! - Physical and logical locations
-//! - Key ownership and delegation
+//! This module provides domain types for CIM key infrastructure by:
+//! - Importing canonical types from cim-domain-* crates
+//! - Defining cim-keys specific extensions (NatsPermissions, KeyOwnership, etc.)
+//! - Providing bootstrap configuration types for JSON loading
 //!
-//! cim-keys is the genesis point that creates the initial Domain
-//! for a business infrastructure. These models are projected to
-//! encrypted storage and imported by CIM deployments.
+//! ## Architecture
+//!
+//! **Domain Types** (from cim-domain-*):
+//! - Organization, Department, Team, Role from cim-domain-organization
+//! - Person (core identity) from cim-domain-person
+//! - Location from cim-domain-location
+//! - EdgeConcept, RelationshipCategory from cim-domain-relationship
+//!
+//! **Bootstrap Types** (cim-keys specific):
+//! - BootstrapOrganization - JSON config with embedded units
+//! - BootstrapPerson - JSON config with roles/permissions
+//!
+//! **cim-keys Extensions**:
+//! - KeyOwnership, KeyOwnerRole - PKI ownership model
+//! - NatsPermissions, NatsIdentity - NATS security configuration
+//! - Policy, PolicyClaim - Claims-based authorization
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use chrono::{DateTime, Utc, Timelike};
 use std::collections::HashMap;
+
+// ============================================================================
+// DOMAIN IMPORTS FROM CIM-DOMAIN-* CRATES
+// ============================================================================
 
 // Import Location domain from cim-domain-location
 pub use cim_domain_location::{
@@ -27,6 +43,45 @@ pub use cim_domain_location::{
     LocationDomainEvent,  // Events
 };
 
+// Import Organization domain types from cim-domain-organization
+// These are the canonical DDD types for runtime operations
+#[cfg(feature = "policy")]
+pub use cim_domain_organization::{
+    Organization as DomainOrganization,
+    OrganizationUnit as DomainOrganizationUnit,
+    Department as DomainDepartment,
+    Team as DomainTeam,
+    Role as DomainRole,
+    OrganizationType,
+    OrganizationStatus,
+};
+
+// OrganizationUnitType from entity submodule (not exported at crate root)
+#[cfg(feature = "policy")]
+pub use cim_domain_organization::entity::OrganizationUnitType as DomainOrganizationUnitType;
+
+// Import Person domain types from cim-domain-person
+// Person is core identity only (name, birth/death, lifecycle)
+#[cfg(feature = "policy")]
+pub use cim_domain_person::{
+    Person as DomainPerson,
+    PersonId,
+    PersonMarker,
+    PersonName,
+    EmploymentRelationship,
+    EmploymentRole,
+};
+
+// Import Relationship domain types from cim-domain-relationship
+#[cfg(feature = "policy")]
+pub use cim_domain_relationship::{
+    EdgeConcept,
+    RelationshipCategory,
+    EntityRef,
+    EntityType as RelationshipEntityType,
+    RelationshipQuality,
+};
+
 // Import Agent domain from cim-domain-agent (optional feature)
 #[cfg(feature = "cim-domain-agent")]
 pub use cim_domain_agent::{
@@ -34,10 +89,17 @@ pub use cim_domain_agent::{
     AgentType,
 };
 
-// We define our own complete domain models here since cim-keys
-// is the master that creates the initial infrastructure domain
+// ============================================================================
+// BOOTSTRAP CONFIGURATION TYPES
+// ============================================================================
+// These types are for JSON deserialization of bootstrap configuration files.
+// They provide a "denormalized" view with embedded relationships for convenience.
+// After loading, convert to proper domain types for runtime operations.
 
-/// Organization in the CIM infrastructure
+/// Bootstrap organization configuration with embedded units
+///
+/// This is for JSON deserialization from domain-bootstrap.json.
+/// Convert to DomainOrganization for runtime operations.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Organization {
     pub id: Uuid,
@@ -45,11 +107,12 @@ pub struct Organization {
     pub display_name: String,
     pub description: Option<String>,
     pub parent_id: Option<Uuid>,
+    /// Embedded units for bootstrap convenience (denormalized)
     pub units: Vec<OrganizationUnit>,
     pub metadata: HashMap<String, String>,
 }
 
-/// Organizational unit within an organization
+/// Bootstrap organizational unit configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrganizationUnit {
     pub id: Uuid,
@@ -61,7 +124,7 @@ pub struct OrganizationUnit {
     pub nats_account_name: Option<String>,
 }
 
-/// Type of organizational unit
+/// Type of organizational unit (bootstrap version)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OrganizationUnitType {
     Division,
@@ -72,7 +135,14 @@ pub enum OrganizationUnitType {
     Infrastructure,
 }
 
-/// Person in the organization
+/// Bootstrap person configuration with organization-specific data
+///
+/// This is for JSON deserialization from domain-bootstrap.json.
+/// Contains both person identity AND organizational membership.
+///
+/// For runtime operations, use:
+/// - `DomainPerson` for core person identity (from cim-domain-person)
+/// - `EmploymentRelationship` for org membership (from cim-domain-person::cross_domain)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Person {
     pub id: Uuid,
@@ -142,6 +212,118 @@ pub struct NatsPermissions {
     pub allow_responses: bool,
     /// Maximum message payload size in bytes
     pub max_payload: Option<usize>,
+}
+
+// ============================================================================
+// CONVERSION IMPLEMENTATIONS
+// ============================================================================
+// These implementations allow converting between bootstrap types (for JSON loading)
+// and domain types (for runtime operations with cim-domain-* crates).
+
+#[cfg(feature = "policy")]
+impl Organization {
+    /// Convert bootstrap Organization to domain Organization
+    ///
+    /// Note: The embedded `units` are NOT included in the domain Organization.
+    /// They should be converted separately to DomainOrganizationUnit entities.
+    pub fn to_domain(&self) -> DomainOrganization {
+        use cim_domain::EntityId;
+        let now = Utc::now();
+        DomainOrganization {
+            id: EntityId::from_uuid(self.id),
+            name: self.name.clone(),
+            display_name: self.display_name.clone(),
+            description: self.description.clone(),
+            parent_id: self.parent_id.map(EntityId::from_uuid),
+            organization_type: OrganizationType::Corporation, // Default
+            status: OrganizationStatus::Active,
+            founded_date: None,
+            metadata: serde_json::to_value(&self.metadata).unwrap_or_default(),
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    /// Extract units as domain OrganizationUnit entities
+    pub fn units_to_domain(&self) -> Vec<DomainOrganizationUnit> {
+        use cim_domain::EntityId;
+        let now = Utc::now();
+        self.units.iter().map(|unit| {
+            DomainOrganizationUnit {
+                id: EntityId::from_uuid(unit.id),
+                organization_id: EntityId::from_uuid(self.id),
+                parent_id: unit.parent_unit_id.map(EntityId::from_uuid),
+                unit_type: match unit.unit_type {
+                    OrganizationUnitType::Division => DomainOrganizationUnitType::Division,
+                    OrganizationUnitType::Department => DomainOrganizationUnitType::Branch,
+                    OrganizationUnitType::Team => DomainOrganizationUnitType::Office,
+                    OrganizationUnitType::Project => DomainOrganizationUnitType::BusinessUnit,
+                    OrganizationUnitType::Service => DomainOrganizationUnitType::CostCenter,
+                    OrganizationUnitType::Infrastructure => DomainOrganizationUnitType::Other("Infrastructure".to_string()),
+                },
+                name: unit.name.clone(),
+                code: unit.name.to_lowercase().replace(' ', "-"),
+                description: unit.nats_account_name.clone(),
+                metadata: serde_json::Value::Object(serde_json::Map::new()),
+                created_at: now,
+                updated_at: now,
+            }
+        }).collect()
+    }
+}
+
+#[cfg(feature = "policy")]
+impl Person {
+    /// Convert bootstrap Person to domain Person (core identity only)
+    ///
+    /// Note: Organization membership (roles, unit_ids) are NOT included.
+    /// They should be represented as EmploymentRelationship from cim-domain-person.
+    pub fn to_domain_person(&self) -> DomainPerson {
+        // Parse name into first/last
+        let parts: Vec<&str> = self.name.split_whitespace().collect();
+        let (first, last) = if parts.len() >= 2 {
+            (parts[0].to_string(), parts[1..].join(" "))
+        } else {
+            (self.name.clone(), String::new())
+        };
+
+        DomainPerson::new(
+            PersonId::from_uuid(self.id),
+            PersonName::new(first, last),
+        )
+    }
+
+    /// Create an EmploymentRelationship for this person's org membership
+    pub fn to_employment(&self) -> EmploymentRelationship {
+        use chrono::NaiveDate;
+        use cim_domain_person::cross_domain::person_organization::{
+            EmploymentType, EmploymentMetadata, RemoteWorkArrangement,
+        };
+        EmploymentRelationship {
+            person_id: PersonId::from_uuid(self.id),
+            organization_id: self.organization_id,
+            role: EmploymentRole {
+                title: self.roles.first()
+                    .map(|r| format!("{:?}", r.role_type))
+                    .unwrap_or_else(|| "Member".to_string()),
+                level: None,
+                category: None,
+            },
+            department_id: self.unit_ids.first().copied(),
+            start_date: NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(), // Default
+            end_date: None,
+            employment_type: EmploymentType::FullTime,
+            reporting_to: self.owner_id.map(PersonId::from_uuid),
+            is_primary: true,
+            metadata: EmploymentMetadata {
+                compensation: None,
+                work_location_id: None,
+                remote_work: RemoteWorkArrangement::OnSite,
+                agreement_id: None,
+                custom_attributes: std::collections::HashMap::new(),
+            },
+        }
+    }
 }
 
 /// Key ownership tied to a person in the organization

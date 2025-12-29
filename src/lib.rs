@@ -91,9 +91,6 @@ pub mod policy_types;
 // NATS identity types for security configuration
 pub mod nats_identity_types;
 
-// Domain stubs for temporary compatibility
-pub mod domain_stubs;
-
 // IPLD support for content-addressed storage
 pub mod ipld_support;
 
@@ -133,11 +130,25 @@ pub use types::KeyMetadata;
 pub use aggregate::{KeyManagementAggregate, KeyManagementError};
 pub use projections::{OfflineKeyProjection, KeyManifest, ProjectionError};
 pub use domain::{
+    // Bootstrap types (for JSON loading)
     Organization, OrganizationUnit, Person, PersonRole, Location,
     KeyOwnership, KeyContext, NatsIdentity,
     OrganizationalPKI, ServiceAccount, KeyOwnerRole,
     // Re-export Location types from cim-domain-location
     LocationMarker, Address, GeoCoordinates, LocationType, VirtualLocation,
+};
+
+// Re-export canonical domain types from cim-domain-* crates (when policy feature enabled)
+#[cfg(feature = "policy")]
+pub use domain::{
+    // Organization domain
+    DomainOrganization, DomainOrganizationUnit, DomainDepartment, DomainTeam, DomainRole,
+    OrganizationType, OrganizationStatus, DomainOrganizationUnitType,
+    // Person domain
+    DomainPerson, PersonId, PersonMarker, PersonName,
+    EmploymentRelationship, EmploymentRole,
+    // Relationship domain
+    EdgeConcept, RelationshipCategory, EntityRef, RelationshipEntityType, RelationshipQuality,
 };
 
 // Re-export from cim-domain for convenience
