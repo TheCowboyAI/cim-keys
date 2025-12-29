@@ -69,6 +69,14 @@ pub const ICON_SETTINGS: char = '⚙';
 pub const ICON_FOLDER: char = '📁';
 pub const ICON_FOLDER_OPEN: char = '📂';
 
+// Additional icons for DomainNode visualization
+pub const ICON_KEY: char = '🔑';
+pub const ICON_USB: char = '🔌';
+pub const ICON_MEMORY: char = '💾';
+pub const ICON_DOWNLOAD: char = '📥';
+pub const ICON_HELP: char = '❓';
+pub const ICON_CHECK_CIRCLE: char = '✅';
+
 /// Render an icon with default size and emoji font
 pub fn icon<'a, Message: 'a>(icon_char: char) -> Element<'a, Message> {
     text(icon_char)

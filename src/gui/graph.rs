@@ -284,7 +284,7 @@ pub enum NodeType {
     },
 
     /// Separation class - grouping of roles for progressive disclosure
-    SeparationClassGroup {
+    PolicyGroup {
         class_id: Uuid,
         name: String,
         separation_class: crate::policy::SeparationClass,
@@ -346,7 +346,7 @@ pub enum EdgeType {
     RoleContainsClaim,
     /// Category contains claim (PolicyCategory → PolicyClaim)
     CategoryContainsClaim,
-    /// Separation class contains role (SeparationClassGroup → PolicyRole)
+    /// Separation class contains role (PolicyGroup → PolicyRole)
     ClassContainsRole,
     /// Policy requirement (Role → Policy)
     RoleRequiresPolicy,
@@ -900,7 +900,7 @@ impl OrganizationConcept {
 
         let node = ConceptEntity {
             id: class_id,
-            node_type: NodeType::SeparationClassGroup {
+            node_type: NodeType::PolicyGroup {
                 class_id,
                 name: name.clone(),
                 separation_class,
@@ -2019,7 +2019,7 @@ impl OrganizationConcept {
                 // Policy Categories (progressive disclosure)
                 NodeType::PolicyCategory { .. } => "PolicyCategory",
                 // Separation Class Groups (progressive disclosure)
-                NodeType::SeparationClassGroup { .. } => "SeparationClassGroup",
+                NodeType::PolicyGroup { .. } => "PolicyGroup",
             };
             type_groups.entry(type_key.to_string()).or_insert_with(Vec::new).push(*id);
         }
@@ -2824,7 +2824,7 @@ impl OrganizationConcept {
                 // Policy claims go in tier 2 (below roles)
                 NodeType::PolicyClaim { .. } => tier_2.push(*id),
                 // Separation class groups go in tier 0 (top level)
-                NodeType::SeparationClassGroup { .. } => tier_0.push(*id),
+                NodeType::PolicyGroup { .. } => tier_0.push(*id),
                 // Policy categories go in tier 1 (same level as roles)
                 NodeType::PolicyCategory { .. } => tier_1.push(*id),
             }
@@ -3021,7 +3021,7 @@ impl OrganizationConcept {
             NodeType::Organization(_) | NodeType::OrganizationalUnit(_) |
             NodeType::Location(_) | NodeType::Role(_) | NodeType::Policy(_) |
             NodeType::PolicyRole { .. } | NodeType::PolicyClaim { .. } |
-            NodeType::PolicyCategory { .. } | NodeType::SeparationClassGroup { .. } => {
+            NodeType::PolicyCategory { .. } | NodeType::PolicyGroup { .. } => {
                 self.filter_show_orgs
             }
             NodeType::NatsOperator(_) | NodeType::NatsAccount(_) |
@@ -3224,7 +3224,7 @@ impl OrganizationConcept {
                 // Policy Categories (progressive disclosure)
                 NodeType::PolicyCategory { .. } => org_nodes.push(*id),
                 // Separation Class Groups (progressive disclosure)
-                NodeType::SeparationClassGroup { .. } => org_nodes.push(*id),
+                NodeType::PolicyGroup { .. } => org_nodes.push(*id),
             }
         }
 
@@ -3751,7 +3751,7 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                     format!("{} claims", claim_count),
                 ),
                 // Separation Class Groups (progressive disclosure) - no icon above, +/- indicator below
-                NodeType::SeparationClassGroup { name, role_count, .. } => (
+                NodeType::PolicyGroup { name, role_count, .. } => (
                     ' ',  // No icon - the +/- indicator below is the main UI element
                     iced::Font::DEFAULT,
                     name.clone(),
@@ -3793,14 +3793,14 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                 shaping: Shaping::Advanced,
             });
 
-            // Draw +/- expansion indicator for expandable nodes (SeparationClassGroup, PolicyCategory)
+            // Draw +/- expansion indicator for expandable nodes (PolicyGroup, PolicyCategory)
             let is_expandable = matches!(
                 &node.node_type,
-                NodeType::SeparationClassGroup { .. } | NodeType::PolicyCategory { .. }
+                NodeType::PolicyGroup { .. } | NodeType::PolicyCategory { .. }
             );
             if is_expandable {
                 let expanded = match &node.node_type {
-                    NodeType::SeparationClassGroup { expanded, .. } => *expanded,
+                    NodeType::PolicyGroup { expanded, .. } => *expanded,
                     NodeType::PolicyCategory { expanded, .. } => *expanded,
                     _ => false,
                 };
@@ -4140,7 +4140,7 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                         // Check if this is an expandable node
                         let is_expandable = matches!(
                             &node.node_type,
-                            NodeType::SeparationClassGroup { .. } | NodeType::PolicyCategory { .. }
+                            NodeType::PolicyGroup { .. } | NodeType::PolicyCategory { .. }
                         );
 
                         if is_expandable {
@@ -4647,7 +4647,7 @@ pub fn view_graph(graph: &OrganizationConcept) -> Element<'_, OrganizationIntent
                     text("Click to toggle expansion").size(12),
                 ],
                 // Separation Class Groups (progressive disclosure)
-                NodeType::SeparationClassGroup { class_id, name, separation_class, role_count, expanded } => column![
+                NodeType::PolicyGroup { class_id, name, separation_class, role_count, expanded } => column![
                     text("Selected Separation Class:").size(16),
                     text(format!("ID: {}", class_id)),
                     text(format!("Name: {}", name)),

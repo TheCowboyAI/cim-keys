@@ -39,6 +39,7 @@ pub mod graph_pki;
 pub mod graph_nats;
 pub mod graph_yubikey;
 pub mod graph_events;
+pub mod domain_node;
 
 // Aggregate-specific graph views for DDD organization
 pub mod graph_person;
@@ -3326,8 +3327,8 @@ impl CimKeysApp {
                     OrganizationIntent::ExpandIndicatorClicked(id) => {
                         // Handle +/- indicator click for expandable nodes
                         if let Some(node) = self.policy_graph.nodes.get(id) {
-                            // SeparationClassGroup expansion
-                            if let graph::NodeType::SeparationClassGroup { separation_class, .. } = &node.node_type {
+                            // PolicyGroup expansion
+                            if let graph::NodeType::PolicyGroup { separation_class, .. } = &node.node_type {
                                 let class = separation_class.clone();
                                 if self.expanded_separation_classes.contains(&class) {
                                     self.expanded_separation_classes.remove(&class);
@@ -4106,8 +4107,8 @@ impl CimKeysApp {
                                         }
                                     }
                                     // Separation Class Groups - read-only, return unchanged
-                                    graph::NodeType::SeparationClassGroup { class_id, name, separation_class, role_count, expanded } => {
-                                        graph::NodeType::SeparationClassGroup {
+                                    graph::NodeType::PolicyGroup { class_id, name, separation_class, role_count, expanded } => {
+                                        graph::NodeType::PolicyGroup {
                                             class_id: *class_id,
                                             name: name.clone(),
                                             separation_class: separation_class.clone(),
@@ -4569,7 +4570,7 @@ impl CimKeysApp {
                             name.to_lowercase().contains(&query_lower)
                         }
                         // Separation Class Groups
-                        graph::NodeType::SeparationClassGroup { name, .. } => {
+                        graph::NodeType::PolicyGroup { name, .. } => {
                             "class".contains(&query_lower) || "separation".contains(&query_lower) ||
                             name.to_lowercase().contains(&query_lower)
                         }
@@ -5551,7 +5552,7 @@ impl CimKeysApp {
     }
 
     /// Populate the policy graph with progressive disclosure
-    /// - Classes level: Show only 6 SeparationClassGroup nodes
+    /// - Classes level: Show only 6 PolicyGroup nodes
     /// - Roles level: Show roles in expanded classes, or all if level is Roles
     /// - Claims level: Show roles + claims for expanded categories
     fn populate_policy_graph(&mut self) {

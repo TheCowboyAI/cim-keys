@@ -315,7 +315,7 @@ impl PropertyCard {
                 self.edit_enabled = true;
             }
             // Separation Class Groups - clickable to expand/collapse
-            NodeType::SeparationClassGroup { name, role_count, expanded, .. } => {
+            NodeType::PolicyGroup { name, role_count, expanded, .. } => {
                 self.edit_name = name.clone();
                 self.edit_description = format!("{} roles | {}", role_count, if *expanded { "Expanded" } else { "Collapsed" });
                 self.edit_email = String::new();
@@ -535,7 +535,7 @@ impl PropertyCard {
                 return self.view_yubikey_details(node_type);
             }
             NodeType::PolicyRole { .. } | NodeType::PolicyCategory { .. } |
-            NodeType::SeparationClassGroup { .. } => {
+            NodeType::PolicyGroup { .. } => {
                 return self.view_policy_details(node_type);
             }
             _ => {}
@@ -551,7 +551,7 @@ impl PropertyCard {
             // Policy graph node types
             NodeType::PolicyRole { .. } => "Role",
             NodeType::PolicyCategory { .. } => "Claim Category",
-            NodeType::SeparationClassGroup { .. } => "Separation Class",
+            NodeType::PolicyGroup { .. } => "Separation Class",
             // Certificate types
             NodeType::RootCertificate { .. } => "Root Certificate",
             NodeType::IntermediateCertificate { .. } => "Intermediate Certificate",
@@ -1408,7 +1408,7 @@ impl PropertyCard {
                     text("Claim categories group related permissions.").size(11).color(Color::from_rgb(0.6, 0.6, 0.7)),
                 ].spacing(8)
             ),
-            NodeType::SeparationClassGroup { name, role_count, separation_class, .. } => (
+            NodeType::PolicyGroup { name, role_count, separation_class, .. } => (
                 "Separation Class",
                 column![
                     self.detail_row("Class:", name),
