@@ -345,6 +345,56 @@ pub enum Intent {
         error: String,
     },
 
+    /// Bootstrap domain data loaded from storage
+    PortDomainLoaded {
+        organization_name: String,
+        organization_id: String,
+        people_count: usize,
+        locations_count: usize,
+    },
+
+    /// Bootstrap secrets data loaded from storage
+    PortSecretsLoaded {
+        organization_name: String,
+        people_count: usize,
+        yubikey_count: usize,
+    },
+
+    /// Domain exported to path
+    PortDomainExported {
+        path: String,
+        bytes_written: usize,
+    },
+
+    /// Domain export failed
+    PortDomainExportFailed {
+        path: String,
+        error: String,
+    },
+
+    /// NATS hierarchy generated
+    PortNatsHierarchyGenerated {
+        operator_name: String,
+        account_count: usize,
+        user_count: usize,
+    },
+
+    /// NATS hierarchy generation failed
+    PortNatsHierarchyFailed {
+        error: String,
+    },
+
+    /// Policy data loaded
+    PortPolicyLoaded {
+        role_count: usize,
+        assignment_count: usize,
+    },
+
+    /// Policy loading failed
+    PortPolicyLoadFailed {
+        error: String,
+    },
+
     // ===== System-Originated Intents =====
     /// System file picker dialog returned a path
     SystemFileSelected(PathBuf),
@@ -387,6 +437,9 @@ impl Intent {
                 | Intent::PortX509GenerationFailed { .. }
                 | Intent::PortSSHGenerationFailed { .. }
                 | Intent::PortYubiKeyOperationFailed { .. }
+                | Intent::PortDomainExportFailed { .. }
+                | Intent::PortNatsHierarchyFailed { .. }
+                | Intent::PortPolicyLoadFailed { .. }
                 | Intent::SystemErrorOccurred { .. }
         )
     }
@@ -442,6 +495,15 @@ impl Intent {
                 | Intent::PortYubiKeyDevicesListed { .. }
                 | Intent::PortYubiKeyKeyGenerated { .. }
                 | Intent::PortYubiKeyOperationFailed { .. }
+                // New async result intents
+                | Intent::PortDomainLoaded { .. }
+                | Intent::PortSecretsLoaded { .. }
+                | Intent::PortDomainExported { .. }
+                | Intent::PortDomainExportFailed { .. }
+                | Intent::PortNatsHierarchyGenerated { .. }
+                | Intent::PortNatsHierarchyFailed { .. }
+                | Intent::PortPolicyLoaded { .. }
+                | Intent::PortPolicyLoadFailed { .. }
         )
     }
 

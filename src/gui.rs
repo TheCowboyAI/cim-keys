@@ -681,6 +681,133 @@ pub enum Message {
     RoleDragCancel,        // Escape pressed (cancel)
 }
 
+impl Message {
+    /// Convert a Message to an Intent if applicable
+    ///
+    /// This method provides a bridge from the Iced Message type to the
+    /// MVI Intent type. Messages that have direct Intent equivalents are
+    /// converted; Iced-specific messages return None.
+    ///
+    /// ## Intent Routing Categories
+    ///
+    /// Messages are categorized by their origin and handling:
+    ///
+    /// 1. **Ui* Intents**: User interface interactions (button clicks, form inputs)
+    /// 2. **Domain* Intents**: Domain events from aggregates
+    /// 3. **Port* Intents**: Async responses from hexagonal ports
+    /// 4. **System* Intents**: System-level events (file picker, clipboard)
+    /// 5. **Iced-specific**: Component wrappers, animations (remain as Message)
+    pub fn to_intent(&self) -> Option<Intent> {
+        match self {
+            // === Direct Ui* Intent mappings ===
+            Message::TabSelected(tab) => {
+                // Convert gui::Tab to mvi::model::Tab
+                let mvi_tab = match tab {
+                    Tab::Welcome => crate::mvi::model::Tab::Welcome,
+                    Tab::Organization => crate::mvi::model::Tab::Organization,
+                    Tab::Keys => crate::mvi::model::Tab::Keys,
+                    Tab::Export => crate::mvi::model::Tab::Export,
+                    Tab::Locations => return None, // No equivalent in mvi::model::Tab
+                };
+                Some(Intent::UiTabSelected(mvi_tab))
+            }
+            Message::CreateNewDomain => Some(Intent::UiCreateDomainClicked),
+            Message::OrganizationNameChanged(name) => {
+                Some(Intent::UiOrganizationNameChanged(name.clone()))
+            }
+            Message::MasterPassphraseChanged(pass) => {
+                Some(Intent::UiPassphraseChanged(pass.clone()))
+            }
+            Message::MasterPassphraseConfirmChanged(pass) => {
+                Some(Intent::UiPassphraseConfirmChanged(pass.clone()))
+            }
+            Message::AddPerson => Some(Intent::UiAddPersonClicked),
+            Message::GenerateRootCA => Some(Intent::UiGenerateRootCAClicked),
+            Message::GenerateSSHKeys => Some(Intent::UiGenerateSSHKeysClicked),
+            Message::GenerateAllKeys => Some(Intent::UiGenerateAllKeysClicked),
+
+            // === Already an Intent - unwrap ===
+            Message::MviIntent(intent) => Some(intent.clone()),
+
+            // === Iced-specific - remain as Message ===
+            // Component wrappers
+            Message::OrganizationIntent(_)
+            | Message::ContextMenuMessage(_)
+            | Message::PropertyCardMessage(_)
+            | Message::PassphraseDialogMessage(_)
+            | Message::RolePaletteMessage(_) => None,
+
+            // Animations and subscriptions
+            Message::AnimationTick
+            | Message::RoleDragMove(_)
+            | Message::RoleDragDrop
+            | Message::RoleDragCancel => None,
+
+            // All other messages don't have Intent equivalents yet
+            _ => None,
+        }
+    }
+
+    /// Check if this message can be converted to an Intent
+    #[inline]
+    pub fn has_intent_equivalent(&self) -> bool {
+        self.to_intent().is_some()
+    }
+
+    /// Get the origin category of this message
+    ///
+    /// Returns a string describing the origin for debugging and logging.
+    pub fn origin_category(&self) -> &'static str {
+        match self {
+            // UI-originated messages
+            Message::TabSelected(_)
+            | Message::CreateNewDomain
+            | Message::LoadExistingDomain
+            | Message::OrganizationNameChanged(_)
+            | Message::MasterPassphraseChanged(_)
+            | Message::AddPerson
+            | Message::GenerateRootCA
+            | Message::GenerateSSHKeys
+            | Message::GenerateAllKeys
+            | Message::ToggleHelp
+            | Message::IncreaseScale
+            | Message::DecreaseScale
+            | Message::ResetScale
+            | Message::SearchQueryChanged(_)
+            | Message::ClearSearch => "Ui",
+
+            // Port-originated messages (async results)
+            Message::DomainCreated(_)
+            | Message::DomainLoaded(_)
+            | Message::SecretsImported(_)
+            | Message::YubiKeysDetected(_)
+            | Message::YubiKeyProvisioned(_)
+            | Message::DomainExported(_)
+            | Message::KeysGenerated(_)
+            | Message::NatsHierarchyGenerated(_)
+            | Message::PolicyDataLoaded(_)
+            | Message::GraphExported(_)
+            | Message::GraphImported(_) => "Port",
+
+            // Component messages (delegated to sub-components)
+            Message::OrganizationIntent(_)
+            | Message::ContextMenuMessage(_)
+            | Message::PropertyCardMessage(_)
+            | Message::PassphraseDialogMessage(_)
+            | Message::RolePaletteMessage(_) => "Component",
+
+            // System messages
+            Message::AnimationTick => "System",
+
+            // MVI bridge
+            Message::MviIntent(_) => "MviIntent",
+
+            // Default for unclassified
+            _ => "Other",
+        }
+    }
+}
+
 /// Bootstrap configuration - supports both full and simplified formats
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]

@@ -971,6 +971,94 @@ pub fn update(
             (updated, Task::none())
         }
 
+        // ===== New Port Intents for async results =====
+        Intent::PortDomainLoaded {
+            organization_name,
+            organization_id,
+            people_count,
+            locations_count,
+        } => {
+            let updated = model.with_status_message(format!(
+                "Domain loaded: {} (ID: {}, {} people, {} locations)",
+                organization_name, organization_id, people_count, locations_count
+            ));
+            (updated, Task::none())
+        }
+
+        Intent::PortSecretsLoaded {
+            organization_name,
+            people_count,
+            yubikey_count,
+        } => {
+            let updated = model.with_status_message(format!(
+                "Secrets loaded: {} ({} people, {} YubiKeys)",
+                organization_name, people_count, yubikey_count
+            ));
+            (updated, Task::none())
+        }
+
+        Intent::PortDomainExported { path, bytes_written } => {
+            let updated = model
+                .with_export_status(ExportStatus::Completed {
+                    path: path.clone().into(),
+                    bytes_written,
+                })
+                .with_status_message(format!(
+                    "Domain exported to {} ({} bytes)",
+                    path, bytes_written
+                ));
+            (updated, Task::none())
+        }
+
+        Intent::PortDomainExportFailed { path, error } => {
+            let updated = model
+                .with_export_status(ExportStatus::Failed { error: error.clone() })
+                .with_error(Some(format!(
+                    "Domain export failed to {}: {}",
+                    path, error
+                )));
+            (updated, Task::none())
+        }
+
+        Intent::PortNatsHierarchyGenerated {
+            operator_name,
+            account_count,
+            user_count,
+        } => {
+            let updated = model.with_status_message(format!(
+                "NATS hierarchy generated: {} ({} accounts, {} users)",
+                operator_name, account_count, user_count
+            ));
+            (updated, Task::none())
+        }
+
+        Intent::PortNatsHierarchyFailed { error } => {
+            let updated = model.with_error(Some(format!(
+                "NATS hierarchy generation failed: {}",
+                error
+            )));
+            (updated, Task::none())
+        }
+
+        Intent::PortPolicyLoaded {
+            role_count,
+            assignment_count,
+        } => {
+            let updated = model.with_status_message(format!(
+                "Policy loaded: {} roles, {} assignments",
+                role_count, assignment_count
+            ));
+            (updated, Task::none())
+        }
+
+        Intent::PortPolicyLoadFailed { error } => {
+            let updated = model.with_error(Some(format!(
+                "Policy load failed: {}",
+                error
+            )));
+            (updated, Task::none())
+        }
+
         Intent::NoOp => {
             (model, Task::none())
         }
