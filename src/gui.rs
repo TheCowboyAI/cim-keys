@@ -3301,7 +3301,45 @@ impl CimKeysApp {
                             // Normal node selection
                             self.selected_person = Some(*id);
                             self.org_graph.selected_node = Some(*id);  // Update graph's selected node
-                            // Phase 4: Open property card when node is clicked
+
+                            // Check policy_graph first for progressive disclosure nodes
+                            if let Some(node) = self.policy_graph.nodes.get(id) {
+                                // Check if this is a SeparationClassGroup - toggle expansion
+                                if let graph::NodeType::SeparationClassGroup { separation_class, .. } = &node.node_type {
+                                    let class = separation_class.clone();
+                                    if self.expanded_separation_classes.contains(&class) {
+                                        self.expanded_separation_classes.remove(&class);
+                                        self.status_message = format!("Collapsed {} class", node.label);
+                                    } else {
+                                        self.expanded_separation_classes.insert(class);
+                                        self.status_message = format!("Expanded {} class - showing roles", node.label);
+                                    }
+                                    self.populate_policy_graph();
+                                    return Task::none();
+                                }
+
+                                // Check if this is a PolicyCategory - toggle expansion
+                                if let graph::NodeType::PolicyCategory { name, .. } = &node.node_type {
+                                    let cat_name = name.clone();
+                                    if self.expanded_categories.contains(&cat_name) {
+                                        self.expanded_categories.remove(&cat_name);
+                                        self.status_message = format!("Collapsed {} category", node.label);
+                                    } else {
+                                        self.expanded_categories.insert(cat_name);
+                                        self.status_message = format!("Expanded {} category - showing claims", node.label);
+                                    }
+                                    self.populate_policy_graph();
+                                    return Task::none();
+                                }
+
+                                // For other policy nodes, show in property card
+                                self.policy_graph.selected_node = Some(*id);
+                                self.property_card.set_node(*id, node.node_type.clone());
+                                self.status_message = format!("Selected policy node '{}'", node.label);
+                                return Task::none();
+                            }
+
+                            // Phase 4: Open property card when node is clicked (org_graph)
                             if let Some(node) = self.org_graph.nodes.get(id) {
                                 self.property_card.set_node(*id, node.node_type.clone());
                                 self.status_message = format!("Selected '{}' - property card: {}, selected_node: {:?}",
