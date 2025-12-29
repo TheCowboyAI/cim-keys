@@ -1218,7 +1218,7 @@ impl FoldDomainNode for FoldVisualization {
         VisualizationData {
             color: iced::Color::from_rgb(0.2, 0.8, 1.0), // Cyan
             primary_text: name.to_string(),
-            secondary_text: format!("@{}", account_name),
+            secondary_text: format!("Account: {}", account_name),
             icon: crate::icons::ICON_PERSON,
             icon_font: crate::icons::MATERIAL_ICONS,
             expandable: false,
@@ -1232,13 +1232,13 @@ impl FoldDomainNode for FoldVisualization {
         subject: &str,
         _issuer: &str,
         _not_before: DateTime<Utc>,
-        _not_after: DateTime<Utc>,
+        not_after: DateTime<Utc>,
         _key_usage: &[String],
     ) -> Self::Output {
         VisualizationData {
             color: iced::Color::from_rgb(0.0, 0.6, 0.4), // Dark teal (root trust)
-            primary_text: format!("Root CA: {}", subject),
-            secondary_text: "Root Certificate".to_string(),
+            primary_text: "Root CA".to_string(),
+            secondary_text: format!("{} (expires {})", subject, not_after.format("%Y-%m-%d")),
             icon: crate::icons::ICON_VERIFIED,
             icon_font: crate::icons::MATERIAL_ICONS,
             expandable: false,
@@ -1252,13 +1252,13 @@ impl FoldDomainNode for FoldVisualization {
         subject: &str,
         _issuer: &str,
         _not_before: DateTime<Utc>,
-        _not_after: DateTime<Utc>,
+        not_after: DateTime<Utc>,
         _key_usage: &[String],
     ) -> Self::Output {
         VisualizationData {
             color: iced::Color::from_rgb(0.2, 0.8, 0.6), // Medium teal
-            primary_text: format!("Intermediate CA: {}", subject),
-            secondary_text: "Intermediate Certificate".to_string(),
+            primary_text: "Intermediate CA".to_string(),
+            secondary_text: format!("{} (expires {})", subject, not_after.format("%Y-%m-%d")),
             icon: crate::icons::ICON_VERIFIED,
             icon_font: crate::icons::MATERIAL_ICONS,
             expandable: false,
@@ -1272,15 +1272,20 @@ impl FoldDomainNode for FoldVisualization {
         subject: &str,
         _issuer: &str,
         _not_before: DateTime<Utc>,
-        _not_after: DateTime<Utc>,
+        not_after: DateTime<Utc>,
         _key_usage: &[String],
-        _san: &[String],
+        san: &[String],
     ) -> Self::Output {
+        let secondary = if !san.is_empty() {
+            format!("SAN: {} (expires {})", san[0], not_after.format("%Y-%m-%d"))
+        } else {
+            format!("expires {}", not_after.format("%Y-%m-%d"))
+        };
         VisualizationData {
             color: iced::Color::from_rgb(0.4, 1.0, 0.8), // Light teal
             primary_text: format!("Certificate: {}", subject),
-            secondary_text: "Leaf Certificate".to_string(),
-            icon: crate::icons::ICON_VERIFIED,
+            secondary_text: secondary,
+            icon: crate::icons::ICON_LOCK,
             icon_font: crate::icons::MATERIAL_ICONS,
             expandable: false,
             expanded: false,
@@ -1292,13 +1297,18 @@ impl FoldDomainNode for FoldVisualization {
         _key_id: Uuid,
         algorithm: &KeyAlgorithm,
         purpose: &KeyPurpose,
-        _expires_at: Option<DateTime<Utc>>,
+        expires_at: Option<DateTime<Utc>>,
     ) -> Self::Output {
+        let secondary = if let Some(exp) = expires_at {
+            format!("{:?} (expires {})", algorithm, exp.format("%Y-%m-%d"))
+        } else {
+            format!("{:?} (no expiry)", algorithm)
+        };
         VisualizationData {
             color: iced::Color::from_rgb(0.7, 0.5, 0.9), // Light purple
-            primary_text: format!("{:?}", purpose),
-            secondary_text: format!("{:?}", algorithm),
-            icon: crate::icons::ICON_KEY,
+            primary_text: format!("Key: {:?}", purpose),
+            secondary_text: secondary,
+            icon: crate::icons::ICON_LOCK,
             icon_font: crate::icons::MATERIAL_ICONS,
             expandable: false,
             expanded: false,
@@ -1309,15 +1319,15 @@ impl FoldDomainNode for FoldVisualization {
         &self,
         _device_id: Uuid,
         serial: &str,
-        _version: &str,
+        version: &str,
         _provisioned_at: Option<DateTime<Utc>>,
-        _slots_used: &[String],
+        slots_used: &[String],
     ) -> Self::Output {
         VisualizationData {
             color: iced::Color::from_rgb(0.8, 0.3, 0.8), // Magenta (hardware)
             primary_text: format!("YubiKey {}", serial),
-            secondary_text: "Hardware Token".to_string(),
-            icon: crate::icons::ICON_USB,
+            secondary_text: format!("v{} ({} slots used)", version, slots_used.len()),
+            icon: crate::icons::ICON_SECURITY,
             icon_font: crate::icons::MATERIAL_ICONS,
             expandable: false,
             expanded: false,
@@ -1330,13 +1340,18 @@ impl FoldDomainNode for FoldVisualization {
         slot_name: &str,
         _yubikey_serial: &str,
         has_key: bool,
-        _certificate_subject: Option<&String>,
+        certificate_subject: Option<&String>,
     ) -> Self::Output {
+        let secondary = if has_key {
+            certificate_subject.cloned().unwrap_or_else(|| "Key loaded".to_string())
+        } else {
+            "Empty slot".to_string()
+        };
         VisualizationData {
             color: iced::Color::from_rgb(0.9, 0.5, 0.9), // Light magenta (slot)
             primary_text: slot_name.to_string(),
-            secondary_text: if has_key { "Key Present" } else { "Empty" }.to_string(),
-            icon: crate::icons::ICON_MEMORY,
+            secondary_text: secondary,
+            icon: crate::icons::ICON_LOCK,
             icon_font: crate::icons::MATERIAL_ICONS,
             expandable: false,
             expanded: false,
@@ -1350,16 +1365,16 @@ impl FoldDomainNode for FoldVisualization {
         slots_provisioned: &[PIVSlot],
         slots_needed: &[PIVSlot],
     ) -> Self::Output {
-        let status = if yubikey_serial.is_some() {
-            format!("{}/{} slots", slots_provisioned.len(), slots_needed.len())
+        let secondary = if let Some(serial) = yubikey_serial {
+            format!("{}/{} slots ({}))", slots_provisioned.len(), slots_needed.len(), serial)
         } else {
-            "No YubiKey".to_string()
+            format!("{}/{} slots needed", slots_provisioned.len(), slots_needed.len())
         };
         VisualizationData {
             color: iced::Color::from_rgb(0.6, 0.4, 0.7), // Purple
             primary_text: "YubiKey Status".to_string(),
-            secondary_text: status,
-            icon: crate::icons::ICON_USB,
+            secondary_text: secondary,
+            icon: crate::icons::ICON_SECURITY,
             icon_font: crate::icons::MATERIAL_ICONS,
             expandable: false,
             expanded: false,
@@ -1370,14 +1385,19 @@ impl FoldDomainNode for FoldVisualization {
         &self,
         _manifest_id: Uuid,
         name: &str,
-        _destination: Option<&std::path::PathBuf>,
+        destination: Option<&std::path::PathBuf>,
         _checksum: Option<&String>,
     ) -> Self::Output {
+        let secondary = if let Some(dest) = destination {
+            format!("-> {}", dest.display())
+        } else {
+            "No destination".to_string()
+        };
         VisualizationData {
             color: iced::Color::from_rgb(0.5, 0.7, 0.5), // Green
-            primary_text: name.to_string(),
-            secondary_text: "Export Manifest".to_string(),
-            icon: crate::icons::ICON_DOWNLOAD,
+            primary_text: format!("Manifest: {}", name),
+            secondary_text: secondary,
+            icon: crate::icons::ICON_BUSINESS,
             icon_font: crate::icons::MATERIAL_ICONS,
             expandable: false,
             expanded: false,
@@ -1388,7 +1408,7 @@ impl FoldDomainNode for FoldVisualization {
         &self,
         _role_id: Uuid,
         name: &str,
-        _purpose: &str,
+        purpose: &str,
         level: u8,
         separation_class: SeparationClass,
         claim_count: usize,
@@ -1405,7 +1425,7 @@ impl FoldDomainNode for FoldVisualization {
         VisualizationData {
             color,
             primary_text: name.to_string(),
-            secondary_text: format!("Level {} • {} claims", level, claim_count),
+            secondary_text: format!("L{} | {} claims | {}", level, claim_count, purpose),
             icon: crate::icons::ICON_SECURITY,
             icon_font: crate::icons::MATERIAL_ICONS,
             expandable: false,
@@ -1423,7 +1443,7 @@ impl FoldDomainNode for FoldVisualization {
             color: iced::Color::from_rgb(0.4, 0.8, 0.6), // Teal
             primary_text: name.to_string(),
             secondary_text: category.to_string(),
-            icon: crate::icons::ICON_CHECK_CIRCLE,
+            icon: crate::icons::ICON_VERIFIED,
             icon_font: crate::icons::MATERIAL_ICONS,
             expandable: false,
             expanded: false,
@@ -1441,8 +1461,8 @@ impl FoldDomainNode for FoldVisualization {
             color: iced::Color::from_rgb(0.5, 0.6, 0.8), // Blue-gray
             primary_text: name.to_string(),
             secondary_text: format!("{} claims", claim_count),
-            icon: crate::icons::ICON_FOLDER,
-            icon_font: crate::icons::MATERIAL_ICONS,
+            icon: ' ',  // No icon - the +/- indicator below is the main UI element
+            icon_font: iced::Font::DEFAULT,
             expandable: true,
             expanded,
         }
@@ -1469,8 +1489,8 @@ impl FoldDomainNode for FoldVisualization {
             color,
             primary_text: name.to_string(),
             secondary_text: format!("{} roles", role_count),
-            icon: crate::icons::ICON_FOLDER,
-            icon_font: crate::icons::MATERIAL_ICONS,
+            icon: ' ',  // No icon - the +/- indicator below is the main UI element
+            icon_font: iced::Font::DEFAULT,
             expandable: true,
             expanded,
         }

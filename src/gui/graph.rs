@@ -215,6 +215,20 @@ impl ConceptEntity {
 }
 
 /// Type of node in the graph
+///
+/// **DEPRECATED**: Use `DomainNode` instead. This enum will be removed in a future version.
+/// The `ConceptEntity` struct now has a `domain_node` field that should be used for
+/// creating and querying node types. Use `entity.visualization()` for rendering and
+/// `entity.injection()` for type checking.
+///
+/// Migration path:
+/// - Replace `NodeType::Person { .. }` checks with `entity.injection() == Injection::Person`
+/// - Replace rendering matches with `entity.visualization()`
+/// - Use `ConceptEntity::from_domain_node()` for new node creation
+#[deprecated(
+    since = "0.9.0",
+    note = "Use DomainNode instead. See ConceptEntity::domain_node and entity.visualization()"
+)]
 #[derive(Debug, Clone)]
 pub enum NodeType {
     Organization(Organization),
@@ -703,7 +717,7 @@ impl OrganizationConcept {
         let node_radius = 25.0;  // Standard node radius
 
         for (id, node) in &self.nodes {
-            if let NodeType::Person { .. } = node.node_type {
+            if node.injection() == super::domain_node::Injection::Person {
                 let dx = position.x - node.position.x;
                 let dy = position.y - node.position.y;
                 let distance = (dx * dx + dy * dy).sqrt();
@@ -3385,7 +3399,7 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                     continue;
                 }
                 // Only highlight Person nodes as valid drop targets
-                if let NodeType::Person { .. } = &node.node_type {
+                if node.injection() == super::domain_node::Injection::Person {
                     let is_hovered = self.dragging_role.as_ref()
                         .map(|d| d.hover_person == Some(*node_id))
                         .unwrap_or(false);
@@ -3488,185 +3502,15 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                 .with_width(if is_selected { 2.5 } else { 2.0 });  // Slightly thicker
             frame.stroke(&circle, border_stroke);
 
-            // Draw node properties as multi-line text based on node type
-            let (type_icon, type_font, primary_text, secondary_text) = match &node.node_type {
-                NodeType::Organization(org) => (
-                    crate::icons::ICON_BUSINESS,
-                    crate::icons::MATERIAL_ICONS,
-                    org.name.clone(),
-                    org.display_name.clone(),
-                ),
-                NodeType::OrganizationalUnit(unit) => (
-                    crate::icons::ICON_GROUP,
-                    crate::icons::MATERIAL_ICONS,
-                    unit.name.clone(),
-                    format!("{:?}", unit.unit_type),
-                ),
-                NodeType::Person { person, role: _ } => {
-                    (crate::icons::ICON_PERSON, crate::icons::MATERIAL_ICONS, person.name.clone(), person.email.clone())
-                },
-                NodeType::Location(loc) => (
-                    crate::icons::ICON_LOCATION,
-                    crate::icons::MATERIAL_ICONS,
-                    loc.name.clone(),
-                    format!("{:?}", loc.location_type),
-                ),
-                NodeType::Role(role) => (
-                    crate::icons::ICON_SECURITY,
-                    crate::icons::MATERIAL_ICONS,
-                    role.name.clone(),
-                    role.description.clone(),
-                ),
-                NodeType::Policy(policy) => (
-                    crate::icons::ICON_VERIFIED,
-                    crate::icons::MATERIAL_ICONS,
-                    policy.name.clone(),
-                    format!("{} claims", policy.claims.len()),
-                ),
-                // NATS Infrastructure
-                NodeType::NatsOperator(identity) => (
-                    crate::icons::ICON_CLOUD,
-                    crate::icons::MATERIAL_ICONS,
-                    "NATS Operator".to_string(),
-                    identity.nkey.public_key.public_key()[..8].to_string(), // First 8 chars of NKey
-                ),
-                NodeType::NatsOperatorSimple { name, .. } => (
-                    crate::icons::ICON_CLOUD,
-                    crate::icons::MATERIAL_ICONS,
-                    name.clone(),
-                    "NATS Operator".to_string(),
-                ),
-                NodeType::NatsAccount(identity) => (
-                    crate::icons::ICON_ACCOUNT_CIRCLE,
-                    crate::icons::MATERIAL_ICONS,
-                    "NATS Account".to_string(),
-                    identity.nkey.public_key.public_key()[..8].to_string(),
-                ),
-                NodeType::NatsAccountSimple { name, is_system, .. } => (
-                    crate::icons::ICON_ACCOUNT_CIRCLE,
-                    crate::icons::MATERIAL_ICONS,
-                    name.clone(),
-                    if *is_system { "System Account".to_string() } else { "NATS Account".to_string() },
-                ),
-                NodeType::NatsUser(identity) => (
-                    crate::icons::ICON_PERSON,
-                    crate::icons::MATERIAL_ICONS,
-                    "NATS User".to_string(),
-                    identity.nkey.public_key.public_key()[..8].to_string(),
-                ),
-                NodeType::NatsUserSimple { name, account_name, .. } => (
-                    crate::icons::ICON_PERSON,
-                    crate::icons::MATERIAL_ICONS,
-                    name.clone(),
-                    format!("Account: {}", account_name),
-                ),
-                NodeType::NatsServiceAccount(identity) => (
-                    crate::icons::ICON_SETTINGS,
-                    crate::icons::MATERIAL_ICONS,
-                    "Service Account".to_string(),
-                    identity.nkey.public_key.public_key()[..8].to_string(),
-                ),
-                // PKI Trust Chain
-                NodeType::RootCertificate { subject, not_after, .. } => (
-                    crate::icons::ICON_VERIFIED,
-                    crate::icons::MATERIAL_ICONS,
-                    "Root CA".to_string(),
-                    format!("{} (expires {})", subject, not_after.format("%Y-%m-%d")),
-                ),
-                NodeType::IntermediateCertificate { subject, not_after, .. } => (
-                    crate::icons::ICON_VERIFIED,
-                    crate::icons::MATERIAL_ICONS,
-                    "Intermediate CA".to_string(),
-                    format!("{} (expires {})", subject, not_after.format("%Y-%m-%d")),
-                ),
-                NodeType::LeafCertificate { subject, not_after, san, .. } => (
-                    crate::icons::ICON_LOCK,
-                    crate::icons::MATERIAL_ICONS,
-                    format!("Certificate: {}", subject),
-                    if !san.is_empty() {
-                        format!("SAN: {} (expires {})", san[0], not_after.format("%Y-%m-%d"))
-                    } else {
-                        format!("expires {}", not_after.format("%Y-%m-%d"))
-                    },
-                ),
-                // YubiKey Hardware
-                NodeType::YubiKey { serial, version, slots_used, .. } => (
-                    crate::icons::ICON_SECURITY,
-                    crate::icons::MATERIAL_ICONS,
-                    format!("YubiKey {}", serial),
-                    format!("v{} ({} slots used)", version, slots_used.len()),
-                ),
-                NodeType::PivSlot { slot_name, has_key, certificate_subject, .. } => (
-                    crate::icons::ICON_LOCK,
-                    crate::icons::MATERIAL_ICONS,
-                    slot_name.clone(),
-                    if *has_key {
-                        certificate_subject.clone().unwrap_or_else(|| "Key loaded".to_string())
-                    } else {
-                        "Empty slot".to_string()
-                    },
-                ),
-                NodeType::YubiKeyStatus { yubikey_serial, slots_provisioned, slots_needed, .. } => (
-                    crate::icons::ICON_SECURITY,
-                    crate::icons::MATERIAL_ICONS,
-                    format!("YubiKey Status"),
-                    if let Some(serial) = yubikey_serial {
-                        format!("{}/{} slots ({}))", slots_provisioned.len(), slots_needed.len(), serial)
-                    } else {
-                        format!("{}/{} slots needed", slots_provisioned.len(), slots_needed.len())
-                    },
-                ),
-                // Cryptographic Keys
-                NodeType::Key { algorithm, purpose, expires_at, .. } => (
-                    crate::icons::ICON_LOCK,
-                    crate::icons::MATERIAL_ICONS,
-                    format!("Key: {:?}", purpose),
-                    if let Some(exp) = expires_at {
-                        format!("{:?} (expires {})", algorithm, exp.format("%Y-%m-%d"))
-                    } else {
-                        format!("{:?} (no expiry)", algorithm)
-                    },
-                ),
-                // Export and Manifest
-                NodeType::Manifest { name, destination, .. } => (
-                    crate::icons::ICON_BUSINESS,
-                    crate::icons::MATERIAL_ICONS,
-                    format!("Manifest: {}", name),
-                    if let Some(dest) = destination {
-                        format!("→ {}", dest.display())
-                    } else {
-                        "No destination".to_string()
-                    },
-                ),
-                // Policy Roles from policy-bootstrap.json
-                NodeType::PolicyRole { name, purpose, level, claim_count, .. } => (
-                    crate::icons::ICON_SECURITY,
-                    crate::icons::MATERIAL_ICONS,
-                    name.clone(),
-                    format!("L{} | {} claims | {}", level, claim_count, purpose),
-                ),
-                // Policy Claims
-                NodeType::PolicyClaim { name, category, .. } => (
-                    crate::icons::ICON_VERIFIED,
-                    crate::icons::MATERIAL_ICONS,
-                    name.clone(),
-                    category.clone(),
-                ),
-                // Policy Categories (progressive disclosure) - no icon above, +/- indicator below
-                NodeType::PolicyCategory { name, claim_count, .. } => (
-                    ' ',  // No icon - the +/- indicator below is the main UI element
-                    iced::Font::DEFAULT,
-                    name.clone(),
-                    format!("{} claims", claim_count),
-                ),
-                // Separation Class Groups (progressive disclosure) - no icon above, +/- indicator below
-                NodeType::PolicyGroup { name, role_count, .. } => (
-                    ' ',  // No icon - the +/- indicator below is the main UI element
-                    iced::Font::DEFAULT,
-                    name.clone(),
-                    format!("{} roles", role_count),
-                ),
-            };
+            // Draw node properties using the DomainNode fold pattern
+            // This replaces the 180-line match statement with a single method call
+            let viz = node.visualization();
+            let (type_icon, type_font, primary_text, secondary_text) = (
+                viz.icon,
+                viz.icon_font,
+                viz.primary_text,
+                viz.secondary_text,
+            );
 
             // Primary text (below node)
             let name_position = Point::new(
@@ -3703,16 +3547,9 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
             });
 
             // Draw +/- expansion indicator for expandable nodes (PolicyGroup, PolicyCategory)
-            let is_expandable = matches!(
-                &node.node_type,
-                NodeType::PolicyGroup { .. } | NodeType::PolicyCategory { .. }
-            );
-            if is_expandable {
-                let expanded = match &node.node_type {
-                    NodeType::PolicyGroup { expanded, .. } => *expanded,
-                    NodeType::PolicyCategory { expanded, .. } => *expanded,
-                    _ => false,
-                };
+            // Using fold pattern: viz.expandable and viz.expanded from VisualizationData
+            if viz.expandable {
+                let expanded = viz.expanded;
 
                 // Position indicator below secondary text (with extra spacing)
                 let indicator_y = node.position.y + radius + 52.0;
@@ -3745,7 +3582,8 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
             }
 
             // Draw role badges for Person nodes (compact mode)
-            if let NodeType::Person { .. } = &node.node_type {
+            // Using injection() to check node type
+            if node.injection() == super::domain_node::Injection::Person {
                 if let Some(badges) = self.role_badges.get(&node.id) {
                     let badge_y = node.position.y + radius + 42.0;
                     let badge_spacing = 24.0;
