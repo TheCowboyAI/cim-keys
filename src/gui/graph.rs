@@ -3277,10 +3277,9 @@ impl OrganizationGraph {
 pub struct CanvasState {
     dragging_node: Option<Uuid>,
     drag_start_pos: Option<Point>,
-    // Panning state
+    // Panning state - track last cursor position for smooth frame-to-frame delta
     panning: bool,
-    pan_start_pos: Option<Point>,
-    pan_start_offset: Vector,
+    last_pan_pos: Option<Point>,
 }
 
 impl canvas::Program<GraphMessage> for OrganizationGraph {
@@ -4123,13 +4122,12 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                 // Middle mouse button for panning
                 canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Middle)) => {
                     state.panning = true;
-                    state.pan_start_pos = Some(canvas_relative);
-                    state.pan_start_offset = self.pan_offset;
+                    state.last_pan_pos = Some(canvas_relative);
                     return (canvas::event::Status::Captured, None);
                 }
                 canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Middle)) => {
                     state.panning = false;
-                    state.pan_start_pos = None;
+                    state.last_pan_pos = None;
                     return (canvas::event::Status::Captured, None);
                 }
                 canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
@@ -4296,17 +4294,18 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                     );
                 }
                 canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
-                    // Handle panning with middle mouse button
+                    // Handle panning with middle mouse button - use frame-to-frame delta for smoothness
                     if state.panning {
-                        if let Some(pan_start) = state.pan_start_pos {
+                        if let Some(last_pos) = state.last_pan_pos {
                             let delta = Vector::new(
-                                canvas_relative.x - pan_start.x,
-                                canvas_relative.y - pan_start.y,
+                                canvas_relative.x - last_pos.x,
+                                canvas_relative.y - last_pos.y,
                             );
-                            let new_offset = state.pan_start_offset + delta;
+                            // Update last position for next frame
+                            state.last_pan_pos = Some(canvas_relative);
                             return (
                                 canvas::event::Status::Captured,
-                                Some(GraphMessage::Pan(new_offset - self.pan_offset)),
+                                Some(GraphMessage::Pan(delta)),
                             );
                         }
                     }
