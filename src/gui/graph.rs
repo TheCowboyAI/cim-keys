@@ -432,6 +432,8 @@ pub enum LayoutAlgorithm {
 #[derive(Debug, Clone)]
 pub enum GraphMessage {
     NodeClicked(Uuid),
+    /// Click on +/- expansion indicator (separate from node click)
+    ExpandIndicatorClicked(Uuid),
     NodeDragStarted { node_id: Uuid, offset: Vector },
     NodeDragged(Point),  // New cursor position
     NodeDragEnded,
@@ -442,6 +444,8 @@ pub enum GraphMessage {
     EdgeCreationStarted(Uuid),  // Start edge creation by dragging from node border
     ZoomIn,
     ZoomOut,
+    /// Smooth zoom by delta (for touchpad gestures)
+    ZoomBy(f32),
     ResetView,
     Pan(Vector),
     AutoLayout,
@@ -2450,6 +2454,11 @@ impl OrganizationGraph {
                 self.drag_offset = Vector::new(0.0, 0.0);
                 self.drag_start_position = None;
             },
+            GraphMessage::ExpandIndicatorClicked(_id) => {
+                // This is handled at the gui.rs level where we have access to
+                // expanded_separation_classes and expanded_categories
+                // The graph just receives this message for routing
+            },
             GraphMessage::NodeDragStarted { node_id, offset } => {
                 self.dragging_node = Some(node_id);
                 self.drag_offset = offset;
@@ -2503,6 +2512,13 @@ impl OrganizationGraph {
             GraphMessage::EdgeClicked { from: _, to: _ } => {}
             GraphMessage::ZoomIn => self.zoom = (self.zoom * 1.2).min(10.0),  // Max zoom 10.0 (zoom in closer)
             GraphMessage::ZoomOut => self.zoom = (self.zoom / 1.2).max(0.1),  // Min zoom 0.1 (zoom out much further)
+            GraphMessage::ZoomBy(delta) => {
+                // Smooth zoom using exponential scaling
+                // delta > 0 = zoom in, delta < 0 = zoom out
+                // 0.01 factor gives good responsiveness on high-res touchpads
+                let zoom_factor = 1.0 + delta * 0.01;
+                self.zoom = (self.zoom * zoom_factor).clamp(0.1, 10.0);
+            }
             GraphMessage::ResetView => {
                 self.zoom = 1.0;  // Reset to 1:1 scale
                 self.pan_offset = Vector::new(0.0, 0.0);
@@ -3728,17 +3744,17 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                     name.clone(),
                     category.clone(),
                 ),
-                // Policy Categories (progressive disclosure) - use simple category icon
+                // Policy Categories (progressive disclosure) - no icon above, +/- indicator below
                 NodeType::PolicyCategory { name, claim_count, .. } => (
-                    crate::icons::ICON_GROUP,  // Category icon
-                    crate::icons::MATERIAL_ICONS,
+                    ' ',  // No icon - the +/- indicator below is the main UI element
+                    iced::Font::DEFAULT,
                     name.clone(),
                     format!("{} claims", claim_count),
                 ),
-                // Separation Class Groups (progressive disclosure) - use security icon
+                // Separation Class Groups (progressive disclosure) - no icon above, +/- indicator below
                 NodeType::SeparationClassGroup { name, role_count, .. } => (
-                    crate::icons::ICON_SECURITY,  // Security/shield icon for separation classes
-                    crate::icons::MATERIAL_ICONS,
+                    ' ',  // No icon - the +/- indicator below is the main UI element
+                    iced::Font::DEFAULT,
                     name.clone(),
                     format!("{} roles", role_count),
                 ),
@@ -3790,8 +3806,8 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                     _ => false,
                 };
 
-                // Position indicator below secondary text
-                let indicator_y = node.position.y + radius + 44.0;
+                // Position indicator below secondary text (with extra spacing)
+                let indicator_y = node.position.y + radius + 52.0;
                 let indicator_center = Point::new(node.position.x, indicator_y);
                 let indicator_radius = 10.0;
 
@@ -4117,14 +4133,42 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                     return (canvas::event::Status::Captured, None);
                 }
                 canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
-                    // Check if click is on a node
-                    let hit_node = false;
+                    // First, check if click is on a +/- expansion indicator for expandable nodes
+                    let node_radius = 20.0;
+                    let indicator_offset = node_radius + 52.0;  // Must match drawing code
+                    let indicator_radius = 10.0;
+
+                    for (node_id, node) in &self.nodes {
+                        // Check if this is an expandable node
+                        let is_expandable = matches!(
+                            &node.node_type,
+                            NodeType::SeparationClassGroup { .. } | NodeType::PolicyCategory { .. }
+                        );
+
+                        if is_expandable {
+                            // Check if click is on the +/- indicator
+                            let indicator_center_y = node.position.y + indicator_offset;
+                            let indicator_distance = ((adjusted_position.x - node.position.x).powi(2)
+                                + (adjusted_position.y - indicator_center_y).powi(2))
+                            .sqrt();
+
+                            if indicator_distance <= indicator_radius + 2.0 {  // Small tolerance
+                                // Click on expansion indicator - expand/collapse
+                                return (
+                                    canvas::event::Status::Captured,
+                                    Some(GraphMessage::ExpandIndicatorClicked(*node_id)),
+                                );
+                            }
+                        }
+                    }
+
+                    // Check if click is on a node (not indicator)
                     for (node_id, node) in &self.nodes {
                         let distance = ((adjusted_position.x - node.position.x).powi(2)
                             + (adjusted_position.y - node.position.y).powi(2))
                         .sqrt();
 
-                        if distance <= 20.0 {
+                        if distance <= node_radius {
                             // Check if click is on border (outer ring) vs center
                             // Border: 12-20 pixels from center → start edge creation
                             // Center: 0-12 pixels from center → start node drag
@@ -4157,12 +4201,10 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                     }
 
                     // Click on empty canvas - emit CanvasClicked for node placement
-                    if !hit_node {
-                        return (
-                            canvas::event::Status::Captured,
-                            Some(GraphMessage::CanvasClicked(adjusted_position)),
-                        );
-                    }
+                    return (
+                        canvas::event::Status::Captured,
+                        Some(GraphMessage::CanvasClicked(adjusted_position)),
+                    );
                 }
                 canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
                     // Check if we're creating an edge
@@ -4286,6 +4328,7 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                 canvas::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
                     match delta {
                         mouse::ScrollDelta::Lines { y, .. } => {
+                            // Mouse wheel - use discrete zoom steps
                             if y > 0.0 {
                                 return (
                                     canvas::event::Status::Captured,
@@ -4298,16 +4341,28 @@ impl canvas::Program<GraphMessage> for OrganizationGraph {
                                 );
                             }
                         }
-                        mouse::ScrollDelta::Pixels { y, .. } => {
-                            if y > 0.0 {
+                        mouse::ScrollDelta::Pixels { x, y } => {
+                            // Touchpad gestures:
+                            // - Vertical scroll (y) = smooth zoom (pinch-to-zoom also maps to this)
+                            // - Horizontal scroll (x) = horizontal pan (two-finger swipe)
+                            //
+                            // Pan controls:
+                            // - Horizontal touchpad swipe = pan
+                            // - Middle mouse button + drag = free pan (X and Y)
+                            //
+                            // Priority: horizontal pan first, then zoom
+                            if x.abs() > y.abs() && x.abs() > 0.5 {
+                                // Primarily horizontal - pan
                                 return (
                                     canvas::event::Status::Captured,
-                                    Some(GraphMessage::ZoomIn),
+                                    Some(GraphMessage::Pan(Vector::new(-x * 1.5, 0.0))),
                                 );
-                            } else if y < 0.0 {
+                            }
+                            if y.abs() > 0.5 {
+                                // Primarily vertical - zoom
                                 return (
                                     canvas::event::Status::Captured,
-                                    Some(GraphMessage::ZoomOut),
+                                    Some(GraphMessage::ZoomBy(y)),
                                 );
                             }
                         }
