@@ -19,6 +19,8 @@ cim-domain-person = { path = "../cim-domain-person", optional = true }
 cim-domain-organization = { path = "../cim-domain-organization", optional = true }
 cim-domain-policy = { path = "../cim-domain-policy", optional = true }
 cim-domain-agent = { path = "../cim-domain-agent", optional = true }
+cim-domain-relationship = { path = "../cim-domain-relationship", optional = true }
+cim-domain-spaces = { path = "../cim-domain-spaces", optional = true }
 cim-graph = { path = "../cim-graph" }
 cim-ipld = { path = "../cim-ipld" }
 
@@ -115,7 +117,16 @@ proptest = "1.5"  # Property-based testing for compositional laws (Axiom A9)
 [features]
 default = ["gui", "policy"]
 gui = ["iced", "iced_widget", "iced_futures", "bytemuck"]
-policy = ["cim-domain-policy", "cim-domain-organization", "cim-domain-person"]
+# All CIM domain crates for full domain composition
+policy = [
+    "cim-domain-person",
+    "cim-domain-organization",
+    "cim-domain-policy",
+    "cim-domain-agent",
+    "cim-domain-relationship",
+]
+# Conceptual spaces (Sprint 6)
+conceptual-spaces = ["cim-domain-spaces"]
 yubikey-support = ["yubikey", "pcsc"]
 gpg-support = ["sequoia-openpgp", "gpgme"]
 ipld = ["dep:cid", "dep:libipld", "dep:multihash"]  # IPLD content-addressed storage support
