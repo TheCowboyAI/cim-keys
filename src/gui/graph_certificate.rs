@@ -45,7 +45,8 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
 use crate::events::KeyAlgorithm;
-use crate::gui::graph::{OrganizationConcept, NodeType, EdgeType};
+use crate::gui::graph::{OrganizationConcept, EdgeType};
+use crate::gui::domain_node::{DomainNodeData, Injection};
 
 /// Certificate type classification
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,8 +99,8 @@ impl CertificateAnalysis {
         let node = graph.nodes.get(&certificate_id)?;
 
         // Extract certificate type and details based on node type
-        let (certificate_type, subject, issuer, not_before, not_after, key_usage, san) = match &node.node_type {
-            NodeType::RootCertificate {
+        let (certificate_type, subject, issuer, not_before, not_after, key_usage, san) = match node.domain_node.data() {
+            DomainNodeData::RootCertificate {
                 subject,
                 issuer,
                 not_before,
@@ -115,7 +116,7 @@ impl CertificateAnalysis {
                 key_usage.clone(),
                 Vec::new(),
             ),
-            NodeType::IntermediateCertificate {
+            DomainNodeData::IntermediateCertificate {
                 subject,
                 issuer,
                 not_before,
@@ -131,7 +132,7 @@ impl CertificateAnalysis {
                 key_usage.clone(),
                 Vec::new(),
             ),
-            NodeType::LeafCertificate {
+            DomainNodeData::LeafCertificate {
                 subject,
                 issuer,
                 not_before,
@@ -148,7 +149,6 @@ impl CertificateAnalysis {
                 key_usage.clone(),
                 san.clone(),
             ),
-            // NodeType::Certificate - TODO: Add generic certificate type in Phase 4 if needed
             _ => return None,
         };
 
@@ -170,7 +170,7 @@ impl CertificateAnalysis {
                         // Key used by this certificate
                         signing_key_id = Some(edge.from);
                         if let Some(key_node) = graph.nodes.get(&edge.from) {
-                            if let NodeType::Key { algorithm, .. } = &key_node.node_type {
+                            if let DomainNodeData::Key { algorithm, .. } = key_node.domain_node.data() {
                                 signing_key_algorithm = Some(algorithm.clone());
                             }
                         }
@@ -183,10 +183,10 @@ impl CertificateAnalysis {
                         // Entity (person/org) this certificate was issued to
                         subject_entity_id = Some(edge.from);
                         if let Some(entity_node) = graph.nodes.get(&edge.from) {
-                            subject_entity_type = Some(match entity_node.node_type {
-                                NodeType::Person { .. } => "Person".to_string(),
-                                NodeType::Organization(_) => "Organization".to_string(),
-                                NodeType::OrganizationalUnit(_) => "OrganizationalUnit".to_string(),
+                            subject_entity_type = Some(match entity_node.domain_node.injection() {
+                                Injection::Person => "Person".to_string(),
+                                Injection::Organization => "Organization".to_string(),
+                                Injection::OrganizationUnit => "OrganizationalUnit".to_string(),
                                 _ => "Unknown".to_string(),
                             });
                         }

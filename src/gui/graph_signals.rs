@@ -6,7 +6,8 @@
 //! - Type-safe node/edge operations
 
 use crate::signals::{Signal, EventKind, StepKind, ContinuousKind, Time};
-use crate::gui::graph::{ConceptEntity, ConceptRelation, OrganizationConcept, NodeType, EdgeType};
+use crate::gui::graph::{ConceptEntity, ConceptRelation, OrganizationConcept, EdgeType};
+use crate::gui::domain_node::Injection;
 use std::collections::HashMap;
 use uuid::Uuid;
 use iced::Point;
@@ -53,13 +54,14 @@ pub fn visible_nodes(
 ) -> Vec<ConceptEntity> {
     graph.nodes.values()
         .filter(|node| {
-            // Apply category filters
-            let category_match = match &node.node_type {
-                NodeType::Person { .. } => filters.show_people,
-                NodeType::Organization { .. } | NodeType::OrganizationalUnit { .. } => filters.show_orgs,
-                NodeType::NatsOperator { .. } | NodeType::NatsAccount { .. } | NodeType::NatsUser { .. } => filters.show_nats,
-                NodeType::RootCertificate { .. } | NodeType::IntermediateCertificate { .. } | NodeType::LeafCertificate { .. } => filters.show_pki,
-                NodeType::YubiKey { .. } | NodeType::PivSlot { .. } | NodeType::YubiKeyStatus { .. } => filters.show_yubikey,
+            // Apply category filters using DomainNode injection
+            let injection = node.domain_node.injection();
+            let category_match = match injection {
+                Injection::Person => filters.show_people,
+                Injection::Organization | Injection::OrganizationUnit => filters.show_orgs,
+                _ if injection.is_nats() => filters.show_nats,
+                _ if injection.is_certificate() => filters.show_pki,
+                _ if injection.is_yubikey() => filters.show_yubikey,
                 _ => true,
             };
 

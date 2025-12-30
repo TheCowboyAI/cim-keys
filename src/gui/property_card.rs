@@ -9,14 +9,15 @@ use iced::{
 use uuid::Uuid;
 use std::collections::HashSet;
 
-use crate::gui::graph::{NodeType, EdgeType};
+use crate::gui::graph::EdgeType;
+use crate::gui::domain_node::{DomainNode, DomainNodeData, Injection};
 use crate::domain::{PolicyClaim, RoleType, LocationType};
 use crate::icons::{self, ICON_CLOSE};
 
 /// What is being edited
 #[derive(Debug, Clone)]
 pub enum EditTarget {
-    Node { id: Uuid, node_type: NodeType },
+    Node { id: Uuid, domain_node: DomainNode },
     Edge { index: usize, from: Uuid, to: Uuid, edge_type: EdgeType },
 }
 
@@ -116,35 +117,35 @@ impl PropertyCard {
     }
 
     /// Set the node to edit
-    pub fn set_node(&mut self, node_id: Uuid, node_type: NodeType) {
+    pub fn set_node(&mut self, node_id: Uuid, domain_node: DomainNode) {
         self.edit_target = Some(EditTarget::Node {
             id: node_id,
-            node_type: node_type.clone(),
+            domain_node: domain_node.clone(),
         });
         self.dirty = false;
 
-        // Initialize edit fields from node data
-        match &node_type {
-            NodeType::Organization(org) => {
+        // Initialize edit fields from node data using DomainNode accessors
+        match domain_node.data() {
+            DomainNodeData::Organization(org) => {
                 self.edit_name = org.name.clone();
                 self.edit_description = org.description.clone().unwrap_or_default();
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
-            NodeType::OrganizationalUnit(unit) => {
+            DomainNodeData::OrganizationUnit(unit) => {
                 self.edit_name = unit.name.clone();
                 self.edit_description = String::new();
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
-            NodeType::Person { person, .. } => {
+            DomainNodeData::Person { person, .. } => {
                 self.edit_name = person.name.clone();
                 self.edit_description = String::new();
                 self.edit_email = person.email.clone();
                 self.edit_enabled = person.active;
                 self.edit_roles = person.roles.iter().map(|r| r.role_type.clone()).collect();
             }
-            NodeType::Location(loc) => {
+            DomainNodeData::Location(loc) => {
                 self.edit_name = loc.name.clone();
                 self.edit_description = String::new();
                 self.edit_email = String::new();
@@ -177,13 +178,13 @@ impl PropertyCard {
                     })
                     .unwrap_or_default();
             }
-            NodeType::Role(role) => {
+            DomainNodeData::Role(role) => {
                 self.edit_name = role.name.clone();
                 self.edit_description = role.description.clone();
                 self.edit_email = String::new();
                 self.edit_enabled = role.active;
             }
-            NodeType::Policy(policy) => {
+            DomainNodeData::Policy(policy) => {
                 self.edit_name = policy.name.clone();
                 self.edit_description = policy.description.clone();
                 self.edit_email = String::new();
@@ -191,82 +192,82 @@ impl PropertyCard {
                 self.edit_claims = policy.claims.iter().cloned().collect();
             }
             // NATS Infrastructure - read-only, no editing
-            NodeType::NatsOperator(identity) => {
+            DomainNodeData::NatsOperator(identity) => {
                 self.edit_name = "NATS Operator".to_string();
                 self.edit_description = format!("NKey: {}", identity.nkey.public_key.public_key());
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
-            NodeType::NatsAccount(identity) => {
+            DomainNodeData::NatsAccount(identity) => {
                 self.edit_name = "NATS Account".to_string();
                 self.edit_description = format!("NKey: {}", identity.nkey.public_key.public_key());
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
-            NodeType::NatsUser(identity) => {
+            DomainNodeData::NatsUser(identity) => {
                 self.edit_name = "NATS User".to_string();
                 self.edit_description = format!("NKey: {}", identity.nkey.public_key.public_key());
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
-            NodeType::NatsServiceAccount(identity) => {
+            DomainNodeData::NatsServiceAccount(identity) => {
                 self.edit_name = "Service Account".to_string();
                 self.edit_description = format!("NKey: {}", identity.nkey.public_key.public_key());
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
             // NATS Infrastructure - Simple variants (visualization only)
-            NodeType::NatsOperatorSimple { name, organization_id } => {
+            DomainNodeData::NatsOperatorSimple { name, organization_id } => {
                 self.edit_name = name.clone();
                 self.edit_description = format!("Org: {}", organization_id.map(|id| id.to_string()).unwrap_or_else(|| "N/A".to_string()));
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
-            NodeType::NatsAccountSimple { name, unit_id, is_system } => {
+            DomainNodeData::NatsAccountSimple { name, unit_id, is_system } => {
                 self.edit_name = name.clone();
                 self.edit_description = format!("Unit: {}, System: {}", unit_id.map(|id| id.to_string()).unwrap_or_else(|| "N/A".to_string()), is_system);
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
-            NodeType::NatsUserSimple { name, person_id, account_name } => {
+            DomainNodeData::NatsUserSimple { name, person_id, account_name } => {
                 self.edit_name = name.clone();
                 self.edit_description = format!("Account: {}, Person: {}", account_name, person_id.map(|id| id.to_string()).unwrap_or_else(|| "N/A".to_string()));
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
             // PKI Trust Chain - read-only, no editing
-            NodeType::RootCertificate { subject, issuer, .. } => {
+            DomainNodeData::RootCertificate { subject, issuer, .. } => {
                 self.edit_name = format!("Root CA: {}", subject);
                 self.edit_description = format!("Issuer: {}", issuer);
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
-            NodeType::IntermediateCertificate { subject, issuer, .. } => {
+            DomainNodeData::IntermediateCertificate { subject, issuer, .. } => {
                 self.edit_name = format!("Intermediate CA: {}", subject);
                 self.edit_description = format!("Issuer: {}", issuer);
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
-            NodeType::LeafCertificate { subject, issuer, .. } => {
+            DomainNodeData::LeafCertificate { subject, issuer, .. } => {
                 self.edit_name = format!("Certificate: {}", subject);
                 self.edit_description = format!("Issuer: {}", issuer);
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
             // YubiKey Hardware - read-only, no editing
-            NodeType::YubiKey { serial, version, .. } => {
+            DomainNodeData::YubiKey { serial, version, .. } => {
                 self.edit_name = format!("YubiKey {}", serial);
                 self.edit_description = format!("Version: {}", version);
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
-            NodeType::PivSlot { slot_name, yubikey_serial, has_key, .. } => {
+            DomainNodeData::PivSlot { slot_name, yubikey_serial, has_key, .. } => {
                 self.edit_name = slot_name.clone();
                 self.edit_description = format!("YubiKey {} - {}", yubikey_serial, if *has_key { "In use" } else { "Empty" });
                 self.edit_email = String::new();
                 self.edit_enabled = *has_key;
             }
-            NodeType::YubiKeyStatus { yubikey_serial, slots_provisioned, slots_needed, .. } => {
+            DomainNodeData::YubiKeyStatus { yubikey_serial, slots_provisioned, slots_needed, .. } => {
                 self.edit_name = "YubiKey Status".to_string();
                 self.edit_description = format!("{}/{} slots - {}",
                     slots_provisioned.len(),
@@ -277,14 +278,14 @@ impl PropertyCard {
                 self.edit_enabled = true;
             }
             // Cryptographic Keys - read-only, no editing
-            NodeType::Key { key_id, algorithm, purpose, .. } => {
+            DomainNodeData::Key { key_id, algorithm, purpose, .. } => {
                 self.edit_name = format!("Key: {:?}", purpose);
                 self.edit_description = format!("Algorithm: {:?}, ID: {}", algorithm, key_id);
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
             // Export and Manifest - read-only, no editing
-            NodeType::Manifest { manifest_id, name, destination, .. } => {
+            DomainNodeData::Manifest { manifest_id, name, destination, .. } => {
                 self.edit_name = format!("Manifest: {}", name);
                 self.edit_description = format!("ID: {}, Destination: {}",
                     manifest_id,
@@ -294,28 +295,28 @@ impl PropertyCard {
                 self.edit_enabled = true;
             }
             // Policy Roles from policy-bootstrap.json - read-only
-            NodeType::PolicyRole { name, purpose, level, separation_class, claim_count, .. } => {
+            DomainNodeData::PolicyRole { name, purpose, level, separation_class, claim_count, .. } => {
                 self.edit_name = name.clone();
                 self.edit_description = format!("L{} {:?} | {} claims | {}", level, separation_class, claim_count, purpose);
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
             // Policy Claims - read-only
-            NodeType::PolicyClaim { name, category, .. } => {
+            DomainNodeData::PolicyClaim { name, category, .. } => {
                 self.edit_name = name.clone();
                 self.edit_description = format!("Category: {}", category);
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
             // Policy Categories - clickable to expand/collapse
-            NodeType::PolicyCategory { name, claim_count, expanded, .. } => {
+            DomainNodeData::PolicyCategory { name, claim_count, expanded, .. } => {
                 self.edit_name = name.clone();
                 self.edit_description = format!("{} claims | {}", claim_count, if *expanded { "Expanded" } else { "Collapsed" });
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
             // Separation Class Groups - clickable to expand/collapse
-            NodeType::PolicyGroup { name, role_count, expanded, .. } => {
+            DomainNodeData::PolicyGroup { name, role_count, expanded, .. } => {
                 self.edit_name = name.clone();
                 self.edit_description = format!("{} roles | {}", role_count, if *expanded { "Expanded" } else { "Collapsed" });
                 self.edit_email = String::new();
@@ -511,7 +512,7 @@ impl PropertyCard {
         }
 
         match &self.edit_target {
-            Some(EditTarget::Node { node_type, .. }) => self.view_node(node_type),
+            Some(EditTarget::Node { domain_node, .. }) => self.view_node(domain_node),
             Some(EditTarget::Edge { edge_type, .. }) => self.view_edge(edge_type),
             None => container(text("Select a node or edge to edit"))
                 .padding(20)
@@ -520,52 +521,24 @@ impl PropertyCard {
     }
 
     /// Render property card for editing a node
-    fn view_node<'a>(&self, node_type: &'a NodeType) -> Element<'a, PropertyCardMessage> {
+    fn view_node<'a>(&self, domain_node: &'a DomainNode) -> Element<'a, PropertyCardMessage> {
         // For read-only infrastructure types, show detailed info panel instead of edit fields
-        match node_type {
-            NodeType::NatsOperator(_) | NodeType::NatsAccount(_) |
-            NodeType::NatsUser(_) | NodeType::NatsServiceAccount(_) => {
-                return self.view_nats_details(node_type);
-            }
-            NodeType::RootCertificate { .. } | NodeType::IntermediateCertificate { .. } |
-            NodeType::LeafCertificate { .. } => {
-                return self.view_certificate_details(node_type);
-            }
-            NodeType::YubiKey { .. } | NodeType::PivSlot { .. } => {
-                return self.view_yubikey_details(node_type);
-            }
-            NodeType::PolicyRole { .. } | NodeType::PolicyCategory { .. } |
-            NodeType::PolicyGroup { .. } => {
-                return self.view_policy_details(node_type);
-            }
-            _ => {}
+        let injection = domain_node.injection();
+        if injection.is_nats() {
+            return self.view_nats_details(domain_node);
+        }
+        if injection.is_certificate() {
+            return self.view_certificate_details(domain_node);
+        }
+        if matches!(injection, Injection::YubiKey | Injection::PivSlot) {
+            return self.view_yubikey_details(domain_node);
+        }
+        if matches!(injection, Injection::PolicyRole | Injection::PolicyCategory | Injection::PolicyGroup) {
+            return self.view_policy_details(domain_node);
         }
 
-        let node_type_label = match node_type {
-            NodeType::Organization(_) => "Organization",
-            NodeType::OrganizationalUnit(_) => "Organizational Unit",
-            NodeType::Person { .. } => "Person",
-            NodeType::Location(_) => "Location",
-            NodeType::Role(_) => "Role",
-            NodeType::Policy(_) => "Policy",
-            // Policy graph node types
-            NodeType::PolicyRole { .. } => "Role",
-            NodeType::PolicyCategory { .. } => "Claim Category",
-            NodeType::PolicyGroup { .. } => "Separation Class",
-            // Certificate types
-            NodeType::RootCertificate { .. } => "Root Certificate",
-            NodeType::IntermediateCertificate { .. } => "Intermediate Certificate",
-            NodeType::LeafCertificate { .. } => "Leaf Certificate",
-            // NATS types
-            NodeType::NatsOperator(_) => "NATS Operator",
-            NodeType::NatsAccount(_) => "NATS Account",
-            NodeType::NatsUser(_) => "NATS User",
-            NodeType::NatsServiceAccount(_) => "NATS Service Account",
-            // YubiKey types
-            NodeType::YubiKey { .. } => "YubiKey",
-            NodeType::PivSlot { .. } => "PIV Slot",
-            _ => "Node",
-        };
+        // Get the display label using injection's display_name()
+        let node_type_label = injection.display_name();
 
         let header: Row<'_, PropertyCardMessage> = row![
             text(node_type_label).size(18),
@@ -599,7 +572,7 @@ impl PropertyCard {
         );
 
         // Location-specific fields
-        if matches!(node_type, NodeType::Location(_)) {
+        if injection == Injection::Location {
             // Location type selector (Physical, Virtual, Logical, Hybrid)
             fields = fields.push(
                 column![
@@ -711,8 +684,8 @@ impl PropertyCard {
 
         // Description field (Organization, Role, Policy)
         if matches!(
-            node_type,
-            NodeType::Organization(_) | NodeType::Role(_) | NodeType::Policy(_)
+            injection,
+            Injection::Organization | Injection::Role | Injection::Policy
         ) {
             fields = fields.push(
                 column![
@@ -726,7 +699,7 @@ impl PropertyCard {
         }
 
         // Email field (Person only)
-        if matches!(node_type, NodeType::Person { .. }) {
+        if injection == Injection::Person {
             fields = fields.push(
                 column![
                     text("Email:").size(12),
@@ -739,7 +712,7 @@ impl PropertyCard {
         }
 
         // Roles checkboxes (Person only)
-        if matches!(node_type, NodeType::Person { .. }) {
+        if injection == Injection::Person {
             fields = fields.push(
                 text("Roles:")
                     .size(12)
@@ -817,7 +790,7 @@ impl PropertyCard {
         }
 
         // Key Operations section for Organization nodes (Root CA only)
-        if matches!(node_type, NodeType::Organization(_)) {
+        if injection == Injection::Organization {
             fields = fields.push(
                 column![
                     text("Key Operations:").size(12),
@@ -839,7 +812,7 @@ impl PropertyCard {
         }
 
         // Key Operations section for OrganizationalUnit nodes (Intermediate CA only)
-        if matches!(node_type, NodeType::OrganizationalUnit(_)) {
+        if injection == Injection::OrganizationUnit {
             fields = fields.push(
                 column![
                     text("Key Operations:").size(12),
@@ -862,13 +835,13 @@ impl PropertyCard {
 
         // Enabled checkbox (Person, Role, Policy)
         if matches!(
-            node_type,
-            NodeType::Person { .. } | NodeType::Role(_) | NodeType::Policy(_)
+            injection,
+            Injection::Person | Injection::Role | Injection::Policy
         ) {
-            let label = match node_type {
-                NodeType::Person { .. } => "Active",
-                NodeType::Role(_) => "Active",
-                NodeType::Policy(_) => "Enabled",
+            let label = match injection {
+                Injection::Person => "Active",
+                Injection::Role => "Active",
+                Injection::Policy => "Enabled",
                 _ => "Enabled",
             };
 
@@ -882,7 +855,7 @@ impl PropertyCard {
         }
 
         // Claims checkboxes (Policy only)
-        if matches!(node_type, NodeType::Policy(_)) {
+        if injection == Injection::Policy {
             fields = fields.push(
                 text("Claims (Permissions):")
                     .size(12)
@@ -1112,9 +1085,9 @@ impl PropertyCard {
     }
 
     /// Render detailed NATS infrastructure information (read-only)
-    fn view_nats_details<'a>(&self, node_type: &'a NodeType) -> Element<'a, PropertyCardMessage> {
-        let (title, details) = match node_type {
-            NodeType::NatsOperator(identity) => (
+    fn view_nats_details<'a>(&self, domain_node: &'a DomainNode) -> Element<'a, PropertyCardMessage> {
+        let (title, details) = match domain_node.data() {
+            DomainNodeData::NatsOperator(identity) => (
                 "NATS Operator",
                 column![
                     self.detail_row("Type:", "Root Authority"),
@@ -1129,7 +1102,7 @@ impl PropertyCard {
                     self.detail_row("Has Credential:", if identity.credential.is_some() { "Yes" } else { "No" }),
                 ].spacing(8)
             ),
-            NodeType::NatsAccount(identity) => (
+            DomainNodeData::NatsAccount(identity) => (
                 "NATS Account",
                 column![
                     self.detail_row("Type:", "Account (Organizational Unit)"),
@@ -1144,7 +1117,7 @@ impl PropertyCard {
                     self.detail_row("Has Credential:", if identity.credential.is_some() { "Yes" } else { "No" }),
                 ].spacing(8)
             ),
-            NodeType::NatsUser(identity) => (
+            DomainNodeData::NatsUser(identity) => (
                 "NATS User",
                 column![
                     self.detail_row("Type:", "User (Person)"),
@@ -1159,7 +1132,7 @@ impl PropertyCard {
                     self.detail_row("Has Credential:", if identity.credential.is_some() { "Yes" } else { "No" }),
                 ].spacing(8)
             ),
-            NodeType::NatsServiceAccount(identity) => (
+            DomainNodeData::NatsServiceAccount(identity) => (
                 "NATS Service Account",
                 column![
                     self.detail_row("Type:", "Service (Automation)"),
@@ -1201,9 +1174,9 @@ impl PropertyCard {
     }
 
     /// Render detailed PKI certificate information (read-only)
-    fn view_certificate_details<'a>(&self, node_type: &'a NodeType) -> Element<'a, PropertyCardMessage> {
-        let (title, details) = match node_type {
-            NodeType::RootCertificate { subject, issuer, not_before, not_after, key_usage, .. } => (
+    fn view_certificate_details<'a>(&self, domain_node: &'a DomainNode) -> Element<'a, PropertyCardMessage> {
+        let (title, details) = match domain_node.data() {
+            DomainNodeData::RootCertificate { subject, issuer, not_before, not_after, key_usage, .. } => (
                 "Root CA Certificate",
                 column![
                     self.detail_row("Certificate Type:", "Root Certificate Authority"),
@@ -1220,7 +1193,7 @@ impl PropertyCard {
                     self.detail_row("Path Length:", "Unlimited"),
                 ].spacing(8)
             ),
-            NodeType::IntermediateCertificate { subject, issuer, not_before, not_after, key_usage, .. } => (
+            DomainNodeData::IntermediateCertificate { subject, issuer, not_before, not_after, key_usage, .. } => (
                 "Intermediate CA Certificate",
                 column![
                     self.detail_row("Certificate Type:", "Intermediate Certificate Authority"),
@@ -1237,7 +1210,7 @@ impl PropertyCard {
                     self.detail_row("Can Sign:", "Leaf Certificates"),
                 ].spacing(8)
             ),
-            NodeType::LeafCertificate { subject, issuer, not_before, not_after, key_usage, san, .. } => (
+            DomainNodeData::LeafCertificate { subject, issuer, not_before, not_after, key_usage, san, .. } => (
                 "Leaf Certificate",
                 column![
                     self.detail_row("Certificate Type:", "End Entity Certificate"),
@@ -1290,9 +1263,9 @@ impl PropertyCard {
     }
 
     /// Render detailed YubiKey hardware information (read-only)
-    fn view_yubikey_details<'a>(&self, node_type: &'a NodeType) -> Element<'a, PropertyCardMessage> {
-        let (title, details) = match node_type {
-            NodeType::YubiKey { serial, version, provisioned_at, slots_used, .. } => (
+    fn view_yubikey_details<'a>(&self, domain_node: &'a DomainNode) -> Element<'a, PropertyCardMessage> {
+        let (title, details) = match domain_node.data() {
+            DomainNodeData::YubiKey { serial, version, provisioned_at, slots_used, .. } => (
                 "YubiKey Hardware Token",
                 column![
                     self.detail_row("Device Type:", "YubiKey Hardware Security Module"),
@@ -1321,7 +1294,7 @@ impl PropertyCard {
                     ].spacing(2),
                 ].spacing(8)
             ),
-            NodeType::PivSlot { slot_name, yubikey_serial, has_key, certificate_subject, .. } => (
+            DomainNodeData::PivSlot { slot_name, yubikey_serial, has_key, certificate_subject, .. } => (
                 "PIV Slot",
                 column![
                     self.detail_row("Slot:", slot_name),
@@ -1378,11 +1351,11 @@ impl PropertyCard {
     }
 
     /// Render detailed policy information (read-only)
-    fn view_policy_details<'a>(&self, node_type: &'a NodeType) -> Element<'a, PropertyCardMessage> {
+    fn view_policy_details<'a>(&self, domain_node: &'a DomainNode) -> Element<'a, PropertyCardMessage> {
         use crate::gui::cowboy_theme::CowboyAppTheme as CowboyCustomTheme;
 
-        let (title, details) = match node_type {
-            NodeType::PolicyRole { name, purpose, level, separation_class, claim_count, .. } => (
+        let (title, details) = match domain_node.data() {
+            DomainNodeData::PolicyRole { name, purpose, level, separation_class, claim_count, .. } => (
                 "Role",
                 column![
                     self.detail_row("Name:", name),
@@ -1400,7 +1373,7 @@ impl PropertyCard {
                     self.detail_row("Claims:", &format!("{} permissions", claim_count)),
                 ].spacing(8)
             ),
-            NodeType::PolicyCategory { name, claim_count, .. } => (
+            DomainNodeData::PolicyCategory { name, claim_count, .. } => (
                 "Claim Category",
                 column![
                     self.detail_row("Category:", name),
@@ -1408,7 +1381,7 @@ impl PropertyCard {
                     text("Claim categories group related permissions.").size(11).color(Color::from_rgb(0.6, 0.6, 0.7)),
                 ].spacing(8)
             ),
-            NodeType::PolicyGroup { name, role_count, separation_class, .. } => (
+            DomainNodeData::PolicyGroup { name, role_count, separation_class, .. } => (
                 "Separation Class",
                 column![
                     self.detail_row("Class:", name),
@@ -1469,7 +1442,6 @@ impl PropertyCard {
 mod tests {
     use super::*;
     use crate::domain::Organization;
-    use chrono::Utc;
     use std::collections::HashMap;
 
     #[test]
@@ -1493,7 +1465,8 @@ mod tests {
             metadata: HashMap::new(),
         };
 
-        card.set_node(org.id, NodeType::Organization(org.clone()));
+        let domain_node = DomainNode::inject_organization(org.clone());
+        card.set_node(org.id, domain_node);
 
         assert!(card.is_editing());
         assert!(!card.is_dirty());
@@ -1515,7 +1488,8 @@ mod tests {
             metadata: HashMap::new(),
         };
 
-        card.set_node(org.id, NodeType::Organization(org.clone()));
+        let domain_node = DomainNode::inject_organization(org.clone());
+        card.set_node(org.id, domain_node);
         assert!(!card.is_dirty());
 
         card.update(PropertyCardMessage::NameChanged("New Name".to_string()));
@@ -1537,7 +1511,8 @@ mod tests {
             metadata: HashMap::new(),
         };
 
-        card.set_node(org.id, NodeType::Organization(org));
+        let domain_node = DomainNode::inject_organization(org.clone());
+        card.set_node(org.id, domain_node);
         card.update(PropertyCardMessage::NameChanged("Modified".to_string()));
 
         assert!(card.is_editing());

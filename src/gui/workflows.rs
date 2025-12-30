@@ -44,7 +44,8 @@
 
 use crate::signals::{Signal, StepKind, ContinuousKind};
 use crate::causality::{CausalChain, CausalEvent};
-use crate::gui::graph::{OrganizationConcept, NodeType};
+use crate::gui::graph::OrganizationConcept;
+use crate::gui::domain_node::Injection;
 use crate::gui::graph_causality::GraphOperation;
 use uuid::Uuid;
 use iced::Point;
@@ -92,7 +93,7 @@ pub fn build_pki_workflow(graph: &OrganizationConcept) -> WorkflowStep {
 
     // Find organization nodes
     let org_nodes: Vec<_> = graph.nodes.values()
-        .filter(|n| matches!(n.node_type, NodeType::Organization(_)))
+        .filter(|n| n.domain_node.injection() == Injection::Organization)
         .collect();
 
     for org_node in org_nodes {
@@ -126,7 +127,7 @@ pub fn build_pki_workflow(graph: &OrganizationConcept) -> WorkflowStep {
 
         // Step 2: Create Intermediate CAs for organizational units
         let unit_nodes: Vec<_> = graph.nodes.values()
-            .filter(|n| matches!(n.node_type, NodeType::OrganizationalUnit(_)))
+            .filter(|n| n.domain_node.injection() == Injection::OrganizationUnit)
             .collect();
 
         for unit_node in &unit_nodes {
@@ -161,7 +162,7 @@ pub fn build_pki_workflow(graph: &OrganizationConcept) -> WorkflowStep {
 
             // Step 3: Create Leaf Certificates for people in this unit
             let people_nodes: Vec<_> = graph.nodes.values()
-                .filter(|n| matches!(n.node_type, NodeType::Person { .. }))
+                .filter(|n| n.domain_node.injection() == Injection::Person)
                 .collect();
 
             for person_node in &people_nodes {
@@ -240,7 +241,7 @@ pub fn build_nats_workflow(graph: &OrganizationConcept) -> WorkflowStep {
 
     // Find organization nodes
     let org_nodes: Vec<_> = graph.nodes.values()
-        .filter(|n| matches!(n.node_type, NodeType::Organization(_)))
+        .filter(|n| n.domain_node.injection() == Injection::Organization)
         .collect();
 
     for org_node in org_nodes {
@@ -274,7 +275,7 @@ pub fn build_nats_workflow(graph: &OrganizationConcept) -> WorkflowStep {
 
         // Step 2: Create NATS Accounts for organizational units
         let unit_nodes: Vec<_> = graph.nodes.values()
-            .filter(|n| matches!(n.node_type, NodeType::OrganizationalUnit(_)))
+            .filter(|n| n.domain_node.injection() == Injection::OrganizationUnit)
             .collect();
 
         for unit_node in &unit_nodes {
@@ -309,7 +310,7 @@ pub fn build_nats_workflow(graph: &OrganizationConcept) -> WorkflowStep {
 
             // Step 3: Create NATS Users for people in this unit
             let people_nodes: Vec<_> = graph.nodes.values()
-                .filter(|n| matches!(n.node_type, NodeType::Person { .. }))
+                .filter(|n| n.domain_node.injection() == Injection::Person)
                 .collect();
 
             for person_node in &people_nodes {

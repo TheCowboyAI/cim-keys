@@ -37,7 +37,8 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::domain::Location;
-use crate::gui::graph::{OrganizationConcept, NodeType, EdgeType};
+use crate::gui::graph::{OrganizationConcept, EdgeType};
+use crate::gui::domain_node::{DomainNodeData, Injection};
 
 /// Location-centric analysis of the organizational graph
 #[derive(Debug, Clone)]
@@ -67,8 +68,8 @@ impl LocationAnalysis {
     pub fn analyze(graph: &OrganizationConcept, location_id: Uuid) -> Option<Self> {
         // Find the location node
         let node = graph.nodes.get(&location_id)?;
-        let location = match &node.node_type {
-            NodeType::Location(loc) => loc.clone(),
+        let location = match node.domain_node.data() {
+            DomainNodeData::Location(loc) => loc.clone(),
             _ => return None,
         };
 
@@ -85,16 +86,14 @@ impl LocationAnalysis {
                 match edge.edge_type {
                     EdgeType::StoredAt => {
                         if let Some(source_node) = graph.nodes.get(&edge.from) {
-                            match &source_node.node_type {
-                                NodeType::Key { purpose, .. } => {
+                            match source_node.domain_node.data() {
+                                DomainNodeData::Key { purpose, .. } => {
                                     stored_keys.insert(edge.from, format!("{:?}", purpose));
                                 }
-                                NodeType::RootCertificate { .. } |
-                                NodeType::IntermediateCertificate { .. } |
-                                NodeType::LeafCertificate { .. } => {
+                                _ if source_node.domain_node.injection().is_certificate() => {
                                     stored_certificates.push(edge.from);
                                 }
-                                NodeType::YubiKey { .. } => {
+                                _ if source_node.domain_node.injection() == Injection::YubiKey => {
                                     stored_yubikeys.push(edge.from);
                                 }
                                 _ => {}

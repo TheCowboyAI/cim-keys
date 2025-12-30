@@ -41,7 +41,8 @@ use uuid::Uuid;
 use chrono::Utc;
 
 use crate::domain::{Organization, OrganizationUnit, Person, KeyOwnerRole};
-use crate::gui::graph::{OrganizationConcept, NodeType, ConceptEntity, ConceptRelation, EdgeType};
+use crate::gui::graph::{OrganizationConcept, ConceptEntity, ConceptRelation, EdgeType};
+use crate::gui::domain_node::{DomainNode, DomainNodeData};
 use iced::{Color, Point};
 
 /// Result of analyzing the organizational graph for NATS generation
@@ -79,7 +80,7 @@ pub fn analyze_graph_for_nats(graph: &OrganizationConcept) -> NatsHierarchy {
 
     // Step 1: Find the root organization
     for (id, node) in &graph.nodes {
-        if let NodeType::Organization(org) = &node.node_type {
+        if let DomainNodeData::Organization(org) = node.domain_node.data() {
             hierarchy.root_organization = Some((*id, org.clone()));
             break; // Assume single root organization
         }
@@ -88,7 +89,7 @@ pub fn analyze_graph_for_nats(graph: &OrganizationConcept) -> NatsHierarchy {
     // Step 2: Find all organizational units and their parent organization
     if let Some((org_id, _)) = &hierarchy.root_organization {
         for (unit_id, node) in &graph.nodes {
-            if let NodeType::OrganizationalUnit(unit) = &node.node_type {
+            if let DomainNodeData::OrganizationUnit(unit) = node.domain_node.data() {
                 // Find parent edge (Organization → OrganizationalUnit)
                 let parent_id = graph.edges.iter()
                     .find(|edge| {
@@ -106,7 +107,7 @@ pub fn analyze_graph_for_nats(graph: &OrganizationConcept) -> NatsHierarchy {
 
     // Step 3: Find all people and their parent organizational unit
     for (person_id, node) in &graph.nodes {
-        if let NodeType::Person { person, role } = &node.node_type {
+        if let DomainNodeData::Person { person, role } = node.domain_node.data() {
             // Find parent edge (OrganizationalUnit → Person or Organization → Person)
             let parent_id = graph.edges.iter()
                 .find(|edge| {
@@ -279,9 +280,9 @@ fn create_nats_operator_node(nats_id: Uuid, org: &Organization) -> Result<Concep
         events: Vec::new(), // US-021: GUI placeholder (events collected during projection)
     };
 
-    let node_type = NodeType::NatsOperator(identity);
+    let domain_node = DomainNode::inject_nats_operator(identity);
     let position = Point::new(400.0, 100.0); // Top center
-    Ok(ConceptEntity::from_node_type(nats_id, node_type, position))
+    Ok(ConceptEntity::from_domain_node(nats_id, domain_node, position))
 }
 
 /// Create NATS Account node from OrganizationalUnit
@@ -328,9 +329,9 @@ fn create_nats_account_node(
         events: Vec::new(), // US-021: GUI placeholder (events collected during projection)
     };
 
-    let node_type = NodeType::NatsAccount(identity);
+    let domain_node = DomainNode::inject_nats_account(identity);
     let position = Point::new(400.0, 250.0); // Middle
-    Ok(ConceptEntity::from_node_type(nats_id, node_type, position))
+    Ok(ConceptEntity::from_domain_node(nats_id, domain_node, position))
 }
 
 /// Create NATS User node from Person
@@ -387,9 +388,9 @@ fn create_nats_user_node(
         events: Vec::new(), // US-021: GUI placeholder (events collected during projection)
     };
 
-    let node_type = NodeType::NatsUser(identity);
+    let domain_node = DomainNode::inject_nats_user(identity);
     let position = Point::new(400.0, 400.0); // Bottom
-    Ok(ConceptEntity::from_node_type(nats_id, node_type, position))
+    Ok(ConceptEntity::from_domain_node(nats_id, domain_node, position))
 }
 
 /// Add NATS nodes and edges to the organizational graph

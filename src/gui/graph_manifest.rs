@@ -50,7 +50,8 @@ use std::path::PathBuf;
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
-use crate::gui::graph::{OrganizationConcept, NodeType, EdgeType};
+use crate::gui::graph::{OrganizationConcept, EdgeType};
+use crate::gui::domain_node::{DomainNodeData, Injection};
 
 /// Export format type
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -138,37 +139,37 @@ impl ManifestAnalysis {
                     EdgeType::ExportedTo => {
                         // Track what was exported
                         if let Some(exported_node) = graph.nodes.get(&edge.to) {
-                            match &exported_node.node_type {
-                                NodeType::Key { key_id, .. } => {
+                            match exported_node.domain_node.data() {
+                                DomainNodeData::Key { key_id, .. } => {
                                     exported_keys.push((*key_id, exported_node.label.clone()));
                                 }
-                                NodeType::RootCertificate { subject, .. } |
-                                NodeType::IntermediateCertificate { subject, .. } |
-                                NodeType::LeafCertificate { subject, .. } => {
+                                DomainNodeData::RootCertificate { subject, .. } |
+                                DomainNodeData::IntermediateCertificate { subject, .. } |
+                                DomainNodeData::LeafCertificate { subject, .. } => {
                                     exported_certificates.push((edge.to, subject.clone()));
                                 }
-                                NodeType::NatsOperator(_) => {
+                                DomainNodeData::NatsOperator(_) => {
                                     exported_nats_operators.push(edge.to);
                                 }
-                                NodeType::NatsAccount(_) => {
+                                DomainNodeData::NatsAccount(_) => {
                                     exported_nats_accounts.push(edge.to);
                                 }
-                                NodeType::NatsUser(_) | NodeType::NatsServiceAccount(_) => {
+                                DomainNodeData::NatsUser(_) | DomainNodeData::NatsServiceAccount(_) => {
                                     exported_nats_users.push(edge.to);
                                 }
-                                NodeType::Organization(_) => {
+                                DomainNodeData::Organization(_) => {
                                     exported_organizations.push(edge.to);
                                 }
-                                NodeType::OrganizationalUnit(_) => {
+                                DomainNodeData::OrganizationUnit(_) => {
                                     exported_units.push(edge.to);
                                 }
-                                NodeType::Person { .. } => {
+                                DomainNodeData::Person { .. } => {
                                     exported_people.push(edge.to);
                                 }
-                                NodeType::Location(_) => {
+                                DomainNodeData::Location(_) => {
                                     exported_locations.push(edge.to);
                                 }
-                                NodeType::YubiKey { serial, .. } => {
+                                DomainNodeData::YubiKey { serial, .. } => {
                                     referenced_yubikeys.push((edge.to, serial.clone()));
                                 }
                                 _ => {}
@@ -186,7 +187,7 @@ impl ManifestAnalysis {
 
         // Extract checksum and signature from manifest node metadata
         if let Some(manifest_node) = graph.nodes.get(&manifest_id) {
-            if let NodeType::Manifest { checksum: cs, .. } = &manifest_node.node_type {
+            if let DomainNodeData::Manifest { checksum: cs, .. } = manifest_node.domain_node.data() {
                 checksum = cs.clone();
             }
         }

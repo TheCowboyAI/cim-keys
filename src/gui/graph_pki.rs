@@ -41,7 +41,8 @@ use uuid::Uuid;
 use chrono::Utc;
 
 use crate::domain::{Organization, OrganizationUnit, Person, KeyOwnerRole};
-use crate::gui::graph::{OrganizationConcept, NodeType, ConceptEntity, ConceptRelation, EdgeType};
+use crate::gui::graph::{OrganizationConcept, ConceptEntity, ConceptRelation, EdgeType};
+use crate::gui::domain_node::{DomainNode, DomainNodeData};
 use iced::{Color, Point};
 
 /// Result of analyzing the organizational graph for PKI generation
@@ -79,7 +80,7 @@ pub fn analyze_graph_for_pki(graph: &OrganizationConcept) -> PkiHierarchy {
 
     // Step 1: Find the root organization
     for (id, node) in &graph.nodes {
-        if let NodeType::Organization(org) = &node.node_type {
+        if let DomainNodeData::Organization(org) = node.domain_node.data() {
             hierarchy.root_organization = Some((*id, org.clone()));
             break; // Assume single root organization
         }
@@ -88,7 +89,7 @@ pub fn analyze_graph_for_pki(graph: &OrganizationConcept) -> PkiHierarchy {
     // Step 2: Find all organizational units and their parent organization
     if let Some((org_id, _)) = &hierarchy.root_organization {
         for (unit_id, node) in &graph.nodes {
-            if let NodeType::OrganizationalUnit(unit) = &node.node_type {
+            if let DomainNodeData::OrganizationUnit(unit) = node.domain_node.data() {
                 // Find parent edge (Organization → OrganizationalUnit)
                 let parent_id = graph.edges.iter()
                     .find(|edge| {
@@ -106,7 +107,7 @@ pub fn analyze_graph_for_pki(graph: &OrganizationConcept) -> PkiHierarchy {
 
     // Step 3: Find all people and their parent organizational unit
     for (person_id, node) in &graph.nodes {
-        if let NodeType::Person { person, role } = &node.node_type {
+        if let DomainNodeData::Person { person, role } = node.domain_node.data() {
             // Find parent edge (OrganizationalUnit → Person or Organization → Person)
             let parent_id = graph.edges.iter()
                 .find(|edge| {
@@ -251,19 +252,19 @@ fn create_root_ca_node(cert_id: Uuid, org: &Organization) -> Result<ConceptEntit
     let subject = format!("CN={} Root CA, O={}", org.name, org.name);
     let issuer = subject.clone(); // Self-signed
 
-    let node_type = NodeType::RootCertificate {
+    let domain_node = DomainNode::inject_root_certificate(
         cert_id,
         subject,
         issuer,
-        not_before: now,
-        not_after: valid_until,
-        key_usage: vec![
+        now,
+        valid_until,
+        vec![
             "Certificate Sign".to_string(),
             "CRL Sign".to_string(),
         ],
-    };
+    );
     let position = Point::new(400.0, 100.0); // Top center
-    Ok(ConceptEntity::from_node_type(cert_id, node_type, position))
+    Ok(ConceptEntity::from_domain_node(cert_id, domain_node, position))
 }
 
 /// Create Intermediate CA certificate node from OrganizationalUnit
@@ -278,19 +279,19 @@ fn create_intermediate_ca_node(
     let subject = format!("CN={} CA, OU={}", unit.name, unit.name);
     let issuer = format!("Parent CA {}", parent_cert_id); // Simplified
 
-    let node_type = NodeType::IntermediateCertificate {
+    let domain_node = DomainNode::inject_intermediate_certificate(
         cert_id,
         subject,
         issuer,
-        not_before: now,
-        not_after: valid_until,
-        key_usage: vec![
+        now,
+        valid_until,
+        vec![
             "Certificate Sign".to_string(),
             "CRL Sign".to_string(),
         ],
-    };
+    );
     let position = Point::new(400.0, 250.0); // Middle
-    Ok(ConceptEntity::from_node_type(cert_id, node_type, position))
+    Ok(ConceptEntity::from_domain_node(cert_id, domain_node, position))
 }
 
 /// Create Leaf certificate node from Person
@@ -316,17 +317,17 @@ fn create_leaf_certificate_node(
         KeyOwnerRole::Auditor => vec!["Digital Signature".to_string()],
     };
 
-    let node_type = NodeType::LeafCertificate {
+    let domain_node = DomainNode::inject_leaf_certificate(
         cert_id,
         subject,
         issuer,
-        not_before: now,
-        not_after: valid_until,
+        now,
+        valid_until,
         key_usage,
-        san: vec![person.email.clone()], // Subject Alternative Name
-    };
+        vec![person.email.clone()], // Subject Alternative Name
+    );
     let position = Point::new(400.0, 400.0); // Bottom
-    Ok(ConceptEntity::from_node_type(cert_id, node_type, position))
+    Ok(ConceptEntity::from_domain_node(cert_id, domain_node, position))
 }
 
 /// Add PKI nodes and edges to the organizational graph

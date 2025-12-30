@@ -7,7 +7,8 @@
 use uuid::Uuid;
 use iced::{Point, Color};
 use chrono::{DateTime, Utc};
-use super::graph::{EdgeType, NodeType};
+use super::graph::EdgeType;
+use super::domain_node::DomainNode;
 
 /// Graph events that can be applied to change graph state
 #[derive(Debug, Clone)]
@@ -15,7 +16,8 @@ pub enum GraphEvent {
     /// Node was created
     NodeCreated {
         node_id: Uuid,
-        node_type: NodeType,
+        /// The domain node data (using categorical coproduct pattern)
+        domain_node: DomainNode,
         position: Point,
         color: Color,
         label: String,
@@ -25,7 +27,7 @@ pub enum GraphEvent {
     NodeDeleted {
         node_id: Uuid,
         // Store snapshot for potential redo
-        node_type: NodeType,
+        domain_node: DomainNode,
         position: Point,
         color: Color,
         label: String,
@@ -35,10 +37,10 @@ pub enum GraphEvent {
     NodePropertiesChanged {
         node_id: Uuid,
         // Old values for undo (compensating event with these as new values)
-        old_node_type: NodeType,
+        old_domain_node: DomainNode,
         old_label: String,
         // New values
-        new_node_type: NodeType,
+        new_domain_node: DomainNode,
         new_label: String,
         timestamp: DateTime<Utc>,
     },
@@ -79,20 +81,20 @@ impl GraphEvent {
     /// Create a compensating event that undoes this event
     pub fn compensate(&self) -> Self {
         match self {
-            GraphEvent::NodeCreated { node_id, node_type, position, color, label, .. } => {
+            GraphEvent::NodeCreated { node_id, domain_node, position, color, label, .. } => {
                 GraphEvent::NodeDeleted {
                     node_id: *node_id,
-                    node_type: node_type.clone(),
+                    domain_node: domain_node.clone(),
                     position: *position,
                     color: *color,
                     label: label.clone(),
                     timestamp: Utc::now(),
                 }
             }
-            GraphEvent::NodeDeleted { node_id, node_type, position, color, label, .. } => {
+            GraphEvent::NodeDeleted { node_id, domain_node, position, color, label, .. } => {
                 GraphEvent::NodeCreated {
                     node_id: *node_id,
-                    node_type: node_type.clone(),
+                    domain_node: domain_node.clone(),
                     position: *position,
                     color: *color,
                     label: label.clone(),
@@ -101,17 +103,17 @@ impl GraphEvent {
             }
             GraphEvent::NodePropertiesChanged {
                 node_id,
-                old_node_type,
+                old_domain_node,
                 old_label,
-                new_node_type,
+                new_domain_node,
                 new_label,
                 ..
             } => {
                 GraphEvent::NodePropertiesChanged {
                     node_id: *node_id,
-                    old_node_type: new_node_type.clone(),
+                    old_domain_node: new_domain_node.clone(),
                     old_label: new_label.clone(),
-                    new_node_type: old_node_type.clone(),
+                    new_domain_node: old_domain_node.clone(),
                     new_label: old_label.clone(),
                     timestamp: Utc::now(),
                 }
@@ -290,12 +292,12 @@ mod tests {
             owner_id: None,
         };
 
+        let node_id = person.id;
+        let domain_node = DomainNode::inject_person(person, KeyOwnerRole::Developer);
+
         let event = GraphEvent::NodeCreated {
-            node_id: person.id,
-            node_type: NodeType::Person {
-                person,
-                role: KeyOwnerRole::Developer,
-            },
+            node_id,
+            domain_node,
             position: Point::new(100.0, 200.0),
             color: Color::from_rgb(0.5, 0.5, 0.5),
             label: "Test".to_string(),
@@ -321,12 +323,12 @@ mod tests {
             owner_id: None,
         };
 
+        let node_id = person.id;
+        let domain_node = DomainNode::inject_person(person, KeyOwnerRole::Developer);
+
         let created = GraphEvent::NodeCreated {
-            node_id: person.id,
-            node_type: NodeType::Person {
-                person: person.clone(),
-                role: KeyOwnerRole::Developer,
-            },
+            node_id,
+            domain_node,
             position: Point::new(100.0, 200.0),
             color: Color::from_rgb(0.5, 0.5, 0.5),
             label: "Test".to_string(),
@@ -352,12 +354,12 @@ mod tests {
             owner_id: None,
         };
 
+        let node_id = person.id;
+        let domain_node = DomainNode::inject_person(person, KeyOwnerRole::Developer);
+
         let event = GraphEvent::NodeCreated {
-            node_id: person.id,
-            node_type: NodeType::Person {
-                person,
-                role: KeyOwnerRole::Developer,
-            },
+            node_id,
+            domain_node,
             position: Point::new(100.0, 200.0),
             color: Color::from_rgb(0.5, 0.5, 0.5),
             label: "Test".to_string(),
@@ -394,12 +396,10 @@ mod tests {
         };
 
         for i in 0..5 {
+            let domain_node = DomainNode::inject_person(person.clone(), KeyOwnerRole::Developer);
             let event = GraphEvent::NodeCreated {
                 node_id: Uuid::now_v7(),
-                node_type: NodeType::Person {
-                    person: person.clone(),
-                    role: KeyOwnerRole::Developer,
-                },
+                domain_node,
                 position: Point::new(i as f32 * 100.0, 200.0),
                 color: Color::from_rgb(0.5, 0.5, 0.5),
                 label: format!("Test {}", i),

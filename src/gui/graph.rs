@@ -23,6 +23,7 @@ use super::edge_indicator::EdgeCreationIndicator;
 use super::graph_events::{EventStack, GraphEvent};
 use super::GraphLayout;
 use super::cowboy_theme::CowboyAppTheme as CowboyCustomTheme;
+use super::domain_node::{DomainNode, DomainNodeData, Injection};
 
 /// Role badge for compact display mode (shown on person nodes)
 #[derive(Debug, Clone)]
@@ -761,12 +762,9 @@ impl OrganizationConcept {
     /// Add a person node to the graph
     pub fn add_node(&mut self, person: Person, role: KeyOwnerRole) {
         let node_id = person.id;
-        let node_type = NodeType::Person {
-            person: person.clone(),
-            role,
-        };
+        let domain_node = DomainNode::inject_person(person, role);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_node_type(node_id, node_type, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
 
         self.nodes.insert(node_id, node);
     }
@@ -774,9 +772,9 @@ impl OrganizationConcept {
     /// Add an organization node to the graph
     pub fn add_organization_node(&mut self, org: Organization) {
         let node_id = org.id;
-        let node_type = NodeType::Organization(org);
+        let domain_node = DomainNode::inject_organization(org);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_node_type(node_id, node_type, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
 
         self.nodes.insert(node_id, node);
     }
@@ -784,9 +782,9 @@ impl OrganizationConcept {
     /// Add an organizational unit node to the graph
     pub fn add_org_unit_node(&mut self, unit: OrganizationUnit) {
         let node_id = unit.id;
-        let node_type = NodeType::OrganizationalUnit(unit);
+        let domain_node = DomainNode::inject_organization_unit(unit);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_node_type(node_id, node_type, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
 
         self.nodes.insert(node_id, node);
     }
@@ -795,9 +793,9 @@ impl OrganizationConcept {
     pub fn add_location_node(&mut self, location: Location) {
         use cim_domain::AggregateRoot;
         let node_id = *location.id().as_uuid();
-        let node_type = NodeType::Location(location);
+        let domain_node = DomainNode::inject_location(location);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_node_type(node_id, node_type, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
 
         self.nodes.insert(node_id, node);
     }
@@ -805,9 +803,9 @@ impl OrganizationConcept {
     /// Add a role node to the graph (domain Role type)
     pub fn add_domain_role_node(&mut self, role: Role) {
         let node_id = role.id;
-        let node_type = NodeType::Role(role);
+        let domain_node = DomainNode::inject_role(role);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_node_type(node_id, node_type, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
 
         self.nodes.insert(node_id, node);
     }
@@ -823,16 +821,11 @@ impl OrganizationConcept {
         separation_class: crate::policy::SeparationClass,
         claim_count: usize,
     ) {
-        let node_type = NodeType::PolicyRole {
-            role_id,
-            name,
-            purpose,
-            level,
-            separation_class,
-            claim_count,
-        };
+        let domain_node = DomainNode::inject_policy_role(
+            role_id, name, purpose, level, separation_class, claim_count
+        );
         let position = self.calculate_node_position(role_id);
-        let node = ConceptEntity::from_node_type(role_id, node_type, position);
+        let node = ConceptEntity::from_domain_node(role_id, domain_node, position);
 
         self.nodes.insert(role_id, node);
     }
@@ -845,13 +838,9 @@ impl OrganizationConcept {
         name: String,
         category: String,
     ) {
-        let node_type = NodeType::PolicyClaim {
-            claim_id,
-            name,
-            category,
-        };
+        let domain_node = DomainNode::inject_policy_claim(claim_id, name, category);
         let position = self.calculate_node_position(claim_id);
-        let node = ConceptEntity::from_node_type(claim_id, node_type, position);
+        let node = ConceptEntity::from_domain_node(claim_id, domain_node, position);
 
         self.nodes.insert(claim_id, node);
     }
@@ -864,14 +853,9 @@ impl OrganizationConcept {
         claim_count: usize,
         expanded: bool,
     ) {
-        let node_type = NodeType::PolicyCategory {
-            category_id,
-            name,
-            claim_count,
-            expanded,
-        };
+        let domain_node = DomainNode::inject_policy_category(category_id, name, claim_count, expanded);
         let position = self.calculate_node_position(category_id);
-        let node = ConceptEntity::from_node_type(category_id, node_type, position);
+        let node = ConceptEntity::from_domain_node(category_id, domain_node, position);
 
         self.nodes.insert(category_id, node);
     }
@@ -885,15 +869,11 @@ impl OrganizationConcept {
         role_count: usize,
         expanded: bool,
     ) {
-        let node_type = NodeType::PolicyGroup {
-            class_id,
-            name,
-            separation_class,
-            role_count,
-            expanded,
-        };
+        let domain_node = DomainNode::inject_policy_group(
+            class_id, name, separation_class, role_count, expanded
+        );
         let position = self.calculate_node_position(class_id);
-        let node = ConceptEntity::from_node_type(class_id, node_type, position);
+        let node = ConceptEntity::from_domain_node(class_id, domain_node, position);
 
         self.nodes.insert(class_id, node);
     }
@@ -901,9 +881,9 @@ impl OrganizationConcept {
     /// Add a policy node to the graph
     pub fn add_policy_node(&mut self, policy: Policy) {
         let node_id = policy.id;
-        let node_type = NodeType::Policy(policy);
+        let domain_node = DomainNode::inject_policy(policy);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_node_type(node_id, node_type, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
 
         self.nodes.insert(node_id, node);
     }
@@ -912,36 +892,36 @@ impl OrganizationConcept {
 
     /// Add a NATS operator node to the graph
     pub fn add_nats_operator_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, _label: String) {
-        let node_type = NodeType::NatsOperator(nats_identity);
+        let domain_node = DomainNode::inject_nats_operator(nats_identity);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_node_type(node_id, node_type, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
 
         self.nodes.insert(node_id, node);
     }
 
     /// Add a NATS account node to the graph
     pub fn add_nats_account_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, _label: String) {
-        let node_type = NodeType::NatsAccount(nats_identity);
+        let domain_node = DomainNode::inject_nats_account(nats_identity);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_node_type(node_id, node_type, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
 
         self.nodes.insert(node_id, node);
     }
 
     /// Add a NATS user node to the graph
     pub fn add_nats_user_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, _label: String) {
-        let node_type = NodeType::NatsUser(nats_identity);
+        let domain_node = DomainNode::inject_nats_user(nats_identity);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_node_type(node_id, node_type, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
 
         self.nodes.insert(node_id, node);
     }
 
     /// Add a NATS service account node to the graph
     pub fn add_nats_service_account_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, _label: String) {
-        let node_type = NodeType::NatsServiceAccount(nats_identity);
+        let domain_node = DomainNode::inject_nats_service_account(nats_identity);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_node_type(node_id, node_type, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
 
         self.nodes.insert(node_id, node);
     }
@@ -950,25 +930,25 @@ impl OrganizationConcept {
 
     /// Add a simple NATS operator node (visualization without crypto)
     pub fn add_nats_operator_simple(&mut self, node_id: Uuid, name: String, organization_id: Option<Uuid>) {
-        let node_type = NodeType::NatsOperatorSimple { name, organization_id };
+        let domain_node = DomainNode::inject_nats_operator_simple(name, organization_id);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_node_type(node_id, node_type, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
         self.nodes.insert(node_id, node);
     }
 
     /// Add a simple NATS account node (visualization without crypto)
     pub fn add_nats_account_simple(&mut self, node_id: Uuid, name: String, unit_id: Option<Uuid>, is_system: bool) {
-        let node_type = NodeType::NatsAccountSimple { name, unit_id, is_system };
+        let domain_node = DomainNode::inject_nats_account_simple(name, unit_id, is_system);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_node_type(node_id, node_type, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
         self.nodes.insert(node_id, node);
     }
 
     /// Add a simple NATS user node (visualization without crypto)
     pub fn add_nats_user_simple(&mut self, node_id: Uuid, name: String, person_id: Option<Uuid>, account_name: String) {
-        let node_type = NodeType::NatsUserSimple { name, person_id, account_name };
+        let domain_node = DomainNode::inject_nats_user_simple(name, person_id, account_name);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_node_type(node_id, node_type, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
         self.nodes.insert(node_id, node);
     }
 
@@ -984,16 +964,11 @@ impl OrganizationConcept {
         not_after: chrono::DateTime<chrono::Utc>,
         key_usage: Vec<String>,
     ) {
-        let node_type = NodeType::RootCertificate {
-            cert_id,
-            subject,
-            issuer,
-            not_before,
-            not_after,
-            key_usage,
-        };
+        let domain_node = DomainNode::inject_root_certificate(
+            cert_id, subject, issuer, not_before, not_after, key_usage
+        );
         let position = self.calculate_node_position(cert_id);
-        let node = ConceptEntity::from_node_type(cert_id, node_type, position);
+        let node = ConceptEntity::from_domain_node(cert_id, domain_node, position);
 
         self.nodes.insert(cert_id, node);
     }
@@ -1008,16 +983,11 @@ impl OrganizationConcept {
         not_after: chrono::DateTime<chrono::Utc>,
         key_usage: Vec<String>,
     ) {
-        let node_type = NodeType::IntermediateCertificate {
-            cert_id,
-            subject,
-            issuer,
-            not_before,
-            not_after,
-            key_usage,
-        };
+        let domain_node = DomainNode::inject_intermediate_certificate(
+            cert_id, subject, issuer, not_before, not_after, key_usage
+        );
         let position = self.calculate_node_position(cert_id);
-        let node = ConceptEntity::from_node_type(cert_id, node_type, position);
+        let node = ConceptEntity::from_domain_node(cert_id, domain_node, position);
 
         self.nodes.insert(cert_id, node);
     }
@@ -1033,17 +1003,11 @@ impl OrganizationConcept {
         key_usage: Vec<String>,
         san: Vec<String>,
     ) {
-        let node_type = NodeType::LeafCertificate {
-            cert_id,
-            subject,
-            issuer,
-            not_before,
-            not_after,
-            key_usage,
-            san,
-        };
+        let domain_node = DomainNode::inject_leaf_certificate(
+            cert_id, subject, issuer, not_before, not_after, key_usage, san
+        );
         let position = self.calculate_node_position(cert_id);
-        let node = ConceptEntity::from_node_type(cert_id, node_type, position);
+        let node = ConceptEntity::from_domain_node(cert_id, domain_node, position);
 
         self.nodes.insert(cert_id, node);
     }
@@ -1138,15 +1102,11 @@ impl OrganizationConcept {
         provisioned_at: Option<chrono::DateTime<chrono::Utc>>,
         slots_used: Vec<String>,
     ) {
-        let node_type = NodeType::YubiKey {
-            device_id,
-            serial,
-            version,
-            provisioned_at,
-            slots_used,
-        };
+        let domain_node = DomainNode::inject_yubikey(
+            device_id, serial, version, provisioned_at, slots_used
+        );
         let position = self.calculate_node_position(device_id);
-        let node = ConceptEntity::from_node_type(device_id, node_type, position);
+        let node = ConceptEntity::from_domain_node(device_id, domain_node, position);
 
         self.nodes.insert(device_id, node);
     }
@@ -1160,15 +1120,11 @@ impl OrganizationConcept {
         has_key: bool,
         certificate_subject: Option<String>,
     ) {
-        let node_type = NodeType::PivSlot {
-            slot_id,
-            slot_name,
-            yubikey_serial,
-            has_key,
-            certificate_subject,
-        };
+        let domain_node = DomainNode::inject_piv_slot(
+            slot_id, slot_name, yubikey_serial, has_key, certificate_subject
+        );
         let position = self.calculate_node_position(slot_id);
-        let node = ConceptEntity::from_node_type(slot_id, node_type, position);
+        let node = ConceptEntity::from_domain_node(slot_id, domain_node, position);
 
         self.nodes.insert(slot_id, node);
     }
@@ -1449,10 +1405,10 @@ impl OrganizationConcept {
     /// This is the ONLY way to change graph state for undo/redo to work correctly
     pub fn apply_event(&mut self, event: &GraphEvent) {
         match event {
-            GraphEvent::NodeCreated { node_id, node_type, position, color, label, .. } => {
-                // Use from_node_type but override color/label if provided by event
-                // This preserves event-sourced state while maintaining the domain_node field
-                let mut node = ConceptEntity::from_node_type(*node_id, node_type.clone(), *position);
+            GraphEvent::NodeCreated { node_id, domain_node, position, color, label, .. } => {
+                // Use from_domain_node - the preferred constructor
+                // Override color/label with event values for event-sourced consistency
+                let mut node = ConceptEntity::from_domain_node(*node_id, domain_node.clone(), *position);
                 node.color = *color;
                 node.label = label.clone();
                 self.nodes.insert(*node_id, node);
@@ -1466,11 +1422,11 @@ impl OrganizationConcept {
                     self.selected_node = None;
                 }
             }
-            GraphEvent::NodePropertiesChanged { node_id, new_node_type, new_label, .. } => {
+            GraphEvent::NodePropertiesChanged { node_id, new_domain_node, new_label, .. } => {
                 if let Some(node) = self.nodes.get_mut(node_id) {
                     // Update both node_type and domain_node for consistency
-                    node.domain_node = super::domain_node::DomainNode::from_node_type(new_node_type);
-                    node.node_type = new_node_type.clone();
+                    node.domain_node = new_domain_node.clone();
+                    node.node_type = new_domain_node.to_node_type();
                     node.label = new_label.clone();
                 }
             }
@@ -1901,13 +1857,11 @@ impl OrganizationConcept {
     fn hierarchical_layout(&mut self) {
         let center = Point { x: 400.0, y: 300.0 };
 
-        // Group nodes by type
+        // Group nodes by type using DomainNode
         let mut type_groups: HashMap<String, Vec<Uuid>> = HashMap::new();
         for (id, node) in &self.nodes {
-            let type_key = match &node.node_type {
-                NodeType::Organization(_) => "Organization",
-                NodeType::OrganizationalUnit(_) => "OrganizationalUnit",
-                NodeType::Person { role, .. } => match role {
+            let type_key = match node.domain_node.data() {
+                DomainNodeData::Person { role, .. } => match role {
                     KeyOwnerRole::RootAuthority => "Person_RootAuthority",
                     KeyOwnerRole::SecurityAdmin => "Person_SecurityAdmin",
                     KeyOwnerRole::BackupHolder => "Person_BackupHolder",
@@ -1915,34 +1869,7 @@ impl OrganizationConcept {
                     KeyOwnerRole::Developer => "Person_Developer",
                     KeyOwnerRole::ServiceAccount => "Person_ServiceAccount",
                 },
-                NodeType::Location(_) => "Location",
-                NodeType::Role(_) => "Role",
-                NodeType::Policy(_) => "Policy",
-                // NATS Infrastructure
-                NodeType::NatsOperator(_) | NodeType::NatsOperatorSimple { .. } => "NatsOperator",
-                NodeType::NatsAccount(_) | NodeType::NatsAccountSimple { .. } => "NatsAccount",
-                NodeType::NatsUser(_) | NodeType::NatsUserSimple { .. } => "NatsUser",
-                NodeType::NatsServiceAccount(_) => "NatsServiceAccount",
-                // PKI Trust Chain
-                NodeType::RootCertificate { .. } => "RootCertificate",
-                NodeType::IntermediateCertificate { .. } => "IntermediateCertificate",
-                NodeType::LeafCertificate { .. } => "LeafCertificate",
-                // Cryptographic Keys
-                NodeType::Key { .. } => "Key",
-                // YubiKey Hardware
-                NodeType::YubiKey { .. } => "YubiKey",
-                NodeType::PivSlot { .. } => "PivSlot",
-                NodeType::YubiKeyStatus { .. } => "YubiKeyStatus",
-                // Export and Manifest
-                NodeType::Manifest { .. } => "Manifest",
-                // Policy Roles from policy-bootstrap.json
-                NodeType::PolicyRole { .. } => "PolicyRole",
-                // Policy Claims
-                NodeType::PolicyClaim { .. } => "PolicyClaim",
-                // Policy Categories (progressive disclosure)
-                NodeType::PolicyCategory { .. } => "PolicyCategory",
-                // Separation Class Groups (progressive disclosure)
-                NodeType::PolicyGroup { .. } => "PolicyGroup",
+                _ => node.domain_node.injection().display_name(),
             };
             type_groups.entry(type_key.to_string()).or_insert_with(Vec::new).push(*id);
         }
@@ -2715,41 +2642,20 @@ impl OrganizationConcept {
     /// Reorganize all nodes into a hierarchical tiered layout
     /// Call this after adding all nodes to reposition them properly
     pub fn layout_hierarchical(&mut self) {
-        // Collect nodes by tier
-        let mut tier_0: Vec<Uuid> = Vec::new(); // Organization
-        let mut tier_1: Vec<Uuid> = Vec::new(); // OrganizationalUnit
-        let mut tier_2: Vec<Uuid> = Vec::new(); // Person, Location
-        let tier_3: Vec<Uuid> = Vec::new(); // NATS Operator/Account, YubiKey (reserved)
-        let tier_4: Vec<Uuid> = Vec::new(); // NATS User, Certificates, Keys, PIV Slots (reserved)
+        // Collect nodes by tier using the DomainNode fold pattern
+        // This replaces the 30-line match statement with a single method call
+        let mut tier_0: Vec<Uuid> = Vec::new(); // Root entities (Organization, NATS Operator, Root CA, YubiKey)
+        let mut tier_1: Vec<Uuid> = Vec::new(); // Intermediate entities (OrgUnit, NATS Account, Intermediate CA, Role, Policy)
+        let mut tier_2: Vec<Uuid> = Vec::new(); // Leaf entities (Person, Location, NATS User, Leaf Cert, Key)
+        let tier_3: Vec<Uuid> = Vec::new(); // Reserved for future expansion
+        let tier_4: Vec<Uuid> = Vec::new(); // Reserved for future expansion
 
         for (id, node) in &self.nodes {
-            match &node.node_type {
-                NodeType::Organization(_) => tier_0.push(*id),
-                NodeType::OrganizationalUnit(_) => tier_1.push(*id),
-                NodeType::Person { .. } => tier_2.push(*id),
-                NodeType::Location(_) => tier_2.push(*id),
-                NodeType::Role(_) => tier_1.push(*id),
-                NodeType::Policy(_) => tier_1.push(*id),
-                NodeType::NatsOperator(_) | NodeType::NatsOperatorSimple { .. } => tier_0.push(*id),
-                NodeType::NatsAccount(_) | NodeType::NatsAccountSimple { .. } => tier_1.push(*id),
-                NodeType::YubiKey { .. } => tier_0.push(*id),
-                NodeType::NatsUser(_) | NodeType::NatsUserSimple { .. } => tier_2.push(*id),
-                NodeType::NatsServiceAccount(_) => tier_2.push(*id),
-                NodeType::RootCertificate { .. } => tier_0.push(*id),
-                NodeType::IntermediateCertificate { .. } => tier_1.push(*id),
-                NodeType::LeafCertificate { .. } => tier_2.push(*id),
-                NodeType::Key { .. } => tier_2.push(*id),
-                NodeType::PivSlot { .. } => tier_1.push(*id),
-                NodeType::YubiKeyStatus { .. } => tier_0.push(*id),
-                NodeType::Manifest { .. } => tier_2.push(*id),
-                // Policy roles go in tier 1 (same as Role/Policy)
-                NodeType::PolicyRole { .. } => tier_1.push(*id),
-                // Policy claims go in tier 2 (below roles)
-                NodeType::PolicyClaim { .. } => tier_2.push(*id),
-                // Separation class groups go in tier 0 (top level)
-                NodeType::PolicyGroup { .. } => tier_0.push(*id),
-                // Policy categories go in tier 1 (same level as roles)
-                NodeType::PolicyCategory { .. } => tier_1.push(*id),
+            // Use the categorical fold pattern via injection().layout_tier()
+            match node.injection().layout_tier() {
+                0 => tier_0.push(*id),
+                1 => tier_1.push(*id),
+                _ => tier_2.push(*id), // Tier 2 and above
             }
         }
 
@@ -2784,19 +2690,21 @@ impl OrganizationConcept {
     /// Specialized layout for YubiKey graphs
     /// Groups PIV slots under their parent YubiKey with better spacing
     pub fn layout_yubikey_grouped(&mut self) {
-        // Collect YubiKeys and PIV slots
+        // Collect YubiKeys and PIV slots using the DomainNode accessor pattern
+        // This replaces the match statement with injection() checks and accessor methods
         let mut yubikeys: Vec<(Uuid, String)> = Vec::new();  // (node_id, serial)
         let mut piv_slots: Vec<(Uuid, String)> = Vec::new(); // (node_id, yubikey_serial)
 
         for (id, node) in &self.nodes {
-            match &node.node_type {
-                NodeType::YubiKey { serial, .. } => {
-                    yubikeys.push((*id, serial.clone()));
+            let injection = node.injection();
+            if injection == super::domain_node::Injection::YubiKey {
+                if let Some(serial) = node.domain_node.yubikey_serial() {
+                    yubikeys.push((*id, serial.to_string()));
                 }
-                NodeType::PivSlot { yubikey_serial, .. } => {
-                    piv_slots.push((*id, yubikey_serial.clone()));
+            } else if injection == super::domain_node::Injection::PivSlot {
+                if let Some(serial) = node.domain_node.yubikey_serial() {
+                    piv_slots.push((*id, serial.to_string()));
                 }
-                _ => {}
             }
         }
 
@@ -2847,30 +2755,35 @@ impl OrganizationConcept {
     /// Specialized layout for NATS infrastructure graphs
     /// Arranges: Operator (top) -> Accounts (middle row) -> Users (bottom rows under their accounts)
     pub fn layout_nats_hierarchical(&mut self) {
-        // Collect NATS nodes by type
+        // Collect NATS nodes by type using the DomainNode accessor pattern
+        // This replaces the match statement with injection() checks and accessor methods
+        use super::domain_node::Injection;
+
         let mut operators: Vec<Uuid> = Vec::new();
         let mut accounts: Vec<(Uuid, String)> = Vec::new(); // (id, name)
         let mut users: Vec<(Uuid, String)> = Vec::new();    // (id, account_name)
 
         for (id, node) in &self.nodes {
-            match &node.node_type {
-                NodeType::NatsOperator(_) | NodeType::NatsOperatorSimple { .. } => {
+            let injection = node.injection();
+            match injection {
+                Injection::NatsOperator | Injection::NatsOperatorSimple => {
                     operators.push(*id);
                 }
-                NodeType::NatsAccount(_) => {
-                    accounts.push((*id, node.label.clone()));
+                Injection::NatsAccount | Injection::NatsAccountSimple => {
+                    // Use the nats_account_name accessor, fall back to label
+                    let name = node.domain_node.nats_account_name()
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| node.label.clone());
+                    accounts.push((*id, name));
                 }
-                NodeType::NatsAccountSimple { name, .. } => {
-                    accounts.push((*id, name.clone()));
+                Injection::NatsUser | Injection::NatsUserSimple => {
+                    // Use the nats_user_account_name accessor
+                    let account_name = node.domain_node.nats_user_account_name()
+                        .map(|s| s.to_string())
+                        .unwrap_or_default();
+                    users.push((*id, account_name));
                 }
-                NodeType::NatsUser(_) => {
-                    // Get account from label or use default
-                    users.push((*id, String::new()));
-                }
-                NodeType::NatsUserSimple { account_name, .. } => {
-                    users.push((*id, account_name.clone()));
-                }
-                NodeType::NatsServiceAccount(_) => {
+                Injection::NatsServiceAccount => {
                     users.push((*id, String::new()));
                 }
                 _ => {}
@@ -2939,31 +2852,19 @@ impl OrganizationConcept {
 
     /// Check if a node should be visible based on current filter settings
     pub fn should_show_node(&self, node: &ConceptEntity) -> bool {
-        match &node.node_type {
-            NodeType::Person { .. } => self.filter_show_people,
-            NodeType::Organization(_) | NodeType::OrganizationalUnit(_) |
-            NodeType::Location(_) | NodeType::Role(_) | NodeType::Policy(_) |
-            NodeType::PolicyRole { .. } | NodeType::PolicyClaim { .. } |
-            NodeType::PolicyCategory { .. } | NodeType::PolicyGroup { .. } => {
-                self.filter_show_orgs
-            }
-            NodeType::NatsOperator(_) | NodeType::NatsAccount(_) |
-            NodeType::NatsUser(_) | NodeType::NatsServiceAccount(_) |
-            NodeType::NatsOperatorSimple { .. } | NodeType::NatsAccountSimple { .. } |
-            NodeType::NatsUserSimple { .. } => {
-                self.filter_show_nats
-            }
-            NodeType::RootCertificate { .. } | NodeType::IntermediateCertificate { .. } |
-            NodeType::LeafCertificate { .. } => {
-                self.filter_show_pki
-            }
-            NodeType::YubiKey { .. } | NodeType::PivSlot { .. } | NodeType::YubiKeyStatus { .. } => {
-                self.filter_show_yubikey
-            }
-            // Cryptographic Keys
-            NodeType::Key { .. } => self.filter_show_pki,
-            // Export and Manifest
-            NodeType::Manifest { .. } => self.filter_show_orgs,
+        let injection = node.domain_node.injection();
+        match injection {
+            Injection::Person => self.filter_show_people,
+            Injection::Organization | Injection::OrganizationUnit |
+            Injection::Location | Injection::Role | Injection::Policy |
+            Injection::PolicyRole | Injection::PolicyClaim |
+            Injection::PolicyCategory | Injection::PolicyGroup |
+            Injection::Manifest => self.filter_show_orgs,
+            _ if injection.is_nats() => self.filter_show_nats,
+            _ if injection.is_certificate() => self.filter_show_pki,
+            _ if injection.is_yubikey() => self.filter_show_yubikey,
+            Injection::Key => self.filter_show_pki,
+            _ => true,
         }
     }
 
@@ -3117,37 +3018,20 @@ impl OrganizationConcept {
         let mut yubikey_nodes = Vec::new();
 
         for (id, node) in &self.nodes {
-            match &node.node_type {
-                NodeType::Person { .. } => person_nodes.push(*id),
-                NodeType::Organization(_) | NodeType::OrganizationalUnit(_) |
-                NodeType::Location(_) | NodeType::Role(_) | NodeType::Policy(_) => {
+            let injection = node.domain_node.injection();
+            match injection {
+                Injection::Person => person_nodes.push(*id),
+                Injection::Organization | Injection::OrganizationUnit |
+                Injection::Location | Injection::Role | Injection::Policy |
+                Injection::Manifest | Injection::PolicyRole | Injection::PolicyClaim |
+                Injection::PolicyCategory | Injection::PolicyGroup => {
                     org_nodes.push(*id);
                 }
-                NodeType::NatsOperator(_) | NodeType::NatsAccount(_) |
-                NodeType::NatsUser(_) | NodeType::NatsServiceAccount(_) |
-                NodeType::NatsOperatorSimple { .. } | NodeType::NatsAccountSimple { .. } |
-                NodeType::NatsUserSimple { .. } => {
-                    nats_nodes.push(*id);
-                }
-                NodeType::RootCertificate { .. } | NodeType::IntermediateCertificate { .. } |
-                NodeType::LeafCertificate { .. } => {
-                    pki_nodes.push(*id);
-                }
-                NodeType::YubiKey { .. } | NodeType::PivSlot { .. } | NodeType::YubiKeyStatus { .. } => {
-                    yubikey_nodes.push(*id);
-                }
-                // Cryptographic Keys
-                NodeType::Key { .. } => pki_nodes.push(*id),
-                // Export and Manifest
-                NodeType::Manifest { .. } => org_nodes.push(*id),
-                // Policy Roles from policy-bootstrap.json
-                NodeType::PolicyRole { .. } => org_nodes.push(*id),
-                // Policy Claims
-                NodeType::PolicyClaim { .. } => org_nodes.push(*id),
-                // Policy Categories (progressive disclosure)
-                NodeType::PolicyCategory { .. } => org_nodes.push(*id),
-                // Separation Class Groups (progressive disclosure)
-                NodeType::PolicyGroup { .. } => org_nodes.push(*id),
+                _ if injection.is_nats() => nats_nodes.push(*id),
+                _ if injection.is_certificate() => pki_nodes.push(*id),
+                _ if injection.is_yubikey() => yubikey_nodes.push(*id),
+                Injection::Key => pki_nodes.push(*id),
+                _ => org_nodes.push(*id),
             }
         }
 
@@ -3886,8 +3770,8 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                     for (node_id, node) in &self.nodes {
                         // Check if this is an expandable node
                         let is_expandable = matches!(
-                            &node.node_type,
-                            NodeType::PolicyGroup { .. } | NodeType::PolicyCategory { .. }
+                            node.domain_node.injection(),
+                            Injection::PolicyGroup | Injection::PolicyCategory
                         );
 
                         if is_expandable {
@@ -4183,227 +4067,54 @@ pub fn view_graph(graph: &OrganizationConcept) -> Element<'_, OrganizationIntent
     .height(Length::Fill);
 
 
-    // Show selected node details
+    // Show selected node details using the DomainNode fold pattern
+    // This replaces the 220-line match statement with the FoldDetailPanel catamorphism
     if let Some(selected_id) = graph.selected_node {
         if let Some(node) = graph.nodes.get(&selected_id) {
-            let details = match &node.node_type {
-                NodeType::Organization(org) => column![
-                    text("Selected Organization:").size(16),
-                    text(format!("Name: {}", org.name)),
-                    text(format!("Display Name: {}", org.display_name)),
-                    text(format!("Units: {}", org.units.len())),
-                ],
-                NodeType::OrganizationalUnit(unit) => column![
-                    text("Selected Unit:").size(16),
-                    text(format!("Name: {}", unit.name)),
-                    text(format!("Type: {:?}", unit.unit_type)),
-                ],
-                NodeType::Person { person, role } => {
-                    let mut person_details = column![
-                        text("Selected Person:").size(16),
-                        text(format!("Name: {}", person.name)),
-                        text(format!("Email: {}", person.email)),
-                        text(format!("Active: {}", if person.active { "✓" } else { "✗" })),
-                        text(format!("Key Role: {:?}", role)),
-                    ];
+            // Get detail panel data from the DomainNode fold
+            let detail_data = node.domain_node.detail_panel();
 
-                    // Show assigned policy roles from role_badges
-                    if let Some(badges) = graph.role_badges.get(&selected_id) {
-                        person_details = person_details.push(text("").size(6)); // Spacer
-                        person_details = person_details.push(text("ASSIGNED ROLES:").size(14));
+            // Build the column from DetailPanelData
+            let mut details = column![
+                text(detail_data.title).size(16),
+            ];
 
-                        for badge in &badges.badges {
-                            let level_indicator = "●".repeat(badge.level as usize).chars().take(5).collect::<String>();
-                            let empty_indicator = "○".repeat(5_usize.saturating_sub(badge.level as usize));
-                            person_details = person_details.push(
-                                text(format!("  {} {} {}{}",
-                                    match badge.separation_class {
-                                        crate::policy::SeparationClass::Operational => "🔵",
-                                        crate::policy::SeparationClass::Administrative => "🟣",
-                                        crate::policy::SeparationClass::Audit => "🟢",
-                                        crate::policy::SeparationClass::Emergency => "🔴",
-                                        crate::policy::SeparationClass::Financial => "🟡",
-                                        crate::policy::SeparationClass::Personnel => "🟠",
-                                    },
-                                    badge.name,
-                                    level_indicator,
-                                    empty_indicator,
-                                )).size(12)
-                            );
-                        }
+            for (label, value) in detail_data.fields {
+                details = details.push(text(format!("{}: {}", label, value)));
+            }
 
-                        if badges.has_more {
-                            person_details = person_details.push(text("  (+more roles...)").size(11));
-                        }
+            // Special handling for Person nodes: show role badges
+            if node.injection() == super::domain_node::Injection::Person {
+                if let Some(badges) = graph.role_badges.get(&selected_id) {
+                    details = details.push(text("").size(6)); // Spacer
+                    details = details.push(text("ASSIGNED ROLES:").size(14));
+
+                    for badge in &badges.badges {
+                        let level_indicator = "●".repeat(badge.level as usize).chars().take(5).collect::<String>();
+                        let empty_indicator = "○".repeat(5_usize.saturating_sub(badge.level as usize));
+                        details = details.push(
+                            text(format!("  {} {} {}{}",
+                                match badge.separation_class {
+                                    crate::policy::SeparationClass::Operational => "🔵",
+                                    crate::policy::SeparationClass::Administrative => "🟣",
+                                    crate::policy::SeparationClass::Audit => "🟢",
+                                    crate::policy::SeparationClass::Emergency => "🔴",
+                                    crate::policy::SeparationClass::Financial => "🟡",
+                                    crate::policy::SeparationClass::Personnel => "🟠",
+                                },
+                                badge.name,
+                                level_indicator,
+                                empty_indicator,
+                            )).size(12)
+                        );
                     }
 
-                    person_details
-                },
-                NodeType::Location(loc) => column![
-                    text("Selected Location:").size(16),
-                    text(format!("Name: {}", loc.name)),
-                    text(format!("Type: {:?}", loc.location_type)),
-                ],
-                NodeType::Role(role) => column![
-                    text("Selected Role:").size(16),
-                    text(format!("Name: {}", role.name)),
-                    text(format!("Description: {}", role.description)),
-                    text(format!("Required Policies: {}", role.required_policies.len())),
-                ],
-                NodeType::Policy(policy) => column![
-                    text("Selected Policy:").size(16),
-                    text(format!("Name: {}", policy.name)),
-                    text(format!("Claims: {}", policy.claims.len())),
-                    text(format!("Conditions: {}", policy.conditions.len())),
-                    text(format!("Priority: {}", policy.priority)),
-                    text(format!("Enabled: {}", policy.enabled)),
-                ],
-                // NATS Infrastructure
-                NodeType::NatsOperator(identity) => column![
-                    text("Selected NATS Operator:").size(16),
-                    text(format!("Public Key: {}", identity.nkey.public_key.public_key())),
-                    text(format!("JWT Token: {}...", &identity.jwt.token()[..20])),
-                    text(format!("Has Credential: {}", identity.credential.is_some())),
-                ],
-                NodeType::NatsOperatorSimple { name, organization_id } => column![
-                    text("Selected NATS Operator:").size(16),
-                    text(format!("Name: {}", name)),
-                    text(format!("Organization: {}", organization_id.map(|id| id.to_string()).unwrap_or_else(|| "N/A".to_string()))),
-                    text("(Visualization only - no crypto keys)"),
-                ],
-                NodeType::NatsAccount(identity) => column![
-                    text("Selected NATS Account:").size(16),
-                    text(format!("Public Key: {}", identity.nkey.public_key.public_key())),
-                    text(format!("JWT Token: {}...", &identity.jwt.token()[..20])),
-                    text(format!("Has Credential: {}", identity.credential.is_some())),
-                ],
-                NodeType::NatsAccountSimple { name, unit_id, is_system } => column![
-                    text("Selected NATS Account:").size(16),
-                    text(format!("Name: {}", name)),
-                    text(format!("Unit: {}", unit_id.map(|id| id.to_string()).unwrap_or_else(|| "N/A".to_string()))),
-                    text(format!("System Account: {}", is_system)),
-                    text("(Visualization only - no crypto keys)"),
-                ],
-                NodeType::NatsUser(identity) => column![
-                    text("Selected NATS User:").size(16),
-                    text(format!("Public Key: {}", identity.nkey.public_key.public_key())),
-                    text(format!("JWT Token: {}...", &identity.jwt.token()[..20])),
-                    text(format!("Has Credential: {}", identity.credential.is_some())),
-                ],
-                NodeType::NatsUserSimple { name, person_id, account_name } => column![
-                    text("Selected NATS User:").size(16),
-                    text(format!("Name: {}", name)),
-                    text(format!("Account: {}", account_name)),
-                    text(format!("Person: {}", person_id.map(|id| id.to_string()).unwrap_or_else(|| "N/A".to_string()))),
-                    text("(Visualization only - no crypto keys)"),
-                ],
-                NodeType::NatsServiceAccount(identity) => column![
-                    text("Selected Service Account:").size(16),
-                    text(format!("Public Key: {}", identity.nkey.public_key.public_key())),
-                    text(format!("JWT Token: {}...", &identity.jwt.token()[..20])),
-                    text(format!("Has Credential: {}", identity.credential.is_some())),
-                ],
-                // PKI Trust Chain
-                NodeType::RootCertificate { subject, issuer, not_before, not_after, key_usage, .. } => column![
-                    text("Selected Root CA Certificate:").size(16),
-                    text(format!("Subject: {}", subject)),
-                    text(format!("Issuer: {}", issuer)),
-                    text(format!("Valid From: {}", not_before.format("%Y-%m-%d %H:%M:%S UTC"))),
-                    text(format!("Valid Until: {}", not_after.format("%Y-%m-%d %H:%M:%S UTC"))),
-                    text(format!("Key Usage: {}", key_usage.join(", "))),
-                ],
-                NodeType::IntermediateCertificate { subject, issuer, not_before, not_after, key_usage, .. } => column![
-                    text("Selected Intermediate CA Certificate:").size(16),
-                    text(format!("Subject: {}", subject)),
-                    text(format!("Issuer: {}", issuer)),
-                    text(format!("Valid From: {}", not_before.format("%Y-%m-%d %H:%M:%S UTC"))),
-                    text(format!("Valid Until: {}", not_after.format("%Y-%m-%d %H:%M:%S UTC"))),
-                    text(format!("Key Usage: {}", key_usage.join(", "))),
-                ],
-                NodeType::LeafCertificate { subject, issuer, not_before, not_after, key_usage, san, .. } => column![
-                    text("Selected Leaf Certificate:").size(16),
-                    text(format!("Subject: {}", subject)),
-                    text(format!("Issuer: {}", issuer)),
-                    text(format!("Valid From: {}", not_before.format("%Y-%m-%d %H:%M:%S UTC"))),
-                    text(format!("Valid Until: {}", not_after.format("%Y-%m-%d %H:%M:%S UTC"))),
-                    text(format!("Key Usage: {}", key_usage.join(", "))),
-                    text(format!("Subject Alt Names: {}", if san.is_empty() { "none".to_string() } else { san.join(", ") })),
-                ],
-                // YubiKey Hardware
-                NodeType::YubiKey { serial, version, provisioned_at, slots_used, .. } => column![
-                    text("Selected YubiKey:").size(16),
-                    text(format!("Serial: {}", serial)),
-                    text(format!("Version: {}", version)),
-                    text(format!("Provisioned: {}", provisioned_at.map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string()).unwrap_or_else(|| "Not provisioned".to_string()))),
-                    text(format!("Slots Used: {}", slots_used.join(", "))),
-                ],
-                NodeType::PivSlot { slot_name, yubikey_serial, has_key, certificate_subject, .. } => column![
-                    text("Selected PIV Slot:").size(16),
-                    text(format!("Slot: {}", slot_name)),
-                    text(format!("YubiKey: {}", yubikey_serial)),
-                    text(format!("Status: {}", if *has_key { "Key loaded" } else { "Empty" })),
-                    text(format!("Certificate: {}", certificate_subject.clone().unwrap_or_else(|| "None".to_string()))),
-                ],
-                NodeType::YubiKeyStatus { person_id, yubikey_serial, slots_provisioned, slots_needed } => column![
-                    text("Selected YubiKey Status:").size(16),
-                    text(format!("Person ID: {}", person_id)),
-                    text(format!("Serial: {}", yubikey_serial.clone().unwrap_or_else(|| "Not detected".to_string()))),
-                    text(format!("Provisioned Slots: {}", slots_provisioned.len())),
-                    text(format!("Needed Slots: {}", slots_needed.len())),
-                ],
-                // Cryptographic Keys
-                NodeType::Key { key_id, algorithm, purpose, expires_at } => column![
-                    text("Selected Key:").size(16),
-                    text(format!("ID: {}", key_id)),
-                    text(format!("Algorithm: {:?}", algorithm)),
-                    text(format!("Purpose: {:?}", purpose)),
-                    text(format!("Expires: {}", expires_at.map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string()).unwrap_or_else(|| "Never".to_string()))),
-                ],
-                // Export and Manifest
-                NodeType::Manifest { manifest_id, name, destination, checksum } => column![
-                    text("Selected Manifest:").size(16),
-                    text(format!("ID: {}", manifest_id)),
-                    text(format!("Name: {}", name)),
-                    text(format!("Destination: {}", destination.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "None".to_string()))),
-                    text(format!("Checksum: {}", checksum.clone().unwrap_or_else(|| "None".to_string()))),
-                ],
-                // Policy Roles from policy-bootstrap.json
-                NodeType::PolicyRole { role_id, name, purpose, level, separation_class, claim_count } => column![
-                    text("Selected Policy Role:").size(16),
-                    text(format!("ID: {}", role_id)),
-                    text(format!("Name: {}", name)),
-                    text(format!("Purpose: {}", purpose)),
-                    text(format!("Level: {}", level)),
-                    text(format!("Separation Class: {:?}", separation_class)),
-                    text(format!("Claims: {}", claim_count)),
-                ],
-                // Policy Claims
-                NodeType::PolicyClaim { claim_id, name, category } => column![
-                    text("Selected Claim:").size(16),
-                    text(format!("ID: {}", claim_id)),
-                    text(format!("Name: {}", name)),
-                    text(format!("Category: {}", category)),
-                ],
-                // Policy Categories (progressive disclosure)
-                NodeType::PolicyCategory { category_id, name, claim_count, expanded } => column![
-                    text("Selected Category:").size(16),
-                    text(format!("ID: {}", category_id)),
-                    text(format!("Name: {}", name)),
-                    text(format!("Claims: {}", claim_count)),
-                    text(format!("Expanded: {}", if *expanded { "Yes" } else { "No" })),
-                    text("Click to toggle expansion").size(12),
-                ],
-                // Separation Class Groups (progressive disclosure)
-                NodeType::PolicyGroup { class_id, name, separation_class, role_count, expanded } => column![
-                    text("Selected Separation Class:").size(16),
-                    text(format!("ID: {}", class_id)),
-                    text(format!("Name: {}", name)),
-                    text(format!("Class: {:?}", separation_class)),
-                    text(format!("Roles: {}", role_count)),
-                    text(format!("Expanded: {}", if *expanded { "Yes" } else { "No" })),
-                    text("Click to toggle expansion").size(12),
-                ],
-            };
+                    if badges.has_more {
+                        details = details.push(text("  (+more roles...)").size(11));
+                    }
+                }
+            }
+
             items = items.push(details.spacing(5));
         }
     }

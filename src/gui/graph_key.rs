@@ -40,7 +40,8 @@
 use uuid::Uuid;
 
 use crate::events::{KeyAlgorithm, KeyPurpose};
-use crate::gui::graph::{OrganizationConcept, NodeType, EdgeType};
+use crate::gui::graph::{OrganizationConcept, EdgeType};
+use crate::gui::domain_node::{DomainNodeData, Injection};
 
 /// Key-centric analysis of the organizational graph
 #[derive(Debug, Clone)]
@@ -75,8 +76,8 @@ impl KeyAnalysis {
     pub fn analyze(graph: &OrganizationConcept, key_id: Uuid) -> Option<Self> {
         // Find the key node
         let node = graph.nodes.get(&key_id)?;
-        let (algorithm, purpose) = match &node.node_type {
-            NodeType::Key { algorithm, purpose, .. } => (algorithm.clone(), purpose.clone()),
+        let (algorithm, purpose) = match node.domain_node.data() {
+            DomainNodeData::Key { algorithm, purpose, .. } => (algorithm.clone(), *purpose),
             _ => return None,
         };
 
@@ -96,9 +97,9 @@ impl KeyAnalysis {
                     EdgeType::OwnsKey => {
                         owner_id = Some(edge.from);
                         if let Some(owner_node) = graph.nodes.get(&edge.from) {
-                            owner_type = Some(match owner_node.node_type {
-                                NodeType::Person { .. } => "Person".to_string(),
-                                NodeType::Organization(_) => "Organization".to_string(),
+                            owner_type = Some(match owner_node.domain_node.injection() {
+                                Injection::Person => "Person".to_string(),
+                                Injection::Organization => "Organization".to_string(),
                                 _ => "Unknown".to_string(),
                             });
                         }

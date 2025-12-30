@@ -25,7 +25,7 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
 use crate::domain::{
-    Person, Organization, OrganizationUnit, Location, Policy, Role, KeyOwnerRole,
+    Person, Organization, OrganizationUnit, Location, Policy, Role, KeyOwnerRole, PolicyClaim,
 };
 use crate::domain_projections::NatsIdentityProjection;
 use crate::events::{KeyAlgorithm, KeyPurpose};
@@ -110,6 +110,76 @@ impl Injection {
             Self::PolicyCategory => "Policy Category",
             Self::PolicyGroup => "Separation Class",
         }
+    }
+
+    /// Get the layout tier for hierarchical positioning
+    ///
+    /// Tiers are used for visual hierarchy in graph layouts:
+    /// - Tier 0: Root entities (Organization, NATS Operator, Root CA, YubiKey, PolicyGroup)
+    /// - Tier 1: Intermediate entities (OrgUnit, NATS Account, Intermediate CA, Role, Policy, PivSlot, PolicyRole, PolicyCategory)
+    /// - Tier 2: Leaf entities (Person, Location, NATS User, Leaf Cert, Key, Manifest, PolicyClaim)
+    pub fn layout_tier(&self) -> u8 {
+        match self {
+            // Tier 0: Root entities
+            Self::Organization => 0,
+            Self::NatsOperator | Self::NatsOperatorSimple => 0,
+            Self::RootCertificate => 0,
+            Self::YubiKey => 0,
+            Self::YubiKeyStatus => 0,
+            Self::PolicyGroup => 0,
+
+            // Tier 1: Intermediate entities
+            Self::OrganizationUnit => 1,
+            Self::Role => 1,
+            Self::Policy => 1,
+            Self::NatsAccount | Self::NatsAccountSimple => 1,
+            Self::IntermediateCertificate => 1,
+            Self::PivSlot => 1,
+            Self::PolicyRole => 1,
+            Self::PolicyCategory => 1,
+
+            // Tier 2: Leaf entities
+            Self::Person => 2,
+            Self::Location => 2,
+            Self::NatsUser | Self::NatsUserSimple | Self::NatsServiceAccount => 2,
+            Self::LeafCertificate => 2,
+            Self::Key => 2,
+            Self::Manifest => 2,
+            Self::PolicyClaim => 2,
+        }
+    }
+
+    /// Check if this injection type is a NATS infrastructure node
+    pub fn is_nats(&self) -> bool {
+        matches!(
+            self,
+            Self::NatsOperator | Self::NatsOperatorSimple |
+            Self::NatsAccount | Self::NatsAccountSimple |
+            Self::NatsUser | Self::NatsUserSimple |
+            Self::NatsServiceAccount
+        )
+    }
+
+    /// Check if this injection type is a PKI certificate node
+    pub fn is_certificate(&self) -> bool {
+        matches!(
+            self,
+            Self::RootCertificate | Self::IntermediateCertificate | Self::LeafCertificate
+        )
+    }
+
+    /// Check if this injection type is a YubiKey-related node
+    pub fn is_yubikey(&self) -> bool {
+        matches!(self, Self::YubiKey | Self::PivSlot | Self::YubiKeyStatus)
+    }
+
+    /// Check if this injection type is a policy-related node
+    pub fn is_policy(&self) -> bool {
+        matches!(
+            self,
+            Self::Policy | Self::PolicyRole | Self::PolicyClaim |
+            Self::PolicyCategory | Self::PolicyGroup
+        )
     }
 }
 
@@ -588,6 +658,104 @@ impl DomainNode {
     /// Consume and return the inner data
     pub fn into_data(self) -> DomainNodeData {
         self.data
+    }
+
+    // ========================================================================
+    // Layout Accessors (for graph layout functions)
+    // ========================================================================
+
+    /// Get YubiKey serial number if this is a YubiKey or PivSlot node
+    pub fn yubikey_serial(&self) -> Option<&str> {
+        match &self.data {
+            DomainNodeData::YubiKey { serial, .. } => Some(serial),
+            DomainNodeData::PivSlot { yubikey_serial, .. } => Some(yubikey_serial),
+            DomainNodeData::YubiKeyStatus { yubikey_serial, .. } => yubikey_serial.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// Get NATS account name if this is a NatsAccountSimple node
+    /// (NatsAccount projections don't store the name directly)
+    pub fn nats_account_name(&self) -> Option<&str> {
+        match &self.data {
+            DomainNodeData::NatsAccountSimple { name, .. } => Some(name),
+            // NatsAccount projection doesn't have a direct name field
+            _ => None,
+        }
+    }
+
+    /// Get the parent account name if this is a NATS user node
+    pub fn nats_user_account_name(&self) -> Option<&str> {
+        match &self.data {
+            DomainNodeData::NatsUserSimple { account_name, .. } => Some(account_name),
+            // NatsUser projection doesn't store account_name directly
+            _ => None,
+        }
+    }
+
+    /// Get the name/identifier for NATS simple nodes (operators, accounts, users)
+    /// (Full projection nodes don't expose name directly; use node.label instead)
+    pub fn nats_name(&self) -> Option<&str> {
+        match &self.data {
+            DomainNodeData::NatsOperatorSimple { name, .. } => Some(name),
+            DomainNodeData::NatsAccountSimple { name, .. } => Some(name),
+            DomainNodeData::NatsUserSimple { name, .. } => Some(name),
+            // Full projections don't have a direct name field - use node.label
+            _ => None,
+        }
+    }
+
+    /// Get organization ID if this is an Organization node
+    pub fn org_id(&self) -> Option<uuid::Uuid> {
+        match &self.data {
+            DomainNodeData::Organization(org) => Some(org.id),
+            _ => None,
+        }
+    }
+
+    /// Get Person reference if this is a Person node
+    pub fn person(&self) -> Option<&Person> {
+        match &self.data {
+            DomainNodeData::Person { person, .. } => Some(person),
+            _ => None,
+        }
+    }
+
+    /// Get person name if this is a Person node (convenience method)
+    pub fn person_name(&self) -> Option<&str> {
+        self.person().map(|p| p.name.as_str())
+    }
+
+    /// Get Organization reference if this is an Organization node
+    pub fn organization(&self) -> Option<&Organization> {
+        match &self.data {
+            DomainNodeData::Organization(org) => Some(org),
+            _ => None,
+        }
+    }
+
+    /// Get OrganizationUnit reference if this is an OrganizationUnit node
+    pub fn organization_unit(&self) -> Option<&OrganizationUnit> {
+        match &self.data {
+            DomainNodeData::OrganizationUnit(unit) => Some(unit),
+            _ => None,
+        }
+    }
+
+    /// Get separation class if this is a PolicyGroup node
+    pub fn separation_class(&self) -> Option<&crate::policy::SeparationClass> {
+        match &self.data {
+            DomainNodeData::PolicyGroup { separation_class, .. } => Some(separation_class),
+            _ => None,
+        }
+    }
+
+    /// Get category name if this is a PolicyCategory node
+    pub fn policy_category_name(&self) -> Option<&str> {
+        match &self.data {
+            DomainNodeData::PolicyCategory { name, .. } => Some(name),
+            _ => None,
+        }
     }
 
     // ========================================================================
@@ -1494,6 +1662,908 @@ impl FoldDomainNode for FoldVisualization {
             expandable: true,
             expanded,
         }
+    }
+}
+
+// ============================================================================
+// Detail Panel Fold
+// ============================================================================
+
+/// Data for rendering a detail panel for a selected node
+#[derive(Debug, Clone)]
+pub struct DetailPanelData {
+    /// Title for the detail panel (e.g., "Selected Organization:")
+    pub title: String,
+    /// List of (label, value) pairs to display
+    pub fields: Vec<(String, String)>,
+}
+
+/// Folder that produces detail panel data from a domain node
+pub struct FoldDetailPanel;
+
+impl FoldDomainNode for FoldDetailPanel {
+    type Output = DetailPanelData;
+
+    fn fold_person(&self, person: &Person, role: &KeyOwnerRole) -> Self::Output {
+        DetailPanelData {
+            title: "Selected Person:".to_string(),
+            fields: vec![
+                ("Name".to_string(), person.name.clone()),
+                ("Email".to_string(), person.email.clone()),
+                ("Active".to_string(), if person.active { "✓" } else { "✗" }.to_string()),
+                ("Key Role".to_string(), format!("{:?}", role)),
+            ],
+        }
+    }
+
+    fn fold_organization(&self, org: &Organization) -> Self::Output {
+        DetailPanelData {
+            title: "Selected Organization:".to_string(),
+            fields: vec![
+                ("Name".to_string(), org.name.clone()),
+                ("Display Name".to_string(), org.display_name.clone()),
+                ("Units".to_string(), org.units.len().to_string()),
+            ],
+        }
+    }
+
+    fn fold_organization_unit(&self, unit: &OrganizationUnit) -> Self::Output {
+        DetailPanelData {
+            title: "Selected Unit:".to_string(),
+            fields: vec![
+                ("Name".to_string(), unit.name.clone()),
+                ("Type".to_string(), format!("{:?}", unit.unit_type)),
+            ],
+        }
+    }
+
+    fn fold_location(&self, loc: &Location) -> Self::Output {
+        DetailPanelData {
+            title: "Selected Location:".to_string(),
+            fields: vec![
+                ("Name".to_string(), loc.name.clone()),
+                ("Type".to_string(), format!("{:?}", loc.location_type)),
+            ],
+        }
+    }
+
+    fn fold_role(&self, role: &Role) -> Self::Output {
+        DetailPanelData {
+            title: "Selected Role:".to_string(),
+            fields: vec![
+                ("Name".to_string(), role.name.clone()),
+                ("Description".to_string(), role.description.clone()),
+                ("Required Policies".to_string(), role.required_policies.len().to_string()),
+            ],
+        }
+    }
+
+    fn fold_policy(&self, policy: &Policy) -> Self::Output {
+        DetailPanelData {
+            title: "Selected Policy:".to_string(),
+            fields: vec![
+                ("Name".to_string(), policy.name.clone()),
+                ("Claims".to_string(), policy.claims.len().to_string()),
+                ("Conditions".to_string(), policy.conditions.len().to_string()),
+                ("Priority".to_string(), policy.priority.to_string()),
+                ("Enabled".to_string(), policy.enabled.to_string()),
+            ],
+        }
+    }
+
+    fn fold_nats_operator(&self, identity: &NatsIdentityProjection) -> Self::Output {
+        DetailPanelData {
+            title: "Selected NATS Operator:".to_string(),
+            fields: vec![
+                ("Public Key".to_string(), identity.nkey.public_key.public_key().to_string()),
+                ("JWT Token".to_string(), format!("{}...", &identity.jwt.token()[..20.min(identity.jwt.token().len())])),
+                ("Has Credential".to_string(), identity.credential.is_some().to_string()),
+            ],
+        }
+    }
+
+    fn fold_nats_account(&self, identity: &NatsIdentityProjection) -> Self::Output {
+        DetailPanelData {
+            title: "Selected NATS Account:".to_string(),
+            fields: vec![
+                ("Public Key".to_string(), identity.nkey.public_key.public_key().to_string()),
+                ("JWT Token".to_string(), format!("{}...", &identity.jwt.token()[..20.min(identity.jwt.token().len())])),
+                ("Has Credential".to_string(), identity.credential.is_some().to_string()),
+            ],
+        }
+    }
+
+    fn fold_nats_user(&self, identity: &NatsIdentityProjection) -> Self::Output {
+        DetailPanelData {
+            title: "Selected NATS User:".to_string(),
+            fields: vec![
+                ("Public Key".to_string(), identity.nkey.public_key.public_key().to_string()),
+                ("JWT Token".to_string(), format!("{}...", &identity.jwt.token()[..20.min(identity.jwt.token().len())])),
+                ("Has Credential".to_string(), identity.credential.is_some().to_string()),
+            ],
+        }
+    }
+
+    fn fold_nats_service_account(&self, identity: &NatsIdentityProjection) -> Self::Output {
+        DetailPanelData {
+            title: "Selected Service Account:".to_string(),
+            fields: vec![
+                ("Public Key".to_string(), identity.nkey.public_key.public_key().to_string()),
+                ("JWT Token".to_string(), format!("{}...", &identity.jwt.token()[..20.min(identity.jwt.token().len())])),
+                ("Has Credential".to_string(), identity.credential.is_some().to_string()),
+            ],
+        }
+    }
+
+    fn fold_nats_operator_simple(&self, name: &str, organization_id: Option<Uuid>) -> Self::Output {
+        DetailPanelData {
+            title: "Selected NATS Operator:".to_string(),
+            fields: vec![
+                ("Name".to_string(), name.to_string()),
+                ("Organization".to_string(), organization_id.map(|id| id.to_string()).unwrap_or_else(|| "N/A".to_string())),
+                ("Note".to_string(), "(Visualization only - no crypto keys)".to_string()),
+            ],
+        }
+    }
+
+    fn fold_nats_account_simple(&self, name: &str, unit_id: Option<Uuid>, is_system: bool) -> Self::Output {
+        DetailPanelData {
+            title: "Selected NATS Account:".to_string(),
+            fields: vec![
+                ("Name".to_string(), name.to_string()),
+                ("Unit".to_string(), unit_id.map(|id| id.to_string()).unwrap_or_else(|| "N/A".to_string())),
+                ("System Account".to_string(), is_system.to_string()),
+                ("Note".to_string(), "(Visualization only - no crypto keys)".to_string()),
+            ],
+        }
+    }
+
+    fn fold_nats_user_simple(&self, name: &str, person_id: Option<Uuid>, account_name: &str) -> Self::Output {
+        DetailPanelData {
+            title: "Selected NATS User:".to_string(),
+            fields: vec![
+                ("Name".to_string(), name.to_string()),
+                ("Account".to_string(), account_name.to_string()),
+                ("Person".to_string(), person_id.map(|id| id.to_string()).unwrap_or_else(|| "N/A".to_string())),
+                ("Note".to_string(), "(Visualization only - no crypto keys)".to_string()),
+            ],
+        }
+    }
+
+    fn fold_root_certificate(
+        &self,
+        _cert_id: Uuid,
+        subject: &str,
+        issuer: &str,
+        not_before: DateTime<Utc>,
+        not_after: DateTime<Utc>,
+        key_usage: &[String],
+    ) -> Self::Output {
+        DetailPanelData {
+            title: "Selected Root CA Certificate:".to_string(),
+            fields: vec![
+                ("Subject".to_string(), subject.to_string()),
+                ("Issuer".to_string(), issuer.to_string()),
+                ("Valid From".to_string(), not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+                ("Valid Until".to_string(), not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+                ("Key Usage".to_string(), key_usage.join(", ")),
+            ],
+        }
+    }
+
+    fn fold_intermediate_certificate(
+        &self,
+        _cert_id: Uuid,
+        subject: &str,
+        issuer: &str,
+        not_before: DateTime<Utc>,
+        not_after: DateTime<Utc>,
+        key_usage: &[String],
+    ) -> Self::Output {
+        DetailPanelData {
+            title: "Selected Intermediate CA Certificate:".to_string(),
+            fields: vec![
+                ("Subject".to_string(), subject.to_string()),
+                ("Issuer".to_string(), issuer.to_string()),
+                ("Valid From".to_string(), not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+                ("Valid Until".to_string(), not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+                ("Key Usage".to_string(), key_usage.join(", ")),
+            ],
+        }
+    }
+
+    fn fold_leaf_certificate(
+        &self,
+        _cert_id: Uuid,
+        subject: &str,
+        issuer: &str,
+        not_before: DateTime<Utc>,
+        not_after: DateTime<Utc>,
+        key_usage: &[String],
+        san: &[String],
+    ) -> Self::Output {
+        DetailPanelData {
+            title: "Selected Leaf Certificate:".to_string(),
+            fields: vec![
+                ("Subject".to_string(), subject.to_string()),
+                ("Issuer".to_string(), issuer.to_string()),
+                ("Valid From".to_string(), not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+                ("Valid Until".to_string(), not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+                ("Key Usage".to_string(), key_usage.join(", ")),
+                ("Subject Alt Names".to_string(), if san.is_empty() { "none".to_string() } else { san.join(", ") }),
+            ],
+        }
+    }
+
+    fn fold_key(
+        &self,
+        key_id: Uuid,
+        algorithm: &KeyAlgorithm,
+        purpose: &KeyPurpose,
+        expires_at: Option<DateTime<Utc>>,
+    ) -> Self::Output {
+        DetailPanelData {
+            title: "Selected Key:".to_string(),
+            fields: vec![
+                ("ID".to_string(), key_id.to_string()),
+                ("Algorithm".to_string(), format!("{:?}", algorithm)),
+                ("Purpose".to_string(), format!("{:?}", purpose)),
+                ("Expires".to_string(), expires_at.map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string()).unwrap_or_else(|| "Never".to_string())),
+            ],
+        }
+    }
+
+    fn fold_yubikey(
+        &self,
+        _device_id: Uuid,
+        serial: &str,
+        version: &str,
+        provisioned_at: Option<DateTime<Utc>>,
+        slots_used: &[String],
+    ) -> Self::Output {
+        DetailPanelData {
+            title: "Selected YubiKey:".to_string(),
+            fields: vec![
+                ("Serial".to_string(), serial.to_string()),
+                ("Version".to_string(), version.to_string()),
+                ("Provisioned".to_string(), provisioned_at.map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string()).unwrap_or_else(|| "Not provisioned".to_string())),
+                ("Slots Used".to_string(), slots_used.join(", ")),
+            ],
+        }
+    }
+
+    fn fold_piv_slot(
+        &self,
+        _slot_id: Uuid,
+        slot_name: &str,
+        yubikey_serial: &str,
+        has_key: bool,
+        certificate_subject: Option<&String>,
+    ) -> Self::Output {
+        DetailPanelData {
+            title: "Selected PIV Slot:".to_string(),
+            fields: vec![
+                ("Slot".to_string(), slot_name.to_string()),
+                ("YubiKey".to_string(), yubikey_serial.to_string()),
+                ("Status".to_string(), if has_key { "Key loaded" } else { "Empty" }.to_string()),
+                ("Certificate".to_string(), certificate_subject.cloned().unwrap_or_else(|| "None".to_string())),
+            ],
+        }
+    }
+
+    fn fold_yubikey_status(
+        &self,
+        person_id: Uuid,
+        yubikey_serial: Option<&String>,
+        slots_provisioned: &[PIVSlot],
+        slots_needed: &[PIVSlot],
+    ) -> Self::Output {
+        DetailPanelData {
+            title: "Selected YubiKey Status:".to_string(),
+            fields: vec![
+                ("Person ID".to_string(), person_id.to_string()),
+                ("Serial".to_string(), yubikey_serial.cloned().unwrap_or_else(|| "Not detected".to_string())),
+                ("Provisioned Slots".to_string(), slots_provisioned.len().to_string()),
+                ("Needed Slots".to_string(), slots_needed.len().to_string()),
+            ],
+        }
+    }
+
+    fn fold_manifest(
+        &self,
+        manifest_id: Uuid,
+        name: &str,
+        destination: Option<&std::path::PathBuf>,
+        checksum: Option<&String>,
+    ) -> Self::Output {
+        DetailPanelData {
+            title: "Selected Manifest:".to_string(),
+            fields: vec![
+                ("ID".to_string(), manifest_id.to_string()),
+                ("Name".to_string(), name.to_string()),
+                ("Destination".to_string(), destination.map(|p| p.display().to_string()).unwrap_or_else(|| "None".to_string())),
+                ("Checksum".to_string(), checksum.cloned().unwrap_or_else(|| "None".to_string())),
+            ],
+        }
+    }
+
+    fn fold_policy_role(
+        &self,
+        role_id: Uuid,
+        name: &str,
+        purpose: &str,
+        level: u8,
+        separation_class: SeparationClass,
+        claim_count: usize,
+    ) -> Self::Output {
+        DetailPanelData {
+            title: "Selected Policy Role:".to_string(),
+            fields: vec![
+                ("ID".to_string(), role_id.to_string()),
+                ("Name".to_string(), name.to_string()),
+                ("Purpose".to_string(), purpose.to_string()),
+                ("Level".to_string(), level.to_string()),
+                ("Separation Class".to_string(), format!("{:?}", separation_class)),
+                ("Claims".to_string(), claim_count.to_string()),
+            ],
+        }
+    }
+
+    fn fold_policy_claim(
+        &self,
+        claim_id: Uuid,
+        name: &str,
+        category: &str,
+    ) -> Self::Output {
+        DetailPanelData {
+            title: "Selected Claim:".to_string(),
+            fields: vec![
+                ("ID".to_string(), claim_id.to_string()),
+                ("Name".to_string(), name.to_string()),
+                ("Category".to_string(), category.to_string()),
+            ],
+        }
+    }
+
+    fn fold_policy_category(
+        &self,
+        category_id: Uuid,
+        name: &str,
+        claim_count: usize,
+        expanded: bool,
+    ) -> Self::Output {
+        DetailPanelData {
+            title: "Selected Category:".to_string(),
+            fields: vec![
+                ("ID".to_string(), category_id.to_string()),
+                ("Name".to_string(), name.to_string()),
+                ("Claims".to_string(), claim_count.to_string()),
+                ("Expanded".to_string(), if expanded { "Yes" } else { "No" }.to_string()),
+                ("Action".to_string(), "Click to toggle expansion".to_string()),
+            ],
+        }
+    }
+
+    fn fold_policy_group(
+        &self,
+        class_id: Uuid,
+        name: &str,
+        separation_class: SeparationClass,
+        role_count: usize,
+        expanded: bool,
+    ) -> Self::Output {
+        DetailPanelData {
+            title: "Selected Separation Class:".to_string(),
+            fields: vec![
+                ("ID".to_string(), class_id.to_string()),
+                ("Name".to_string(), name.to_string()),
+                ("Class".to_string(), format!("{:?}", separation_class)),
+                ("Roles".to_string(), role_count.to_string()),
+                ("Expanded".to_string(), if expanded { "Yes" } else { "No" }.to_string()),
+                ("Action".to_string(), "Click to toggle expansion".to_string()),
+            ],
+        }
+    }
+}
+
+/// Helper method on DomainNode for getting detail panel data
+impl DomainNode {
+    /// Get detail panel data using the FoldDetailPanel catamorphism
+    pub fn detail_panel(&self) -> DetailPanelData {
+        self.fold(&FoldDetailPanel)
+    }
+}
+
+// ============================================================================
+// FoldSearchableText - Extracts searchable text for node filtering/search
+// ============================================================================
+
+/// Data for search/filter matching on nodes
+#[derive(Debug, Clone)]
+pub struct SearchableText {
+    /// Text fields from the node data (name, email, subject, etc.)
+    pub fields: Vec<String>,
+    /// Type-specific keywords (e.g., "nats operator", "certificate", "yubikey")
+    pub keywords: Vec<String>,
+}
+
+impl SearchableText {
+    /// Check if any field or keyword contains the query (case-insensitive)
+    pub fn matches(&self, query: &str) -> bool {
+        let query_lower = query.to_lowercase();
+        self.fields.iter().any(|f| f.to_lowercase().contains(&query_lower)) ||
+        self.keywords.iter().any(|k| k.contains(&query_lower))
+    }
+}
+
+/// Folder that produces searchable text from a domain node
+pub struct FoldSearchableText;
+
+impl FoldDomainNode for FoldSearchableText {
+    type Output = SearchableText;
+
+    fn fold_person(&self, person: &Person, _role: &KeyOwnerRole) -> Self::Output {
+        SearchableText {
+            fields: vec![person.name.clone(), person.email.clone()],
+            keywords: vec!["person".to_string()],
+        }
+    }
+
+    fn fold_organization(&self, org: &Organization) -> Self::Output {
+        let mut fields = vec![org.name.clone(), org.display_name.clone()];
+        if let Some(desc) = &org.description {
+            fields.push(desc.clone());
+        }
+        SearchableText {
+            fields,
+            keywords: vec!["organization".to_string(), "org".to_string()],
+        }
+    }
+
+    fn fold_organization_unit(&self, unit: &OrganizationUnit) -> Self::Output {
+        SearchableText {
+            fields: vec![unit.name.clone()],
+            keywords: vec!["unit".to_string(), "department".to_string()],
+        }
+    }
+
+    fn fold_location(&self, loc: &Location) -> Self::Output {
+        SearchableText {
+            fields: vec![loc.name.clone()],
+            keywords: vec!["location".to_string()],
+        }
+    }
+
+    fn fold_role(&self, role: &Role) -> Self::Output {
+        SearchableText {
+            fields: vec![role.name.clone()],
+            keywords: vec!["role".to_string()],
+        }
+    }
+
+    fn fold_policy(&self, policy: &Policy) -> Self::Output {
+        SearchableText {
+            fields: vec![policy.name.clone()],
+            keywords: vec!["policy".to_string()],
+        }
+    }
+
+    fn fold_nats_operator(&self, _proj: &NatsIdentityProjection) -> Self::Output {
+        SearchableText {
+            fields: vec![],
+            keywords: vec!["nats operator".to_string(), "operator".to_string()],
+        }
+    }
+
+    fn fold_nats_account(&self, _proj: &NatsIdentityProjection) -> Self::Output {
+        SearchableText {
+            fields: vec![],
+            keywords: vec!["nats account".to_string(), "account".to_string()],
+        }
+    }
+
+    fn fold_nats_user(&self, _proj: &NatsIdentityProjection) -> Self::Output {
+        SearchableText {
+            fields: vec![],
+            keywords: vec!["nats user".to_string(), "user".to_string()],
+        }
+    }
+
+    fn fold_nats_service_account(&self, _proj: &NatsIdentityProjection) -> Self::Output {
+        SearchableText {
+            fields: vec![],
+            keywords: vec!["service account".to_string(), "service".to_string()],
+        }
+    }
+
+    fn fold_nats_operator_simple(&self, name: &str, _organization_id: Option<Uuid>) -> Self::Output {
+        SearchableText {
+            fields: vec![name.to_string()],
+            keywords: vec!["nats operator".to_string(), "operator".to_string()],
+        }
+    }
+
+    fn fold_nats_account_simple(&self, name: &str, _unit_id: Option<Uuid>, _is_system: bool) -> Self::Output {
+        SearchableText {
+            fields: vec![name.to_string()],
+            keywords: vec!["nats account".to_string(), "account".to_string()],
+        }
+    }
+
+    fn fold_nats_user_simple(&self, name: &str, _person_id: Option<Uuid>, account_name: &str) -> Self::Output {
+        SearchableText {
+            fields: vec![name.to_string(), account_name.to_string()],
+            keywords: vec!["nats user".to_string(), "user".to_string()],
+        }
+    }
+
+    fn fold_root_certificate(
+        &self,
+        _cert_id: Uuid,
+        subject: &str,
+        _issuer: &str,
+        _not_before: DateTime<Utc>,
+        _not_after: DateTime<Utc>,
+        _key_usage: &[String],
+    ) -> Self::Output {
+        SearchableText {
+            fields: vec![subject.to_string()],
+            keywords: vec!["root".to_string(), "certificate".to_string(), "ca".to_string()],
+        }
+    }
+
+    fn fold_intermediate_certificate(
+        &self,
+        _cert_id: Uuid,
+        subject: &str,
+        _issuer: &str,
+        _not_before: DateTime<Utc>,
+        _not_after: DateTime<Utc>,
+        _key_usage: &[String],
+    ) -> Self::Output {
+        SearchableText {
+            fields: vec![subject.to_string()],
+            keywords: vec!["intermediate".to_string(), "certificate".to_string(), "ca".to_string()],
+        }
+    }
+
+    fn fold_leaf_certificate(
+        &self,
+        _cert_id: Uuid,
+        subject: &str,
+        _issuer: &str,
+        _not_before: DateTime<Utc>,
+        _not_after: DateTime<Utc>,
+        _key_usage: &[String],
+        _san: &[String],
+    ) -> Self::Output {
+        SearchableText {
+            fields: vec![subject.to_string()],
+            keywords: vec!["leaf".to_string(), "certificate".to_string()],
+        }
+    }
+
+    fn fold_yubikey(
+        &self,
+        _device_id: Uuid,
+        serial: &str,
+        _version: &str,
+        _provisioned_at: Option<DateTime<Utc>>,
+        _slots_used: &[String],
+    ) -> Self::Output {
+        SearchableText {
+            fields: vec![serial.to_string()],
+            keywords: vec!["yubikey".to_string()],
+        }
+    }
+
+    fn fold_piv_slot(
+        &self,
+        _slot_id: Uuid,
+        slot_name: &str,
+        _yubikey_serial: &str,
+        _has_key: bool,
+        _certificate_subject: Option<&String>,
+    ) -> Self::Output {
+        SearchableText {
+            fields: vec![slot_name.to_string()],
+            keywords: vec!["piv".to_string(), "slot".to_string()],
+        }
+    }
+
+    fn fold_yubikey_status(
+        &self,
+        _person_id: Uuid,
+        yubikey_serial: Option<&String>,
+        _slots_provisioned: &[PIVSlot],
+        _slots_needed: &[PIVSlot],
+    ) -> Self::Output {
+        let mut fields = vec![];
+        if let Some(serial) = yubikey_serial {
+            fields.push(serial.clone());
+        }
+        SearchableText {
+            fields,
+            keywords: vec!["yubikey".to_string(), "status".to_string()],
+        }
+    }
+
+    fn fold_key(
+        &self,
+        _key_id: Uuid,
+        algorithm: &KeyAlgorithm,
+        purpose: &KeyPurpose,
+        _expires_at: Option<DateTime<Utc>>,
+    ) -> Self::Output {
+        SearchableText {
+            fields: vec![format!("{:?}", algorithm), format!("{:?}", purpose)],
+            keywords: vec!["key".to_string()],
+        }
+    }
+
+    fn fold_manifest(
+        &self,
+        _manifest_id: Uuid,
+        name: &str,
+        _destination: Option<&std::path::PathBuf>,
+        _checksum: Option<&String>,
+    ) -> Self::Output {
+        SearchableText {
+            fields: vec![name.to_string()],
+            keywords: vec!["manifest".to_string(), "export".to_string()],
+        }
+    }
+
+    fn fold_policy_role(
+        &self,
+        _role_id: Uuid,
+        name: &str,
+        purpose: &str,
+        _level: u8,
+        _separation_class: SeparationClass,
+        _claim_count: usize,
+    ) -> Self::Output {
+        SearchableText {
+            fields: vec![name.to_string(), purpose.to_string()],
+            keywords: vec!["role".to_string(), "policy".to_string()],
+        }
+    }
+
+    fn fold_policy_claim(
+        &self,
+        _claim_id: Uuid,
+        name: &str,
+        category: &str,
+    ) -> Self::Output {
+        SearchableText {
+            fields: vec![name.to_string(), category.to_string()],
+            keywords: vec!["claim".to_string()],
+        }
+    }
+
+    fn fold_policy_category(&self, _category_id: Uuid, name: &str, _claim_count: usize, _expanded: bool) -> Self::Output {
+        SearchableText {
+            fields: vec![name.to_string()],
+            keywords: vec!["category".to_string()],
+        }
+    }
+
+    fn fold_policy_group(&self, _class_id: Uuid, name: &str, _separation_class: SeparationClass, _role_count: usize, _expanded: bool) -> Self::Output {
+        SearchableText {
+            fields: vec![name.to_string()],
+            keywords: vec!["class".to_string(), "separation".to_string()],
+        }
+    }
+}
+
+/// Helper method on DomainNode for getting searchable text
+impl DomainNode {
+    /// Get searchable text using the FoldSearchableText catamorphism
+    pub fn searchable_text(&self) -> SearchableText {
+        self.fold(&FoldSearchableText)
+    }
+}
+
+// ============================================================================
+// PropertyUpdate - Mutation support for domain nodes
+// ============================================================================
+
+/// Property updates for mutable domain node types.
+///
+/// This structure captures all mutable properties that can be updated via
+/// the PropertyCard UI. Using Option<T> allows partial updates - only
+/// specified properties are changed.
+///
+/// ## Mutable Types and Their Properties
+///
+/// | Type | name | description | email | enabled | claims |
+/// |------|------|-------------|-------|---------|--------|
+/// | Organization | ✓ | ✓ | - | - | - |
+/// | OrganizationUnit | ✓ | - | - | - | - |
+/// | Person | ✓ | - | ✓ | ✓ (active) | - |
+/// | Location | ✓ | - | - | - | - |
+/// | Role | ✓ | ✓ | - | ✓ (active) | - |
+/// | Policy | ✓ | ✓ | - | ✓ (enabled) | ✓ |
+///
+/// All other types (NATS, PKI, YubiKey, etc.) are read-only and ignore updates.
+#[derive(Debug, Clone, Default)]
+pub struct PropertyUpdate {
+    /// New name for the entity
+    pub name: Option<String>,
+    /// New description (Organization, Role, Policy)
+    pub description: Option<String>,
+    /// New email (Person only)
+    pub email: Option<String>,
+    /// New enabled/active state (Person, Role, Policy)
+    pub enabled: Option<bool>,
+    /// New claims list (Policy only)
+    pub claims: Option<Vec<PolicyClaim>>,
+}
+
+impl PropertyUpdate {
+    /// Create a new empty property update
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the name property
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    /// Set the description property
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    /// Set the email property
+    pub fn with_email(mut self, email: impl Into<String>) -> Self {
+        self.email = Some(email.into());
+        self
+    }
+
+    /// Set the enabled/active property
+    pub fn with_enabled(mut self, enabled: bool) -> Self {
+        self.enabled = Some(enabled);
+        self
+    }
+
+    /// Set the claims property
+    pub fn with_claims(mut self, claims: Vec<PolicyClaim>) -> Self {
+        self.claims = Some(claims);
+        self
+    }
+
+    /// Check if this update would change anything for a given injection type
+    pub fn has_changes_for(&self, injection: Injection) -> bool {
+        match injection {
+            Injection::Organization => self.name.is_some() || self.description.is_some(),
+            Injection::OrganizationUnit => self.name.is_some(),
+            Injection::Person => self.name.is_some() || self.email.is_some() || self.enabled.is_some(),
+            Injection::Location => self.name.is_some(),
+            Injection::Role => self.name.is_some() || self.description.is_some() || self.enabled.is_some(),
+            Injection::Policy => {
+                self.name.is_some() || self.description.is_some() ||
+                self.enabled.is_some() || self.claims.is_some()
+            }
+            // All other types are read-only
+            _ => false,
+        }
+    }
+}
+
+/// Methods for updating domain node properties
+impl DomainNode {
+    /// Apply property updates to this domain node, returning a new updated node.
+    ///
+    /// This method respects the mutability of each domain type:
+    /// - Mutable types (Organization, OrganizationUnit, Person, Location, Role, Policy)
+    ///   apply relevant updates and return a new node
+    /// - Read-only types (NATS, PKI, YubiKey, etc.) return a clone unchanged
+    ///
+    /// ## Example
+    ///
+    /// ```ignore
+    /// let update = PropertyUpdate::new()
+    ///     .with_name("New Name")
+    ///     .with_email("new@example.com");
+    ///
+    /// let updated_node = node.with_properties(&update);
+    /// ```
+    pub fn with_properties(&self, update: &PropertyUpdate) -> Self {
+        match &self.data {
+            // Mutable types - apply relevant updates
+            DomainNodeData::Organization(org) => {
+                let mut updated = org.clone();
+                if let Some(name) = &update.name {
+                    updated.name = name.clone();
+                    updated.display_name = name.clone();
+                }
+                if let Some(description) = &update.description {
+                    updated.description = Some(description.clone());
+                }
+                Self::inject_organization(updated)
+            }
+
+            DomainNodeData::OrganizationUnit(unit) => {
+                let mut updated = unit.clone();
+                if let Some(name) = &update.name {
+                    updated.name = name.clone();
+                }
+                Self::inject_organization_unit(updated)
+            }
+
+            DomainNodeData::Person { person, role } => {
+                let mut updated = person.clone();
+                if let Some(name) = &update.name {
+                    updated.name = name.clone();
+                }
+                if let Some(email) = &update.email {
+                    updated.email = email.clone();
+                }
+                if let Some(enabled) = update.enabled {
+                    updated.active = enabled;
+                }
+                Self::inject_person(updated, role.clone())
+            }
+
+            DomainNodeData::Location(loc) => {
+                let mut updated = loc.clone();
+                if let Some(name) = &update.name {
+                    updated.name = name.clone();
+                }
+                Self::inject_location(updated)
+            }
+
+            DomainNodeData::Role(role) => {
+                let mut updated = role.clone();
+                if let Some(name) = &update.name {
+                    updated.name = name.clone();
+                }
+                if let Some(description) = &update.description {
+                    updated.description = description.clone();
+                }
+                if let Some(enabled) = update.enabled {
+                    updated.active = enabled;
+                }
+                Self::inject_role(updated)
+            }
+
+            DomainNodeData::Policy(policy) => {
+                let mut updated = policy.clone();
+                if let Some(name) = &update.name {
+                    updated.name = name.clone();
+                }
+                if let Some(description) = &update.description {
+                    updated.description = description.clone();
+                }
+                if let Some(enabled) = update.enabled {
+                    updated.enabled = enabled;
+                }
+                if let Some(claims) = &update.claims {
+                    updated.claims = claims.clone();
+                }
+                Self::inject_policy(updated)
+            }
+
+            // Read-only types - return clone unchanged
+            _ => self.clone(),
+        }
+    }
+
+    /// Check if this node type is mutable (supports property updates)
+    pub fn is_mutable(&self) -> bool {
+        matches!(
+            self.injection,
+            Injection::Organization |
+            Injection::OrganizationUnit |
+            Injection::Person |
+            Injection::Location |
+            Injection::Role |
+            Injection::Policy
+        )
     }
 }
 

@@ -47,7 +47,8 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::domain::{Organization, OrganizationUnit, Person, KeyOwnerRole};
-use crate::gui::graph::{OrganizationConcept, NodeType, EdgeType};
+use crate::gui::graph::{OrganizationConcept, EdgeType};
+use crate::gui::domain_node::{DomainNodeData, Injection};
 
 /// Organization-centric analysis of the organizational graph
 #[derive(Debug, Clone)]
@@ -80,8 +81,8 @@ impl OrganizationAnalysis {
     pub fn analyze(graph: &OrganizationConcept, organization_id: Uuid) -> Option<Self> {
         // Find the organization node
         let node = graph.nodes.get(&organization_id)?;
-        let organization = match &node.node_type {
-            NodeType::Organization(org) => org.clone(),
+        let organization = match node.domain_node.data() {
+            DomainNodeData::Organization(org) => org.clone(),
             _ => return None,
         };
 
@@ -100,7 +101,7 @@ impl OrganizationAnalysis {
                     EdgeType::ParentChild | EdgeType::ManagesUnit => {
                         // This organization manages a unit
                         if let Some(child_node) = graph.nodes.get(&edge.to) {
-                            if let NodeType::OrganizationalUnit(unit) = &child_node.node_type {
+                            if let DomainNodeData::OrganizationUnit(unit) = child_node.domain_node.data() {
                                 child_units.insert(edge.to, unit.clone());
                             }
                         }
@@ -108,7 +109,7 @@ impl OrganizationAnalysis {
                     EdgeType::MemberOf => {
                         // Direct member of this organization
                         if let Some(member_node) = graph.nodes.get(&edge.from) {
-                            if let NodeType::Person { person, role } = &member_node.node_type {
+                            if let DomainNodeData::Person { person, role } = member_node.domain_node.data() {
                                 direct_members.insert(edge.from, (person.clone(), *role));
                             }
                         }
@@ -116,10 +117,10 @@ impl OrganizationAnalysis {
                     EdgeType::ManagesResource => {
                         // Resource managed by this organization
                         if let Some(resource_node) = graph.nodes.get(&edge.to) {
-                            let resource_type = match &resource_node.node_type {
-                                NodeType::Location(_) => "Location",
-                                NodeType::Key { .. } => "Key",
-                                NodeType::YubiKey { .. } => "YubiKey",
+                            let resource_type = match resource_node.domain_node.injection() {
+                                Injection::Location => "Location",
+                                Injection::Key => "Key",
+                                Injection::YubiKey => "YubiKey",
                                 _ => "Unknown",
                             };
                             managed_resources.push((edge.to, resource_type.to_string()));
@@ -143,7 +144,7 @@ impl OrganizationAnalysis {
             for edge in &graph.edges {
                 if edge.to == *unit_id && edge.edge_type == EdgeType::MemberOf {
                     if let Some(member_node) = graph.nodes.get(&edge.from) {
-                        if let NodeType::Person { person, role } = &member_node.node_type {
+                        if let DomainNodeData::Person { person, role } = member_node.domain_node.data() {
                             indirect_members.insert(
                                 edge.from,
                                 (person.clone(), *role, *unit_id),
@@ -213,8 +214,8 @@ impl OrganizationalUnitAnalysis {
     pub fn analyze(graph: &OrganizationConcept, unit_id: Uuid) -> Option<Self> {
         // Find the unit node
         let node = graph.nodes.get(&unit_id)?;
-        let unit = match &node.node_type {
-            NodeType::OrganizationalUnit(u) => u.clone(),
+        let unit = match node.domain_node.data() {
+            DomainNodeData::OrganizationUnit(u) => u.clone(),
             _ => return None,
         };
 
@@ -234,9 +235,9 @@ impl OrganizationalUnitAnalysis {
                         // Find parent
                         parent_id = Some(edge.from);
                         if let Some(parent_node) = graph.nodes.get(&edge.from) {
-                            parent_type = Some(match parent_node.node_type {
-                                NodeType::Organization(_) => "Organization".to_string(),
-                                NodeType::OrganizationalUnit(_) => "OrganizationalUnit".to_string(),
+                            parent_type = Some(match parent_node.domain_node.injection() {
+                                Injection::Organization => "Organization".to_string(),
+                                Injection::OrganizationUnit => "OrganizationalUnit".to_string(),
                                 _ => "Unknown".to_string(),
                             });
                         }
@@ -244,7 +245,7 @@ impl OrganizationalUnitAnalysis {
                     EdgeType::MemberOf => {
                         // Member of this unit
                         if let Some(member_node) = graph.nodes.get(&edge.from) {
-                            if let NodeType::Person { person, role } = &member_node.node_type {
+                            if let DomainNodeData::Person { person, role } = member_node.domain_node.data() {
                                 members.insert(edge.from, (person.clone(), *role));
                             }
                         }
@@ -252,7 +253,7 @@ impl OrganizationalUnitAnalysis {
                     EdgeType::ResponsibleFor => {
                         // Person responsible for this unit
                         if let Some(person_node) = graph.nodes.get(&edge.from) {
-                            if let NodeType::Person { person, .. } = &person_node.node_type {
+                            if let DomainNodeData::Person { person, .. } = person_node.domain_node.data() {
                                 responsible_person = Some((edge.from, person.clone()));
                             }
                         }
@@ -265,7 +266,7 @@ impl OrganizationalUnitAnalysis {
                     EdgeType::ParentChild | EdgeType::ManagesUnit => {
                         // Child unit
                         if let Some(child_node) = graph.nodes.get(&edge.to) {
-                            if let NodeType::OrganizationalUnit(child) = &child_node.node_type {
+                            if let DomainNodeData::OrganizationUnit(child) = child_node.domain_node.data() {
                                 child_units.insert(edge.to, child.clone());
                             }
                         }
@@ -273,10 +274,10 @@ impl OrganizationalUnitAnalysis {
                     EdgeType::ManagesResource => {
                         // Resource managed by this unit
                         if let Some(resource_node) = graph.nodes.get(&edge.to) {
-                            let resource_type = match &resource_node.node_type {
-                                NodeType::Location(_) => "Location",
-                                NodeType::Key { .. } => "Key",
-                                NodeType::YubiKey { .. } => "YubiKey",
+                            let resource_type = match resource_node.domain_node.injection() {
+                                Injection::Location => "Location",
+                                Injection::Key => "Key",
+                                Injection::YubiKey => "YubiKey",
                                 _ => "Unknown",
                             };
                             managed_resources.push((edge.to, resource_type.to_string()));

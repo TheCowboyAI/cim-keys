@@ -19,7 +19,8 @@
 //! ```
 
 use crate::causality::{CausalChain, CausalEvent};
-use crate::gui::graph::{OrganizationConcept, NodeType, EdgeType};
+use crate::gui::graph::{OrganizationConcept, EdgeType};
+use crate::gui::domain_node::Injection;
 use uuid::Uuid;
 use iced::Point;
 
@@ -98,26 +99,10 @@ impl GraphOperation {
     }
 }
 
-/// Helper function to get node type name
-fn get_node_type_name(node_type: &NodeType) -> &str {
-    match node_type {
-        NodeType::Person { .. } => "Person",
-        NodeType::Organization(_) => "Organization",
-        NodeType::OrganizationalUnit(_) => "OrganizationalUnit",
-        NodeType::NatsOperator(_) => "NatsOperator",
-        NodeType::NatsAccount(_) => "NatsAccount",
-        NodeType::NatsUser(_) => "NatsUser",
-        NodeType::NatsServiceAccount(_) => "NatsServiceAccount",
-        NodeType::RootCertificate { .. } => "RootCertificate",
-        NodeType::IntermediateCertificate { .. } => "IntermediateCertificate",
-        NodeType::LeafCertificate { .. } => "LeafCertificate",
-        NodeType::YubiKey { .. } => "YubiKey",
-        NodeType::PivSlot { .. } => "PivSlot",
-        NodeType::YubiKeyStatus { .. } => "YubiKeyStatus",
-        NodeType::Location(_) => "Location",
-        NodeType::Role(_) => "Role",
-        NodeType::Policy(_) => "Policy",
-    }
+/// Helper function to get node type name using Injection
+#[allow(dead_code)]
+fn get_node_type_name(injection: Injection) -> &'static str {
+    injection.display_name()
 }
 
 /// Helper function to get edge type name
@@ -165,7 +150,7 @@ pub fn build_pki_from_graph(graph: &OrganizationConcept) -> CausalChain<GraphOpe
 
     // Step 1: Find organization root nodes
     let org_nodes: Vec<_> = graph.nodes.values()
-        .filter(|n| matches!(n.node_type, NodeType::Organization(_)))
+        .filter(|n| n.domain_node.injection() == Injection::Organization)
         .collect();
 
     for org_node in org_nodes {
@@ -200,7 +185,7 @@ pub fn build_pki_from_graph(graph: &OrganizationConcept) -> CausalChain<GraphOpe
         let unit_nodes: Vec<_> = graph.edges.iter()
             .filter(|e| e.from == org_node.id && e.edge_type == EdgeType::ParentChild)
             .filter_map(|e| graph.nodes.get(&e.to))
-            .filter(|n| matches!(n.node_type, NodeType::OrganizationalUnit(_)))
+            .filter(|n| n.domain_node.injection() == Injection::OrganizationUnit)
             .collect();
 
         for unit_node in unit_nodes {
@@ -250,7 +235,7 @@ pub fn build_pki_from_graph(graph: &OrganizationConcept) -> CausalChain<GraphOpe
             let people_nodes: Vec<_> = graph.edges.iter()
                 .filter(|e| e.from == unit_node.id && e.edge_type == EdgeType::ParentChild)
                 .filter_map(|e| graph.nodes.get(&e.to))
-                .filter(|n| matches!(n.node_type, NodeType::Person { .. }))
+                .filter(|n| n.domain_node.injection() == Injection::Person)
                 .collect();
 
             for person_node in people_nodes {
@@ -312,7 +297,7 @@ pub fn build_nats_from_graph(graph: &OrganizationConcept) -> CausalChain<GraphOp
 
     // Find organization root nodes
     let org_nodes: Vec<_> = graph.nodes.values()
-        .filter(|n| matches!(n.node_type, NodeType::Organization(_)))
+        .filter(|n| n.domain_node.injection() == Injection::Organization)
         .collect();
 
     for org_node in org_nodes {
@@ -347,7 +332,7 @@ pub fn build_nats_from_graph(graph: &OrganizationConcept) -> CausalChain<GraphOp
         let unit_nodes: Vec<_> = graph.edges.iter()
             .filter(|e| e.from == org_node.id && e.edge_type == EdgeType::ParentChild)
             .filter_map(|e| graph.nodes.get(&e.to))
-            .filter(|n| matches!(n.node_type, NodeType::OrganizationalUnit(_)))
+            .filter(|n| n.domain_node.injection() == Injection::OrganizationUnit)
             .collect();
 
         for unit_node in unit_nodes {
@@ -397,7 +382,7 @@ pub fn build_nats_from_graph(graph: &OrganizationConcept) -> CausalChain<GraphOp
             let people_nodes: Vec<_> = graph.edges.iter()
                 .filter(|e| e.from == unit_node.id && e.edge_type == EdgeType::ParentChild)
                 .filter_map(|e| graph.nodes.get(&e.to))
-                .filter(|n| matches!(n.node_type, NodeType::Person { .. }))
+                .filter(|n| n.domain_node.injection() == Injection::Person)
                 .collect();
 
             for person_node in people_nodes {

@@ -38,7 +38,8 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::domain::{Person, KeyOwnerRole};
-use crate::gui::graph::{OrganizationConcept, NodeType, ConceptEntity};
+use crate::gui::graph::{OrganizationConcept, ConceptEntity};
+use crate::gui::domain_node::{DomainNode, DomainNodeData};
 use iced::{Color, Point};
 
 /// PIV slot assignments based on role
@@ -147,7 +148,7 @@ pub fn analyze_graph_for_yubikey(graph: &OrganizationConcept) -> YubiKeyProvisio
 
     // Find all people in the graph and determine their YubiKey needs
     for (person_id, node) in &graph.nodes {
-        if let NodeType::Person { person, role } = &node.node_type {
+        if let DomainNodeData::Person { person, role } = node.domain_node.data() {
             let slots = slots_for_role(role);
 
             let plan = YubiKeyProvisionPlan {
@@ -190,14 +191,14 @@ pub fn generate_yubikey_provision_from_graph(
             format!("⏳ {} YubiKey ({} slots needed)", plan.person.name, plan.slots.len())
         };
 
-        let node_type = NodeType::YubiKeyStatus {
+        let domain_node = DomainNode::inject_yubikey_status(
             person_id,
-            yubikey_serial: plan.yubikey_serial.clone(),
-            slots_provisioned: if plan.already_provisioned { plan.slots.clone() } else { vec![] },
-            slots_needed: plan.slots.clone(),
-        };
+            plan.yubikey_serial.clone(),
+            if plan.already_provisioned { plan.slots.clone() } else { vec![] },
+            plan.slots.clone(),
+        );
         let position = Point::new(400.0, 500.0); // Below person nodes
-        let mut provision_node = ConceptEntity::from_node_type(provision_node_id, node_type, position);
+        let mut provision_node = ConceptEntity::from_domain_node(provision_node_id, domain_node, position);
 
         // Override color based on provisioning status
         provision_node.color = if plan.already_provisioned {

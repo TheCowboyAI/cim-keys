@@ -6,7 +6,8 @@
 #[cfg(test)]
 mod graph_first_integration_tests {
     use crate::domain::{Organization, OrganizationUnit, Person, KeyOwnerRole, OrganizationUnitType};
-    use crate::gui::graph::{OrganizationConcept, NodeType};
+    use crate::gui::graph::OrganizationConcept;
+    use crate::gui::domain_node::DomainNodeData;
     use crate::gui::{graph_pki, graph_nats, graph_yubikey};
     use chrono::Utc;
     use std::collections::HashMap;
@@ -158,7 +159,7 @@ mod graph_first_integration_tests {
 
         // And: Each person should have a YubiKey requirement
         for (node, _) in &yubikey_nodes {
-            if let NodeType::YubiKeyStatus { slots_needed, .. } = &node.node_type {
+            if let DomainNodeData::YubiKeyStatus { slots_needed, .. } = node.domain_node.data() {
                 assert!(!slots_needed.is_empty(), "Each person should need at least one PIV slot");
             } else {
                 panic!("Expected YubiKeyStatus node");
