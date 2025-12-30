@@ -115,7 +115,7 @@ mockall = "0.13"
 proptest = "1.5"  # Property-based testing for compositional laws (Axiom A9)
 
 [features]
-default = ["gui", "policy"]
+default = ["gui", "policy", "conceptual-spaces"]
 gui = ["iced", "iced_widget", "iced_futures", "bytemuck"]
 # All CIM domain crates for full domain composition
 policy = [

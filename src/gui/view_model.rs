@@ -341,6 +341,44 @@ impl ColorPalette {
 use iced::Point;
 use uuid::Uuid;
 
+// Import conceptual-spaces types for semantic positioning
+#[cfg(feature = "conceptual-spaces")]
+use cim_domain_spaces::{Point3, KnowledgeLevel, EvidenceScore};
+
+/// Stereographic projection from 3D unit sphere to 2D plane.
+///
+/// Projects a point on the unit sphere (semantic 3D position) to a 2D screen
+/// position using stereographic projection from the south pole.
+///
+/// # Algorithm
+///
+/// Given a point (x, y, z) on the unit sphere where z ≠ -1:
+/// - Projected x' = x / (1 + z)
+/// - Projected y' = y / (1 + z)
+///
+/// The result is then scaled to fit the canvas dimensions.
+///
+/// # Arguments
+///
+/// * `p3` - A point on the unit sphere (semantic position)
+/// * `center` - Center of the 2D canvas
+/// * `scale` - Scale factor for the projection
+///
+/// # Returns
+///
+/// A 2D point suitable for screen rendering.
+#[cfg(feature = "conceptual-spaces")]
+pub fn stereographic_projection(p3: &Point3<f64>, center: Point, scale: f32) -> Point {
+    // Avoid division by zero at south pole
+    let denom: f64 = 1.0 + p3.z;
+    let denom = if denom.abs() < 0.001 { 0.001 } else { denom };
+
+    let x = (p3.x / denom) as f32 * scale + center.x;
+    let y = (p3.y / denom) as f32 * scale + center.y;
+
+    Point::new(x, y)
+}
+
 /// View model for individual graph node visualization.
 ///
 /// Separates UI concerns (position, selection, sizing) from domain data.
@@ -358,8 +396,32 @@ pub struct NodeView {
     /// Reference to the domain entity
     pub entity_id: Uuid,
 
-    /// Position in the graph canvas (UI concern)
+    /// Position in the graph canvas (UI concern - 2D projection)
     pub position: Point,
+
+    /// Semantic 3D position on unit sphere (conceptual-spaces integration)
+    ///
+    /// When set, the 2D `position` is derived via stereographic projection.
+    /// This enables semantic similarity to be visualized spatially.
+    #[cfg(feature = "conceptual-spaces")]
+    pub semantic_position: Option<Point3<f64>>,
+
+    /// Knowledge level from conceptual-spaces
+    ///
+    /// Indicates our epistemic state about this entity:
+    /// - Unknown: We don't know if it exists
+    /// - Suspected: We suspect it exists based on patterns
+    /// - KnownUnknown: We know we don't know the details
+    /// - Known: We have verified information
+    #[cfg(feature = "conceptual-spaces")]
+    pub knowledge_level: Option<KnowledgeLevel>,
+
+    /// Evidence score for confidence visualization
+    ///
+    /// Range [0.0, 1.0] indicating confidence in the entity's data.
+    /// Affects visual rendering (e.g., opacity, border style).
+    #[cfg(feature = "conceptual-spaces")]
+    pub evidence_score: Option<EvidenceScore>,
 
     /// Display color (derived from domain node type)
     pub color: Color,
@@ -386,12 +448,91 @@ impl NodeView {
         Self {
             entity_id,
             position,
+            #[cfg(feature = "conceptual-spaces")]
+            semantic_position: None,
+            #[cfg(feature = "conceptual-spaces")]
+            knowledge_level: None,
+            #[cfg(feature = "conceptual-spaces")]
+            evidence_score: None,
             color,
             label,
             secondary_text: None,
             selected: false,
             dragging: false,
             radius: 30.0,
+        }
+    }
+
+    /// Create a node view with semantic 3D position
+    ///
+    /// The 2D screen position is derived via stereographic projection.
+    #[cfg(feature = "conceptual-spaces")]
+    pub fn with_semantic_position(
+        entity_id: Uuid,
+        semantic_pos: Point3<f64>,
+        canvas_center: Point,
+        scale: f32,
+        color: Color,
+        label: String,
+    ) -> Self {
+        let position = stereographic_projection(&semantic_pos, canvas_center, scale);
+        Self {
+            entity_id,
+            position,
+            semantic_position: Some(semantic_pos),
+            knowledge_level: None,
+            evidence_score: None,
+            color,
+            label,
+            secondary_text: None,
+            selected: false,
+            dragging: false,
+            radius: 30.0,
+        }
+    }
+
+    /// Set the knowledge level for this node
+    #[cfg(feature = "conceptual-spaces")]
+    pub fn with_knowledge_level(mut self, level: KnowledgeLevel) -> Self {
+        self.knowledge_level = Some(level);
+        self
+    }
+
+    /// Set the evidence score for this node
+    #[cfg(feature = "conceptual-spaces")]
+    pub fn with_evidence_score(mut self, score: EvidenceScore) -> Self {
+        self.evidence_score = Some(score);
+        self
+    }
+
+    /// Get the visual opacity based on knowledge level
+    ///
+    /// - Known: 1.0 (fully opaque)
+    /// - KnownUnknown: 0.8
+    /// - Suspected: 0.6
+    /// - Unknown: 0.4
+    #[cfg(feature = "conceptual-spaces")]
+    pub fn knowledge_opacity(&self) -> f32 {
+        match self.knowledge_level {
+            Some(KnowledgeLevel::Known) => 1.0,
+            Some(KnowledgeLevel::KnownUnknown) => 0.8,
+            Some(KnowledgeLevel::Suspected) => 0.6,
+            Some(KnowledgeLevel::Unknown) => 0.4,
+            None => 1.0, // Default to fully opaque
+        }
+    }
+
+    /// Get the border style based on knowledge level
+    ///
+    /// Returns (border_width, is_dashed) tuple.
+    #[cfg(feature = "conceptual-spaces")]
+    pub fn knowledge_border_style(&self) -> (f32, bool) {
+        match self.knowledge_level {
+            Some(KnowledgeLevel::Known) => (2.0, false),        // Solid, normal
+            Some(KnowledgeLevel::KnownUnknown) => (2.0, true),  // Dashed
+            Some(KnowledgeLevel::Suspected) => (1.5, true),     // Thin dashed
+            Some(KnowledgeLevel::Unknown) => (1.0, true),       // Thin dashed
+            None => (2.0, false),
         }
     }
 
