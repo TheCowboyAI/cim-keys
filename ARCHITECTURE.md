@@ -253,10 +253,38 @@ graph TB
 | Axiom | Status | Implementation |
 |-------|--------|----------------|
 | A3: Decoupled | ✅ | `update()` output depends only on input |
-| A4: Causality | ✅ | UUID v7 embeds millisecond timestamp - inherent ordering |
+| A4: Causality | ⚠️ | UUID v7 + MessageFactory required (see migration below) |
 | A5: Totality | ✅ | All `with_*` methods are total |
 | A7: Event Logs | ✅ | Events stored as timestamped prefixes |
 | A9: Composition | ✅ | Associativity verified by proptest |
+
+### A4 Causality Migration Required
+
+**Current State**: Events have `causation_id: Option<Uuid>` fields but many are set to `None`.
+
+**Required Action**: Migrate to `cim_domain::MessageFactory` pattern:
+
+```rust
+// Files requiring MessageFactory migration:
+// - src/aggregate.rs (causation_id: None on lines 86, 147)
+// - src/graph_projection.rs (many causation_id: None)
+// - src/commands/nats_identity.rs (causation_id: None)
+// - src/commands/export.rs (causation_id: None)
+// - src/adapters/nats_client.rs (causation_id: None)
+```
+
+**Migration Pattern**:
+```rust
+// BEFORE (broken audit trail)
+DomainEvent {
+    causation_id: None,
+    // ...
+}
+
+// AFTER (complete audit trail)
+let identity = MessageFactory::command_from_command(event_id, &cmd.identity);
+DomainEventEnvelope::new(identity, event_payload)
+```
 
 ## UUID v7 Causality Architecture
 
@@ -284,23 +312,66 @@ UUID v7 Structure (128 bits):
 
 ### Complete Causality Model
 
-All aggregates implement the full causality chain:
+**MANDATORY**: Use `cim_domain::MessageFactory` to create message identities with automatic causation tracking.
 
 ```rust
-// Every command and event carries causality metadata
-struct Command {
-    command_id: Uuid,      // UUID v7 - when command was created
-    correlation_id: Uuid,  // Business transaction ID (also v7)
-    causation_id: Option<Uuid>,  // What triggered this command
-    // ... domain fields
+use cim_domain::{MessageFactory, MessageIdentity, CausationId};
+
+// MessageIdentity carries the full causality chain
+pub struct MessageIdentity {
+    pub correlation_id: CorrelationId,  // Shared across entire transaction
+    pub causation_id: CausationId,      // Immediate parent's message_id
+    pub message_id: Uuid,               // This message's UUID v7
+}
+```
+
+### MessageFactory Pattern (REQUIRED)
+
+```rust
+use cim_domain::MessageFactory;
+
+// ROOT COMMAND: causation = self (I am the root cause)
+let root_id = Uuid::now_v7();
+let root_identity = MessageFactory::create_root_command(root_id);
+// Result: correlation = root_id, causation = root_id, message_id = root_id
+
+// DERIVED COMMAND: causation = parent's message_id
+let child_id = Uuid::now_v7();
+let child_identity = MessageFactory::command_from_command(child_id, &root_identity);
+// Result: correlation = root_id, causation = root_id, message_id = child_id
+
+// EVENT FROM COMMAND: causation = command's message_id
+let event_id = Uuid::now_v7();
+let event_identity = MessageFactory::command_from_event(event_id, &command_identity);
+// Result: correlation preserved, causation = command's message_id
+```
+
+### Causation Rules
+
+| Message Type | causation_id Value |
+|--------------|-------------------|
+| Root command | `self.message_id` (self-reference) |
+| Command from command | `parent.message_id` |
+| Command from event | `parent.message_id` |
+| Event from command | `command.message_id` |
+| Query from event | `event.message_id` |
+
+### Anti-Pattern: Manual causation_id
+
+```rust
+// ❌ WRONG - manual None breaks audit trail
+DomainEvent {
+    event_id: Uuid::now_v7(),
+    causation_id: None,  // AUDIT TRAIL BROKEN
+    // ...
 }
 
-struct DomainEvent {
-    event_id: Uuid,        // UUID v7 - when event occurred
-    correlation_id: Uuid,  // Links to originating transaction
-    causation_id: Option<Uuid>,  // The command/event that caused this
-    // ... domain fields
-}
+// ❌ WRONG - manual Option<Uuid> is error-prone
+causation_id: Some(cmd.command_id),  // Easy to forget
+
+// ✅ CORRECT - use MessageFactory
+let identity = MessageFactory::command_from_command(event_id, &cmd.identity);
+// causation_id automatically set to cmd.identity.message_id
 ```
 
 ### Three-Level Causality

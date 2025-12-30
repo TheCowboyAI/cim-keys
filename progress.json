@@ -176,8 +176,16 @@
       "date": "2025-12-30",
       "sprint": "10 completed (FINAL)",
       "ddd_validation_checks": "4/5",
-      "frp_compliance": "50%",
-      "note_frp": "A3, A4, A5, A7, A9 fully compliant (5/10). UUID v7 provides inherent causality - A4 upgraded from partial to full.",
+      "frp_compliance": "40%",
+      "note_frp": "A3, A5, A7, A9 proven (4/10). A4 (Causality) requires MessageFactory migration - UUID v7 structure exists but causation_id often None.",
+      "a4_migration_required": true,
+      "a4_migration_files": [
+        "src/aggregate.rs",
+        "src/graph_projection.rs",
+        "src/commands/nats_identity.rs",
+        "src/commands/export.rs",
+        "src/adapters/nats_client.rs"
+      ],
       "inline_domain_models": 3,
       "note_inline_models": "Bootstrap types kept for JSON loading with conversion functions",
       "cim_domain_types_imported": true,
