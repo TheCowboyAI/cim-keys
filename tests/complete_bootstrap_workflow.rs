@@ -285,6 +285,7 @@ impl BootstrapWorkflow {
             state: org.metadata.get("state").cloned(),
             locality: org.metadata.get("city").cloned(),
             validity_years: 20,
+            pathlen: 1, // Allow one intermediate CA level
         };
 
         let root_correlation_id = Uuid::now_v7();
@@ -325,6 +326,7 @@ impl BootstrapWorkflow {
                 common_name: format!("{} {} Intermediate CA", org.display_name, unit.name),
                 country: org.metadata.get("country").cloned(),
                 validity_years: 3,
+                pathlen: 0, // Can only sign leaf certificates
             };
 
             let intermediate_correlation_id = Uuid::now_v7();
