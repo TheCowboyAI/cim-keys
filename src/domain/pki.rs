@@ -247,3 +247,131 @@ impl std::fmt::Display for CertificateStatus {
         }
     }
 }
+
+// ============================================================================
+// GRAPH NODE TYPES (for DomainNode visualization)
+// ============================================================================
+
+/// Certificate node data for graph visualization
+///
+/// This type is used in `DomainNodeData` for rendering certificates in the graph.
+/// It uses phantom-typed `CertificateId` for compile-time safety.
+#[derive(Debug, Clone)]
+pub struct CertificateNode {
+    pub id: CertificateId,
+    pub cert_type: CertificateType,
+    pub subject: String,
+    pub issuer: String,
+    pub not_before: DateTime<Utc>,
+    pub not_after: DateTime<Utc>,
+    pub key_usage: Vec<String>,
+    pub san: Vec<String>,
+}
+
+impl CertificateNode {
+    /// Create a root certificate node
+    pub fn root(
+        id: CertificateId,
+        subject: String,
+        not_before: DateTime<Utc>,
+        not_after: DateTime<Utc>,
+        key_usage: Vec<String>,
+    ) -> Self {
+        Self {
+            id,
+            cert_type: CertificateType::Root,
+            subject: subject.clone(),
+            issuer: subject, // Self-signed
+            not_before,
+            not_after,
+            key_usage,
+            san: Vec::new(),
+        }
+    }
+
+    /// Create an intermediate certificate node
+    pub fn intermediate(
+        id: CertificateId,
+        subject: String,
+        issuer: String,
+        not_before: DateTime<Utc>,
+        not_after: DateTime<Utc>,
+        key_usage: Vec<String>,
+    ) -> Self {
+        Self {
+            id,
+            cert_type: CertificateType::Intermediate,
+            subject,
+            issuer,
+            not_before,
+            not_after,
+            key_usage,
+            san: Vec::new(),
+        }
+    }
+
+    /// Create a leaf certificate node
+    pub fn leaf(
+        id: CertificateId,
+        subject: String,
+        issuer: String,
+        not_before: DateTime<Utc>,
+        not_after: DateTime<Utc>,
+        key_usage: Vec<String>,
+        san: Vec<String>,
+    ) -> Self {
+        Self {
+            id,
+            cert_type: CertificateType::Leaf,
+            subject,
+            issuer,
+            not_before,
+            not_after,
+            key_usage,
+            san,
+        }
+    }
+
+    /// Check if certificate is currently valid (not expired)
+    pub fn is_valid(&self) -> bool {
+        let now = Utc::now();
+        now >= self.not_before && now <= self.not_after
+    }
+
+    /// Get days until expiration (negative if expired)
+    pub fn days_until_expiry(&self) -> i64 {
+        let now = Utc::now();
+        (self.not_after - now).num_days()
+    }
+}
+
+/// Key node data for graph visualization
+///
+/// This type is used in `DomainNodeData` for rendering keys in the graph.
+/// It uses phantom-typed `KeyId` for compile-time safety.
+#[derive(Debug, Clone)]
+pub struct KeyNode {
+    pub id: KeyId,
+    pub algorithm: KeyAlgorithm,
+    pub purpose: KeyPurpose,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+impl KeyNode {
+    /// Create a new key node
+    pub fn new(
+        id: KeyId,
+        algorithm: KeyAlgorithm,
+        purpose: KeyPurpose,
+        expires_at: Option<DateTime<Utc>>,
+    ) -> Self {
+        Self { id, algorithm, purpose, expires_at }
+    }
+
+    /// Check if key is expired
+    pub fn is_expired(&self) -> bool {
+        self.expires_at
+            .map(|exp| Utc::now() > exp)
+            .unwrap_or(false)
+    }
+}

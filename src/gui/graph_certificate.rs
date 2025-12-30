@@ -100,54 +100,32 @@ impl CertificateAnalysis {
 
         // Extract certificate type and details based on node type
         let (certificate_type, subject, issuer, not_before, not_after, key_usage, san) = match node.domain_node.data() {
-            DomainNodeData::RootCertificate {
-                subject,
-                issuer,
-                not_before,
-                not_after,
-                key_usage,
-                ..
-            } => (
+            DomainNodeData::RootCertificate(cert) => (
                 CertificateType::RootCA,
-                subject.clone(),
-                issuer.clone(),
-                *not_before,
-                *not_after,
-                key_usage.clone(),
+                cert.subject.clone(),
+                cert.issuer.clone(),
+                cert.not_before,
+                cert.not_after,
+                cert.key_usage.clone(),
                 Vec::new(),
             ),
-            DomainNodeData::IntermediateCertificate {
-                subject,
-                issuer,
-                not_before,
-                not_after,
-                key_usage,
-                ..
-            } => (
+            DomainNodeData::IntermediateCertificate(cert) => (
                 CertificateType::IntermediateCA,
-                subject.clone(),
-                issuer.clone(),
-                *not_before,
-                *not_after,
-                key_usage.clone(),
+                cert.subject.clone(),
+                cert.issuer.clone(),
+                cert.not_before,
+                cert.not_after,
+                cert.key_usage.clone(),
                 Vec::new(),
             ),
-            DomainNodeData::LeafCertificate {
-                subject,
-                issuer,
-                not_before,
-                not_after,
-                key_usage,
-                san,
-                ..
-            } => (
+            DomainNodeData::LeafCertificate(cert) => (
                 CertificateType::Leaf,
-                subject.clone(),
-                issuer.clone(),
-                *not_before,
-                *not_after,
-                key_usage.clone(),
-                san.clone(),
+                cert.subject.clone(),
+                cert.issuer.clone(),
+                cert.not_before,
+                cert.not_after,
+                cert.key_usage.clone(),
+                cert.san.clone(),
             ),
             _ => return None,
         };
@@ -170,8 +148,8 @@ impl CertificateAnalysis {
                         // Key used by this certificate
                         signing_key_id = Some(edge.from);
                         if let Some(key_node) = graph.nodes.get(&edge.from) {
-                            if let DomainNodeData::Key { algorithm, .. } = key_node.domain_node.data() {
-                                signing_key_algorithm = Some(algorithm.clone());
+                            if let DomainNodeData::Key(key) = key_node.domain_node.data() {
+                                signing_key_algorithm = Some(key.algorithm.clone());
                             }
                         }
                     }

@@ -77,7 +77,7 @@ impl KeyAnalysis {
         // Find the key node
         let node = graph.nodes.get(&key_id)?;
         let (algorithm, purpose) = match node.domain_node.data() {
-            DomainNodeData::Key { algorithm, purpose, .. } => (algorithm.clone(), *purpose),
+            DomainNodeData::Key(key) => (key.algorithm.clone(), key.purpose),
             _ => return None,
         };
 

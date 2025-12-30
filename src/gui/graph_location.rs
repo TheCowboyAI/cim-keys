@@ -87,8 +87,8 @@ impl LocationAnalysis {
                     EdgeType::StoredAt => {
                         if let Some(source_node) = graph.nodes.get(&edge.from) {
                             match source_node.domain_node.data() {
-                                DomainNodeData::Key { purpose, .. } => {
-                                    stored_keys.insert(edge.from, format!("{:?}", purpose));
+                                DomainNodeData::Key(key) => {
+                                    stored_keys.insert(edge.from, format!("{:?}", key.purpose));
                                 }
                                 _ if source_node.domain_node.injection().is_certificate() => {
                                     stored_certificates.push(edge.from);

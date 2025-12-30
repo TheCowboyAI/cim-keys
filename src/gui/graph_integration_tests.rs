@@ -159,8 +159,8 @@ mod graph_first_integration_tests {
 
         // And: Each person should have a YubiKey requirement
         for (node, _) in &yubikey_nodes {
-            if let DomainNodeData::YubiKeyStatus { slots_needed, .. } = node.domain_node.data() {
-                assert!(!slots_needed.is_empty(), "Each person should need at least one PIV slot");
+            if let DomainNodeData::YubiKeyStatus(status) = node.domain_node.data() {
+                assert!(!status.slots_needed.is_empty(), "Each person should need at least one PIV slot");
             } else {
                 panic!("Expected YubiKeyStatus node");
             }

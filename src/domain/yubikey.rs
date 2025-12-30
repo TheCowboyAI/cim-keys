@@ -279,3 +279,114 @@ impl std::fmt::Display for PinPolicy {
         }
     }
 }
+
+// ============================================================================
+// GRAPH NODE TYPES (for DomainNode visualization)
+// ============================================================================
+
+use chrono::{DateTime, Utc};
+
+/// YubiKey device node for graph visualization
+///
+/// This type is used in `DomainNodeData` for rendering YubiKeys in the graph.
+/// It uses phantom-typed `YubiKeyDeviceId` for compile-time safety.
+#[derive(Debug, Clone)]
+pub struct YubiKeyNode {
+    pub id: YubiKeyDeviceId,
+    pub serial: String,
+    pub version: String,
+    pub provisioned_at: Option<DateTime<Utc>>,
+    pub slots_used: Vec<String>,
+}
+
+impl YubiKeyNode {
+    /// Create a new YubiKey node
+    pub fn new(
+        id: YubiKeyDeviceId,
+        serial: String,
+        version: String,
+        provisioned_at: Option<DateTime<Utc>>,
+        slots_used: Vec<String>,
+    ) -> Self {
+        Self { id, serial, version, provisioned_at, slots_used }
+    }
+
+    /// Check if YubiKey has been provisioned
+    pub fn is_provisioned(&self) -> bool {
+        self.provisioned_at.is_some()
+    }
+
+    /// Get the number of slots in use
+    pub fn slots_in_use(&self) -> usize {
+        self.slots_used.len()
+    }
+}
+
+/// PIV slot node for graph visualization
+///
+/// This type is used in `DomainNodeData` for rendering PIV slots in the graph.
+/// It uses phantom-typed `SlotId` for compile-time safety.
+#[derive(Debug, Clone)]
+pub struct PivSlotNode {
+    pub id: SlotId,
+    pub slot_name: String,
+    pub yubikey_serial: String,
+    pub has_key: bool,
+    pub certificate_subject: Option<String>,
+}
+
+impl PivSlotNode {
+    /// Create a new PIV slot node
+    pub fn new(
+        id: SlotId,
+        slot_name: String,
+        yubikey_serial: String,
+        has_key: bool,
+        certificate_subject: Option<String>,
+    ) -> Self {
+        Self { id, slot_name, yubikey_serial, has_key, certificate_subject }
+    }
+
+    /// Check if slot is empty
+    pub fn is_empty(&self) -> bool {
+        !self.has_key
+    }
+}
+
+/// YubiKey provisioning status node for graph visualization
+///
+/// Shows the provisioning status of a YubiKey for a specific person.
+#[derive(Debug, Clone)]
+pub struct YubiKeyStatusNode {
+    pub person_id: Uuid,
+    pub yubikey_serial: Option<String>,
+    pub slots_provisioned: Vec<PIVSlot>,
+    pub slots_needed: Vec<PIVSlot>,
+}
+
+impl YubiKeyStatusNode {
+    /// Create a new YubiKey status node
+    pub fn new(
+        person_id: Uuid,
+        yubikey_serial: Option<String>,
+        slots_provisioned: Vec<PIVSlot>,
+        slots_needed: Vec<PIVSlot>,
+    ) -> Self {
+        Self { person_id, yubikey_serial, slots_provisioned, slots_needed }
+    }
+
+    /// Check if all needed slots are provisioned
+    pub fn is_fully_provisioned(&self) -> bool {
+        self.slots_needed.is_empty()
+    }
+
+    /// Get the number of slots still needed
+    pub fn pending_slots(&self) -> usize {
+        self.slots_needed.len()
+    }
+
+    /// Check if person has a YubiKey assigned
+    pub fn has_yubikey(&self) -> bool {
+        self.yubikey_serial.is_some()
+    }
+}

@@ -2231,7 +2231,7 @@ impl CimKeysApp {
                         // Create Root CA node in graph using DomainNode
                         let cert_id = Uuid::now_v7();
                         let subject = format!("CN={} Root CA, O={}", self.organization_name, self.organization_name);
-                        let domain_node = domain_node::DomainNode::inject_root_certificate(
+                        let domain_node = domain_node::DomainNode::inject_root_certificate_uuid(
                             cert_id,
                             subject.clone(),
                             subject.clone(), // Self-signed (issuer = subject)
@@ -2272,7 +2272,7 @@ impl CimKeysApp {
                         // Create Leaf Certificate node in graph using DomainNode
                         let cert_id = Uuid::now_v7();
                         let subject = certificate.certificate_pem.lines().nth(0).unwrap_or("Personal Cert").to_string();
-                        let domain_node = domain_node::DomainNode::inject_leaf_certificate(
+                        let domain_node = domain_node::DomainNode::inject_leaf_certificate_uuid(
                             cert_id,
                             subject,
                             "Self-Signed (Temporary)".to_string(),

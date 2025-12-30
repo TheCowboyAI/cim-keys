@@ -38,11 +38,12 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::domain::{Person, KeyOwnerRole};
+use crate::domain::yubikey::PIVSlot as DomainPIVSlot;
 use crate::gui::graph::{OrganizationConcept, ConceptEntity};
 use crate::gui::domain_node::{DomainNode, DomainNodeData};
 use iced::{Color, Point};
 
-/// PIV slot assignments based on role
+/// PIV slot assignments based on role (graph visualization)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PIVSlot {
     /// 9A: Authentication (PIV Authentication)
@@ -53,6 +54,18 @@ pub enum PIVSlot {
     KeyManagement,
     /// 9E: Card Authentication (Physical access)
     CardAuthentication,
+}
+
+impl PIVSlot {
+    /// Convert to domain PIVSlot type
+    pub fn to_domain(&self) -> DomainPIVSlot {
+        match self {
+            PIVSlot::Authentication => DomainPIVSlot::Authentication,
+            PIVSlot::DigitalSignature => DomainPIVSlot::Signature,
+            PIVSlot::KeyManagement => DomainPIVSlot::KeyManagement,
+            PIVSlot::CardAuthentication => DomainPIVSlot::CardAuth,
+        }
+    }
 }
 
 impl PIVSlot {
@@ -191,11 +204,13 @@ pub fn generate_yubikey_provision_from_graph(
             format!("⏳ {} YubiKey ({} slots needed)", plan.person.name, plan.slots.len())
         };
 
+        // Convert local PIVSlot to domain PIVSlot
+        let slots_as_domain: Vec<DomainPIVSlot> = plan.slots.iter().map(|s| s.to_domain()).collect();
         let domain_node = DomainNode::inject_yubikey_status(
             person_id,
             plan.yubikey_serial.clone(),
-            if plan.already_provisioned { plan.slots.clone() } else { vec![] },
-            plan.slots.clone(),
+            if plan.already_provisioned { slots_as_domain.clone() } else { vec![] },
+            slots_as_domain,
         );
         let position = Point::new(400.0, 500.0); // Below person nodes
         let mut provision_node = ConceptEntity::from_domain_node(provision_node_id, domain_node, position);

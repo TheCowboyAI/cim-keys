@@ -140,13 +140,17 @@ impl ManifestAnalysis {
                         // Track what was exported
                         if let Some(exported_node) = graph.nodes.get(&edge.to) {
                             match exported_node.domain_node.data() {
-                                DomainNodeData::Key { key_id, .. } => {
-                                    exported_keys.push((*key_id, exported_node.label.clone()));
+                                DomainNodeData::Key(key) => {
+                                    exported_keys.push((key.id.as_uuid(), exported_node.label.clone()));
                                 }
-                                DomainNodeData::RootCertificate { subject, .. } |
-                                DomainNodeData::IntermediateCertificate { subject, .. } |
-                                DomainNodeData::LeafCertificate { subject, .. } => {
-                                    exported_certificates.push((edge.to, subject.clone()));
+                                DomainNodeData::RootCertificate(cert) => {
+                                    exported_certificates.push((edge.to, cert.subject.clone()));
+                                }
+                                DomainNodeData::IntermediateCertificate(cert) => {
+                                    exported_certificates.push((edge.to, cert.subject.clone()));
+                                }
+                                DomainNodeData::LeafCertificate(cert) => {
+                                    exported_certificates.push((edge.to, cert.subject.clone()));
                                 }
                                 DomainNodeData::NatsOperator(_) => {
                                     exported_nats_operators.push(edge.to);
@@ -169,8 +173,8 @@ impl ManifestAnalysis {
                                 DomainNodeData::Location(_) => {
                                     exported_locations.push(edge.to);
                                 }
-                                DomainNodeData::YubiKey { serial, .. } => {
-                                    referenced_yubikeys.push((edge.to, serial.clone()));
+                                DomainNodeData::YubiKey(yk) => {
+                                    referenced_yubikeys.push((edge.to, yk.serial.clone()));
                                 }
                                 _ => {}
                             }
@@ -187,8 +191,8 @@ impl ManifestAnalysis {
 
         // Extract checksum and signature from manifest node metadata
         if let Some(manifest_node) = graph.nodes.get(&manifest_id) {
-            if let DomainNodeData::Manifest { checksum: cs, .. } = manifest_node.domain_node.data() {
-                checksum = cs.clone();
+            if let DomainNodeData::Manifest(manifest) = manifest_node.domain_node.data() {
+                checksum = manifest.checksum.clone();
             }
         }
 

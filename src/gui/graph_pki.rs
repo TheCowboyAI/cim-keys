@@ -252,7 +252,7 @@ fn create_root_ca_node(cert_id: Uuid, org: &Organization) -> Result<ConceptEntit
     let subject = format!("CN={} Root CA, O={}", org.name, org.name);
     let issuer = subject.clone(); // Self-signed
 
-    let domain_node = DomainNode::inject_root_certificate(
+    let domain_node = DomainNode::inject_root_certificate_uuid(
         cert_id,
         subject,
         issuer,
@@ -279,7 +279,7 @@ fn create_intermediate_ca_node(
     let subject = format!("CN={} CA, OU={}", unit.name, unit.name);
     let issuer = format!("Parent CA {}", parent_cert_id); // Simplified
 
-    let domain_node = DomainNode::inject_intermediate_certificate(
+    let domain_node = DomainNode::inject_intermediate_certificate_uuid(
         cert_id,
         subject,
         issuer,
@@ -317,7 +317,7 @@ fn create_leaf_certificate_node(
         KeyOwnerRole::Auditor => vec!["Digital Signature".to_string()],
     };
 
-    let domain_node = DomainNode::inject_leaf_certificate(
+    let domain_node = DomainNode::inject_leaf_certificate_uuid(
         cert_id,
         subject,
         issuer,

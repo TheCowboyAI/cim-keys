@@ -236,89 +236,89 @@ impl PropertyCard {
                 self.edit_enabled = true;
             }
             // PKI Trust Chain - read-only, no editing
-            DomainNodeData::RootCertificate { subject, issuer, .. } => {
-                self.edit_name = format!("Root CA: {}", subject);
-                self.edit_description = format!("Issuer: {}", issuer);
+            DomainNodeData::RootCertificate(cert) => {
+                self.edit_name = format!("Root CA: {}", cert.subject);
+                self.edit_description = format!("Issuer: {}", cert.issuer);
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
-            DomainNodeData::IntermediateCertificate { subject, issuer, .. } => {
-                self.edit_name = format!("Intermediate CA: {}", subject);
-                self.edit_description = format!("Issuer: {}", issuer);
+            DomainNodeData::IntermediateCertificate(cert) => {
+                self.edit_name = format!("Intermediate CA: {}", cert.subject);
+                self.edit_description = format!("Issuer: {}", cert.issuer);
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
-            DomainNodeData::LeafCertificate { subject, issuer, .. } => {
-                self.edit_name = format!("Certificate: {}", subject);
-                self.edit_description = format!("Issuer: {}", issuer);
+            DomainNodeData::LeafCertificate(cert) => {
+                self.edit_name = format!("Certificate: {}", cert.subject);
+                self.edit_description = format!("Issuer: {}", cert.issuer);
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
             // YubiKey Hardware - read-only, no editing
-            DomainNodeData::YubiKey { serial, version, .. } => {
-                self.edit_name = format!("YubiKey {}", serial);
-                self.edit_description = format!("Version: {}", version);
+            DomainNodeData::YubiKey(yk) => {
+                self.edit_name = format!("YubiKey {}", yk.serial);
+                self.edit_description = format!("Version: {}", yk.version);
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
-            DomainNodeData::PivSlot { slot_name, yubikey_serial, has_key, .. } => {
-                self.edit_name = slot_name.clone();
-                self.edit_description = format!("YubiKey {} - {}", yubikey_serial, if *has_key { "In use" } else { "Empty" });
+            DomainNodeData::PivSlot(slot) => {
+                self.edit_name = slot.slot_name.clone();
+                self.edit_description = format!("YubiKey {} - {}", slot.yubikey_serial, if slot.has_key { "In use" } else { "Empty" });
                 self.edit_email = String::new();
-                self.edit_enabled = *has_key;
+                self.edit_enabled = slot.has_key;
             }
-            DomainNodeData::YubiKeyStatus { yubikey_serial, slots_provisioned, slots_needed, .. } => {
+            DomainNodeData::YubiKeyStatus(status) => {
                 self.edit_name = "YubiKey Status".to_string();
                 self.edit_description = format!("{}/{} slots - {}",
-                    slots_provisioned.len(),
-                    slots_needed.len(),
-                    yubikey_serial.clone().unwrap_or_else(|| "Not detected".to_string())
+                    status.slots_provisioned.len(),
+                    status.slots_needed.len(),
+                    status.yubikey_serial.clone().unwrap_or_else(|| "Not detected".to_string())
                 );
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
             // Cryptographic Keys - read-only, no editing
-            DomainNodeData::Key { key_id, algorithm, purpose, .. } => {
-                self.edit_name = format!("Key: {:?}", purpose);
-                self.edit_description = format!("Algorithm: {:?}, ID: {}", algorithm, key_id);
+            DomainNodeData::Key(key) => {
+                self.edit_name = format!("Key: {:?}", key.purpose);
+                self.edit_description = format!("Algorithm: {:?}, ID: {}", key.algorithm, key.id.as_uuid());
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
             // Export and Manifest - read-only, no editing
-            DomainNodeData::Manifest { manifest_id, name, destination, .. } => {
-                self.edit_name = format!("Manifest: {}", name);
+            DomainNodeData::Manifest(manifest) => {
+                self.edit_name = format!("Manifest: {}", manifest.name);
                 self.edit_description = format!("ID: {}, Destination: {}",
-                    manifest_id,
-                    destination.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "None".to_string())
+                    manifest.id.as_uuid(),
+                    manifest.destination.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "None".to_string())
                 );
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
             // Policy Roles from policy-bootstrap.json - read-only
-            DomainNodeData::PolicyRole { name, purpose, level, separation_class, claim_count, .. } => {
-                self.edit_name = name.clone();
-                self.edit_description = format!("L{} {:?} | {} claims | {}", level, separation_class, claim_count, purpose);
+            DomainNodeData::PolicyRole(role) => {
+                self.edit_name = role.name.clone();
+                self.edit_description = format!("L{} {:?} | {} claims | {}", role.level, role.separation_class, role.claim_count, role.purpose);
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
             // Policy Claims - read-only
-            DomainNodeData::PolicyClaim { name, category, .. } => {
-                self.edit_name = name.clone();
-                self.edit_description = format!("Category: {}", category);
+            DomainNodeData::PolicyClaim(claim) => {
+                self.edit_name = claim.name.clone();
+                self.edit_description = format!("Category: {}", claim.category);
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
             // Policy Categories - clickable to expand/collapse
-            DomainNodeData::PolicyCategory { name, claim_count, expanded, .. } => {
-                self.edit_name = name.clone();
-                self.edit_description = format!("{} claims | {}", claim_count, if *expanded { "Expanded" } else { "Collapsed" });
+            DomainNodeData::PolicyCategory(category) => {
+                self.edit_name = category.name.clone();
+                self.edit_description = format!("{} claims | {}", category.claim_count, if category.expanded { "Expanded" } else { "Collapsed" });
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
             // Separation Class Groups - clickable to expand/collapse
-            DomainNodeData::PolicyGroup { name, role_count, expanded, .. } => {
-                self.edit_name = name.clone();
-                self.edit_description = format!("{} roles | {}", role_count, if *expanded { "Expanded" } else { "Collapsed" });
+            DomainNodeData::PolicyGroup(group) => {
+                self.edit_name = group.name.clone();
+                self.edit_description = format!("{} roles | {}", group.role_count, if group.expanded { "Expanded" } else { "Collapsed" });
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
@@ -1176,57 +1176,57 @@ impl PropertyCard {
     /// Render detailed PKI certificate information (read-only)
     fn view_certificate_details<'a>(&self, domain_node: &'a DomainNode) -> Element<'a, PropertyCardMessage> {
         let (title, details) = match domain_node.data() {
-            DomainNodeData::RootCertificate { subject, issuer, not_before, not_after, key_usage, .. } => (
+            DomainNodeData::RootCertificate(cert) => (
                 "Root CA Certificate",
                 column![
                     self.detail_row("Certificate Type:", "Root Certificate Authority"),
-                    self.detail_row("Subject:", subject),
-                    self.detail_row("Issuer:", issuer),
-                    self.detail_row("Valid From:", &not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
-                    self.detail_row("Valid Until:", &not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
-                    self.detail_row("Validity:", &format!("{} days", (not_after.signed_duration_since(*not_before).num_days()))),
+                    self.detail_row("Subject:", &cert.subject),
+                    self.detail_row("Issuer:", &cert.issuer),
+                    self.detail_row("Valid From:", &cert.not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+                    self.detail_row("Valid Until:", &cert.not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+                    self.detail_row("Validity:", &format!("{} days", (cert.not_after.signed_duration_since(cert.not_before).num_days()))),
                     text("Key Usage:").size(12).color(Color::from_rgb(0.7, 0.7, 0.8)),
-                    column(key_usage.iter().map(|usage| {
+                    column(cert.key_usage.iter().map(|usage| {
                         text(format!("  • {}", usage)).size(11).into()
                     }).collect::<Vec<_>>()).spacing(2),
                     self.detail_row("Trust Level:", "Root (Highest)"),
                     self.detail_row("Path Length:", "Unlimited"),
                 ].spacing(8)
             ),
-            DomainNodeData::IntermediateCertificate { subject, issuer, not_before, not_after, key_usage, .. } => (
+            DomainNodeData::IntermediateCertificate(cert) => (
                 "Intermediate CA Certificate",
                 column![
                     self.detail_row("Certificate Type:", "Intermediate Certificate Authority"),
-                    self.detail_row("Subject:", subject),
-                    self.detail_row("Issuer:", issuer),
-                    self.detail_row("Valid From:", &not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
-                    self.detail_row("Valid Until:", &not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
-                    self.detail_row("Validity:", &format!("{} days", (not_after.signed_duration_since(*not_before).num_days()))),
+                    self.detail_row("Subject:", &cert.subject),
+                    self.detail_row("Issuer:", &cert.issuer),
+                    self.detail_row("Valid From:", &cert.not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+                    self.detail_row("Valid Until:", &cert.not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+                    self.detail_row("Validity:", &format!("{} days", (cert.not_after.signed_duration_since(cert.not_before).num_days()))),
                     text("Key Usage:").size(12).color(Color::from_rgb(0.7, 0.7, 0.8)),
-                    column(key_usage.iter().map(|usage| {
+                    column(cert.key_usage.iter().map(|usage| {
                         text(format!("  • {}", usage)).size(11).into()
                     }).collect::<Vec<_>>()).spacing(2),
                     self.detail_row("Trust Level:", "Intermediate"),
                     self.detail_row("Can Sign:", "Leaf Certificates"),
                 ].spacing(8)
             ),
-            DomainNodeData::LeafCertificate { subject, issuer, not_before, not_after, key_usage, san, .. } => (
+            DomainNodeData::LeafCertificate(cert) => (
                 "Leaf Certificate",
                 column![
                     self.detail_row("Certificate Type:", "End Entity Certificate"),
-                    self.detail_row("Subject:", subject),
-                    self.detail_row("Issuer:", issuer),
-                    self.detail_row("Valid From:", &not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
-                    self.detail_row("Valid Until:", &not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
-                    self.detail_row("Validity:", &format!("{} days", (not_after.signed_duration_since(*not_before).num_days()))),
+                    self.detail_row("Subject:", &cert.subject),
+                    self.detail_row("Issuer:", &cert.issuer),
+                    self.detail_row("Valid From:", &cert.not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+                    self.detail_row("Valid Until:", &cert.not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+                    self.detail_row("Validity:", &format!("{} days", (cert.not_after.signed_duration_since(cert.not_before).num_days()))),
                     text("Key Usage:").size(12).color(Color::from_rgb(0.7, 0.7, 0.8)),
-                    column(key_usage.iter().map(|usage| {
+                    column(cert.key_usage.iter().map(|usage| {
                         text(format!("  • {}", usage)).size(11).into()
                     }).collect::<Vec<_>>()).spacing(2),
-                    if !san.is_empty() {
+                    if !cert.san.is_empty() {
                         column![
                             text("Subject Alternative Names:").size(12).color(Color::from_rgb(0.7, 0.7, 0.8)),
-                            column(san.iter().map(|name| {
+                            column(cert.san.iter().map(|name| {
                                 text(format!("  • {}", name)).size(11).into()
                             }).collect::<Vec<_>>()).spacing(2),
                         ].spacing(4)
@@ -1265,21 +1265,21 @@ impl PropertyCard {
     /// Render detailed YubiKey hardware information (read-only)
     fn view_yubikey_details<'a>(&self, domain_node: &'a DomainNode) -> Element<'a, PropertyCardMessage> {
         let (title, details) = match domain_node.data() {
-            DomainNodeData::YubiKey { serial, version, provisioned_at, slots_used, .. } => (
+            DomainNodeData::YubiKey(yk) => (
                 "YubiKey Hardware Token",
                 column![
                     self.detail_row("Device Type:", "YubiKey Hardware Security Module"),
-                    self.detail_row("Serial Number:", serial),
-                    self.detail_row("Firmware Version:", version),
+                    self.detail_row("Serial Number:", &yk.serial),
+                    self.detail_row("Firmware Version:", &yk.version),
                     self.detail_row("Provisioned:",
-                        &provisioned_at
+                        &yk.provisioned_at
                             .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
                             .unwrap_or_else(|| "Not provisioned".to_string())
                     ),
-                    self.detail_row("Slots Used:", &format!("{} / 4", slots_used.len())),
+                    self.detail_row("Slots Used:", &format!("{} / 4", yk.slots_used.len())),
                     text("Active PIV Slots:").size(12).color(Color::from_rgb(0.7, 0.7, 0.8)),
-                    if !slots_used.is_empty() {
-                        column(slots_used.iter().map(|slot| {
+                    if !yk.slots_used.is_empty() {
+                        column(yk.slots_used.iter().map(|slot| {
                             text(format!("  • Slot {}", slot)).size(11).into()
                         }).collect::<Vec<_>>()).spacing(2)
                     } else {
@@ -1294,32 +1294,32 @@ impl PropertyCard {
                     ].spacing(2),
                 ].spacing(8)
             ),
-            DomainNodeData::PivSlot { slot_name, yubikey_serial, has_key, certificate_subject, .. } => (
+            DomainNodeData::PivSlot(slot) => (
                 "PIV Slot",
                 column![
-                    self.detail_row("Slot:", slot_name),
-                    self.detail_row("YubiKey:", yubikey_serial),
-                    self.detail_row("Status:", if *has_key { "In Use" } else { "Empty" }),
+                    self.detail_row("Slot:", &slot.slot_name),
+                    self.detail_row("YubiKey:", &slot.yubikey_serial),
+                    self.detail_row("Status:", if slot.has_key { "In Use" } else { "Empty" }),
                     self.detail_row("Purpose:", {
-                        if slot_name.contains("9A") {
+                        if slot.slot_name.contains("9A") {
                             "Authentication - SSH, VPN, System Login"
-                        } else if slot_name.contains("9C") {
+                        } else if slot.slot_name.contains("9C") {
                             "Digital Signature - Code Signing, Email Signing"
-                        } else if slot_name.contains("9D") {
+                        } else if slot.slot_name.contains("9D") {
                             "Key Management - Encryption, Decryption"
-                        } else if slot_name.contains("9E") {
+                        } else if slot.slot_name.contains("9E") {
                             "Card Authentication - Physical Access"
                         } else {
                             "Unknown"
                         }
                     }),
-                    if *has_key {
+                    if slot.has_key {
                         self.detail_row("Certificate Subject:",
-                            certificate_subject.as_deref().unwrap_or("No certificate loaded"))
+                            slot.certificate_subject.as_deref().unwrap_or("No certificate loaded"))
                     } else {
                         self.detail_row("Certificate:", "None (empty slot)")
                     },
-                    self.detail_row("Algorithm:", if *has_key { "RSA 2048 or ECC P-256" } else { "N/A" }),
+                    self.detail_row("Algorithm:", if slot.has_key { "RSA 2048 or ECC P-256" } else { "N/A" }),
                     self.detail_row("Touch Policy:", "Not configured"),
                     self.detail_row("PIN Policy:", "Default (once per session)"),
                 ].spacing(8)
@@ -1355,12 +1355,12 @@ impl PropertyCard {
         use crate::gui::cowboy_theme::CowboyAppTheme as CowboyCustomTheme;
 
         let (title, details) = match domain_node.data() {
-            DomainNodeData::PolicyRole { name, purpose, level, separation_class, claim_count, .. } => (
+            DomainNodeData::PolicyRole(role) => (
                 "Role",
                 column![
-                    self.detail_row("Name:", name),
-                    self.detail_row("Purpose:", purpose),
-                    self.detail_row("Level:", &format!("{} ({})", level, match level {
+                    self.detail_row("Name:", &role.name),
+                    self.detail_row("Purpose:", &role.purpose),
+                    self.detail_row("Level:", &format!("{} ({})", role.level, match role.level {
                         0 => "Entry",
                         1 => "Junior",
                         2 => "Mid-level",
@@ -1369,26 +1369,26 @@ impl PropertyCard {
                         5 => "Executive",
                         _ => "Custom",
                     })),
-                    self.detail_row("Separation Class:", &format!("{:?}", separation_class)),
-                    self.detail_row("Claims:", &format!("{} permissions", claim_count)),
+                    self.detail_row("Separation Class:", &format!("{:?}", role.separation_class)),
+                    self.detail_row("Claims:", &format!("{} permissions", role.claim_count)),
                 ].spacing(8)
             ),
-            DomainNodeData::PolicyCategory { name, claim_count, .. } => (
+            DomainNodeData::PolicyCategory(category) => (
                 "Claim Category",
                 column![
-                    self.detail_row("Category:", name),
-                    self.detail_row("Total Claims:", &format!("{}", claim_count)),
+                    self.detail_row("Category:", &category.name),
+                    self.detail_row("Total Claims:", &format!("{}", category.claim_count)),
                     text("Claim categories group related permissions.").size(11).color(Color::from_rgb(0.6, 0.6, 0.7)),
                 ].spacing(8)
             ),
-            DomainNodeData::PolicyGroup { name, role_count, separation_class, .. } => (
+            DomainNodeData::PolicyGroup(group) => (
                 "Separation Class",
                 column![
-                    self.detail_row("Class:", name),
-                    self.detail_row("Type:", &format!("{:?}", separation_class)),
-                    self.detail_row("Roles:", &format!("{} roles", role_count)),
+                    self.detail_row("Class:", &group.name),
+                    self.detail_row("Type:", &format!("{:?}", group.separation_class)),
+                    self.detail_row("Roles:", &format!("{} roles", group.role_count)),
                     text("Separation classes enforce duty segregation.").size(11).color(Color::from_rgb(0.6, 0.6, 0.7)),
-                    text(match separation_class {
+                    text(match group.separation_class {
                         crate::policy::SeparationClass::Operational => "Operational roles handle day-to-day tasks.",
                         crate::policy::SeparationClass::Administrative => "Administrative roles manage users and policies.",
                         crate::policy::SeparationClass::Audit => "Audit roles monitor and review system activity.",

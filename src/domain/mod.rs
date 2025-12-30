@@ -50,6 +50,9 @@ pub mod nats;
 /// YubiKey Bounded Context - Hardware Tokens, PIV Slots
 pub mod yubikey;
 
+/// Visualization Bounded Context - Manifest, Policy Display
+pub mod visualization;
+
 // ============================================================================
 // RE-EXPORTS FOR CONVENIENCE
 // ============================================================================

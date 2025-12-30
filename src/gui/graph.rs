@@ -632,7 +632,7 @@ impl OrganizationConcept {
         separation_class: crate::policy::SeparationClass,
         claim_count: usize,
     ) {
-        let domain_node = DomainNode::inject_policy_role(
+        let domain_node = DomainNode::inject_policy_role_uuid(
             role_id, name, purpose, level, separation_class, claim_count
         );
         let position = self.calculate_node_position(role_id);
@@ -649,7 +649,7 @@ impl OrganizationConcept {
         name: String,
         category: String,
     ) {
-        let domain_node = DomainNode::inject_policy_claim(claim_id, name, category);
+        let domain_node = DomainNode::inject_policy_claim_uuid(claim_id, name, category);
         let position = self.calculate_node_position(claim_id);
         let node = ConceptEntity::from_domain_node(claim_id, domain_node, position);
 
@@ -664,7 +664,7 @@ impl OrganizationConcept {
         claim_count: usize,
         expanded: bool,
     ) {
-        let domain_node = DomainNode::inject_policy_category(category_id, name, claim_count, expanded);
+        let domain_node = DomainNode::inject_policy_category_uuid(category_id, name, claim_count, expanded);
         let position = self.calculate_node_position(category_id);
         let node = ConceptEntity::from_domain_node(category_id, domain_node, position);
 
@@ -680,7 +680,7 @@ impl OrganizationConcept {
         role_count: usize,
         expanded: bool,
     ) {
-        let domain_node = DomainNode::inject_policy_group(
+        let domain_node = DomainNode::inject_policy_group_uuid(
             class_id, name, separation_class, role_count, expanded
         );
         let position = self.calculate_node_position(class_id);
@@ -775,7 +775,7 @@ impl OrganizationConcept {
         not_after: chrono::DateTime<chrono::Utc>,
         key_usage: Vec<String>,
     ) {
-        let domain_node = DomainNode::inject_root_certificate(
+        let domain_node = DomainNode::inject_root_certificate_uuid(
             cert_id, subject, issuer, not_before, not_after, key_usage
         );
         let position = self.calculate_node_position(cert_id);
@@ -794,7 +794,7 @@ impl OrganizationConcept {
         not_after: chrono::DateTime<chrono::Utc>,
         key_usage: Vec<String>,
     ) {
-        let domain_node = DomainNode::inject_intermediate_certificate(
+        let domain_node = DomainNode::inject_intermediate_certificate_uuid(
             cert_id, subject, issuer, not_before, not_after, key_usage
         );
         let position = self.calculate_node_position(cert_id);
@@ -814,7 +814,7 @@ impl OrganizationConcept {
         key_usage: Vec<String>,
         san: Vec<String>,
     ) {
-        let domain_node = DomainNode::inject_leaf_certificate(
+        let domain_node = DomainNode::inject_leaf_certificate_uuid(
             cert_id, subject, issuer, not_before, not_after, key_usage, san
         );
         let position = self.calculate_node_position(cert_id);
@@ -913,7 +913,7 @@ impl OrganizationConcept {
         provisioned_at: Option<chrono::DateTime<chrono::Utc>>,
         slots_used: Vec<String>,
     ) {
-        let domain_node = DomainNode::inject_yubikey(
+        let domain_node = DomainNode::inject_yubikey_uuid(
             device_id, serial, version, provisioned_at, slots_used
         );
         let position = self.calculate_node_position(device_id);
@@ -931,7 +931,7 @@ impl OrganizationConcept {
         has_key: bool,
         certificate_subject: Option<String>,
     ) {
-        let domain_node = DomainNode::inject_piv_slot(
+        let domain_node = DomainNode::inject_piv_slot_uuid(
             slot_id, slot_name, yubikey_serial, has_key, certificate_subject
         );
         let position = self.calculate_node_position(slot_id);

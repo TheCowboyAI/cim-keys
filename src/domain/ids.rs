@@ -207,6 +207,12 @@ pub struct PolicyRoleMarker;
 /// Marker type for PolicyClaim visualization entities
 pub struct ClaimMarker;
 
+/// Marker type for PolicyCategory grouping entities
+pub struct PolicyCategoryMarker;
+
+/// Marker type for PolicyGroup (SeparationClass) entities
+pub struct PolicyGroupMarker;
+
 // ============================================================================
 // TYPE ALIASES FOR CONVENIENCE
 // ============================================================================
@@ -262,6 +268,12 @@ pub type PolicyRoleId = EntityId<PolicyRoleMarker>;
 
 /// Type-safe PolicyClaim ID
 pub type ClaimId = EntityId<ClaimMarker>;
+
+/// Type-safe PolicyCategory ID
+pub type PolicyCategoryId = EntityId<PolicyCategoryMarker>;
+
+/// Type-safe PolicyGroup ID (for SeparationClass groupings)
+pub type PolicyGroupId = EntityId<PolicyGroupMarker>;
 
 // ============================================================================
 // TESTS
