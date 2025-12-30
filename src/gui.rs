@@ -72,6 +72,7 @@ pub mod graph_projection;
 mod graph_integration_tests;
 
 use graph::{OrganizationConcept, OrganizationIntent};
+use domain_node::Injection;
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
 use view_model::ViewModel;
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
@@ -393,40 +394,9 @@ impl ExportReadiness {
     }
 }
 
-/// Types of nodes in organizational context graph
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OrganizationalNodeType {
-    Organization,
-    OrganizationalUnit,
-    Person,
-    Location,
-    Role,
-    Policy,
-}
-
-impl OrganizationalNodeType {
-    pub fn display_name(&self) -> &'static str {
-        match self {
-            Self::Organization => "Organization",
-            Self::OrganizationalUnit => "Organizational Unit",
-            Self::Person => "Person",
-            Self::Location => "Location",
-            Self::Role => "Role",
-            Self::Policy => "Policy",
-        }
-    }
-
-    pub fn all() -> Vec<Self> {
-        vec![
-            Self::Organization,
-            Self::OrganizationalUnit,
-            Self::Person,
-            Self::Location,
-            Self::Role,
-            Self::Policy,
-        ]
-    }
-}
+// NOTE: OrganizationalNodeType has been removed in favor of domain_node::Injection
+// which provides a proper categorical coproduct with 25 variants.
+// Use Injection::creatable() for the subset that can be manually created.
 
 /// Graph layout algorithms
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -616,7 +586,7 @@ pub enum Message {
     // Graph interactions
     OrganizationIntent(OrganizationIntent),
     CreateContextAwareNode,  // SPACE key: show node type selector
-    SelectNodeType(OrganizationalNodeType),  // User selects node type from menu
+    SelectNodeType(Injection),  // User selects node type from menu
     CancelNodeTypeSelector,  // Escape key cancels selector
     MenuNavigateUp,  // Arrow up: navigate menu selection up
     MenuNavigateDown,  // Arrow down: navigate menu selection down
@@ -3074,7 +3044,7 @@ impl CimKeysApp {
 
             Message::MenuNavigateUp => {
                 if self.show_node_type_selector {
-                    let total_items = OrganizationalNodeType::all().len();
+                    let total_items = Injection::creatable().len();
                     self.selected_menu_index = if self.selected_menu_index == 0 {
                         total_items - 1  // Wrap to bottom
                     } else {
@@ -3086,7 +3056,7 @@ impl CimKeysApp {
 
             Message::MenuNavigateDown => {
                 if self.show_node_type_selector {
-                    let total_items = OrganizationalNodeType::all().len();
+                    let total_items = Injection::creatable().len();
                     self.selected_menu_index = (self.selected_menu_index + 1) % total_items;
                 }
                 Task::none()
@@ -3095,7 +3065,7 @@ impl CimKeysApp {
             Message::MenuAcceptSelection => {
                 if self.show_node_type_selector {
                     // Menu is open - accept selected item
-                    let selected_type = OrganizationalNodeType::all()[self.selected_menu_index];
+                    let selected_type = Injection::creatable()[self.selected_menu_index];
                     // Close menu and trigger selection
                     self.show_node_type_selector = false;
                     // Trigger SelectNodeType message with selected type
@@ -3168,7 +3138,7 @@ impl CimKeysApp {
 
                 // FRP Event-Driven Pattern: Create immutable GraphEvent
                 let event = match node_type {
-                    OrganizationalNodeType::Organization => {
+                    Injection::Organization => {
                         let org = Organization {
                             id: Uuid::now_v7(),
                             name: "New Organization".to_string(),
@@ -3198,7 +3168,7 @@ impl CimKeysApp {
                             timestamp: Utc::now(),
                         }
                     }
-                    OrganizationalNodeType::OrganizationalUnit => {
+                    Injection::OrganizationUnit => {
                         let unit = OrganizationUnit {
                             id: Uuid::now_v7(),
                             name: "New Unit".to_string(),
@@ -3227,7 +3197,7 @@ impl CimKeysApp {
                             timestamp: Utc::now(),
                         }
                     }
-                    OrganizationalNodeType::Person => {
+                    Injection::Person => {
                         let org_id = self.org_graph.nodes.values()
                             .find_map(|n| n.domain_node.org_id())
                             .unwrap_or_else(Uuid::now_v7);
@@ -3264,7 +3234,7 @@ impl CimKeysApp {
                             timestamp: Utc::now(),
                         }
                     }
-                    OrganizationalNodeType::Location => {
+                    Injection::Location => {
                         let node_id = Uuid::now_v7();
                         let address = Address::new(
                             "123 Main St".to_string(),
@@ -3298,7 +3268,7 @@ impl CimKeysApp {
                             timestamp: Utc::now(),
                         }
                     }
-                    OrganizationalNodeType::Role => {
+                    Injection::Role => {
                         let org_id = self.org_graph.nodes.values()
                             .find_map(|n| n.domain_node.org_id())
                             .unwrap_or_else(Uuid::now_v7);
@@ -3336,7 +3306,7 @@ impl CimKeysApp {
                             timestamp: Utc::now(),
                         }
                     }
-                    OrganizationalNodeType::Policy => {
+                    Injection::Policy => {
                         let creator_id = Uuid::now_v7(); // TODO: Get actual user ID
 
                         let policy = Policy {
@@ -3369,6 +3339,11 @@ impl CimKeysApp {
                             label,
                             timestamp: Utc::now(),
                         }
+                    }
+                    // Non-creatable injection types - these are created through other workflows
+                    _ => {
+                        self.status_message = format!("Cannot manually create {} nodes", node_type.display_name());
+                        return Task::none();
                     }
                 };
 
@@ -5100,7 +5075,7 @@ impl CimKeysApp {
         );
 
         // Add button for each node type with selection highlighting
-        for (index, node_type) in OrganizationalNodeType::all().iter().enumerate() {
+        for (index, node_type) in Injection::creatable().iter().enumerate() {
             let is_selected = index == self.selected_menu_index;
 
             let button_text = if is_selected {

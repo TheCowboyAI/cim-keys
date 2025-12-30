@@ -188,6 +188,34 @@ impl Injection {
             Self::PolicyCategory | Self::PolicyGroup
         )
     }
+
+    /// Get the list of injection types that can be manually created from the UI.
+    ///
+    /// This replaces the legacy OrganizationalNodeType::all() method.
+    /// Returns only the core organizational entities that users typically create.
+    pub fn creatable() -> Vec<Self> {
+        vec![
+            Self::Organization,
+            Self::OrganizationUnit,
+            Self::Person,
+            Self::Location,
+            Self::Role,
+            Self::Policy,
+        ]
+    }
+
+    /// Check if this injection type can be manually created from the UI
+    pub fn is_creatable(&self) -> bool {
+        matches!(
+            self,
+            Self::Organization |
+            Self::OrganizationUnit |
+            Self::Person |
+            Self::Location |
+            Self::Role |
+            Self::Policy
+        )
+    }
 }
 
 impl fmt::Display for Injection {
