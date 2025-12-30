@@ -24,8 +24,35 @@
 //! get_org(person_id); // ERROR!
 //! ```
 
+// ============================================================================
+// CORE MODULES
+// ============================================================================
+
+/// Phantom-typed entity IDs for compile-time type safety
 pub mod ids;
+
+/// Bootstrap configuration types for JSON loading
 pub mod bootstrap;
+
+// ============================================================================
+// BOUNDED CONTEXT MODULES (DDD Compliant)
+// ============================================================================
+
+/// Organization Bounded Context - Orgs, People, Units, Locations
+pub mod organization;
+
+/// PKI Bounded Context - Certificates, Keys, Trust Hierarchy
+pub mod pki;
+
+/// NATS Bounded Context - Operators, Accounts, Users
+pub mod nats;
+
+/// YubiKey Bounded Context - Hardware Tokens, PIV Slots
+pub mod yubikey;
+
+// ============================================================================
+// RE-EXPORTS FOR CONVENIENCE
+// ============================================================================
 
 // Re-export all ID types at module level for convenience
 pub use ids::*;
@@ -33,9 +60,3 @@ pub use ids::*;
 // Re-export all bootstrap types for backward compatibility
 // This maintains the existing API: cim_keys::domain::Organization, etc.
 pub use bootstrap::*;
-
-// Future: Bounded context modules will be added here
-// pub mod organization;
-// pub mod pki;
-// pub mod nats;
-// pub mod yubikey;
