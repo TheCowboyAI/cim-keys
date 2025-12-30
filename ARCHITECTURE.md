@@ -253,10 +253,136 @@ graph TB
 | Axiom | Status | Implementation |
 |-------|--------|----------------|
 | A3: Decoupled | ✅ | `update()` output depends only on input |
-| A4: Causality | ⚠️ | Runtime tracking via correlation_id |
+| A4: Causality | ✅ | UUID v7 embeds millisecond timestamp - inherent ordering |
 | A5: Totality | ✅ | All `with_*` methods are total |
 | A7: Event Logs | ✅ | Events stored as timestamped prefixes |
 | A9: Composition | ✅ | Associativity verified by proptest |
+
+## UUID v7 Causality Architecture
+
+**Critical for Security Audit Trail**
+
+All entity and event IDs use UUID v7 (`Uuid::now_v7()`), which provides:
+
+```
+UUID v7 Structure (128 bits):
+┌─────────────────────────────────────────────────────────────┐
+│ 48-bit Unix timestamp (ms) │ 4-bit ver │ 12-bit rand │ ... │
+└─────────────────────────────────────────────────────────────┘
+         ↑
+    Causality embedded at creation time
+```
+
+### Causality Guarantees
+
+| Property | Guarantee | Mechanism |
+|----------|-----------|-----------|
+| **Temporal Ordering** | Events created later have larger UUIDs | Timestamp in bits 0-47 |
+| **Audit Trail** | Complete history reconstructable | Sort by UUID = chronological order |
+| **No Extra Timestamps** | Timestamp derived from ID itself | `uuid.get_timestamp()` extracts time |
+| **Immutable Creation Time** | Cannot be altered post-creation | UUID is the identity |
+
+### Complete Causality Model
+
+All aggregates implement the full causality chain:
+
+```rust
+// Every command and event carries causality metadata
+struct Command {
+    command_id: Uuid,      // UUID v7 - when command was created
+    correlation_id: Uuid,  // Business transaction ID (also v7)
+    causation_id: Option<Uuid>,  // What triggered this command
+    // ... domain fields
+}
+
+struct DomainEvent {
+    event_id: Uuid,        // UUID v7 - when event occurred
+    correlation_id: Uuid,  // Links to originating transaction
+    causation_id: Option<Uuid>,  // The command/event that caused this
+    // ... domain fields
+}
+```
+
+### Three-Level Causality
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    CAUSALITY ARCHITECTURE                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  1. TEMPORAL (UUID v7)           2. CORRELATION               │
+│     ┌──────────┐                    ┌──────────┐                │
+│     │ event_id │ ← timestamp        │ corr_id  │ ← transaction  │
+│     └──────────┘   embedded         └──────────┘   grouping     │
+│                                                                  │
+│  3. CAUSATION                                                    │
+│     ┌──────────────────────────────────────────┐                │
+│     │ Command A ──causes──► Event B            │                │
+│     │     ↑                     │              │                │
+│     │     │                     ▼              │                │
+│     │  causation_id         causation_id       │                │
+│     │  (what caused A)      (points to A)      │                │
+│     └──────────────────────────────────────────┘                │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Audit Trail Reconstruction
+
+```rust
+// Full audit trail from any event
+fn reconstruct_audit_trail(event_id: Uuid) -> AuditTrail {
+    AuditTrail {
+        // 1. Temporal: When did this happen?
+        timestamp: event_id.get_timestamp(),
+
+        // 2. Correlation: What transaction is this part of?
+        transaction_events: events_by_correlation_id(event.correlation_id),
+
+        // 3. Causation: What chain of events led here?
+        causality_chain: build_causality_chain(event_id),
+    }
+}
+
+// Extract timestamp when needed for audit
+let created_at = event.event_id.get_timestamp()
+    .expect("UUID v7 always has timestamp");
+```
+
+### Audit Query Patterns
+
+```rust
+// Get all events in chronological order
+events.sort_by_key(|e| e.event_id);  // UUID v7 sorts temporally
+
+// Find events in time range
+let start_uuid = Uuid::new_v7(Timestamp::from_unix(start_time, 0));
+let end_uuid = Uuid::new_v7(Timestamp::from_unix(end_time, 0));
+events.filter(|e| e.event_id >= start_uuid && e.event_id <= end_uuid);
+
+// Reconstruct causality chain
+fn build_causality_chain(event: &Event, all: &[Event]) -> Vec<&Event> {
+    let mut chain = vec![event];
+    let mut current = event;
+    while let Some(cause_id) = current.causation_id {
+        if let Some(cause) = all.iter().find(|e| e.event_id == cause_id) {
+            chain.push(cause);
+            current = cause;
+        } else { break; }
+    }
+    chain.reverse();  // Oldest first
+    chain
+}
+```
+
+### Why UUID v7 Over Separate Timestamps
+
+| Approach | Problem | UUID v7 Solution |
+|----------|---------|------------------|
+| Separate `created_at` field | Can be inconsistent with ID | Timestamp IS the ID |
+| Clock skew between fields | ID and time can disagree | Single source of truth |
+| Storage overhead | Extra 8+ bytes per event | Zero overhead |
+| Query complexity | Join on time OR id | Single index suffices |
 
 ## Module Dependencies
 
