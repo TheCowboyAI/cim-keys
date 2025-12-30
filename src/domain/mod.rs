@@ -53,6 +53,15 @@ pub mod yubikey;
 /// Visualization Bounded Context - Manifest, Policy Display
 pub mod visualization;
 
+/// Aggregate Roots for each Bounded Context
+pub mod aggregates;
+
+/// Saga Patterns for Cross-Aggregate Operations
+pub mod sagas;
+
+/// Graph Domain Layer - Pure Domain Relations and Events
+pub mod graph;
+
 // ============================================================================
 // RE-EXPORTS FOR CONVENIENCE
 // ============================================================================
@@ -63,3 +72,22 @@ pub use ids::*;
 // Re-export all bootstrap types for backward compatibility
 // This maintains the existing API: cim_keys::domain::Organization, etc.
 pub use bootstrap::*;
+
+// Re-export aggregate roots for each bounded context
+pub use aggregates::{
+    OrganizationAggregate,
+    PkiCertificateChainAggregate,
+    NatsSecurityAggregate,
+    YubiKeyProvisioningAggregate,
+};
+
+// Re-export saga types for cross-aggregate coordination
+pub use sagas::{
+    SagaState,
+    SagaError,
+    SagaResult,
+    CompensationResult,
+    CompleteBootstrapSaga,
+    PersonOnboardingSaga,
+    CertificateProvisioningSaga,
+};

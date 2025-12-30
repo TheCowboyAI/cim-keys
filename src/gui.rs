@@ -66,6 +66,7 @@ pub mod passphrase_dialog;
 pub mod view_model;
 pub mod edge_indicator;
 pub mod role_palette;
+pub mod graph_projection;
 
 #[cfg(test)]
 mod graph_integration_tests;

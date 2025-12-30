@@ -44,8 +44,8 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-// Re-export phantom-typed IDs for NATS
-pub use super::ids::{
+// Re-export phantom-typed IDs for NATS (go up two levels: nats -> domain)
+pub use crate::domain::ids::{
     NatsOperatorId,
     NatsOperatorMarker,
     NatsAccountId,
@@ -55,7 +55,7 @@ pub use super::ids::{
 };
 
 // Re-export NATS types from bootstrap
-pub use super::bootstrap::{
+pub use crate::domain::bootstrap::{
     NatsPermissions,
     NatsIdentity,
     UserIdentity,
