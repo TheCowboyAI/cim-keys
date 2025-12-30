@@ -1032,16 +1032,22 @@ async fn test_interactive_bootstrap() {
     }
 
     // Prompt for output directory
-    print!("Enter output directory [/mnt/encrypted/cim-keys]: ");
+    let default_output = format!("/tmp/cim-keys-{}", chrono::Utc::now().format("%Y%m%d-%H%M%S"));
+    print!("Enter output directory [{}]: ", default_output);
     io::stdout().flush().unwrap();
     let mut output_dir = String::new();
     io::stdin().read_line(&mut output_dir).unwrap();
     let output_dir = output_dir.trim();
     let output_dir = if output_dir.is_empty() {
-        PathBuf::from("/mnt/encrypted/cim-keys")
+        PathBuf::from(&default_output)
     } else {
         PathBuf::from(output_dir)
     };
+
+    // Create the output directory if it doesn't exist
+    if !output_dir.exists() {
+        fs::create_dir_all(&output_dir).expect("Failed to create output directory");
+    }
 
     let bootstrap_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("secrets/domain-bootstrap.json");
