@@ -286,12 +286,12 @@ impl std::fmt::Display for PinPolicy {
 
 use chrono::{DateTime, Utc};
 
-/// YubiKey device node for graph visualization
+/// YubiKey device for graph visualization
 ///
 /// This type is used in `DomainNodeData` for rendering YubiKeys in the graph.
 /// It uses phantom-typed `YubiKeyDeviceId` for compile-time safety.
 #[derive(Debug, Clone)]
-pub struct YubiKeyNode {
+pub struct YubiKeyDevice {
     pub id: YubiKeyDeviceId,
     pub serial: String,
     pub version: String,
@@ -299,8 +299,8 @@ pub struct YubiKeyNode {
     pub slots_used: Vec<String>,
 }
 
-impl YubiKeyNode {
-    /// Create a new YubiKey node
+impl YubiKeyDevice {
+    /// Create a new YubiKey device
     pub fn new(
         id: YubiKeyDeviceId,
         serial: String,
@@ -322,12 +322,12 @@ impl YubiKeyNode {
     }
 }
 
-/// PIV slot node for graph visualization
+/// PIV slot view for graph visualization
 ///
 /// This type is used in `DomainNodeData` for rendering PIV slots in the graph.
 /// It uses phantom-typed `SlotId` for compile-time safety.
 #[derive(Debug, Clone)]
-pub struct PivSlotNode {
+pub struct PivSlotView {
     pub id: SlotId,
     pub slot_name: String,
     pub yubikey_serial: String,
@@ -335,8 +335,8 @@ pub struct PivSlotNode {
     pub certificate_subject: Option<String>,
 }
 
-impl PivSlotNode {
-    /// Create a new PIV slot node
+impl PivSlotView {
+    /// Create a new PIV slot view
     pub fn new(
         id: SlotId,
         slot_name: String,
@@ -353,19 +353,19 @@ impl PivSlotNode {
     }
 }
 
-/// YubiKey provisioning status node for graph visualization
+/// YubiKey provisioning status for graph visualization
 ///
 /// Shows the provisioning status of a YubiKey for a specific person.
 #[derive(Debug, Clone)]
-pub struct YubiKeyStatusNode {
+pub struct YubiKeyStatus {
     pub person_id: Uuid,
     pub yubikey_serial: Option<String>,
     pub slots_provisioned: Vec<PIVSlot>,
     pub slots_needed: Vec<PIVSlot>,
 }
 
-impl YubiKeyStatusNode {
-    /// Create a new YubiKey status node
+impl YubiKeyStatus {
+    /// Create a new YubiKey status
     pub fn new(
         person_id: Uuid,
         yubikey_serial: Option<String>,

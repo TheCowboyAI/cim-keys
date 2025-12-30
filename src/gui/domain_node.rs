@@ -29,10 +29,10 @@ use crate::domain::{
 };
 
 // Bounded context types with phantom-typed IDs
-use crate::domain::pki::{CertificateNode, KeyNode, CertificateId, KeyId, KeyAlgorithm, KeyPurpose};
-use crate::domain::yubikey::{YubiKeyNode, PivSlotNode, YubiKeyStatusNode, YubiKeyDeviceId, SlotId, PIVSlot};
+use crate::domain::pki::{Certificate, CryptographicKey, CertificateId, KeyId, KeyAlgorithm, KeyPurpose};
+use crate::domain::yubikey::{YubiKeyDevice, PivSlotView, YubiKeyStatus, YubiKeyDeviceId, SlotId, PIVSlot};
 use crate::domain::visualization::{
-    ManifestNode, PolicyRoleNode, PolicyClaimNode, PolicyCategoryNode, PolicyGroupNode,
+    Manifest, PolicyRole, PolicyClaimView, PolicyCategory, PolicyGroup,
     ManifestId, PolicyRoleId, ClaimId, PolicyCategoryId, PolicyGroupId,
 };
 
@@ -204,9 +204,9 @@ impl fmt::Display for Injection {
 ///
 /// This enum uses types from bounded context modules for DDD compliance:
 /// - Organization context: Person, Organization, OrganizationUnit, Location, Role, Policy
-/// - PKI context: CertificateNode, KeyNode (with phantom-typed IDs)
-/// - YubiKey context: YubiKeyNode, PivSlotNode, YubiKeyStatusNode
-/// - Visualization context: ManifestNode, PolicyRoleNode, PolicyClaimNode, etc.
+/// - PKI context: Certificate, CryptographicKey (with phantom-typed IDs)
+/// - YubiKey context: YubiKeyDevice, PivSlotView, YubiKeyStatus
+/// - Visualization context: Manifest, PolicyRole, PolicyClaim, etc.
 #[derive(Debug, Clone)]
 pub enum DomainNodeData {
     // =========================================================================
@@ -248,37 +248,37 @@ pub enum DomainNodeData {
     // PKI BOUNDED CONTEXT (with phantom-typed IDs)
     // =========================================================================
     /// Root CA certificate (uses CertificateId)
-    RootCertificate(CertificateNode),
+    RootCertificate(Certificate),
     /// Intermediate CA certificate (uses CertificateId)
-    IntermediateCertificate(CertificateNode),
+    IntermediateCertificate(Certificate),
     /// Leaf/end-entity certificate (uses CertificateId)
-    LeafCertificate(CertificateNode),
+    LeafCertificate(Certificate),
     /// Cryptographic key (uses KeyId)
-    Key(KeyNode),
+    Key(CryptographicKey),
 
     // =========================================================================
     // YUBIKEY BOUNDED CONTEXT (with phantom-typed IDs)
     // =========================================================================
     /// YubiKey hardware device (uses YubiKeyDeviceId)
-    YubiKey(YubiKeyNode),
+    YubiKey(YubiKeyDevice),
     /// PIV slot on a YubiKey (uses SlotId)
-    PivSlot(PivSlotNode),
+    PivSlot(PivSlotView),
     /// YubiKey provisioning status for a person
-    YubiKeyStatus(YubiKeyStatusNode),
+    YubiKeyStatus(YubiKeyStatus),
 
     // =========================================================================
     // VISUALIZATION BOUNDED CONTEXT (with phantom-typed IDs)
     // =========================================================================
     /// Export manifest (uses ManifestId)
-    Manifest(ManifestNode),
+    Manifest(Manifest),
     /// Policy role for graph display (uses PolicyRoleId)
-    PolicyRole(PolicyRoleNode),
+    PolicyRole(PolicyRole),
     /// Policy claim for graph display (uses ClaimId)
-    PolicyClaim(PolicyClaimNode),
+    PolicyClaim(PolicyClaimView),
     /// Policy category grouping (uses PolicyCategoryId)
-    PolicyCategory(PolicyCategoryNode),
+    PolicyCategory(PolicyCategory),
     /// Policy separation class group (uses PolicyGroupId)
-    PolicyGroup(PolicyGroupNode),
+    PolicyGroup(PolicyGroup),
 }
 
 // ============================================================================
@@ -423,7 +423,7 @@ impl DomainNode {
     // PKI BOUNDED CONTEXT INJECTIONS
     // =========================================================================
 
-    /// Injection ι_RootCertificate: Uses CertificateNode with phantom-typed CertificateId
+    /// Injection ι_RootCertificate: Uses Certificate with phantom-typed CertificateId
     pub fn inject_root_certificate(
         cert_id: CertificateId,
         subject: String,
@@ -435,12 +435,12 @@ impl DomainNode {
         Self {
             injection: Injection::RootCertificate,
             data: DomainNodeData::RootCertificate(
-                CertificateNode::root(cert_id, subject, not_before, not_after, key_usage)
+                Certificate::root(cert_id, subject, not_before, not_after, key_usage)
             ),
         }
     }
 
-    /// Injection ι_IntermediateCertificate: Uses CertificateNode with phantom-typed CertificateId
+    /// Injection ι_IntermediateCertificate: Uses Certificate with phantom-typed CertificateId
     pub fn inject_intermediate_certificate(
         cert_id: CertificateId,
         subject: String,
@@ -452,12 +452,12 @@ impl DomainNode {
         Self {
             injection: Injection::IntermediateCertificate,
             data: DomainNodeData::IntermediateCertificate(
-                CertificateNode::intermediate(cert_id, subject, issuer, not_before, not_after, key_usage)
+                Certificate::intermediate(cert_id, subject, issuer, not_before, not_after, key_usage)
             ),
         }
     }
 
-    /// Injection ι_LeafCertificate: Uses CertificateNode with phantom-typed CertificateId
+    /// Injection ι_LeafCertificate: Uses Certificate with phantom-typed CertificateId
     pub fn inject_leaf_certificate(
         cert_id: CertificateId,
         subject: String,
@@ -470,12 +470,12 @@ impl DomainNode {
         Self {
             injection: Injection::LeafCertificate,
             data: DomainNodeData::LeafCertificate(
-                CertificateNode::leaf(cert_id, subject, issuer, not_before, not_after, key_usage, san)
+                Certificate::leaf(cert_id, subject, issuer, not_before, not_after, key_usage, san)
             ),
         }
     }
 
-    /// Injection ι_Key: Uses KeyNode with phantom-typed KeyId
+    /// Injection ι_Key: Uses CryptographicKey with phantom-typed KeyId
     pub fn inject_key(
         key_id: KeyId,
         algorithm: KeyAlgorithm,
@@ -484,7 +484,7 @@ impl DomainNode {
     ) -> Self {
         Self {
             injection: Injection::Key,
-            data: DomainNodeData::Key(KeyNode::new(key_id, algorithm, purpose, expires_at)),
+            data: DomainNodeData::Key(CryptographicKey::new(key_id, algorithm, purpose, expires_at)),
         }
     }
 
@@ -492,7 +492,7 @@ impl DomainNode {
     // YUBIKEY BOUNDED CONTEXT INJECTIONS
     // =========================================================================
 
-    /// Injection ι_YubiKey: Uses YubiKeyNode with phantom-typed YubiKeyDeviceId
+    /// Injection ι_YubiKey: Uses YubiKeyDevice with phantom-typed YubiKeyDeviceId
     pub fn inject_yubikey(
         device_id: YubiKeyDeviceId,
         serial: String,
@@ -503,12 +503,12 @@ impl DomainNode {
         Self {
             injection: Injection::YubiKey,
             data: DomainNodeData::YubiKey(
-                YubiKeyNode::new(device_id, serial, version, provisioned_at, slots_used)
+                YubiKeyDevice::new(device_id, serial, version, provisioned_at, slots_used)
             ),
         }
     }
 
-    /// Injection ι_PivSlot: Uses PivSlotNode with phantom-typed SlotId
+    /// Injection ι_PivSlot: Uses PivSlotView with phantom-typed SlotId
     pub fn inject_piv_slot(
         slot_id: SlotId,
         slot_name: String,
@@ -519,12 +519,12 @@ impl DomainNode {
         Self {
             injection: Injection::PivSlot,
             data: DomainNodeData::PivSlot(
-                PivSlotNode::new(slot_id, slot_name, yubikey_serial, has_key, certificate_subject)
+                PivSlotView::new(slot_id, slot_name, yubikey_serial, has_key, certificate_subject)
             ),
         }
     }
 
-    /// Injection ι_YubiKeyStatus: Uses YubiKeyStatusNode
+    /// Injection ι_YubiKeyStatus: Uses YubiKeyStatus
     pub fn inject_yubikey_status(
         person_id: Uuid,
         yubikey_serial: Option<String>,
@@ -534,7 +534,7 @@ impl DomainNode {
         Self {
             injection: Injection::YubiKeyStatus,
             data: DomainNodeData::YubiKeyStatus(
-                YubiKeyStatusNode::new(person_id, yubikey_serial, slots_provisioned, slots_needed)
+                YubiKeyStatus::new(person_id, yubikey_serial, slots_provisioned, slots_needed)
             ),
         }
     }
@@ -543,7 +543,7 @@ impl DomainNode {
     // VISUALIZATION BOUNDED CONTEXT INJECTIONS
     // =========================================================================
 
-    /// Injection ι_Manifest: Uses ManifestNode with phantom-typed ManifestId
+    /// Injection ι_Manifest: Uses Manifest with phantom-typed ManifestId
     pub fn inject_manifest(
         manifest_id: ManifestId,
         name: String,
@@ -553,12 +553,12 @@ impl DomainNode {
         Self {
             injection: Injection::Manifest,
             data: DomainNodeData::Manifest(
-                ManifestNode::new(manifest_id, name, destination, checksum)
+                Manifest::new(manifest_id, name, destination, checksum)
             ),
         }
     }
 
-    /// Injection ι_PolicyRole: Uses PolicyRoleNode with phantom-typed PolicyRoleId
+    /// Injection ι_PolicyRole: Uses PolicyRole with phantom-typed PolicyRoleId
     pub fn inject_policy_role(
         role_id: PolicyRoleId,
         name: String,
@@ -570,12 +570,12 @@ impl DomainNode {
         Self {
             injection: Injection::PolicyRole,
             data: DomainNodeData::PolicyRole(
-                PolicyRoleNode::new(role_id, name, purpose, level, separation_class, claim_count)
+                PolicyRole::new(role_id, name, purpose, level, separation_class, claim_count)
             ),
         }
     }
 
-    /// Injection ι_PolicyClaim: Uses PolicyClaimNode with phantom-typed ClaimId
+    /// Injection ι_PolicyClaim: Uses PolicyClaimView with phantom-typed ClaimId
     pub fn inject_policy_claim(
         claim_id: ClaimId,
         name: String,
@@ -583,11 +583,11 @@ impl DomainNode {
     ) -> Self {
         Self {
             injection: Injection::PolicyClaim,
-            data: DomainNodeData::PolicyClaim(PolicyClaimNode::new(claim_id, name, category)),
+            data: DomainNodeData::PolicyClaim(PolicyClaimView::new(claim_id, name, category)),
         }
     }
 
-    /// Injection ι_PolicyCategory: Uses PolicyCategoryNode with phantom-typed PolicyCategoryId
+    /// Injection ι_PolicyCategory: Uses PolicyCategory with phantom-typed PolicyCategoryId
     pub fn inject_policy_category(
         category_id: PolicyCategoryId,
         name: String,
@@ -597,12 +597,12 @@ impl DomainNode {
         Self {
             injection: Injection::PolicyCategory,
             data: DomainNodeData::PolicyCategory(
-                PolicyCategoryNode::new(category_id, name, claim_count, expanded)
+                PolicyCategory::new(category_id, name, claim_count, expanded)
             ),
         }
     }
 
-    /// Injection ι_PolicyGroup: Uses PolicyGroupNode with phantom-typed PolicyGroupId
+    /// Injection ι_PolicyGroup: Uses PolicyGroup with phantom-typed PolicyGroupId
     pub fn inject_policy_group(
         class_id: PolicyGroupId,
         name: String,
@@ -613,7 +613,7 @@ impl DomainNode {
         Self {
             injection: Injection::PolicyGroup,
             data: DomainNodeData::PolicyGroup(
-                PolicyGroupNode::new(class_id, name, separation_class, role_count, expanded)
+                PolicyGroup::new(class_id, name, separation_class, role_count, expanded)
             ),
         }
     }

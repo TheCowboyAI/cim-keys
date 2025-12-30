@@ -252,12 +252,12 @@ impl std::fmt::Display for CertificateStatus {
 // GRAPH NODE TYPES (for DomainNode visualization)
 // ============================================================================
 
-/// Certificate node data for graph visualization
+/// Certificate for graph visualization
 ///
 /// This type is used in `DomainNodeData` for rendering certificates in the graph.
 /// It uses phantom-typed `CertificateId` for compile-time safety.
 #[derive(Debug, Clone)]
-pub struct CertificateNode {
+pub struct Certificate {
     pub id: CertificateId,
     pub cert_type: CertificateType,
     pub subject: String,
@@ -268,8 +268,8 @@ pub struct CertificateNode {
     pub san: Vec<String>,
 }
 
-impl CertificateNode {
-    /// Create a root certificate node
+impl Certificate {
+    /// Create a root certificate
     pub fn root(
         id: CertificateId,
         subject: String,
@@ -289,7 +289,7 @@ impl CertificateNode {
         }
     }
 
-    /// Create an intermediate certificate node
+    /// Create an intermediate certificate
     pub fn intermediate(
         id: CertificateId,
         subject: String,
@@ -310,7 +310,7 @@ impl CertificateNode {
         }
     }
 
-    /// Create a leaf certificate node
+    /// Create a leaf certificate
     pub fn leaf(
         id: CertificateId,
         subject: String,
@@ -345,20 +345,20 @@ impl CertificateNode {
     }
 }
 
-/// Key node data for graph visualization
+/// Cryptographic key for graph visualization
 ///
 /// This type is used in `DomainNodeData` for rendering keys in the graph.
 /// It uses phantom-typed `KeyId` for compile-time safety.
 #[derive(Debug, Clone)]
-pub struct KeyNode {
+pub struct CryptographicKey {
     pub id: KeyId,
     pub algorithm: KeyAlgorithm,
     pub purpose: KeyPurpose,
     pub expires_at: Option<DateTime<Utc>>,
 }
 
-impl KeyNode {
-    /// Create a new key node
+impl CryptographicKey {
+    /// Create a new cryptographic key
     pub fn new(
         id: KeyId,
         algorithm: KeyAlgorithm,

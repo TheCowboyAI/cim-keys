@@ -50,19 +50,19 @@ pub use crate::policy::SeparationClass;
 // MANIFEST TYPES
 // ============================================================================
 
-/// Export manifest node for graph visualization
+/// Export manifest for graph visualization
 ///
 /// Represents an export operation to encrypted storage.
 #[derive(Debug, Clone)]
-pub struct ManifestNode {
+pub struct Manifest {
     pub id: ManifestId,
     pub name: String,
     pub destination: Option<PathBuf>,
     pub checksum: Option<String>,
 }
 
-impl ManifestNode {
-    /// Create a new manifest node
+impl Manifest {
+    /// Create a new manifest
     pub fn new(
         id: ManifestId,
         name: String,
@@ -87,11 +87,11 @@ impl ManifestNode {
 // POLICY VISUALIZATION TYPES
 // ============================================================================
 
-/// Policy role node for graph visualization
+/// Policy role for graph visualization
 ///
 /// Represents a role with its claims in the policy graph.
 #[derive(Debug, Clone)]
-pub struct PolicyRoleNode {
+pub struct PolicyRole {
     pub id: PolicyRoleId,
     pub name: String,
     pub purpose: String,
@@ -100,8 +100,8 @@ pub struct PolicyRoleNode {
     pub claim_count: usize,
 }
 
-impl PolicyRoleNode {
-    /// Create a new policy role node
+impl PolicyRole {
+    /// Create a new policy role
     pub fn new(
         id: PolicyRoleId,
         name: String,
@@ -119,36 +119,37 @@ impl PolicyRoleNode {
     }
 }
 
-/// Policy claim node for graph visualization
+/// Policy claim view for graph visualization
 ///
 /// Represents an individual permission/claim in the policy graph.
+/// Named PolicyClaimView to avoid conflict with domain::PolicyClaim enum.
 #[derive(Debug, Clone)]
-pub struct PolicyClaimNode {
+pub struct PolicyClaimView {
     pub id: ClaimId,
     pub name: String,
     pub category: String,
 }
 
-impl PolicyClaimNode {
-    /// Create a new policy claim node
+impl PolicyClaimView {
+    /// Create a new policy claim view
     pub fn new(id: ClaimId, name: String, category: String) -> Self {
         Self { id, name, category }
     }
 }
 
-/// Policy category node for grouping claims
+/// Policy category for grouping claims
 ///
 /// Represents a category of claims (e.g., "Key Management", "Infrastructure").
 #[derive(Debug, Clone)]
-pub struct PolicyCategoryNode {
+pub struct PolicyCategory {
     pub id: PolicyCategoryId,
     pub name: String,
     pub claim_count: usize,
     pub expanded: bool,
 }
 
-impl PolicyCategoryNode {
-    /// Create a new policy category node
+impl PolicyCategory {
+    /// Create a new policy category
     pub fn new(
         id: PolicyCategoryId,
         name: String,
@@ -164,11 +165,11 @@ impl PolicyCategoryNode {
     }
 }
 
-/// Policy group node for separation class grouping
+/// Policy group for separation class grouping
 ///
 /// Groups roles by their separation class (e.g., "Administration", "Operations").
 #[derive(Debug, Clone)]
-pub struct PolicyGroupNode {
+pub struct PolicyGroup {
     pub id: PolicyGroupId,
     pub name: String,
     pub separation_class: SeparationClass,
@@ -176,8 +177,8 @@ pub struct PolicyGroupNode {
     pub expanded: bool,
 }
 
-impl PolicyGroupNode {
-    /// Create a new policy group node
+impl PolicyGroup {
+    /// Create a new policy group
     pub fn new(
         id: PolicyGroupId,
         name: String,
@@ -198,31 +199,31 @@ impl PolicyGroupNode {
 // DISPLAY IMPLEMENTATIONS
 // ============================================================================
 
-impl std::fmt::Display for ManifestNode {
+impl std::fmt::Display for Manifest {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "Manifest: {}", self.name)
     }
 }
 
-impl std::fmt::Display for PolicyRoleNode {
+impl std::fmt::Display for PolicyRole {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{} (L{})", self.name, self.level)
     }
 }
 
-impl std::fmt::Display for PolicyClaimNode {
+impl std::fmt::Display for PolicyClaimView {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", self.name)
     }
 }
 
-impl std::fmt::Display for PolicyCategoryNode {
+impl std::fmt::Display for PolicyCategory {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{} ({})", self.name, self.claim_count)
     }
 }
 
-impl std::fmt::Display for PolicyGroupNode {
+impl std::fmt::Display for PolicyGroup {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{} ({} roles)", self.name, self.role_count)
     }
