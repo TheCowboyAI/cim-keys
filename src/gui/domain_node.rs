@@ -1,10 +1,9 @@
 // Copyright (c) 2025 - Cowboy AI, LLC.
 
-//! Domain Node Coproduct - Categorical replacement for NodeType enum
+//! Domain Node Coproduct - Categorical type for graph nodes
 //!
 //! This module implements a proper coproduct of domain types following
-//! Applied Category Theory principles. Instead of a flat enum (NodeType),
-//! we use:
+//! Applied Category Theory principles. The design uses:
 //!
 //! 1. **Injection functions**: `inject_person()`, `inject_organization()`, etc.
 //! 2. **Universal property**: `FoldDomainNode` trait with `fold()` method
@@ -326,7 +325,7 @@ pub enum DomainNodeData {
 
 /// Domain Node - A proper coproduct of all domain entity types.
 ///
-/// This replaces the `NodeType` enum with a categorical structure that:
+/// Uses a categorical structure that:
 /// 1. Preserves identity of the original entity
 /// 2. Provides injection functions (constructors)
 /// 3. Supports the universal property via `fold()`
@@ -755,224 +754,6 @@ impl DomainNode {
         match &self.data {
             DomainNodeData::PolicyCategory { name, .. } => Some(name),
             _ => None,
-        }
-    }
-
-    // ========================================================================
-    // Conversion from NodeType (for gradual migration)
-    // ========================================================================
-
-    /// Convert from the legacy NodeType enum to DomainNode.
-    ///
-    /// This enables gradual migration - existing code using NodeType can
-    /// be converted to DomainNode incrementally.
-    pub fn from_node_type(node_type: &super::graph::NodeType) -> Self {
-        use super::graph::NodeType;
-        match node_type {
-            NodeType::Person { person, role } => {
-                Self::inject_person(person.clone(), role.clone())
-            }
-            NodeType::Organization(org) => {
-                Self::inject_organization(org.clone())
-            }
-            NodeType::OrganizationalUnit(unit) => {
-                Self::inject_organization_unit(unit.clone())
-            }
-            NodeType::Location(loc) => {
-                Self::inject_location(loc.clone())
-            }
-            NodeType::Role(role) => {
-                Self::inject_role(role.clone())
-            }
-            NodeType::Policy(policy) => {
-                Self::inject_policy(policy.clone())
-            }
-            NodeType::NatsOperator(proj) => {
-                Self::inject_nats_operator(proj.clone())
-            }
-            NodeType::NatsAccount(proj) => {
-                Self::inject_nats_account(proj.clone())
-            }
-            NodeType::NatsUser(proj) => {
-                Self::inject_nats_user(proj.clone())
-            }
-            NodeType::NatsServiceAccount(proj) => {
-                Self::inject_nats_service_account(proj.clone())
-            }
-            NodeType::NatsOperatorSimple { name, organization_id } => {
-                Self::inject_nats_operator_simple(name.clone(), *organization_id)
-            }
-            NodeType::NatsAccountSimple { name, unit_id, is_system } => {
-                Self::inject_nats_account_simple(name.clone(), *unit_id, *is_system)
-            }
-            NodeType::NatsUserSimple { name, person_id, account_name } => {
-                Self::inject_nats_user_simple(name.clone(), *person_id, account_name.clone())
-            }
-            NodeType::RootCertificate { cert_id, subject, issuer, not_before, not_after, key_usage } => {
-                Self::inject_root_certificate(
-                    *cert_id, subject.clone(), issuer.clone(),
-                    *not_before, *not_after, key_usage.clone(),
-                )
-            }
-            NodeType::IntermediateCertificate { cert_id, subject, issuer, not_before, not_after, key_usage } => {
-                Self::inject_intermediate_certificate(
-                    *cert_id, subject.clone(), issuer.clone(),
-                    *not_before, *not_after, key_usage.clone(),
-                )
-            }
-            NodeType::LeafCertificate { cert_id, subject, issuer, not_before, not_after, key_usage, san } => {
-                Self::inject_leaf_certificate(
-                    *cert_id, subject.clone(), issuer.clone(),
-                    *not_before, *not_after, key_usage.clone(), san.clone(),
-                )
-            }
-            NodeType::Key { key_id, algorithm, purpose, expires_at } => {
-                Self::inject_key(*key_id, algorithm.clone(), purpose.clone(), *expires_at)
-            }
-            NodeType::YubiKey { device_id, serial, version, provisioned_at, slots_used } => {
-                Self::inject_yubikey(
-                    *device_id, serial.clone(), version.clone(),
-                    *provisioned_at, slots_used.clone(),
-                )
-            }
-            NodeType::PivSlot { slot_id, slot_name, yubikey_serial, has_key, certificate_subject } => {
-                Self::inject_piv_slot(
-                    *slot_id, slot_name.clone(), yubikey_serial.clone(),
-                    *has_key, certificate_subject.clone(),
-                )
-            }
-            NodeType::YubiKeyStatus { person_id, yubikey_serial, slots_provisioned, slots_needed } => {
-                Self::inject_yubikey_status(
-                    *person_id, yubikey_serial.clone(),
-                    slots_provisioned.clone(), slots_needed.clone(),
-                )
-            }
-            NodeType::Manifest { manifest_id, name, destination, checksum } => {
-                Self::inject_manifest(
-                    *manifest_id, name.clone(),
-                    destination.clone(), checksum.clone(),
-                )
-            }
-            NodeType::PolicyRole { role_id, name, purpose, level, separation_class, claim_count } => {
-                Self::inject_policy_role(
-                    *role_id, name.clone(), purpose.clone(),
-                    *level, *separation_class, *claim_count,
-                )
-            }
-            NodeType::PolicyClaim { claim_id, name, category } => {
-                Self::inject_policy_claim(*claim_id, name.clone(), category.clone())
-            }
-            NodeType::PolicyCategory { category_id, name, claim_count, expanded } => {
-                Self::inject_policy_category(*category_id, name.clone(), *claim_count, *expanded)
-            }
-            NodeType::PolicyGroup { class_id, name, separation_class, role_count, expanded } => {
-                Self::inject_policy_group(
-                    *class_id, name.clone(), *separation_class, *role_count, *expanded,
-                )
-            }
-        }
-    }
-
-    /// Convert DomainNode back to NodeType (for backward compatibility during migration)
-    ///
-    /// This enables code that still uses NodeType to work with DomainNode.
-    /// Once migration is complete, this method can be removed.
-    pub fn to_node_type(&self) -> super::graph::NodeType {
-        use super::graph::NodeType;
-        match &self.data {
-            DomainNodeData::Person { person, role } => {
-                NodeType::Person { person: person.clone(), role: role.clone() }
-            }
-            DomainNodeData::Organization(org) => NodeType::Organization(org.clone()),
-            DomainNodeData::OrganizationUnit(unit) => NodeType::OrganizationalUnit(unit.clone()),
-            DomainNodeData::Location(loc) => NodeType::Location(loc.clone()),
-            DomainNodeData::Role(role) => NodeType::Role(role.clone()),
-            DomainNodeData::Policy(policy) => NodeType::Policy(policy.clone()),
-
-            DomainNodeData::NatsOperator(proj) => NodeType::NatsOperator(proj.clone()),
-            DomainNodeData::NatsAccount(proj) => NodeType::NatsAccount(proj.clone()),
-            DomainNodeData::NatsUser(proj) => NodeType::NatsUser(proj.clone()),
-            DomainNodeData::NatsServiceAccount(proj) => NodeType::NatsServiceAccount(proj.clone()),
-
-            DomainNodeData::NatsOperatorSimple { name, organization_id } => {
-                NodeType::NatsOperatorSimple { name: name.clone(), organization_id: *organization_id }
-            }
-            DomainNodeData::NatsAccountSimple { name, unit_id, is_system } => {
-                NodeType::NatsAccountSimple { name: name.clone(), unit_id: *unit_id, is_system: *is_system }
-            }
-            DomainNodeData::NatsUserSimple { name, person_id, account_name } => {
-                NodeType::NatsUserSimple { name: name.clone(), person_id: *person_id, account_name: account_name.clone() }
-            }
-
-            DomainNodeData::RootCertificate { cert_id, subject, issuer, not_before, not_after, key_usage } => {
-                NodeType::RootCertificate {
-                    cert_id: *cert_id, subject: subject.clone(), issuer: issuer.clone(),
-                    not_before: *not_before, not_after: *not_after, key_usage: key_usage.clone(),
-                }
-            }
-            DomainNodeData::IntermediateCertificate { cert_id, subject, issuer, not_before, not_after, key_usage } => {
-                NodeType::IntermediateCertificate {
-                    cert_id: *cert_id, subject: subject.clone(), issuer: issuer.clone(),
-                    not_before: *not_before, not_after: *not_after, key_usage: key_usage.clone(),
-                }
-            }
-            DomainNodeData::LeafCertificate { cert_id, subject, issuer, not_before, not_after, key_usage, san } => {
-                NodeType::LeafCertificate {
-                    cert_id: *cert_id, subject: subject.clone(), issuer: issuer.clone(),
-                    not_before: *not_before, not_after: *not_after, key_usage: key_usage.clone(), san: san.clone(),
-                }
-            }
-
-            DomainNodeData::Key { key_id, algorithm, purpose, expires_at } => {
-                NodeType::Key { key_id: *key_id, algorithm: algorithm.clone(), purpose: *purpose, expires_at: *expires_at }
-            }
-
-            DomainNodeData::YubiKey { device_id, serial, version, provisioned_at, slots_used } => {
-                NodeType::YubiKey {
-                    device_id: *device_id, serial: serial.clone(), version: version.clone(),
-                    provisioned_at: *provisioned_at, slots_used: slots_used.clone(),
-                }
-            }
-            DomainNodeData::PivSlot { slot_id, slot_name, yubikey_serial, has_key, certificate_subject } => {
-                NodeType::PivSlot {
-                    slot_id: *slot_id, slot_name: slot_name.clone(), yubikey_serial: yubikey_serial.clone(),
-                    has_key: *has_key, certificate_subject: certificate_subject.clone(),
-                }
-            }
-            DomainNodeData::YubiKeyStatus { person_id, yubikey_serial, slots_provisioned, slots_needed } => {
-                NodeType::YubiKeyStatus {
-                    person_id: *person_id, yubikey_serial: yubikey_serial.clone(),
-                    slots_provisioned: slots_provisioned.clone(), slots_needed: slots_needed.clone(),
-                }
-            }
-
-            DomainNodeData::Manifest { manifest_id, name, destination, checksum } => {
-                NodeType::Manifest {
-                    manifest_id: *manifest_id, name: name.clone(),
-                    destination: destination.clone(), checksum: checksum.clone(),
-                }
-            }
-
-            DomainNodeData::PolicyRole { role_id, name, purpose, level, separation_class, claim_count } => {
-                NodeType::PolicyRole {
-                    role_id: *role_id, name: name.clone(), purpose: purpose.clone(),
-                    level: *level, separation_class: *separation_class, claim_count: *claim_count,
-                }
-            }
-            DomainNodeData::PolicyClaim { claim_id, name, category } => {
-                NodeType::PolicyClaim { claim_id: *claim_id, name: name.clone(), category: category.clone() }
-            }
-            DomainNodeData::PolicyCategory { category_id, name, claim_count, expanded } => {
-                NodeType::PolicyCategory {
-                    category_id: *category_id, name: name.clone(), claim_count: *claim_count, expanded: *expanded,
-                }
-            }
-            DomainNodeData::PolicyGroup { class_id, name, separation_class, role_count, expanded } => {
-                NodeType::PolicyGroup {
-                    class_id: *class_id, name: name.clone(), separation_class: *separation_class,
-                    role_count: *role_count, expanded: *expanded,
-                }
-            }
         }
     }
 

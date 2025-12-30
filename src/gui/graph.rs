@@ -138,61 +138,34 @@ pub struct DraggingRole {
 
 /// A node in the organization graph (represents any domain entity)
 ///
-/// ## Migration Note (Sprint 5)
+/// Graph node representing a domain entity with visualization data.
 ///
-/// This struct is being migrated from `node_type: NodeType` to `domain_node: DomainNode`.
-/// During migration:
-/// - `node_type` is deprecated but still present for backward compatibility
-/// - `domain_node` is the new field that uses the categorical coproduct pattern
-/// - Use `visualization()` method to get color/label/icon from domain_node
+/// Uses the categorical coproduct pattern via `DomainNode` for type-safe
+/// node representation. The `visualization()` method provides rendering data.
 #[derive(Debug, Clone)]
 pub struct ConceptEntity {
     pub id: Uuid,
-    /// DEPRECATED: Use domain_node instead. Kept for backward compatibility during migration.
-    pub node_type: NodeType,
-    /// New: Domain node using categorical coproduct pattern
+    /// Domain node using categorical coproduct pattern
     pub domain_node: super::domain_node::DomainNode,
     pub position: Point,
-    /// DEPRECATED: Computed from domain_node.fold(&FoldVisualization).color
+    /// Computed from domain_node.fold(&FoldVisualization).color
     pub color: Color,
-    /// DEPRECATED: Computed from domain_node.fold(&FoldVisualization).primary_text
+    /// Computed from domain_node.fold(&FoldVisualization).primary_text
     pub label: String,
 }
 
 impl ConceptEntity {
-    /// Create a new ConceptEntity from a NodeType (backward compatible constructor)
+    /// Create a new ConceptEntity from a DomainNode
     ///
-    /// This constructor creates both `node_type` and `domain_node` fields,
-    /// deriving color/label from the DomainNode's FoldVisualization.
-    pub fn from_node_type(id: Uuid, node_type: NodeType, position: Point) -> Self {
-        use super::domain_node::{DomainNode, FoldVisualization};
-
-        let domain_node = DomainNode::from_node_type(&node_type);
-        let viz = domain_node.fold(&FoldVisualization);
-
-        Self {
-            id,
-            node_type,
-            domain_node,
-            position,
-            color: viz.color,
-            label: viz.primary_text,
-        }
-    }
-
-    /// Create a new ConceptEntity directly from a DomainNode (preferred)
-    ///
-    /// This is the preferred constructor for new code. It creates the entity
-    /// directly from a DomainNode, deriving NodeType for backward compatibility.
+    /// Uses the categorical coproduct pattern - domain_node carries all type
+    /// information. Visualization data (color, label) is derived via FoldVisualization.
     pub fn from_domain_node(id: Uuid, domain_node: super::domain_node::DomainNode, position: Point) -> Self {
         use super::domain_node::FoldVisualization;
 
         let viz = domain_node.fold(&FoldVisualization);
-        let node_type = domain_node.to_node_type();
 
         Self {
             id,
-            node_type,
             domain_node,
             position,
             color: viz.color,
@@ -213,168 +186,6 @@ impl ConceptEntity {
     pub fn injection(&self) -> super::domain_node::Injection {
         self.domain_node.injection()
     }
-}
-
-/// Type of node in the graph
-///
-/// **DEPRECATED**: Use `DomainNode` instead. This enum will be removed in a future version.
-/// The `ConceptEntity` struct now has a `domain_node` field that should be used for
-/// creating and querying node types. Use `entity.visualization()` for rendering and
-/// `entity.injection()` for type checking.
-///
-/// Migration path:
-/// - Replace `NodeType::Person { .. }` checks with `entity.injection() == Injection::Person`
-/// - Replace rendering matches with `entity.visualization()`
-/// - Use `ConceptEntity::from_domain_node()` for new node creation
-#[deprecated(
-    since = "0.9.0",
-    note = "Use DomainNode instead. See ConceptEntity::domain_node and entity.visualization()"
-)]
-#[derive(Debug, Clone)]
-pub enum NodeType {
-    Organization(Organization),
-    OrganizationalUnit(OrganizationUnit),
-    Person { person: Person, role: KeyOwnerRole },
-    Location(Location),
-    Role(Role),
-    Policy(Policy),
-
-    // NATS Infrastructure (Phase 1)
-    /// NATS Operator - root of NATS trust hierarchy (with full projection)
-    NatsOperator(NatsIdentityProjection),
-    /// NATS Account - corresponds to organizational unit (with full projection)
-    NatsAccount(NatsIdentityProjection),
-    /// NATS User - corresponds to person (with full projection)
-    NatsUser(NatsIdentityProjection),
-    /// NATS Service Account - for automated services (with full projection)
-    NatsServiceAccount(NatsIdentityProjection),
-
-    // NATS Infrastructure - Simple variants for visualization without cryptographic projections
-    /// NATS Operator (visualization only)
-    NatsOperatorSimple {
-        name: String,
-        organization_id: Option<Uuid>,
-    },
-    /// NATS Account (visualization only)
-    NatsAccountSimple {
-        name: String,
-        unit_id: Option<Uuid>,
-        is_system: bool,
-    },
-    /// NATS User (visualization only)
-    NatsUserSimple {
-        name: String,
-        person_id: Option<Uuid>,
-        account_name: String,
-    },
-
-    // PKI Trust Chain (Phase 2)
-    /// Root CA certificate - trust anchor
-    RootCertificate {
-        cert_id: Uuid,
-        subject: String,
-        issuer: String,
-        not_before: chrono::DateTime<chrono::Utc>,
-        not_after: chrono::DateTime<chrono::Utc>,
-        key_usage: Vec<String>,
-    },
-    /// Intermediate CA certificate - signs leaf certificates
-    IntermediateCertificate {
-        cert_id: Uuid,
-        subject: String,
-        issuer: String,
-        not_before: chrono::DateTime<chrono::Utc>,
-        not_after: chrono::DateTime<chrono::Utc>,
-        key_usage: Vec<String>,
-    },
-    /// Leaf certificate - end entity certificate
-    LeafCertificate {
-        cert_id: Uuid,
-        subject: String,
-        issuer: String,
-        not_before: chrono::DateTime<chrono::Utc>,
-        not_after: chrono::DateTime<chrono::Utc>,
-        key_usage: Vec<String>,
-        san: Vec<String>, // Subject Alternative Names
-    },
-
-    // Cryptographic Keys (Phase 4)
-    /// Cryptographic key - can be stored in YubiKey or other locations
-    Key {
-        key_id: Uuid,
-        algorithm: crate::events::KeyAlgorithm,
-        purpose: crate::events::KeyPurpose,
-        expires_at: Option<chrono::DateTime<chrono::Utc>>,
-    },
-
-    // YubiKey Hardware (Phase 3)
-    /// YubiKey hardware token
-    YubiKey {
-        device_id: Uuid,
-        serial: String,
-        version: String,
-        provisioned_at: Option<chrono::DateTime<chrono::Utc>>,
-        slots_used: Vec<String>,
-    },
-    /// PIV slot on a YubiKey
-    PivSlot {
-        slot_id: Uuid,
-        slot_name: String, // e.g., "9A - Authentication"
-        yubikey_serial: String,
-        has_key: bool,
-        certificate_subject: Option<String>,
-    },
-    /// YubiKey provisioning status for a person
-    YubiKeyStatus {
-        person_id: Uuid,
-        yubikey_serial: Option<String>,
-        slots_provisioned: Vec<super::graph_yubikey::PIVSlot>,
-        slots_needed: Vec<super::graph_yubikey::PIVSlot>,
-    },
-
-    // Export and Manifest (Phase 4)
-    /// Export manifest - tracks what was exported and where
-    Manifest {
-        manifest_id: Uuid,
-        name: String,
-        destination: Option<std::path::PathBuf>,
-        checksum: Option<String>,
-    },
-
-    // Policy Roles (Phase 5)
-    /// Policy-based role from policy-bootstrap.json
-    PolicyRole {
-        role_id: Uuid,
-        name: String,
-        purpose: String,
-        level: u8,
-        separation_class: crate::policy::SeparationClass,
-        claim_count: usize,
-    },
-
-    /// Policy claim - individual permission/capability
-    PolicyClaim {
-        claim_id: Uuid,
-        name: String,
-        category: String,
-    },
-
-    /// Policy category - grouping of claims for progressive disclosure
-    PolicyCategory {
-        category_id: Uuid,
-        name: String,
-        claim_count: usize,
-        expanded: bool,
-    },
-
-    /// Separation class - grouping of roles for progressive disclosure
-    PolicyGroup {
-        class_id: Uuid,
-        name: String,
-        separation_class: crate::policy::SeparationClass,
-        role_count: usize,
-        expanded: bool,
-    },
 }
 
 /// An edge in the organization graph (represents relationship/delegation)
@@ -1424,9 +1235,7 @@ impl OrganizationConcept {
             }
             GraphEvent::NodePropertiesChanged { node_id, new_domain_node, new_label, .. } => {
                 if let Some(node) = self.nodes.get_mut(node_id) {
-                    // Update both node_type and domain_node for consistency
                     node.domain_node = new_domain_node.clone();
-                    node.node_type = new_domain_node.to_node_type();
                     node.label = new_label.clone();
                 }
             }

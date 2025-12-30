@@ -4467,7 +4467,7 @@ impl CimKeysApp {
                     nodes: self.org_graph.nodes.iter().map(|(id, node)| {
                         ConceptEntityExport {
                             id: *id,
-                            node_type: format!("{:?}", node.node_type).split('(').next().unwrap_or("Unknown").to_string(),
+                            node_type: node.domain_node.injection().display_name().to_string(),
                             position_x: node.position.x,
                             position_y: node.position.y,
                             label: node.label.clone(),
