@@ -351,6 +351,7 @@ pub fn generate_and_export_credentials(
     }
 
     // Step 4: Create and execute export command
+    // A4: Use correlation_id as causation for the nested command (root command)
     let cmd = ExportToNscStore {
         output_directory: output_directory.to_path_buf(),
         operator_name: operator_name.clone(),
@@ -362,7 +363,7 @@ pub fn generate_and_export_credentials(
         account_credentials,
         user_credentials,
         correlation_id,
-        causation_id: None,
+        causation_id: Some(correlation_id), // A4: Self-reference for root command
     };
 
     handle_export_to_nsc_store(cmd)

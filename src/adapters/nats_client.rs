@@ -372,6 +372,8 @@ mod tests {
         let config = NatsConfig::default();
         let adapter = NatsClientAdapter::new(config, PathBuf::from("/tmp/queue.json"));
 
+        // A4: Generate test event_id for causation tracking
+        let test_event_id = Uuid::now_v7();
         let event = DomainEvent::Key(crate::events::KeyEvents::KeyGenerated(crate::events::key::KeyGeneratedEvent {
             key_id: Uuid::now_v7(),
             algorithm: crate::types::KeyAlgorithm::Ed25519,
@@ -390,7 +392,7 @@ mod tests {
             },
             ownership: None,
             correlation_id: Uuid::now_v7(),
-            causation_id: None,
+            causation_id: Some(test_event_id), // A4: Self-reference for root event
         }));
 
         let subject = adapter.build_subject(&event);

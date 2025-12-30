@@ -70,6 +70,31 @@ impl GraphProjector {
         }
     }
 
+    /// Create a root graph event with self-reference causation.
+    /// A4 Compliance: Root events have causation_id = event_id (self-reference).
+    fn create_root_event(&self, aggregate_id: Uuid, payload: EventPayload) -> GraphEvent {
+        let event_id = Uuid::now_v7();
+        GraphEvent {
+            event_id,
+            aggregate_id,
+            correlation_id: self.correlation_id,
+            causation_id: Some(event_id), // A4: Self-reference for root events
+            payload,
+        }
+    }
+
+    /// Create a derived graph event caused by a prior event.
+    /// A4 Compliance: Derived events have causation_id = parent event's id.
+    fn create_derived_event(&self, aggregate_id: Uuid, causation_id: Uuid, payload: EventPayload) -> GraphEvent {
+        GraphEvent {
+            event_id: Uuid::now_v7(),
+            aggregate_id,
+            correlation_id: self.correlation_id,
+            causation_id: Some(causation_id), // A4: Points to parent event
+            payload,
+        }
+    }
+
     /// Lift a Person domain event into graph events (functor)
     ///
     /// This is a functorial mapping from the Person context to the graph context.
@@ -83,50 +108,43 @@ impl GraphProjector {
         match event {
             PersonEvent::PersonCreated(created) => {
                 // Person is a CONTEXT (bounded context containing Person aggregate)
-                // First event: Create the bounded context
-                let context_event = GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *created.person_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None, // Root event
-                    payload: EventPayload::Context(
+                // First event: Create the bounded context (root event with self-reference causation)
+                let context_event = self.create_root_event(
+                    *created.person_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::BoundedContextCreated {
                             context_id: created.person_id.as_uuid().to_string(),
                             name: format!("Person: {}", created.name.display_name()),
                             description: format!("Person aggregate for {}", created.name.display_name()),
                         }
                     ),
-                };
+                );
 
-                // Second event: Add the Person aggregate to the context
-                let aggregate_event = GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *created.person_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: Some(context_event.event_id), // Caused by context creation
-                    payload: EventPayload::Context(
+                // Second event: Add the Person aggregate to the context (caused by context creation)
+                let aggregate_event = self.create_derived_event(
+                    *created.person_id.as_uuid(),
+                    context_event.event_id,
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::AggregateAdded {
                             context_id: created.person_id.as_uuid().to_string(),
                             aggregate_id: *created.person_id.as_uuid(),
                             aggregate_type: "Person".to_string(),
                         }
                     ),
-                };
+                );
 
                 Ok(vec![context_event, aggregate_event])
             }
 
             PersonEvent::NameUpdated(updated) => {
-                // Entity modification within aggregate
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *updated.person_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                // Entity modification within aggregate (root event in this context)
+                let entity_id = Uuid::now_v7();
+                Ok(vec![self.create_root_event(
+                    *updated.person_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *updated.person_id.as_uuid(),
-                            entity_id: Uuid::now_v7(),
+                            entity_id,
                             entity_type: "NameUpdate".to_string(),
                             properties: serde_json::json!({
                                 "old_name": updated.old_name.display_name(),
@@ -136,19 +154,17 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
 
             PersonEvent::PersonUpdated(updated) => {
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *updated.person_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                let entity_id = Uuid::now_v7();
+                Ok(vec![self.create_root_event(
+                    *updated.person_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *updated.person_id.as_uuid(),
-                            entity_id: Uuid::now_v7(),
+                            entity_id,
                             entity_type: "PersonUpdate".to_string(),
                             properties: serde_json::json!({
                                 "name": updated.name.display_name(),
@@ -156,16 +172,13 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
 
             PersonEvent::BirthDateSet(birth_date) => {
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *birth_date.person_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                Ok(vec![self.create_root_event(
+                    *birth_date.person_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *birth_date.person_id.as_uuid(),
                             entity_id: Uuid::now_v7(),
@@ -176,16 +189,13 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
 
             PersonEvent::DeathRecorded(death) => {
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *death.person_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                Ok(vec![self.create_root_event(
+                    *death.person_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *death.person_id.as_uuid(),
                             entity_id: Uuid::now_v7(),
@@ -196,16 +206,13 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
 
             PersonEvent::PersonDeactivated(deactivated) => {
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *deactivated.person_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                Ok(vec![self.create_root_event(
+                    *deactivated.person_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *deactivated.person_id.as_uuid(),
                             entity_id: Uuid::now_v7(),
@@ -216,16 +223,13 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
 
             PersonEvent::PersonReactivated(reactivated) => {
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *reactivated.person_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                Ok(vec![self.create_root_event(
+                    *reactivated.person_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *reactivated.person_id.as_uuid(),
                             entity_id: Uuid::now_v7(),
@@ -235,17 +239,14 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
 
             PersonEvent::PersonMergedInto(merged) => {
                 // Create relationship between source and target persons
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *merged.source_person_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                Ok(vec![self.create_root_event(
+                    *merged.source_person_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *merged.source_person_id.as_uuid(),
                             entity_id: Uuid::now_v7(),
@@ -257,16 +258,13 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
 
             PersonEvent::AttributeRecorded(attr) => {
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *attr.person_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                Ok(vec![self.create_root_event(
+                    *attr.person_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *attr.person_id.as_uuid(),
                             entity_id: Uuid::now_v7(),
@@ -277,16 +275,13 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
 
             PersonEvent::AttributeUpdated(attr) => {
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *attr.person_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                Ok(vec![self.create_root_event(
+                    *attr.person_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *attr.person_id.as_uuid(),
                             entity_id: Uuid::now_v7(),
@@ -299,16 +294,13 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
 
             PersonEvent::AttributeInvalidated(attr) => {
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *attr.person_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                Ok(vec![self.create_root_event(
+                    *attr.person_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *attr.person_id.as_uuid(),
                             entity_id: Uuid::now_v7(),
@@ -320,7 +312,7 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
         }
     }
@@ -331,47 +323,42 @@ impl GraphProjector {
         match event {
             OrganizationEvent::OrganizationCreated(created) => {
                 // Organization is a CONTEXT (bounded context)
-                let context_event = GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *created.organization_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                // First event: root with self-reference causation
+                let context_event = self.create_root_event(
+                    *created.organization_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::BoundedContextCreated {
                             context_id: created.organization_id.as_uuid().to_string(),
                             name: format!("Organization: {}", created.name),
                             description: format!("{} ({})", created.display_name, format!("{:?}", created.organization_type)),
                         }
                     ),
-                };
+                );
 
-                let aggregate_event = GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *created.organization_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: Some(context_event.event_id),
-                    payload: EventPayload::Context(
+                // Second event: caused by context creation
+                let aggregate_event = self.create_derived_event(
+                    *created.organization_id.as_uuid(),
+                    context_event.event_id,
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::AggregateAdded {
                             context_id: created.organization_id.as_uuid().to_string(),
                             aggregate_id: *created.organization_id.as_uuid(),
                             aggregate_type: "Organization".to_string(),
                         }
                     ),
-                };
+                );
 
                 Ok(vec![context_event, aggregate_event])
             }
 
             OrganizationEvent::OrganizationUpdated(updated) => {
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *updated.organization_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                let entity_id = Uuid::now_v7();
+                Ok(vec![self.create_root_event(
+                    *updated.organization_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *updated.organization_id.as_uuid(),
-                            entity_id: Uuid::now_v7(),
+                            entity_id,
                             entity_type: "OrganizationUpdate".to_string(),
                             properties: serde_json::json!({
                                 "changes": format!("{:?}", updated.changes),
@@ -379,19 +366,17 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
 
             OrganizationEvent::OrganizationDissolved(dissolved) => {
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *dissolved.organization_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                let entity_id = Uuid::now_v7();
+                Ok(vec![self.create_root_event(
+                    *dissolved.organization_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *dissolved.organization_id.as_uuid(),
-                            entity_id: Uuid::now_v7(),
+                            entity_id,
                             entity_type: "Dissolution".to_string(),
                             properties: serde_json::json!({
                                 "reason": dissolved.reason,
@@ -400,19 +385,17 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
 
             OrganizationEvent::OrganizationMerged(merged) => {
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *merged.surviving_organization_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                let entity_id = Uuid::now_v7();
+                Ok(vec![self.create_root_event(
+                    *merged.surviving_organization_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *merged.surviving_organization_id.as_uuid(),
-                            entity_id: Uuid::now_v7(),
+                            entity_id,
                             entity_type: "MergeRecord".to_string(),
                             properties: serde_json::json!({
                                 "merged_organization_id": merged.merged_organization_id.as_uuid().to_string(),
@@ -422,19 +405,17 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
 
             OrganizationEvent::OrganizationStatusChanged(status) => {
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *status.organization_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                let entity_id = Uuid::now_v7();
+                Ok(vec![self.create_root_event(
+                    *status.organization_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *status.organization_id.as_uuid(),
-                            entity_id: Uuid::now_v7(),
+                            entity_id,
                             entity_type: "StatusChange".to_string(),
                             properties: serde_json::json!({
                                 "previous_status": format!("{:?}", status.previous_status),
@@ -444,49 +425,41 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
 
             OrganizationEvent::DepartmentCreated(dept) => {
                 // Department is also a CONTEXT (organizational unit)
-                let context_event = GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *dept.department_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                let context_event = self.create_root_event(
+                    *dept.department_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::BoundedContextCreated {
                             context_id: dept.department_id.as_uuid().to_string(),
                             name: format!("Department: {}", dept.name),
                             description: format!("Department in org {}", dept.organization_id.as_uuid()),
                         }
                     ),
-                };
+                );
 
-                let aggregate_event = GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *dept.department_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: Some(context_event.event_id),
-                    payload: EventPayload::Context(
+                let aggregate_event = self.create_derived_event(
+                    *dept.department_id.as_uuid(),
+                    context_event.event_id,
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::AggregateAdded {
                             context_id: dept.department_id.as_uuid().to_string(),
                             aggregate_id: *dept.department_id.as_uuid(),
                             aggregate_type: "Department".to_string(),
                         }
                     ),
-                };
+                );
 
                 Ok(vec![context_event, aggregate_event])
             }
 
             OrganizationEvent::DepartmentUpdated(dept) => {
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *dept.department_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                Ok(vec![self.create_root_event(
+                    *dept.department_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *dept.department_id.as_uuid(),
                             entity_id: Uuid::now_v7(),
@@ -497,16 +470,13 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
 
             OrganizationEvent::DepartmentRestructured(dept) => {
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *dept.department_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                Ok(vec![self.create_root_event(
+                    *dept.department_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *dept.department_id.as_uuid(),
                             entity_id: Uuid::now_v7(),
@@ -518,16 +488,13 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
 
             OrganizationEvent::DepartmentDissolved(dept) => {
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *dept.department_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                Ok(vec![self.create_root_event(
+                    *dept.department_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *dept.department_id.as_uuid(),
                             entity_id: Uuid::now_v7(),
@@ -539,7 +506,7 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
 
             OrganizationEvent::TeamFormed(team) => {
@@ -549,44 +516,36 @@ impl GraphProjector {
                     None => format!("Team {} ({})", team.name, format!("{:?}", team.team_type)),
                 };
 
-                let context_event = GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *team.team_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                let context_event = self.create_root_event(
+                    *team.team_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::BoundedContextCreated {
                             context_id: team.team_id.as_uuid().to_string(),
                             name: format!("Team: {}", team.name),
                             description,
                         }
                     ),
-                };
+                );
 
-                let aggregate_event = GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *team.team_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: Some(context_event.event_id),
-                    payload: EventPayload::Context(
+                let aggregate_event = self.create_derived_event(
+                    *team.team_id.as_uuid(),
+                    context_event.event_id,
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::AggregateAdded {
                             context_id: team.team_id.as_uuid().to_string(),
                             aggregate_id: *team.team_id.as_uuid(),
                             aggregate_type: "Team".to_string(),
                         }
                     ),
-                };
+                );
 
                 Ok(vec![context_event, aggregate_event])
             }
 
             OrganizationEvent::TeamUpdated(team) => {
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *team.team_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                Ok(vec![self.create_root_event(
+                    *team.team_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *team.team_id.as_uuid(),
                             entity_id: Uuid::now_v7(),
@@ -597,16 +556,13 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
 
             OrganizationEvent::TeamDisbanded(team) => {
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *team.team_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                Ok(vec![self.create_root_event(
+                    *team.team_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *team.team_id.as_uuid(),
                             entity_id: Uuid::now_v7(),
@@ -618,34 +574,28 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
 
             OrganizationEvent::RoleCreated(role) => {
                 // Role is a CONCEPT in conceptual spaces
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *role.role_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Concept(
+                Ok(vec![self.create_root_event(
+                    *role.role_id.as_uuid(),
+                    EventPayload::Concept(
                         cim_graph::events::ConceptPayload::ConceptDefined {
                             concept_id: role.role_id.as_uuid().to_string(),
                             name: role.title.clone(),
                             definition: role.description.clone().unwrap_or_else(|| format!("{} role in organization", role.title)),
                         }
                     ),
-                }])
+                )])
             }
 
             OrganizationEvent::RoleUpdated(role) => {
                 // Role updates are entity changes within the organization context
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *role.organization_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                Ok(vec![self.create_root_event(
+                    *role.organization_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *role.organization_id.as_uuid(),
                             entity_id: *role.role_id.as_uuid(),
@@ -656,17 +606,14 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
 
             OrganizationEvent::RoleDeprecated(role) => {
                 // Role deprecation is an entity change within the organization context
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *role.organization_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                Ok(vec![self.create_root_event(
+                    *role.organization_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *role.organization_id.as_uuid(),
                             entity_id: *role.role_id.as_uuid(),
@@ -679,16 +626,13 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
 
             OrganizationEvent::FacilityCreated(facility) => {
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *facility.organization_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                Ok(vec![self.create_root_event(
+                    *facility.organization_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *facility.organization_id.as_uuid(),
                             entity_id: *facility.facility_id.as_uuid(),
@@ -701,16 +645,13 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
 
             OrganizationEvent::FacilityUpdated(facility) => {
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *facility.organization_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                Ok(vec![self.create_root_event(
+                    *facility.organization_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *facility.organization_id.as_uuid(),
                             entity_id: *facility.facility_id.as_uuid(),
@@ -721,16 +662,13 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
 
             OrganizationEvent::FacilityRemoved(facility) => {
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *facility.organization_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                Ok(vec![self.create_root_event(
+                    *facility.organization_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *facility.organization_id.as_uuid(),
                             entity_id: *facility.facility_id.as_uuid(),
@@ -741,16 +679,13 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
 
             OrganizationEvent::ChildOrganizationAdded(child) => {
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *child.parent_organization_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                Ok(vec![self.create_root_event(
+                    *child.parent_organization_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *child.parent_organization_id.as_uuid(),
                             entity_id: child.child_organization_id,
@@ -762,16 +697,13 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
 
             OrganizationEvent::ChildOrganizationRemoved(child) => {
-                Ok(vec![GraphEvent {
-                    event_id: Uuid::now_v7(),
-                    aggregate_id: *child.parent_organization_id.as_uuid(),
-                    correlation_id: self.correlation_id,
-                    causation_id: None,
-                    payload: EventPayload::Context(
+                Ok(vec![self.create_root_event(
+                    *child.parent_organization_id.as_uuid(),
+                    EventPayload::Context(
                         cim_graph::events::ContextPayload::EntityAdded {
                             aggregate_id: *child.parent_organization_id.as_uuid(),
                             entity_id: child.child_organization_id,
@@ -781,7 +713,7 @@ impl GraphProjector {
                             }),
                         }
                     ),
-                }])
+                )])
             }
         }
     }
@@ -791,17 +723,14 @@ impl GraphProjector {
     /// Roles are Concepts (semantic/conceptual spaces), not Contexts
     pub fn create_role_concept(&self, role_name: String, role_description: String) -> Result<GraphEvent, ProjectionError> {
         let role_id = Uuid::now_v7();
-        Ok(GraphEvent {
-            event_id: Uuid::now_v7(),
-            aggregate_id: role_id,
-            correlation_id: self.correlation_id,
-            causation_id: None,
-            payload: EventPayload::Concept(cim_graph::events::ConceptPayload::ConceptDefined {
+        Ok(self.create_root_event(
+            role_id,
+            EventPayload::Concept(cim_graph::events::ConceptPayload::ConceptDefined {
                 concept_id: role_id.to_string(),
                 name: role_name,
                 definition: role_description,
             }),
-        })
+        ))
     }
 
     /// Create a PKI concept event
@@ -809,17 +738,14 @@ impl GraphProjector {
     /// PKI (certificates, trust chains) are Concepts, not Contexts
     pub fn create_pki_concept(&self, cert_name: String, cert_definition: String) -> Result<GraphEvent, ProjectionError> {
         let cert_id = Uuid::now_v7();
-        Ok(GraphEvent {
-            event_id: Uuid::now_v7(),
-            aggregate_id: cert_id,
-            correlation_id: self.correlation_id,
-            causation_id: None,
-            payload: EventPayload::Concept(cim_graph::events::ConceptPayload::ConceptDefined {
+        Ok(self.create_root_event(
+            cert_id,
+            EventPayload::Concept(cim_graph::events::ConceptPayload::ConceptDefined {
                 concept_id: cert_id.to_string(),
                 name: cert_name,
                 definition: cert_definition,
             }),
-        })
+        ))
     }
 }
 
@@ -973,7 +899,8 @@ mod tests {
         assert_eq!(graph_events1[1].correlation_id, projector.correlation_id);
 
         // Verify causation chain
-        assert_eq!(graph_events1[0].causation_id, None);
-        assert_eq!(graph_events1[1].causation_id, Some(graph_events1[0].event_id));
+        // A4: Root events have self-reference, derived events reference parent
+        assert_eq!(graph_events1[0].causation_id, Some(graph_events1[0].event_id)); // Self-reference
+        assert_eq!(graph_events1[1].causation_id, Some(graph_events1[0].event_id)); // References root
     }
 }

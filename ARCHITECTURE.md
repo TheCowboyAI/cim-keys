@@ -123,33 +123,33 @@ sequenceDiagram
 
 ```mermaid
 graph TB
-    subgraph "Domain Types"
-        O[Organization]
-        OU[OrganizationUnit]
-        P[Person]
-        L[Location]
+    subgraph DOMAIN["Domain Types"]
+        O["Organization"]
+        OU["OrganizationUnit"]
+        P["Person"]
+        L["Location"]
     end
 
-    subgraph "Lifting Functor"
-        LIFT[LiftableDomain::lift]
-        UNLIFT[LiftableDomain::unlift]
+    subgraph FUNCTOR["Lifting Functor"]
+        LIFT["LiftableDomain::lift"]
+        UNLIFT["LiftableDomain::unlift"]
     end
 
-    subgraph "Lifted Graph"
-        LN[LiftedNode]
-        LE[LiftedEdge]
-        LG[LiftedGraph]
+    subgraph GRAPH["Lifted Graph"]
+        LN["LiftedNode"]
+        LE["LiftedEdge"]
+        LG["LiftedGraph"]
     end
 
-    O -->|lift()| LN
-    OU -->|lift()| LN
-    P -->|lift()| LN
-    L -->|lift()| LN
+    O -->|"lift"| LN
+    OU -->|"lift"| LN
+    P -->|"lift"| LN
+    L -->|"lift"| LN
 
-    LN -->|unlift()| O
-    LN -->|unlift()| OU
-    LN -->|unlift()| P
-    LN -->|unlift()| L
+    LN -->|"unlift"| O
+    LN -->|"unlift"| OU
+    LN -->|"unlift"| P
+    LN -->|"unlift"| L
 
     LN --> LG
     LE --> LG
@@ -159,20 +159,20 @@ graph TB
 
 ```mermaid
 graph LR
-    subgraph "Intent Categories"
-        UI[Ui* Intents]
-        PORT[Port* Intents]
-        DOM[Domain* Intents]
-        SYS[System* Intents]
-        ERR[Error* Intents]
+    subgraph INTENTS["Intent Categories"]
+        UI["Ui Intents"]
+        PORT["Port Intents"]
+        DOM["Domain Intents"]
+        SYS["System Intents"]
+        ERR["Error Intents"]
     end
 
-    subgraph "Origins"
-        USER[User Interaction]
-        FILE[File I/O]
-        AGG[Aggregate Events]
-        TIMER[Timers/Ticks]
-        FAIL[Failures]
+    subgraph ORIGINS["Origins"]
+        USER["User Interaction"]
+        FILE["File I/O"]
+        AGG["Aggregate Events"]
+        TIMER["Timers/Ticks"]
+        FAIL["Failures"]
     end
 
     USER --> UI
@@ -186,21 +186,21 @@ graph LR
 
 ```mermaid
 graph TB
-    subgraph "Test Layers"
-        UNIT[Unit Tests<br>341 tests]
-        MVI[MVI Tests<br>33 tests]
-        BDD[BDD Tests<br>18 tests]
-        PROP[Property Tests<br>7 proptest]
+    subgraph TESTS["Test Layers"]
+        UNIT["Unit Tests - 341 tests"]
+        MVI["MVI Tests - 33 tests"]
+        BDD["BDD Tests - 18 tests"]
+        PROP["Property Tests - 7 proptest"]
     end
 
-    subgraph "Specifications"
-        GHERKIN[Gherkin Scenarios<br>112 scenarios]
+    subgraph SPECS["Specifications"]
+        GHERKIN["Gherkin Scenarios - 112 scenarios"]
     end
 
-    subgraph "Coverage"
-        LIB[src/**/*.rs]
-        GUI[src/gui/*]
-        AGG[src/aggregate.rs]
+    subgraph COV["Coverage"]
+        LIB["src/ library code"]
+        GUI["src/gui/ components"]
+        AGG["src/aggregate.rs"]
     end
 
     UNIT --> LIB
@@ -214,36 +214,36 @@ graph TB
 
 ```mermaid
 graph TB
-    subgraph "Encrypted SD Card"
+    subgraph SD["Encrypted SD Card"]
         MAN[manifest.json]
 
-        subgraph "domain/"
+        subgraph DOM["domain/"]
             ORG_J[organization.json]
-            PEOPLE[people/]
+            PEOPLE["people/"]
             RELS[relationships.json]
         end
 
-        subgraph "keys/"
-            KEY_DIR[{key-id}/]
+        subgraph KEYS["keys/"]
+            KEY_DIR["key-id/"]
             META[metadata.json]
             PUB[public.pem]
         end
 
-        subgraph "certificates/"
-            ROOT_DIR[root-ca/]
-            INT_DIR[intermediate-ca/]
-            LEAF_DIR[leaf/]
+        subgraph CERTS["certificates/"]
+            ROOT_DIR["root-ca/"]
+            INT_DIR["intermediate-ca/"]
+            LEAF_DIR["leaf/"]
         end
 
-        subgraph "nats/"
-            OP_DIR[operator/]
-            ACC_DIR[accounts/]
-            USR_DIR[users/]
+        subgraph NATS["nats/"]
+            OP_DIR["operator/"]
+            ACC_DIR["accounts/"]
+            USR_DIR["users/"]
         end
 
-        subgraph "events/"
-            DATE[{date}/]
-            EVT_LOG[*.jsonl]
+        subgraph EVT["events/"]
+            DATE["date/"]
+            EVT_LOG["events.jsonl"]
         end
     end
 ```
@@ -253,37 +253,54 @@ graph TB
 | Axiom | Status | Implementation |
 |-------|--------|----------------|
 | A3: Decoupled | ✅ | `update()` output depends only on input |
-| A4: Causality | ⚠️ | UUID v7 + MessageFactory required (see migration below) |
+| A4: Causality | ✅ | UUID v7 + causation tracking (see below) |
 | A5: Totality | ✅ | All `with_*` methods are total |
 | A7: Event Logs | ✅ | Events stored as timestamped prefixes |
 | A9: Composition | ✅ | Associativity verified by proptest |
 
-### A4 Causality Migration Required
+### A4 Causality Implementation
 
-**Current State**: Events have `causation_id: Option<Uuid>` fields but many are set to `None`.
+**Status**: ✅ **COMPLETE** - All 44 instances migrated, 348 tests passing.
 
-**Required Action**: Migrate to `cim_domain::MessageFactory` pattern:
+**Pattern Applied**:
+- **Root events**: `causation_id = Some(event_id)` (self-reference)
+- **Derived events**: `causation_id = Some(parent_id)` (reference to parent)
 
+**Helper Functions** (`src/graph_projection.rs`):
 ```rust
-// Files requiring MessageFactory migration:
-// - src/aggregate.rs (causation_id: None on lines 86, 147)
-// - src/graph_projection.rs (many causation_id: None)
-// - src/commands/nats_identity.rs (causation_id: None)
-// - src/commands/export.rs (causation_id: None)
-// - src/adapters/nats_client.rs (causation_id: None)
-```
-
-**Migration Pattern**:
-```rust
-// BEFORE (broken audit trail)
-DomainEvent {
-    causation_id: None,
-    // ...
+fn create_root_event(&self, aggregate_id: Uuid, payload: EventPayload) -> GraphEvent {
+    let event_id = Uuid::now_v7();
+    GraphEvent {
+        event_id,
+        causation_id: Some(event_id), // A4: Self-reference for root
+        // ...
+    }
 }
 
-// AFTER (complete audit trail)
-let identity = MessageFactory::command_from_command(event_id, &cmd.identity);
-DomainEventEnvelope::new(identity, event_payload)
+fn create_derived_event(&self, aggregate_id: Uuid, causation_id: Uuid, payload: EventPayload) -> GraphEvent {
+    GraphEvent {
+        event_id: Uuid::now_v7(),
+        causation_id: Some(causation_id), // A4: Reference to parent
+        // ...
+    }
+}
+```
+
+**Causation Module** (`src/causation.rs`):
+```rust
+use cim_keys::causation::Causation;
+
+// Root event (no prior cause - self-reference)
+let causation = Causation::root(event_id);
+
+// Event caused by a command
+let causation = Causation::from_command(command_id);
+
+// Event caused by another event
+let causation = Causation::from_event(parent_event_id);
+
+// NEVER returns None
+assert!(causation.to_option().is_some());
 ```
 
 ## UUID v7 Causality Architecture
@@ -292,13 +309,17 @@ DomainEventEnvelope::new(identity, event_payload)
 
 All entity and event IDs use UUID v7 (`Uuid::now_v7()`), which provides:
 
-```
-UUID v7 Structure (128 bits):
-┌─────────────────────────────────────────────────────────────┐
-│ 48-bit Unix timestamp (ms) │ 4-bit ver │ 12-bit rand │ ... │
-└─────────────────────────────────────────────────────────────┘
-         ↑
-    Causality embedded at creation time
+```mermaid
+flowchart LR
+    subgraph UUID7["UUID v7 Structure - 128 bits"]
+        TS["48-bit timestamp"]
+        VER["4-bit ver"]
+        RAND["12-bit rand"]
+        SEQ["64-bit rand+seq"]
+    end
+    TS --> VER --> RAND --> SEQ
+    NOTE["Causality embedded at creation time"]
+    UUID7 -.-> NOTE
 ```
 
 ### Causality Guarantees
@@ -376,26 +397,27 @@ let identity = MessageFactory::command_from_command(event_id, &cmd.identity);
 
 ### Three-Level Causality
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    CAUSALITY ARCHITECTURE                        │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  1. TEMPORAL (UUID v7)           2. CORRELATION               │
-│     ┌──────────┐                    ┌──────────┐                │
-│     │ event_id │ ← timestamp        │ corr_id  │ ← transaction  │
-│     └──────────┘   embedded         └──────────┘   grouping     │
-│                                                                  │
-│  3. CAUSATION                                                    │
-│     ┌──────────────────────────────────────────┐                │
-│     │ Command A ──causes──► Event B            │                │
-│     │     ↑                     │              │                │
-│     │     │                     ▼              │                │
-│     │  causation_id         causation_id       │                │
-│     │  (what caused A)      (points to A)      │                │
-│     └──────────────────────────────────────────┘                │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph TEMPORAL["1. TEMPORAL - UUID v7"]
+        EID["event_id"]
+        TS["timestamp embedded"]
+        EID --> TS
+    end
+
+    subgraph CORRELATION["2. CORRELATION"]
+        CID["correlation_id"]
+        TXN["transaction grouping"]
+        CID --> TXN
+    end
+
+    subgraph CAUSATION["3. CAUSATION"]
+        CMD["Command A"]
+        EVT["Event B"]
+        CMD -->|"causes"| EVT
+        CMD -.->|"causation_id"| ROOT["what caused A"]
+        EVT -.->|"causation_id"| CMD
+    end
 ```
 
 ### Audit Trail Reconstruction

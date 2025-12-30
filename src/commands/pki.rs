@@ -149,6 +149,8 @@ pub struct RootCAGenerated {
 pub fn handle_generate_root_ca(cmd: GenerateRootCA) -> Result<RootCAGenerated, String> {
     let mut events = Vec::new();
     let ca_id = Uuid::now_v7();
+    // A4: Generate command_id for causation tracking
+    let command_id = Uuid::now_v7();
 
     // Step 1: Generate CA key pair
     let key_pair = handle_generate_key_pair(GenerateKeyPair {
@@ -180,7 +182,7 @@ pub fn handle_generate_root_ca(cmd: GenerateRootCA) -> Result<RootCAGenerated, S
             ],
         },
         correlation_id: cmd.correlation_id,
-        causation_id: None,
+        causation_id: Some(command_id), // A4: Causation from parent command
     })?;
     events.extend(key_pair.events);
 
@@ -483,6 +485,8 @@ mod tests {
 
     #[test]
     fn test_generate_key_pair_uses_purpose_recommendation() {
+        // A4: Generate test command_id for causation tracking
+        let test_command_id = Uuid::now_v7();
         let cmd = GenerateKeyPair {
             purpose: crate::value_objects::AuthKeyPurpose::SshAuthentication,
             algorithm: None, // Let purpose recommend
@@ -498,7 +502,7 @@ mod tests {
                 audit_requirements: vec![],
             },
             correlation_id: Uuid::now_v7(),
-            causation_id: None,
+            causation_id: Some(test_command_id), // A4: Self-reference for root command
         };
 
         let result = handle_generate_key_pair(cmd).unwrap();

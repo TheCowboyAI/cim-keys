@@ -78,12 +78,14 @@ impl KeyManagementAggregate {
                 };
 
                 // Generate key pair first
+                // Causation: this key generation is caused by the certificate command
+                let correlation_id = Uuid::now_v7();
                 let key_pair_cmd = crate::commands::pki::GenerateKeyPair {
                     purpose: key_purpose,
                     algorithm: Some(crate::events::KeyAlgorithm::Ed25519),
                     owner_context: key_context,
-                    correlation_id: Uuid::now_v7(),
-                    causation_id: None,
+                    correlation_id,
+                    causation_id: Some(*cmd.command_id.as_uuid()), // A4: Causation from parent command
                 };
 
                 let key_result = crate::commands::pki::handle_generate_key_pair(key_pair_cmd)
@@ -139,12 +141,13 @@ impl KeyManagementAggregate {
                     audit_requirements: vec![],
                 };
 
+                // Causation: this key generation is caused by the SSH key command
                 let key_pair_cmd = crate::commands::pki::GenerateKeyPair {
                     purpose: key_purpose,
                     algorithm: Some(crate::events::KeyAlgorithm::Ed25519), // Ed25519 for SSH
                     owner_context: key_context,
                     correlation_id: Uuid::now_v7(),
-                    causation_id: None,
+                    causation_id: Some(*cmd.command_id.as_uuid()), // A4: Causation from parent command
                 };
 
                 let result = crate::commands::pki::handle_generate_key_pair(key_pair_cmd)

@@ -521,6 +521,8 @@ mod tests {
         let test_dir = std::env::temp_dir().join(format!("cim-keys-test-{}", Uuid::now_v7()));
         std::fs::create_dir_all(&test_dir).unwrap();
 
+        // A4: Generate test command_id for causation tracking
+        let test_command_id = Uuid::now_v7();
         let cmd = ExportToEncryptedStorage {
             output_directory: test_dir.clone(),
             organization: org,
@@ -529,7 +531,7 @@ mod tests {
             nats_identities: vec![],
             include_manifest: true,
             correlation_id: Uuid::now_v7(),
-            causation_id: None,
+            causation_id: Some(test_command_id), // A4: Self-reference for root command
         };
 
         let result = handle_export_to_encrypted_storage(cmd).unwrap();
@@ -558,6 +560,8 @@ mod tests {
         };
 
         // Test with non-encrypted path (should warn but succeed)
+        // A4: Generate test command_id for causation tracking
+        let test_command_id = Uuid::now_v7();
         let cmd = ExportToEncryptedStorage {
             output_directory: PathBuf::from("/tmp/test"),
             organization: org,
@@ -566,7 +570,7 @@ mod tests {
             nats_identities: vec![],
             include_manifest: false,
             correlation_id: Uuid::now_v7(),
-            causation_id: None,
+            causation_id: Some(test_command_id), // A4: Self-reference for root command
         };
 
         let result = handle_export_to_encrypted_storage(cmd);

@@ -343,12 +343,14 @@ pub fn handle_bootstrap_nats_infrastructure(
     cmd: BootstrapNatsInfrastructure,
 ) -> Result<NatsInfrastructureBootstrapped, String> {
     let mut all_events = Vec::new();
+    // A4: Generate command_id for causation tracking of root command
+    let bootstrap_command_id = Uuid::now_v7();
 
     // Step 1: Create operator for organization
     let operator_cmd = CreateNatsOperator {
         organization: cmd.organization.clone(),
         correlation_id: cmd.correlation_id,
-        causation_id: None,
+        causation_id: Some(bootstrap_command_id), // A4: Reference parent bootstrap command
     };
     let operator = handle_create_nats_operator(operator_cmd)?;
     all_events.extend(operator.events.clone());
@@ -434,10 +436,12 @@ mod tests {
             metadata: Default::default(),
         };
 
+        // A4: Generate test command_id for causation tracking
+        let test_command_id = Uuid::now_v7();
         let cmd = CreateNatsOperator {
             organization: org,
             correlation_id: Uuid::now_v7(),
-            causation_id: None,
+            causation_id: Some(test_command_id), // A4: Self-reference for root command
         };
 
         let result = handle_create_nats_operator(cmd).unwrap();
@@ -485,20 +489,23 @@ mod tests {
         };
 
         // Create operator first
+        // A4: Generate test command_ids for causation tracking
+        let test_operator_cmd_id = Uuid::now_v7();
         let operator = handle_create_nats_operator(CreateNatsOperator {
             organization: org.clone(),
             correlation_id: Uuid::now_v7(),
-            causation_id: None,
+            causation_id: Some(test_operator_cmd_id), // A4: Self-reference for root command
         })
         .unwrap();
 
+        let test_account_cmd_id = Uuid::now_v7();
         let cmd = CreateNatsAccount {
             account: AccountIdentity::OrganizationUnit(unit),
             parent_org: Some(org),
             operator_nkey: operator.operator_nkey,
             limits: None,
             correlation_id: Uuid::now_v7(),
-            causation_id: None,
+            causation_id: Some(test_account_cmd_id), // A4: Reference test command
         };
 
         let result = handle_create_nats_account(cmd).unwrap();
@@ -549,10 +556,12 @@ mod tests {
         };
 
         // Create operator and account first
+        // A4: Generate test command_ids for causation tracking
+        let test_operator_cmd_id = Uuid::now_v7();
         let operator = handle_create_nats_operator(CreateNatsOperator {
             organization: org.clone(),
             correlation_id: Uuid::now_v7(),
-            causation_id: None,
+            causation_id: Some(test_operator_cmd_id), // A4: Self-reference for root command
         })
         .unwrap();
 
@@ -565,16 +574,18 @@ mod tests {
             nats_account_name: None,
         };
 
+        let test_account_cmd_id = Uuid::now_v7();
         let account = handle_create_nats_account(CreateNatsAccount {
             account: AccountIdentity::OrganizationUnit(unit),
             parent_org: Some(org.clone()),
             operator_nkey: operator.operator_nkey,
             limits: None,
             correlation_id: Uuid::now_v7(),
-            causation_id: None,
+            causation_id: Some(test_account_cmd_id), // A4: Reference test command
         })
         .unwrap();
 
+        let test_user_cmd_id = Uuid::now_v7();
         let cmd = CreateNatsUser {
             user: UserIdentity::Person(person),
             organization: org,
@@ -582,7 +593,7 @@ mod tests {
             permissions: None,
             limits: None,
             correlation_id: Uuid::now_v7(),
-            causation_id: None,
+            causation_id: Some(test_user_cmd_id), // A4: Reference test command
         };
 
         let result = handle_create_nats_user(cmd).unwrap();

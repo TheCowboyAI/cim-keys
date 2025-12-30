@@ -41,6 +41,7 @@
 #![warn(rustdoc::missing_crate_level_docs)]
 
 // Core modules following FRP/Event-sourcing
+pub mod causation; // Causation tracking for A4 FRP compliance
 pub mod types; // Shared domain ontologies (value objects, enums)
 pub mod events; // DDD-organized events by aggregate root
 pub mod commands;
@@ -160,6 +161,9 @@ pub use cim_domain::{
     Command, CommandId, EventId,
     CausationId, CorrelationId, EntityId
 };
+
+// Re-export causation tracking for A4 compliance
+pub use causation::{Causation, CausationType, EventBuilder};
 
 // Re-export policy types when feature is enabled
 #[cfg(feature = "policy")]

@@ -356,6 +356,8 @@ pub fn handle_provision_complete_yubikey(
     cmd: ProvisionCompleteYubiKey,
 ) -> Result<YubiKeyCompletelyProvisioned, String> {
     let mut all_events = Vec::new();
+    // A4: Generate command_id for causation tracking
+    let provision_command_id = Uuid::now_v7();
 
     // Step 1: Configure security with generated PIN/PUK
     let secure_pin = generate_secure_pin()?;
@@ -368,7 +370,7 @@ pub fn handle_provision_complete_yubikey(
         new_puk: Some(secure_puk),
         rotate_management_key: true,
         correlation_id: cmd.correlation_id,
-        causation_id: None,
+        causation_id: Some(provision_command_id), // A4: Reference parent provision command
     })?;
     all_events.extend(security_config.events.clone());
 
@@ -568,6 +570,8 @@ mod tests {
 
     #[test]
     fn test_configure_security_detects_factory_defaults() {
+        // A4: Generate test command_id for causation tracking
+        let test_command_id = Uuid::now_v7();
         let cmd = ConfigureYubiKeySecurity {
             yubikey_serial: "12345678".to_string(),
             firmware_version: FirmwareVersion::new(5, 7, 2),
@@ -575,7 +579,7 @@ mod tests {
             new_puk: Some("87654321".to_string()),
             rotate_management_key: false,
             correlation_id: Uuid::now_v7(),
-            causation_id: None,
+            causation_id: Some(test_command_id), // A4: Self-reference for root command
         };
 
         let result = handle_configure_yubikey_security(cmd).unwrap();
@@ -590,6 +594,8 @@ mod tests {
 
     #[test]
     fn test_configure_security_rejects_weak_pin() {
+        // A4: Generate test command_id for causation tracking
+        let test_command_id = Uuid::now_v7();
         let cmd = ConfigureYubiKeySecurity {
             yubikey_serial: "12345678".to_string(),
             firmware_version: FirmwareVersion::new(5, 7, 2),
@@ -597,7 +603,7 @@ mod tests {
             new_puk: None,
             rotate_management_key: false,
             correlation_id: Uuid::now_v7(),
-            causation_id: None,
+            causation_id: Some(test_command_id), // A4: Self-reference for root command
         };
 
         let result = handle_configure_yubikey_security(cmd);
@@ -607,6 +613,8 @@ mod tests {
 
     #[test]
     fn test_configure_security_uses_firmware_aware_algorithms() {
+        // A4: Generate test command_ids for causation tracking
+        let test_modern_cmd_id = Uuid::now_v7();
         // Test with modern firmware (5.4+)
         let cmd_modern = ConfigureYubiKeySecurity {
             yubikey_serial: "12345678".to_string(),
@@ -615,7 +623,7 @@ mod tests {
             new_puk: None,
             rotate_management_key: true,
             correlation_id: Uuid::now_v7(),
-            causation_id: None,
+            causation_id: Some(test_modern_cmd_id), // A4: Self-reference for root command
         };
 
         let result_modern = handle_configure_yubikey_security(cmd_modern).unwrap();
@@ -625,6 +633,7 @@ mod tests {
         );
 
         // Test with legacy firmware (<5.4)
+        let test_legacy_cmd_id = Uuid::now_v7();
         let cmd_legacy = ConfigureYubiKeySecurity {
             yubikey_serial: "12345678".to_string(),
             firmware_version: FirmwareVersion::new(4, 0, 0),
@@ -632,7 +641,7 @@ mod tests {
             new_puk: None,
             rotate_management_key: true,
             correlation_id: Uuid::now_v7(),
-            causation_id: None,
+            causation_id: Some(test_legacy_cmd_id), // A4: Self-reference for root command
         };
 
         let result_legacy = handle_configure_yubikey_security(cmd_legacy).unwrap();

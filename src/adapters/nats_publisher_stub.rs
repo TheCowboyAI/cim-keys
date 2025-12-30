@@ -126,11 +126,13 @@ mod tests {
 
     #[test]
     fn test_event_envelope_serialization() {
+        // A4: Generate test event_id for causation tracking
+        let test_event_id = uuid::Uuid::now_v7();
         let envelope = EventEnvelope {
-            event_id: uuid::Uuid::now_v7(),
+            event_id: test_event_id,
             aggregate_id: uuid::Uuid::now_v7(),
             correlation_id: uuid::Uuid::now_v7(),
-            causation_id: None,
+            causation_id: Some(test_event_id), // A4: Self-reference for root event
             payload_cid: "bafyrei1234567890abcdef".to_string(),
             timestamp: chrono::Utc::now(),
             source: "test".to_string(),
