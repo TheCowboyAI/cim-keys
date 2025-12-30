@@ -291,12 +291,16 @@ impl BootstrapWorkflow {
         let org = self.bootstrap_data.organization.clone();
         let units = self.bootstrap_data.units.clone();
 
-        // Derive master seed from passphrase
+        // Derive master seed from passphrase (Argon2id - intentionally slow for security)
+        println!("  Deriving master seed from passphrase (this may take a moment)...");
+        std::io::Write::flush(&mut std::io::stdout()).ok();
         let master_seed = derive_master_seed(&self.master_passphrase, &org.name)
             .map_err(|e| format!("Failed to derive master seed: {}", e))?;
+        println!("  ✓ Master seed derived");
 
         // Generate Root CA
         println!("  Generating Root CA for {}...", org.display_name);
+        std::io::Write::flush(&mut std::io::stdout()).ok();
         let root_ca_seed = master_seed.derive_child("root-ca");
         let root_params = RootCAParams {
             organization: org.display_name.clone(),
