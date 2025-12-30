@@ -29,6 +29,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 15. **Intent Naming**: Prefix intents with origin: `Ui*`, `Port*`, `Domain*`, `System*`, `Error*`
 16. **Port Dependency Injection**: Inject ports into update function, call through Commands only
 17. **Hex Field Access**: Use correct field names (`data` not `key_data`, `data` not `public_key`)
+18. **DDD Terminology**: Use domain language (ConceptEntity not GraphNode, OrganizationConcept not OrganizationGraph)
+19. **Injection Coproduct**: Use `Injection` enum for type-safe heterogeneous domain dispatch
+20. **LiftableDomain Pattern**: Implement `lift()`/`unlift()` for domain→graph functorial mapping
+21. **Conceptual Spaces**: Use 3D semantic positions with stereographic projection for visualization
+22. **BDD Specifications**: Write Gherkin scenarios in `doc/qa/features/` for domain workflows
+23. **Property-Based Testing**: Use proptest for invariant verification (idempotence, associativity)
+24. **FRP Axiom Tests**: Explicitly test A3 (decoupling), A5 (totality), A7 (events), A9 (composition)
+25. **Sprint Retrospectives**: Write `retrospectives/sprint_N.md` documenting what worked and lessons learned
 
 ## 🔴 MANDATORY: N-ARY FRP AXIOMS
 
@@ -449,3 +457,111 @@ cargo run --bin cim-keys-gui -- ./test-output
 - **WASM compatibility** - Keep dependencies WASM-compatible
 - **Graph visualization primary** - Organization IS a graph, not a hierarchy
 - **Time is always present** - Every relationship has temporal bounds
+
+## DDD Terminology (Sprint 2-3 Refactoring)
+
+Use domain language, not implementation terms:
+
+| Old Term (DON'T USE) | New Term (USE) | Reason |
+|---------------------|----------------|--------|
+| OrganizationGraph | OrganizationConcept | Graph is implementation, not domain |
+| GraphNode | ConceptEntity | Domain expert understands "entity" |
+| GraphEdge | ConceptRelation | Relationships, not edges |
+| GraphMessage | OrganizationIntent | Intent captures user goal |
+| NodeType enum | Injection coproduct | Type-safe domain dispatch |
+
+## LiftableDomain Pattern (Sprint 7)
+
+Faithful functor for lifting domain types into unified graph representation:
+
+```rust
+pub trait LiftableDomain: Clone + Send + Sync + 'static {
+    fn lift(&self) -> LiftedNode;        // Domain → Graph
+    fn unlift(node: &LiftedNode) -> Option<Self>;  // Graph → Domain
+    fn injection() -> Injection;          // Coproduct tag
+    fn entity_id(&self) -> Uuid;
+}
+```
+
+Implementations exist for: Organization, OrganizationUnit, Person, Location
+
+Usage:
+```rust
+let graph = LiftedGraph::new();
+graph.add(&organization);
+graph.add(&person);
+graph.connect(org_id, person_id, "employs", Color::BLUE);
+
+// Recover original types
+let people: Vec<Person> = graph.unlift_all();
+```
+
+## Testing Patterns (Sprint 8-9)
+
+### MVI Tests (`tests/mvi_tests.rs`)
+
+```rust
+// Model immutability - verify with_* returns new instance
+let model = Model::default();
+let updated = model.clone().with_tab(Tab::Organization);
+assert_ne!(std::ptr::addr_of!(model), std::ptr::addr_of!(updated));
+
+// FRP axiom A3 - decoupled (output depends only on input)
+let (m1, _) = update(model.clone(), intent.clone(), &ports);
+let (m2, _) = update(model.clone(), intent.clone(), &ports);
+assert_eq!(m1.current_tab, m2.current_tab);
+```
+
+### Property-Based Tests with Proptest
+
+```rust
+proptest! {
+    #[test]
+    fn prop_with_tab_idempotent(tab in arb_tab()) {
+        let model = Model::default();
+        let once = model.clone().with_tab(tab);
+        let twice = once.clone().with_tab(tab);
+        prop_assert_eq!(once.current_tab, twice.current_tab);
+    }
+}
+```
+
+### BDD Specifications (`doc/qa/features/`)
+
+```gherkin
+Feature: Domain Bootstrap
+  Scenario: Create organization from bootstrap configuration
+    Given a domain-bootstrap.json with organization "CowboyAI"
+    When I execute the bootstrap command
+    Then an OrganizationCreated event should be emitted
+    And the organization should have a valid UUID v7 identifier
+```
+
+Step definitions in `tests/bdd/` connect to actual aggregate/projection.
+
+## Test Coverage Summary
+
+| Test Type | Count | Location |
+|-----------|-------|----------|
+| Library unit tests | 341 | `src/**/*.rs` |
+| MVI tests | 33 | `tests/mvi_tests.rs` |
+| BDD tests | 18 | `tests/bdd_tests.rs` |
+| Gherkin scenarios | 112 | `doc/qa/features/` |
+| Workflow tests | ~50 | `tests/*_state_machine.rs` |
+| **Total** | **~450** | |
+
+## Refactoring Sprint Summary
+
+| Sprint | Focus | Key Deliverable |
+|--------|-------|-----------------|
+| 0 | Foundation | progress.json, expert consultations |
+| 1 | Domain Layer | Import cim-domain-* types |
+| 2 | Terminology | Rename Graph→Concept |
+| 3 | NodeType Removal | Injection coproduct |
+| 4 | MVI Intent Layer | Intent categorization |
+| 5 | Pure Update | with_* methods |
+| 6 | Conceptual Spaces | 3D semantic positions |
+| 7 | LiftableDomain | Faithful functor |
+| 8 | Test Infrastructure | MVI + proptest |
+| 9 | BDD Specifications | 112 Gherkin scenarios |
+| 10 | Documentation | This update |

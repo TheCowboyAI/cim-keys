@@ -1,130 +1,237 @@
-# CIM Keys - DGX Phoenix Cluster Security
+# CIM Keys
 
-**Created**: 2025-12-05
-**Operator**: dgx-phoenix
-**Security Model**: NATS JWT/NKeys
+<!-- Copyright (c) 2025 - Cowboy AI, LLC. -->
+
+**Event-Sourced Cryptographic Key Management for CIM Infrastructure**
+
+[![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
+[![License](https://img.shields.io/badge/license-proprietary-blue.svg)](LICENSE)
 
 ## Overview
 
-This repository contains all PKI credentials and security configurations for the DGX Phoenix NATS cluster. These credentials enable secure, authenticated access to the NATS infrastructure.
+CIM Keys is the genesis point for CIM (Composable Information Machine) infrastructures. It provides:
 
-**⚠️ CRITICAL**: This repository contains sensitive cryptographic material. Never commit to public repositories.
+- **Domain Bootstrap**: Create organizations, people, locations, and their relationships
+- **PKI Generation**: Root CA, intermediate CAs, personal keys, and certificates
+- **NATS Security**: Operators, accounts, users, and JWT credentials
+- **YubiKey Integration**: Hardware token provisioning and management
+- **Offline-First**: Air-gapped operation with encrypted SD card projections
 
-## Security Architecture
+## Architecture
 
-### Operator
-- **Name**: dgx-phoenix
-- **Purpose**: Root of trust for the DGX cluster
-- **Scope**: Manages all accounts and users in the Phoenix datacenter
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         CIM Keys                                 │
+├──────────────┬──────────────┬──────────────┬───────────────────┤
+│   Domain     │    Events    │  Projections │      GUI          │
+│  Bootstrap   │   (CQRS)     │  (JSON/SD)   │  (Iced 0.13+)     │
+├──────────────┼──────────────┼──────────────┼───────────────────┤
+│ Organization │ DomainEvent  │ OfflineKey   │ MVI Architecture  │
+│ Person       │ KeyEvent     │ Projection   │ Pure Update Fn    │
+│ Location     │ YubiKeyEvent │              │ Intent Routing    │
+└──────────────┴──────────────┴──────────────┴───────────────────┘
+```
 
-### Accounts
-
-| Account | Purpose | Users |
-|---------|---------|-------|
-| **SYS** | System account for NATS cluster management | sys-admin |
-| **ADMIN** | Administrative access for operators | admin |
-| **MONITORING** | Metrics collection and monitoring | prometheus |
-
-### Users
-
-| User | Account | Purpose | Credentials File |
-|------|---------|---------|------------------|
-| sys-admin | SYS | Cluster administration | `creds/SYS/sys-admin.creds` |
-| admin | ADMIN | General administrative tasks | `creds/ADMIN/admin.creds` |
-| prometheus | MONITORING | Prometheus metrics scraping | `creds/MONITORING/prometheus.creds` |
-
-## Using Credentials
-
-### Connect with NATS CLI
+## Quick Start
 
 ```bash
-# As sys-admin
-nats --creds=/path/to/cim-keys/creds/SYS/sys-admin.creds server list
+# Enter Nix development shell
+nix develop
 
-# As admin
-nats --creds=/path/to/cim-keys/creds/ADMIN/admin.creds pub test.subject "hello"
+# Build native application
+cargo build --release --features gui
 
-# As prometheus (monitoring)
-nats --creds=/path/to/cim-keys/creds/MONITORING/prometheus.creds sub "metrics.>"
+# Run GUI
+cargo run --bin cim-keys-gui -- /path/to/output
+
+# Run tests
+cargo test --features gui
 ```
 
-### Use in Applications
+## Key Features
 
-```go
-// Go example
-nc, _ := nats.Connect("nats://10.0.20.1:4222",
-    nats.UserCredentials("/path/to/creds/ADMIN/admin.creds"))
-```
+### Event-Sourced FRP Architecture
+
+All state changes flow through immutable events:
 
 ```rust
-// Rust example
-let nc = nats::Options::with_credentials("/path/to/creds/ADMIN/admin.creds")
-    .connect("nats://10.0.20.1:4222")?;
+Command → Aggregate → Events → Projection → GUI
 ```
 
-## Deployment to NATS Servers
+- **No CRUD operations** - Only domain events
+- **Offline-first** - Events stored as JSON on encrypted partitions
+- **Replay capability** - Reconstruct state from event history
 
-The resolver configuration has been generated and saved to:
-- `/git/thecowboyai/cim-dgx/nats-configs/resolver.conf`
+### MVI (Model-View-Intent) GUI
 
-To deploy security to the NATS cluster, include this configuration in your NATS server config files.
+Pure functional reactive GUI using Iced 0.13+:
 
-## Security Best Practices
+```rust
+fn update(model: Model, intent: Intent) -> (Model, Task<Intent>) {
+    // Pure function - no side effects
+    match intent {
+        Intent::UiTabSelected(tab) => (model.with_tab(tab), Task::none()),
+        Intent::PortFileLoaded(data) => (model.with_data(data), Task::none()),
+        // ...
+    }
+}
+```
 
-1. **Never commit unencrypted credentials to git**
-2. **Rotate credentials regularly** (every 90 days recommended)
-3. **Use principle of least privilege** - grant minimum necessary permissions
-4. **Audit access logs** regularly
-5. **Keep backups** of NSC store in secure offline location
+### LiftableDomain Pattern
 
-## Credential Rotation
+Faithful functor for domain composition:
 
-To rotate a user's credentials:
+```rust
+pub trait LiftableDomain {
+    fn lift(&self) -> LiftedNode;
+    fn unlift(node: &LiftedNode) -> Option<Self>;
+    fn injection() -> Injection;
+}
+
+// Implemented for: Organization, OrganizationUnit, Person, Location
+```
+
+## Project Structure
+
+```
+src/
+├── aggregate.rs       # Command processing (CQRS)
+├── commands/          # Domain commands by aggregate
+├── events/            # Immutable domain events
+├── projections.rs     # State materialization to JSON
+├── domain.rs          # Organization, Person, Location
+├── gui.rs             # Iced GUI application
+├── mvi/               # Model-View-Intent architecture
+│   ├── model.rs       # Immutable application state
+│   ├── intent.rs      # User intents (Ui*, Port*, Domain*)
+│   └── update.rs      # Pure update function
+├── lifting.rs         # LiftableDomain trait
+└── crypto/            # Key generation, X.509, seeds
+
+tests/
+├── mvi_tests.rs       # MVI property tests (33 tests)
+├── bdd_tests.rs       # BDD step definitions (18 tests)
+└── bdd/               # Step definition modules
+
+doc/qa/features/       # Gherkin specifications (112 scenarios)
+├── domain_bootstrap.feature
+├── person_management.feature
+├── key_generation.feature
+├── yubikey_provisioning.feature
+├── nats_security_bootstrap.feature
+└── export_manifest.feature
+```
+
+## Testing
+
+### Test Summary
+
+| Type | Count | Location |
+|------|-------|----------|
+| Library tests | 341 | `src/**/*.rs` |
+| MVI tests | 33 | `tests/mvi_tests.rs` |
+| BDD tests | 18 | `tests/bdd_tests.rs` |
+| Gherkin specs | 112 | `doc/qa/features/` |
+| Workflow tests | ~50 | `tests/*_state_machine.rs` |
+
+### Run Tests
 
 ```bash
-# Set NSC home
-export NSC_HOME=/git/thecowboyai/cim-keys/nsc
+# All tests
+cargo test --features gui
 
-# Revoke old credentials
-nsc revoke user --account ADMIN --name admin
+# Library only
+cargo test --features gui --lib
 
-# Generate new credentials  
-nsc generate user --account ADMIN --name admin
+# MVI tests
+cargo test --features gui --test mvi_tests
 
-# Update resolver configuration
-nsc generate config --mem-resolver --sys-account SYS > ../cim-dgx/nats-configs/resolver.conf
-
-# Deploy updated resolver to NATS servers
-# (see deployment documentation)
+# BDD tests
+cargo test --features gui --test bdd_tests
 ```
 
-## Emergency Access Revocation
+## Configuration
 
-If credentials are compromised:
+### Domain Bootstrap
+
+Create `secrets/domain-bootstrap.json`:
+
+```json
+{
+  "organization": {
+    "name": "CowboyAI",
+    "domain": "cowboyai.com"
+  },
+  "units": [
+    { "name": "Engineering", "type": "Department" }
+  ],
+  "people": [
+    { "name": "Admin", "email": "admin@cowboyai.com", "role": "Administrator" }
+  ]
+}
+```
+
+### Export Structure
+
+```
+/mnt/encrypted/cim-keys/
+├── manifest.json
+├── domain/
+│   ├── organization.json
+│   ├── people/
+│   └── relationships.json
+├── keys/
+│   └── {key-id}/
+│       ├── metadata.json
+│       └── public.pem
+├── certificates/
+│   ├── root-ca/
+│   ├── intermediate-ca/
+│   └── leaf/
+├── nats/
+│   ├── operator/
+│   ├── accounts/
+│   └── users/
+└── events/
+    └── {date}/
+```
+
+## Development
+
+### Prerequisites
+
+- Rust 1.75+
+- Nix (recommended)
+- YubiKey (optional, for hardware key storage)
+
+### Best Practices
+
+1. **UUID v7** - Always use `Uuid::now_v7()` for time-ordered IDs
+2. **Pure Functions** - Update functions must be pure
+3. **Immutable Models** - Use `with_*` methods, never mutate
+4. **Event Sourcing** - All state changes through events
+5. **Intent Naming** - Prefix with origin: `Ui*`, `Port*`, `Domain*`
+
+See [CLAUDE.md](CLAUDE.md) for comprehensive development guidelines.
+
+## Documentation
+
+| Document | Purpose |
+|----------|---------|
+| [CLAUDE.md](CLAUDE.md) | Development guidelines |
+| [REFACTORING_PLAN.md](REFACTORING_PLAN.md) | Architecture refactoring plan |
+| [N_ARY_FRP_AXIOMS.md](N_ARY_FRP_AXIOMS.md) | FRP axiom specification |
+| [retrospectives/](retrospectives/) | Sprint retrospectives |
+
+## License
+
+Copyright (c) 2025 - Cowboy AI, LLC. All rights reserved.
+
+## NATS Credentials (DGX Phoenix)
+
+For NATS cluster credentials, see [creds/](creds/) directory.
 
 ```bash
-export NSC_HOME=/git/thecowboyai/cim-keys/nsc
-
-# Revoke the compromised user
-nsc revoke user --account <ACCOUNT> --name <USER>
-
-# Regenerate resolver config
-nsc generate config --mem-resolver --sys-account SYS
-
-# Immediately deploy to all NATS servers
-# The revoked credentials will be rejected within seconds
+# Connect as admin
+nats --creds=creds/ADMIN/admin.creds server list
 ```
-
-## Files to Protect
-
-These files contain sensitive cryptographic material and must be protected:
-
-- `nsc/stores/**/keys/**/*.nk` - Private keys (NEVER share)
-- `creds/**/*.creds` - User credential files (share only with authorized users)
-- `.nkeys/**/*` - NKey seeds (NEVER share)
-
-## Reference
-
-- [NATS Security](https://docs.nats.io/running-a-nats-service/configuration/securing_nats)
-- [NSC Tool Documentation](https://docs.nats.io/running-a-nats-service/configuration/securing_nats/auth_intro/nsc_intro)
-- [JWT Authentication](https://docs.nats.io/running-a-nats-service/configuration/securing_nats/auth_intro/jwt)
