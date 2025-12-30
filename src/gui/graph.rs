@@ -2648,17 +2648,6 @@ impl OrganizationConcept {
         }
     }
 
-    fn role_to_color(&self, role: &KeyOwnerRole) -> Color {
-        match role {
-            KeyOwnerRole::RootAuthority => Color::from_rgb(0.8, 0.2, 0.2),
-            KeyOwnerRole::SecurityAdmin => Color::from_rgb(0.2, 0.2, 0.8),
-            KeyOwnerRole::Developer => Color::from_rgb(0.5, 0.5, 0.8),
-            KeyOwnerRole::ServiceAccount => Color::from_rgb(0.2, 0.8, 0.2),
-            KeyOwnerRole::BackupHolder => Color::from_rgb(0.8, 0.5, 0.2),
-            KeyOwnerRole::Auditor => Color::from_rgb(0.8, 0.8, 0.2),
-        }
-    }
-
     /// Check if a node should be visible based on current filter settings
     pub fn should_show_node(&self, node: &ConceptEntity) -> bool {
         let injection = node.domain_node.injection();

@@ -51,7 +51,7 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
 use crate::gui::graph::{OrganizationConcept, EdgeType};
-use crate::gui::domain_node::{DomainNodeData, Injection};
+use crate::gui::domain_node::DomainNodeData;
 
 /// Export format type
 #[derive(Debug, Clone, PartialEq, Eq)]
