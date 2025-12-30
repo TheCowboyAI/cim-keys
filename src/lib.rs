@@ -50,6 +50,10 @@ pub mod projections;
 // Graph projection layer - Functorial lifting of domain events to cim-graph
 pub mod graph_projection;
 
+// LiftableDomain - Faithful functor for domain composition (Sprint 7)
+#[cfg(feature = "gui")]
+pub mod lifting;
+
 // Configuration management
 pub mod config;
 
