@@ -1,5 +1,149 @@
 {
   "nodes": {
+    "cim-domain": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1762714986,
+        "narHash": "sha256-aneoMaNFyhbZ33bEviuBGcd1XiDbwJcea/VzADDJ/1Q=",
+        "owner": "TheCowboyAI",
+        "repo": "cim-domain",
+        "rev": "33414ffa877c3407c0ce0c9a24afadb42a808ff1",
+        "type": "github"
+      },
+      "original": {
+        "owner": "TheCowboyAI",
+        "repo": "cim-domain",
+        "type": "github"
+      }
+    },
+    "cim-domain-agent": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1762843860,
+        "narHash": "sha256-7sNSWNo3dQqeFl2DvQJvJvFHpt5NJNKGOoPVMEmsIQg=",
+        "owner": "TheCowboyAI",
+        "repo": "cim-domain-agent",
+        "rev": "dfaf92c026ca8bcc5a1df9d81e97a7fc72d2249d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "TheCowboyAI",
+        "repo": "cim-domain-agent",
+        "type": "github"
+      }
+    },
+    "cim-domain-location": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1763249852,
+        "narHash": "sha256-BXGh28ivNGyrUoU+NmFlYGzHP7S3mfPVzheKdb32z10=",
+        "owner": "TheCowboyAI",
+        "repo": "cim-domain-location",
+        "rev": "dc243c603c631afaa6fa1c36a7bb3e7ac311a5e8",
+        "type": "github"
+      },
+      "original": {
+        "owner": "TheCowboyAI",
+        "repo": "cim-domain-location",
+        "type": "github"
+      }
+    },
+    "cim-domain-organization": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1762715038,
+        "narHash": "sha256-L1xjGWiUT9di2CZQhBNFbEawRKdQeegmu+xiJITLYh0=",
+        "owner": "TheCowboyAI",
+        "repo": "cim-domain-organization",
+        "rev": "b3c6abd437e65ed0d0a21877612cfbcd35e91353",
+        "type": "github"
+      },
+      "original": {
+        "owner": "TheCowboyAI",
+        "repo": "cim-domain-organization",
+        "type": "github"
+      }
+    },
+    "cim-domain-person": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1762715035,
+        "narHash": "sha256-GBVgbjEBGBX0pD+kHBlHiJ1I2KCx8O9eRCcUD3Emp7I=",
+        "owner": "TheCowboyAI",
+        "repo": "cim-domain-person",
+        "rev": "625638595acf9ec1ec6f55dc0e9d85bbea6c2b08",
+        "type": "github"
+      },
+      "original": {
+        "owner": "TheCowboyAI",
+        "repo": "cim-domain-person",
+        "type": "github"
+      }
+    },
+    "cim-domain-policy": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1762715043,
+        "narHash": "sha256-ftU04r96YwEc9jWu57uppvBDnyGEJVCItRsqCL2fVgY=",
+        "owner": "TheCowboyAI",
+        "repo": "cim-domain-policy",
+        "rev": "3913ecfebf8061d0bf48c62e8e3ef26e4523baeb",
+        "type": "github"
+      },
+      "original": {
+        "owner": "TheCowboyAI",
+        "repo": "cim-domain-policy",
+        "type": "github"
+      }
+    },
+    "cim-domain-spaces": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1753294830,
+        "narHash": "sha256-Wdq3/CxF6weI8YeIlpDtDPARehNnriu6zvere+zZSeQ=",
+        "owner": "TheCowboyAI",
+        "repo": "cim-domain-conceptualspaces",
+        "rev": "214fda78229c76e46217eb497a378d780f97481a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "TheCowboyAI",
+        "repo": "cim-domain-conceptualspaces",
+        "type": "github"
+      }
+    },
+    "cim-graph": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1765753164,
+        "narHash": "sha256-q4dplw8edaUVi7+PKr6EGTgEBmYe25hLkCL9IsDpYBw=",
+        "owner": "TheCowboyAI",
+        "repo": "cim-graph",
+        "rev": "6c6be0e5c5624df916624b4065c04515a6bb8548",
+        "type": "github"
+      },
+      "original": {
+        "owner": "TheCowboyAI",
+        "repo": "cim-graph",
+        "type": "github"
+      }
+    },
+    "cim-ipld": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1753295388,
+        "narHash": "sha256-GjRqoZ5AbtieKlyHtuLK99MJAuGPRDAnbgFNWUr5wQk=",
+        "owner": "TheCowboyAI",
+        "repo": "cim-ipld-graph",
+        "rev": "2a8476daed71cdc25ca47f3f12f144e56ec022f6",
+        "type": "github"
+      },
+      "original": {
+        "owner": "TheCowboyAI",
+        "repo": "cim-ipld-graph",
+        "type": "github"
+      }
+    },
     "flake-utils": {
       "inputs": {
         "systems": "systems"
@@ -72,6 +216,15 @@
     },
     "root": {
       "inputs": {
+        "cim-domain": "cim-domain",
+        "cim-domain-agent": "cim-domain-agent",
+        "cim-domain-location": "cim-domain-location",
+        "cim-domain-organization": "cim-domain-organization",
+        "cim-domain-person": "cim-domain-person",
+        "cim-domain-policy": "cim-domain-policy",
+        "cim-domain-spaces": "cim-domain-spaces",
+        "cim-graph": "cim-graph",
+        "cim-ipld": "cim-ipld",
         "flake-utils": "flake-utils",
         "nixos-generators": "nixos-generators",
         "nixpkgs": "nixpkgs",

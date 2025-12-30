@@ -12,9 +12,53 @@
       url = "github:nix-community/nixos-generators";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # CIM dependencies - fetched from GitHub for air-gapped builds
+    # Only include repos that exist on GitHub
+    cim-domain = {
+      url = "github:TheCowboyAI/cim-domain";
+      flake = false;
+    };
+    cim-domain-location = {
+      url = "github:TheCowboyAI/cim-domain-location";
+      flake = false;
+    };
+    cim-domain-person = {
+      url = "github:TheCowboyAI/cim-domain-person";
+      flake = false;
+    };
+    cim-domain-organization = {
+      url = "github:TheCowboyAI/cim-domain-organization";
+      flake = false;
+    };
+    cim-domain-policy = {
+      url = "github:TheCowboyAI/cim-domain-policy";
+      flake = false;
+    };
+    cim-domain-agent = {
+      url = "github:TheCowboyAI/cim-domain-agent";
+      flake = false;
+    };
+    # cim-domain-relationship - TODO: push to GitHub
+    cim-domain-spaces = {
+      url = "github:TheCowboyAI/cim-domain-conceptualspaces";
+      flake = false;
+    };
+    cim-graph = {
+      url = "github:TheCowboyAI/cim-graph";
+      flake = false;
+    };
+    cim-ipld = {
+      url = "github:TheCowboyAI/cim-ipld-graph";
+      flake = false;
+    };
   };
 
-  outputs = { self, nixpkgs, rust-overlay, flake-utils, nixos-generators, ... }:
+  outputs = { self, nixpkgs, rust-overlay, flake-utils, nixos-generators
+            , cim-domain, cim-domain-location, cim-domain-person
+            , cim-domain-organization, cim-domain-policy, cim-domain-agent
+            , cim-domain-spaces, cim-graph, cim-ipld
+            , ... }@inputs:
     nixpkgs.lib.recursiveUpdate
     (flake-utils.lib.eachDefaultSystem (system:
       let
@@ -337,20 +381,100 @@
         };
       }))
     # NixOS image outputs - Second argument to recursiveUpdate
-    # Note: cim-keys cannot be pre-built in the image due to path dependencies
-    # to sibling repositories. The image includes the source and development
-    # tools to build it on first boot.
-    {
+    # All CIM dependencies are pre-fetched from GitHub and included in /tmp/cim-build
+    # A first-boot script sets up the workspace and builds cim-keys
+    (let
+      # Module to include all CIM sources for on-device build
+      cimSourcesModule = { pkgs, lib, ... }: {
+        # Include cim-keys source
+        environment.etc."cim-build/cim-keys".source = ./.;
+
+        # Include all dependencies from GitHub
+        environment.etc."cim-build/cim-domain".source = cim-domain;
+        environment.etc."cim-build/cim-domain-location".source = cim-domain-location;
+        environment.etc."cim-build/cim-domain-person".source = cim-domain-person;
+        environment.etc."cim-build/cim-domain-organization".source = cim-domain-organization;
+        environment.etc."cim-build/cim-domain-policy".source = cim-domain-policy;
+        environment.etc."cim-build/cim-domain-agent".source = cim-domain-agent;
+        # cim-domain-relationship - not yet on GitHub
+        environment.etc."cim-build/cim-domain-spaces".source = cim-domain-spaces;
+        environment.etc."cim-build/cim-graph".source = cim-graph;
+        environment.etc."cim-build/cim-ipld".source = cim-ipld;
+
+        # First-boot build script
+        systemd.services.cim-keys-build = {
+          description = "Build CIM Keys on first boot";
+          wantedBy = [ "multi-user.target" ];
+          after = [ "network.target" ];
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            User = "cimkeys";
+            WorkingDirectory = "/tmp/cim-build";
+          };
+          path = with pkgs; [ coreutils cargo rustc pkg-config openssl.dev gcc gnumake ];
+          script = ''
+            # Only run once
+            if [ -f /home/cimkeys/.cim-keys-built ]; then
+              exit 0
+            fi
+
+            echo "Setting up CIM Keys build environment..."
+
+            # Copy sources to writable location
+            mkdir -p /tmp/cim-build
+            cp -r /etc/cim-build/* /tmp/cim-build/
+            chmod -R u+w /tmp/cim-build
+
+            # Update Cargo.toml to use local paths
+            cd /tmp/cim-build/cim-keys
+            sed -i 's|path = "\.\./cim-domain"|path = "/tmp/cim-build/cim-domain"|g' Cargo.toml
+            sed -i 's|path = "\.\./cim-domain-location"|path = "/tmp/cim-build/cim-domain-location"|g' Cargo.toml
+            sed -i 's|path = "\.\./cim-domain-person"|path = "/tmp/cim-build/cim-domain-person"|g' Cargo.toml
+            sed -i 's|path = "\.\./cim-domain-organization"|path = "/tmp/cim-build/cim-domain-organization"|g' Cargo.toml
+            sed -i 's|path = "\.\./cim-domain-policy"|path = "/tmp/cim-build/cim-domain-policy"|g' Cargo.toml
+            sed -i 's|path = "\.\./cim-domain-agent"|path = "/tmp/cim-build/cim-domain-agent"|g' Cargo.toml
+            # Comment out cim-domain-relationship (not on GitHub yet)
+            sed -i 's|^cim-domain-relationship|# cim-domain-relationship|g' Cargo.toml
+            sed -i 's|path = "\.\./cim-domain-spaces"|path = "/tmp/cim-build/cim-domain-spaces"|g' Cargo.toml
+            sed -i 's|path = "\.\./cim-graph"|path = "/tmp/cim-build/cim-graph"|g' Cargo.toml
+            sed -i 's|path = "\.\./cim-ipld"|path = "/tmp/cim-build/cim-ipld"|g' Cargo.toml
+
+            # Set up environment
+            export OPENSSL_DIR="${pkgs.openssl.dev}"
+            export OPENSSL_LIB_DIR="${pkgs.openssl.out}/lib"
+            export PKG_CONFIG_PATH="${pkgs.openssl.dev}/lib/pkgconfig:${pkgs.pcsclite}/lib/pkgconfig"
+
+            # Build
+            echo "Building cim-keys..."
+            cargo build --release 2>&1 | tee /tmp/cim-keys-build.log
+
+            # Install binaries
+            if [ -f target/release/cim-keys ]; then
+              mkdir -p /home/cimkeys/.local/bin
+              cp target/release/cim-keys /home/cimkeys/.local/bin/
+              cp target/release/cim-keys-gui /home/cimkeys/.local/bin/ 2>/dev/null || true
+              chown -R cimkeys:users /home/cimkeys/.local
+              touch /home/cimkeys/.cim-keys-built
+              echo "CIM Keys built successfully!"
+            else
+              echo "Build failed - check /tmp/cim-keys-build.log"
+            fi
+          '';
+        };
+
+        # Add local bin to PATH
+        environment.variables.PATH = lib.mkForce "/home/cimkeys/.local/bin:/run/current-system/sw/bin";
+      };
+
+    in {
       # SD card image for Raspberry Pi 4/5 (aarch64)
       packages.aarch64-linux.sdImage = nixos-generators.nixosGenerate {
         system = "aarch64-linux";
         format = "sd-aarch64";
         modules = [
           ./nixos/sd-image/default.nix
-          ({ pkgs, ... }: {
-            # Include cim-keys source for building on-device
-            environment.etc."cim-keys-source".source = ./.;
-          })
+          cimSourcesModule
         ];
       };
 
@@ -360,6 +484,7 @@
         format = "iso";
         modules = [
           ./nixos/sd-image/default.nix
+          cimSourcesModule
           ({ pkgs, lib, ... }: {
             # ISO-specific overrides
             services.cage.enable = lib.mkForce false;
@@ -372,8 +497,6 @@
               enable = true;
               user = "cimkeys";
             };
-            # Include cim-keys source for building on-device
-            environment.etc."cim-keys-source".source = ./.;
           })
         ];
       };
@@ -384,13 +507,12 @@
         format = "raw";
         modules = [
           ./nixos/sd-image/default.nix
+          cimSourcesModule
           ({ pkgs, lib, ... }: {
             services.cage.enable = lib.mkForce false;
             services.getty.autologinUser = "cimkeys";
-            # Include cim-keys source for building on-device
-            environment.etc."cim-keys-source".source = ./.;
           })
         ];
       };
-    };
+    });
 }
