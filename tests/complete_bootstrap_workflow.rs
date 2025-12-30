@@ -23,17 +23,16 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use cim_keys::secrets_loader::{SecretsLoader, BootstrapData, YubiKeyAssignment, NatsHierarchy};
+use cim_keys::secrets_loader::{SecretsLoader, BootstrapData};
 use cim_keys::crypto::{
     derive_master_seed,
     x509::{generate_root_ca, generate_intermediate_ca, generate_server_certificate},
-    x509::{RootCAParams, IntermediateCAParams, ServerCertParams, X509Certificate},
+    x509::{RootCAParams, IntermediateCAParams, ServerCertParams},
 };
 use cim_keys::adapters::nsc::NscAdapter;
 use cim_keys::adapters::yubikey_cli::YubiKeyCliAdapter;
 use cim_keys::ports::nats::NatsKeyPort;
 use cim_keys::ports::yubikey::{YubiKeyPort, PivSlot, KeyAlgorithm, SecureString};
-use cim_keys::domain::{Organization, Person, OrganizationUnit};
 
 /// Output structure that will be written to SD card
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -682,6 +681,36 @@ impl BootstrapWorkflow {
                 }
                 _ => {
                     println!("    ℹ Unknown role {} - skipping", assignment.role);
+                }
+            }
+
+            // Change management key from default to our generated random key
+            // This is the LAST thing we do - after this, default key won't work
+            if let Some(creds) = self.generated_credentials.iter()
+                .find(|c| c.serial == assignment.serial)
+            {
+                println!("    🔐 Changing management key to random value...");
+                let default_key = hex::decode("010203040506070801020304050607080102030405060708")
+                    .expect("Invalid default key hex");
+                let new_key = hex::decode(&creds.management_key)
+                    .expect("Invalid generated key hex");
+
+                match yubikey_adapter.change_management_key(
+                    &assignment.serial,
+                    &default_key,
+                    &new_key,
+                ).await {
+                    Ok(()) => {
+                        println!("    ✓ Management key changed (store SECRETS.json safely!)");
+                        self.audit("yubikey_mgmt_key_changed", &format!("Management key changed on YubiKey {}", assignment.serial), None, {
+                            let mut details = HashMap::new();
+                            details.insert("serial".to_string(), assignment.serial.clone());
+                            details
+                        });
+                    }
+                    Err(e) => {
+                        println!("    ✗ Failed to change management key: {}", e);
+                    }
                 }
             }
 

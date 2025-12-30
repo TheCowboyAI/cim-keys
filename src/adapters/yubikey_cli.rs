@@ -170,11 +170,27 @@ impl YubiKeyPort for YubiKeyCliAdapter {
 
     async fn change_management_key(
         &self,
-        _serial: &str,
-        _current_key: &[u8],
-        _new_key: &[u8],
+        serial: &str,
+        current_key: &[u8],
+        new_key: &[u8],
     ) -> Result<(), YubiKeyError> {
-        Err(YubiKeyError::NotSupported("Management key change not yet implemented".to_string()))
+        let current_key_hex = hex::encode(current_key);
+        let new_key_hex = hex::encode(new_key);
+
+        let output = Command::new("ykman")
+            .args(["--device", serial])
+            .args(["piv", "access", "change-management-key"])
+            .args(["--management-key", &current_key_hex])
+            .args(["--new-management-key", &new_key_hex])
+            .output()
+            .map_err(|e| YubiKeyError::OperationError(format!("Failed to change management key: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(YubiKeyError::OperationError(format!("Management key change failed: {}", stderr)));
+        }
+
+        Ok(())
     }
 
     async fn reset_piv(&self, _serial: &str) -> Result<(), YubiKeyError> {
