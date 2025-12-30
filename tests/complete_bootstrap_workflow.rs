@@ -59,7 +59,27 @@ pub struct Manifest {
     pub organization_name: String,
     pub created_at: String,
     pub created_by: String,
-    pub passphrase_hash: String, // SHA-256 of passphrase for verification (not the passphrase itself!)
+    pub passphrase_hash: String, // SHA-256 of passphrase for verification
+}
+
+/// Secrets record - stored separately for secure backup
+/// This file contains all secrets needed to reconstruct the PKI
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecretsRecord {
+    pub master_passphrase: String,
+    pub yubikey_pins: Vec<YubiKeyPinRecord>,
+    pub created_at: String,
+    pub warning: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct YubiKeyPinRecord {
+    pub serial: String,
+    pub pin: String,
+    pub puk: String,
+    pub management_key: Option<String>,
+    pub assigned_to: Option<String>,
+    pub role: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -871,6 +891,12 @@ impl BootstrapWorkflow {
         fs::write(&audit_path, serde_json::to_string_pretty(&output.audit_trail).unwrap())
             .map_err(|e| format!("Failed to write audit trail: {}", e))?;
 
+        // Write secrets record (CRITICAL - contains all secrets for recovery)
+        let secrets = self.create_secrets_record();
+        let secrets_path = self.output_dir.join("SECRETS.json");
+        fs::write(&secrets_path, serde_json::to_string_pretty(&secrets).unwrap())
+            .map_err(|e| format!("Failed to write secrets: {}", e))?;
+
         // Write complete output
         let complete_path = self.output_dir.join("bootstrap_output.json");
         fs::write(&complete_path, serde_json::to_string_pretty(&output).unwrap())
@@ -884,9 +910,33 @@ impl BootstrapWorkflow {
         println!("  - nats/users/*.creds");
         println!("  - keys/key_map.json");
         println!("  - events/audit_trail.json");
+        println!("  - SECRETS.json (⚠️  MASTER PASSPHRASE + ALL PINS)");
         println!("  - bootstrap_output.json (complete)");
 
         Ok(())
+    }
+
+    /// Create the secrets record containing all sensitive information
+    fn create_secrets_record(&self) -> SecretsRecord {
+        let yubikey_pins: Vec<YubiKeyPinRecord> = self.bootstrap_data.yubikey_assignments
+            .iter()
+            .map(|assignment| YubiKeyPinRecord {
+                serial: assignment.serial.clone(),
+                pin: assignment.pin.clone(),
+                puk: assignment.puk.clone(),
+                management_key: Some(assignment.mgmt_key.clone()),
+                assigned_to: Some(format!("{} ({})", assignment.name, assignment.person_id)),
+                role: assignment.role.clone(),
+            })
+            .collect();
+
+        SecretsRecord {
+            master_passphrase: self.master_passphrase.clone(),
+            yubikey_pins,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            warning: "⚠️  THIS FILE CONTAINS ALL SECRETS. Store on encrypted media only. \
+                     Do not transmit over network. Physical security required.".to_string(),
+        }
     }
 }
 
