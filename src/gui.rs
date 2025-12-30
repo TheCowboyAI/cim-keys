@@ -4223,6 +4223,7 @@ impl CimKeysApp {
                                                 state: None,
                                                 locality: None,
                                                 validity_years: 20,
+                                                pathlen: 1, // Allow one intermediate CA level
                                             };
 
                                             // Generate Root CA certificate (US-021: with event emission)
@@ -4261,6 +4262,7 @@ impl CimKeysApp {
                                                 state: None,
                                                 locality: None,
                                                 validity_years: 1,
+                                                pathlen: 0, // Personal cert doesn't sign other certs
                                             };
                                             // US-021: Generate with event emission, extract cert
                                             let correlation_id = uuid::Uuid::now_v7();

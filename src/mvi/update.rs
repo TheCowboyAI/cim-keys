@@ -253,6 +253,7 @@ pub fn update(
                         state: None,
                         locality: None,
                         validity_years: 20,
+                        pathlen: 1, // Allow one intermediate CA level
                     };
 
                     // US-021: Generate correlation ID for this operation
@@ -329,6 +330,7 @@ pub fn update(
                         common_name: format!("{} Intermediate CA", name_clone),
                         country: Some("US".to_string()),
                         validity_years: 10,
+                        pathlen: 0, // Can only sign leaf certificates
                     };
 
                     // US-021: Generate correlation ID and root CA ID for this operation

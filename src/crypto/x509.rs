@@ -57,6 +57,10 @@ pub struct RootCAParams {
     pub locality: Option<String>,
     /// Validity in years (default: 20)
     pub validity_years: u32,
+    /// Path length constraint - how many intermediate CA levels allowed below this root
+    /// Default: 1 (standard single-intermediate chain)
+    /// Use 2 for CowboyAI hosting scenario (hosting intermediate + client intermediate)
+    pub pathlen: u8,
 }
 
 /// Parameters for Intermediate CA generation
@@ -71,6 +75,10 @@ pub struct IntermediateCAParams {
     pub country: Option<String>,
     /// Validity in years (default: 3)
     pub validity_years: u32,
+    /// Path length constraint - how many intermediate CA levels allowed below this one
+    /// Default: 0 (can only sign leaf certificates, not other CAs)
+    /// Use 1 for CowboyAI hosting intermediate (can sign one more intermediate level)
+    pub pathlen: u8,
 }
 
 /// Parameters for Server certificate generation
@@ -96,6 +104,7 @@ impl Default for RootCAParams {
             state: None,
             locality: None,
             validity_years: 20,
+            pathlen: 1, // Standard single-intermediate chain
         }
     }
 }
@@ -108,6 +117,7 @@ impl Default for IntermediateCAParams {
             common_name: "CIM Intermediate CA".to_string(),
             country: Some("US".to_string()),
             validity_years: 3,
+            pathlen: 0, // Can only sign leaf certificates by default
         }
     }
 }
@@ -176,8 +186,8 @@ pub fn generate_root_ca(
 
     cert_params.distinguished_name = dn;
 
-    // Root CA specific settings
-    cert_params.is_ca = IsCa::Ca(BasicConstraints::Constrained(1)); // pathlen: 1
+    // Root CA specific settings - pathlen determines how many intermediate levels allowed
+    cert_params.is_ca = IsCa::Ca(BasicConstraints::Constrained(params.pathlen));
     cert_params.key_usages = vec![
         KeyUsagePurpose::KeyCertSign,
         KeyUsagePurpose::CrlSign,
@@ -290,8 +300,10 @@ pub fn generate_intermediate_ca(
     cert_params.distinguished_name = dn;
 
     // Intermediate CA specific settings
-    // CRITICAL: pathlen 0 means this CA cannot sign other CAs!
-    cert_params.is_ca = IsCa::Ca(BasicConstraints::Constrained(0)); // pathlen: 0
+    // pathlen determines how many more intermediate levels can exist below this CA
+    // pathlen: 0 = can only sign leaf certs (typical)
+    // pathlen: 1 = can sign one more intermediate level (for hosting scenario)
+    cert_params.is_ca = IsCa::Ca(BasicConstraints::Constrained(params.pathlen));
 
     // CRITICAL: SIGNING ONLY - no digitalSignature, no keyEncipherment
     cert_params.key_usages = vec![
