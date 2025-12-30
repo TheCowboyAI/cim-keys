@@ -5,15 +5,15 @@
       "locked": {
         "lastModified": 1762714986,
         "narHash": "sha256-aneoMaNFyhbZ33bEviuBGcd1XiDbwJcea/VzADDJ/1Q=",
-        "owner": "TheCowboyAI",
-        "repo": "cim-domain",
+        "ref": "refs/heads/main",
         "rev": "33414ffa877c3407c0ce0c9a24afadb42a808ff1",
-        "type": "github"
+        "revCount": 53,
+        "type": "git",
+        "url": "ssh://git@github.com/TheCowboyAI/cim-domain"
       },
       "original": {
-        "owner": "TheCowboyAI",
-        "repo": "cim-domain",
-        "type": "github"
+        "type": "git",
+        "url": "ssh://git@github.com/TheCowboyAI/cim-domain"
       }
     },
     "cim-domain-agent": {
@@ -21,15 +21,15 @@
       "locked": {
         "lastModified": 1762843860,
         "narHash": "sha256-7sNSWNo3dQqeFl2DvQJvJvFHpt5NJNKGOoPVMEmsIQg=",
-        "owner": "TheCowboyAI",
-        "repo": "cim-domain-agent",
+        "ref": "refs/heads/main",
         "rev": "dfaf92c026ca8bcc5a1df9d81e97a7fc72d2249d",
-        "type": "github"
+        "revCount": 31,
+        "type": "git",
+        "url": "ssh://git@github.com/TheCowboyAI/cim-domain-agent"
       },
       "original": {
-        "owner": "TheCowboyAI",
-        "repo": "cim-domain-agent",
-        "type": "github"
+        "type": "git",
+        "url": "ssh://git@github.com/TheCowboyAI/cim-domain-agent"
       }
     },
     "cim-domain-location": {
@@ -37,15 +37,15 @@
       "locked": {
         "lastModified": 1763249852,
         "narHash": "sha256-BXGh28ivNGyrUoU+NmFlYGzHP7S3mfPVzheKdb32z10=",
-        "owner": "TheCowboyAI",
-        "repo": "cim-domain-location",
+        "ref": "refs/heads/main",
         "rev": "dc243c603c631afaa6fa1c36a7bb3e7ac311a5e8",
-        "type": "github"
+        "revCount": 35,
+        "type": "git",
+        "url": "ssh://git@github.com/TheCowboyAI/cim-domain-location"
       },
       "original": {
-        "owner": "TheCowboyAI",
-        "repo": "cim-domain-location",
-        "type": "github"
+        "type": "git",
+        "url": "ssh://git@github.com/TheCowboyAI/cim-domain-location"
       }
     },
     "cim-domain-organization": {
@@ -53,15 +53,15 @@
       "locked": {
         "lastModified": 1762715038,
         "narHash": "sha256-L1xjGWiUT9di2CZQhBNFbEawRKdQeegmu+xiJITLYh0=",
-        "owner": "TheCowboyAI",
-        "repo": "cim-domain-organization",
+        "ref": "refs/heads/main",
         "rev": "b3c6abd437e65ed0d0a21877612cfbcd35e91353",
-        "type": "github"
+        "revCount": 39,
+        "type": "git",
+        "url": "ssh://git@github.com/TheCowboyAI/cim-domain-organization"
       },
       "original": {
-        "owner": "TheCowboyAI",
-        "repo": "cim-domain-organization",
-        "type": "github"
+        "type": "git",
+        "url": "ssh://git@github.com/TheCowboyAI/cim-domain-organization"
       }
     },
     "cim-domain-person": {
@@ -69,15 +69,15 @@
       "locked": {
         "lastModified": 1762715035,
         "narHash": "sha256-GBVgbjEBGBX0pD+kHBlHiJ1I2KCx8O9eRCcUD3Emp7I=",
-        "owner": "TheCowboyAI",
-        "repo": "cim-domain-person",
+        "ref": "refs/heads/main",
         "rev": "625638595acf9ec1ec6f55dc0e9d85bbea6c2b08",
-        "type": "github"
+        "revCount": 45,
+        "type": "git",
+        "url": "ssh://git@github.com/TheCowboyAI/cim-domain-person"
       },
       "original": {
-        "owner": "TheCowboyAI",
-        "repo": "cim-domain-person",
-        "type": "github"
+        "type": "git",
+        "url": "ssh://git@github.com/TheCowboyAI/cim-domain-person"
       }
     },
     "cim-domain-policy": {
@@ -85,15 +85,31 @@
       "locked": {
         "lastModified": 1762715043,
         "narHash": "sha256-ftU04r96YwEc9jWu57uppvBDnyGEJVCItRsqCL2fVgY=",
-        "owner": "TheCowboyAI",
-        "repo": "cim-domain-policy",
+        "ref": "refs/heads/main",
         "rev": "3913ecfebf8061d0bf48c62e8e3ef26e4523baeb",
-        "type": "github"
+        "revCount": 17,
+        "type": "git",
+        "url": "ssh://git@github.com/TheCowboyAI/cim-domain-policy"
       },
       "original": {
-        "owner": "TheCowboyAI",
-        "repo": "cim-domain-policy",
-        "type": "github"
+        "type": "git",
+        "url": "ssh://git@github.com/TheCowboyAI/cim-domain-policy"
+      }
+    },
+    "cim-domain-relationship": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1767128007,
+        "narHash": "sha256-gOgxacV+kOhEJTEyEpuPVPSK9ZOFuBhENV2jzqYPr+Y=",
+        "ref": "refs/heads/main",
+        "rev": "c9e03b761dc39b790763f2570b3d0d2c048aa392",
+        "revCount": 1,
+        "type": "git",
+        "url": "ssh://git@github.com/TheCowboyAI/cim-domain-relationship"
+      },
+      "original": {
+        "type": "git",
+        "url": "ssh://git@github.com/TheCowboyAI/cim-domain-relationship"
       }
     },
     "cim-domain-spaces": {
@@ -101,15 +117,15 @@
       "locked": {
         "lastModified": 1753294830,
         "narHash": "sha256-Wdq3/CxF6weI8YeIlpDtDPARehNnriu6zvere+zZSeQ=",
-        "owner": "TheCowboyAI",
-        "repo": "cim-domain-conceptualspaces",
+        "ref": "refs/heads/main",
         "rev": "214fda78229c76e46217eb497a378d780f97481a",
-        "type": "github"
+        "revCount": 19,
+        "type": "git",
+        "url": "ssh://git@github.com/TheCowboyAI/cim-domain-conceptualspaces"
       },
       "original": {
-        "owner": "TheCowboyAI",
-        "repo": "cim-domain-conceptualspaces",
-        "type": "github"
+        "type": "git",
+        "url": "ssh://git@github.com/TheCowboyAI/cim-domain-conceptualspaces"
       }
     },
     "cim-graph": {
@@ -117,15 +133,15 @@
       "locked": {
         "lastModified": 1765753164,
         "narHash": "sha256-q4dplw8edaUVi7+PKr6EGTgEBmYe25hLkCL9IsDpYBw=",
-        "owner": "TheCowboyAI",
-        "repo": "cim-graph",
+        "ref": "refs/heads/main",
         "rev": "6c6be0e5c5624df916624b4065c04515a6bb8548",
-        "type": "github"
+        "revCount": 46,
+        "type": "git",
+        "url": "ssh://git@github.com/TheCowboyAI/cim-graph"
       },
       "original": {
-        "owner": "TheCowboyAI",
-        "repo": "cim-graph",
-        "type": "github"
+        "type": "git",
+        "url": "ssh://git@github.com/TheCowboyAI/cim-graph"
       }
     },
     "cim-ipld": {
@@ -133,15 +149,15 @@
       "locked": {
         "lastModified": 1753295388,
         "narHash": "sha256-GjRqoZ5AbtieKlyHtuLK99MJAuGPRDAnbgFNWUr5wQk=",
-        "owner": "TheCowboyAI",
-        "repo": "cim-ipld-graph",
+        "ref": "refs/heads/main",
         "rev": "2a8476daed71cdc25ca47f3f12f144e56ec022f6",
-        "type": "github"
+        "revCount": 9,
+        "type": "git",
+        "url": "ssh://git@github.com/TheCowboyAI/cim-ipld-graph"
       },
       "original": {
-        "owner": "TheCowboyAI",
-        "repo": "cim-ipld-graph",
-        "type": "github"
+        "type": "git",
+        "url": "ssh://git@github.com/TheCowboyAI/cim-ipld-graph"
       }
     },
     "flake-utils": {
@@ -222,6 +238,7 @@
         "cim-domain-organization": "cim-domain-organization",
         "cim-domain-person": "cim-domain-person",
         "cim-domain-policy": "cim-domain-policy",
+        "cim-domain-relationship": "cim-domain-relationship",
         "cim-domain-spaces": "cim-domain-spaces",
         "cim-graph": "cim-graph",
         "cim-ipld": "cim-ipld",

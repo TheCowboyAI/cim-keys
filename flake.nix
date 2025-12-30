@@ -13,43 +13,45 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # CIM dependencies - fetched from GitHub for air-gapped builds
-    # Only include repos that exist on GitHub
+    # CIM dependencies - fetched via SSH for internal repos
     cim-domain = {
-      url = "github:TheCowboyAI/cim-domain";
+      url = "git+ssh://git@github.com/TheCowboyAI/cim-domain";
       flake = false;
     };
     cim-domain-location = {
-      url = "github:TheCowboyAI/cim-domain-location";
+      url = "git+ssh://git@github.com/TheCowboyAI/cim-domain-location";
       flake = false;
     };
     cim-domain-person = {
-      url = "github:TheCowboyAI/cim-domain-person";
+      url = "git+ssh://git@github.com/TheCowboyAI/cim-domain-person";
       flake = false;
     };
     cim-domain-organization = {
-      url = "github:TheCowboyAI/cim-domain-organization";
+      url = "git+ssh://git@github.com/TheCowboyAI/cim-domain-organization";
       flake = false;
     };
     cim-domain-policy = {
-      url = "github:TheCowboyAI/cim-domain-policy";
+      url = "git+ssh://git@github.com/TheCowboyAI/cim-domain-policy";
       flake = false;
     };
     cim-domain-agent = {
-      url = "github:TheCowboyAI/cim-domain-agent";
+      url = "git+ssh://git@github.com/TheCowboyAI/cim-domain-agent";
       flake = false;
     };
-    # cim-domain-relationship - TODO: push to GitHub
+    cim-domain-relationship = {
+      url = "git+ssh://git@github.com/TheCowboyAI/cim-domain-relationship";
+      flake = false;
+    };
     cim-domain-spaces = {
-      url = "github:TheCowboyAI/cim-domain-conceptualspaces";
+      url = "git+ssh://git@github.com/TheCowboyAI/cim-domain-conceptualspaces";
       flake = false;
     };
     cim-graph = {
-      url = "github:TheCowboyAI/cim-graph";
+      url = "git+ssh://git@github.com/TheCowboyAI/cim-graph";
       flake = false;
     };
     cim-ipld = {
-      url = "github:TheCowboyAI/cim-ipld-graph";
+      url = "git+ssh://git@github.com/TheCowboyAI/cim-ipld-graph";
       flake = false;
     };
   };
@@ -57,7 +59,7 @@
   outputs = { self, nixpkgs, rust-overlay, flake-utils, nixos-generators
             , cim-domain, cim-domain-location, cim-domain-person
             , cim-domain-organization, cim-domain-policy, cim-domain-agent
-            , cim-domain-spaces, cim-graph, cim-ipld
+            , cim-domain-relationship, cim-domain-spaces, cim-graph, cim-ipld
             , ... }@inputs:
     nixpkgs.lib.recursiveUpdate
     (flake-utils.lib.eachDefaultSystem (system:
@@ -396,7 +398,7 @@
         environment.etc."cim-build/cim-domain-organization".source = cim-domain-organization;
         environment.etc."cim-build/cim-domain-policy".source = cim-domain-policy;
         environment.etc."cim-build/cim-domain-agent".source = cim-domain-agent;
-        # cim-domain-relationship - not yet on GitHub
+        environment.etc."cim-build/cim-domain-relationship".source = cim-domain-relationship;
         environment.etc."cim-build/cim-domain-spaces".source = cim-domain-spaces;
         environment.etc."cim-build/cim-graph".source = cim-graph;
         environment.etc."cim-build/cim-ipld".source = cim-ipld;
@@ -434,8 +436,7 @@
             sed -i 's|path = "\.\./cim-domain-organization"|path = "/tmp/cim-build/cim-domain-organization"|g' Cargo.toml
             sed -i 's|path = "\.\./cim-domain-policy"|path = "/tmp/cim-build/cim-domain-policy"|g' Cargo.toml
             sed -i 's|path = "\.\./cim-domain-agent"|path = "/tmp/cim-build/cim-domain-agent"|g' Cargo.toml
-            # Comment out cim-domain-relationship (not on GitHub yet)
-            sed -i 's|^cim-domain-relationship|# cim-domain-relationship|g' Cargo.toml
+            sed -i 's|path = "\.\./cim-domain-relationship"|path = "/tmp/cim-build/cim-domain-relationship"|g' Cargo.toml
             sed -i 's|path = "\.\./cim-domain-spaces"|path = "/tmp/cim-build/cim-domain-spaces"|g' Cargo.toml
             sed -i 's|path = "\.\./cim-graph"|path = "/tmp/cim-build/cim-graph"|g' Cargo.toml
             sed -i 's|path = "\.\./cim-ipld"|path = "/tmp/cim-build/cim-ipld"|g' Cargo.toml
