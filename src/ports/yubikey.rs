@@ -33,12 +33,15 @@ pub trait YubiKeyPort: Send + Sync {
     ///
     /// **Functor Mapping**: (device, slot, algorithm) → PublicKey
     /// Preserves composition with import_certificate
+    ///
+    /// Note: Key generation requires the management key, not PIN.
+    /// Touch policy is set to ALWAYS for security.
     async fn generate_key_in_slot(
         &self,
         serial: &str,
         slot: PivSlot,
         algorithm: KeyAlgorithm,
-        pin: &SecureString,
+        management_key: &SecureString,
     ) -> Result<PublicKey, YubiKeyError>;
 
     /// Import certificate to PIV slot

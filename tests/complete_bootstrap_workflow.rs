@@ -564,8 +564,19 @@ impl BootstrapWorkflow {
                 continue;
             }
 
-            let device = device.unwrap();
+            let _device = device.unwrap();
             println!("  Provisioning {} ({})...", assignment.name, assignment.serial);
+
+            // Find the generated credentials for this YubiKey
+            let _creds = self.generated_credentials.iter()
+                .find(|c| c.serial == assignment.serial);
+
+            // NOTE: New YubiKeys have a DEFAULT management key.
+            // We use the default for key generation, then the user should
+            // change it to the generated random key stored in SECRETS.json.
+            // TODO: Implement change_management_key to automate this.
+            let default_mgmt_key = "010203040506070801020304050607080102030405060708";
+            let mgmt_key = SecureString::new(default_mgmt_key);
 
             // Find owner
             let owner = people.iter()
@@ -578,12 +589,12 @@ impl BootstrapWorkflow {
             match assignment.role.as_str() {
                 "RootAuthority" => {
                     // Root CA key in signature slot (9c)
-                    let pin = SecureString::new(&assignment.pin);
+                    println!("    🔑 Touch YubiKey to generate Root CA key...");
                     match yubikey_adapter.generate_key_in_slot(
                         &assignment.serial,
                         PivSlot::Signature,
                         KeyAlgorithm::EccP384,
-                        &pin,
+                        &mgmt_key,
                     ).await {
                         Ok(pubkey) => {
                             println!("    ✓ Generated Root CA key in slot 9c");
@@ -610,12 +621,12 @@ impl BootstrapWorkflow {
                 }
                 "SecurityAdmin" | "Developer" => {
                     // Personal auth key in authentication slot (9a)
-                    let pin = SecureString::new(&assignment.pin);
+                    println!("    🔑 Touch YubiKey to generate authentication key...");
                     match yubikey_adapter.generate_key_in_slot(
                         &assignment.serial,
                         PivSlot::Authentication,
                         KeyAlgorithm::EccP256,
-                        &pin,
+                        &mgmt_key,
                     ).await {
                         Ok(pubkey) => {
                             println!("    ✓ Generated personal key in slot 9a");
@@ -642,11 +653,12 @@ impl BootstrapWorkflow {
                     }
 
                     // Signing key in digital signature slot (9c)
+                    println!("    🔑 Touch YubiKey to generate signing key...");
                     match yubikey_adapter.generate_key_in_slot(
                         &assignment.serial,
                         PivSlot::Signature,
                         KeyAlgorithm::EccP256,
-                        &pin,
+                        &mgmt_key,
                     ).await {
                         Ok(pubkey) => {
                             println!("    ✓ Generated signing key in slot 9c");

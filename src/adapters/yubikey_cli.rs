@@ -89,7 +89,7 @@ impl YubiKeyPort for YubiKeyCliAdapter {
         serial: &str,
         slot: PivSlot,
         algorithm: KeyAlgorithm,
-        pin: &SecureString,
+        management_key: &SecureString,
     ) -> Result<PublicKey, YubiKeyError> {
         let slot_id = match slot {
             PivSlot::Authentication => "9a",
@@ -106,17 +106,17 @@ impl YubiKeyPort for YubiKeyCliAdapter {
             _ => return Err(YubiKeyError::InvalidAlgorithm(format!("{:?} not supported via CLI", algorithm))),
         };
 
-        let pin_str = String::from_utf8_lossy(pin.as_bytes());
+        let mgmt_key_str = String::from_utf8_lossy(management_key.as_bytes());
 
         let output = Command::new("ykman")
             .args(["--device", serial])
             .args(["piv", "keys", "generate"])
+            .args(["--management-key", &mgmt_key_str])
             .args(["--algorithm", alg])
-            .args(["--pin-policy", "DEFAULT"])
-            .args(["--touch-policy", "DEFAULT"])
+            .args(["--pin-policy", "ONCE"])
+            .args(["--touch-policy", "CACHED"])
             .arg(slot_id)
             .arg("-")  // Output to stdout
-            .env("YKMAN_PIN", pin_str.as_ref())
             .output()
             .map_err(|e| YubiKeyError::OperationError(format!("Failed to generate key: {}", e)))?;
 
