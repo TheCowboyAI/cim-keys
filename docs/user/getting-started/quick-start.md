@@ -1,8 +1,20 @@
 # Quick Start Guide
 
+<!-- Copyright (c) 2025 - Cowboy AI, LLC. -->
+
 Get started with cim-keys in 5 minutes.
 
-## 🚀 Fastest Path
+## Architecture: Air-Gapped Only
+
+**cim-keys operates EXCLUSIVELY in air-gapped mode.** There is no "online" mode.
+
+- NATS runs on **localhost only** - no network connectivity
+- All events are **projected to JSON files** on the encrypted SD card
+- Private keys **never touch any network**
+
+This is not a limitation - it's a security requirement for PKI bootstrap.
+
+## Fastest Path
 
 ```bash
 # 1. Enter development environment
@@ -18,75 +30,31 @@ cp config.example.toml config.toml
 cargo run --bin cim-keys-gui --features gui
 ```
 
-## 📋 Common Workflows
+## Configuration
 
-### Offline Mode (Air-Gapped)
-
-**Use Case:** Secure key generation without network
-
-```bash
-# config.toml
-mode = "Offline"
+```toml
+# config.toml - Air-gapped configuration
 
 [nats]
-enabled = false
+# Localhost only - NO network connectivity
+enabled = true
+url = "nats://127.0.0.1:4222"
 
 [storage]
-keys_output_dir = "./cim-keys-output/keys"
-offline_events_dir = "./cim-keys-output/events"
+# All output goes to encrypted SD card
+keys_output_dir = "/mnt/encrypted/cim-keys/keys"
+events_dir = "/mnt/encrypted/cim-keys/events"
 ```
 
 ```bash
-# Run
+# Run local NATS server (no network binding)
+nats-server --addr 127.0.0.1
+
+# Run GUI
 cargo run --bin cim-keys-gui --features gui
 ```
 
-### Online Mode (Real-Time Publishing)
-
-**Use Case:** Live event streaming to NATS
-
-```bash
-# config.toml
-mode = "Online"
-
-[nats]
-enabled = true
-url = "nats://leaf-node-1.local:4222"
-credentials_file = "./creds/infra.creds"
-```
-
-```bash
-# Validate
-cargo run --bin cim-keys -- validate-config
-
-# Run
-cargo run --bin cim-keys-gui --features gui
-```
-
-### Hybrid Mode (Offline + Batch Upload)
-
-**Use Case:** Work offline, publish later
-
-```bash
-# config.toml
-mode = "Hybrid"
-
-[nats]
-enabled = false  # Disable for offline work
-url = "nats://leaf-node-1.local:4222"
-```
-
-```bash
-# Work offline
-cargo run --bin cim-keys-gui --features gui
-
-# Later, batch upload (v0.9.0)
-cargo run --bin cim-keys -- batch-upload \
-  --config config.toml \
-  --events-dir ./cim-keys-output/events
-```
-
-## 🛠️ Essential Commands
+## Essential Commands
 
 ```bash
 # Configuration management
@@ -105,11 +73,11 @@ cargo test --all-features            # Run tests
 cargo build --release --features gui # Build optimized binary
 ```
 
-## 📁 Output Structure
+## Output Structure (on Encrypted SD Card)
 
 ```
-./cim-keys-output/
-├── manifest.json              # Current state
+/mnt/encrypted/cim-keys/
+├── manifest.json              # Current state projection
 ├── domain/
 │   ├── organization.json     # Org structure
 │   ├── people.json          # All people
@@ -131,7 +99,19 @@ cargo build --release --features gui # Build optimized binary
         └── 002-person-created.json
 ```
 
-## 🎯 GUI Workflow
+## Event Flow
+
+```
+User Action → Intent → Command → Aggregate → Event
+                                              ↓
+                              NATS (localhost) → JSON Projection
+                                                    ↓
+                                            Encrypted SD Card
+```
+
+All events flow through localhost NATS and are immediately projected to JSON files on the encrypted storage. The SD card becomes the portable, air-gapped state that can be physically transported to other systems.
+
+## GUI Workflow
 
 1. **Welcome Tab**
    - Create organization
@@ -149,9 +129,9 @@ cargo build --release --features gui # Build optimized binary
 
 4. **Export Tab**
    - Export to encrypted SD card
-   - Configure export options
+   - Generate manifest
 
-## 🔍 Verify Setup
+## Verify Setup
 
 ```bash
 # Check configuration
@@ -160,33 +140,30 @@ cargo run --bin cim-keys -- validate-config
 # Expected output:
 # ✅ Configuration is valid!
 # 📋 Configuration Summary:
-#    • Mode: Offline
-#    • NATS enabled: false
-#    • Keys output dir: ./cim-keys-output/keys
+#    • NATS: localhost only (127.0.0.1:4222)
+#    • Output: /mnt/encrypted/cim-keys
 
 # Run GUI (should start without errors)
 cargo run --bin cim-keys-gui --features gui
 
 # Expected startup:
-# 🔐 [CIM Keys] - Offline Domain Bootstrap
-# 📁 [Output] Directory: ./cim-keys-output
-# ⚙️  [Mode] Offline
-# 📴 [NATS] Disabled - offline mode
+# 🔐 [CIM Keys] - Air-Gapped PKI Bootstrap
+# 📁 [Output] /mnt/encrypted/cim-keys
+# 🔒 [NATS] Localhost only (127.0.0.1:4222)
 ```
 
-## 📚 Next Steps
+## Next Steps
 
-- **Full Tutorial:** [End-to-End Usage Example](./END_TO_END_USAGE_EXAMPLE.md)
-- **CLI Reference:** [CLI Commands](./CLI_REFERENCE.md)
-- **Configuration:** [Event Publishing Usage](./EVENT_PUBLISHING_USAGE.md)
-- **Architecture:** [NATS Streaming](./NATS_STREAMING_ARCHITECTURE.md)
+- **Full Tutorial:** [End-to-End Workflow](../guides/end-to-end-workflow.md)
+- **CLI Reference:** [CLI Commands](../guides/cli-reference.md)
+- **Architecture:** [NATS Streaming](../../technical/architecture/nats-streaming.md)
 
-## 🆘 Troubleshooting
+## Troubleshooting
 
 **GUI won't start:**
 ```bash
-mkdir -p ./cim-keys-output
-cargo run --bin cim-keys-gui --features gui -- ./cim-keys-output
+mkdir -p /mnt/encrypted/cim-keys
+cargo run --bin cim-keys-gui --features gui
 ```
 
 **Config errors:**
@@ -202,14 +179,13 @@ cargo run --bin cim-keys -- validate-config
 RUST_LOG=cim_keys=debug cargo run --bin cim-keys-gui --features gui -- --verbose
 ```
 
-## 🎓 Learning Path
+## Learning Path
 
 1. ✅ **Quick Start** (you are here)
-2. 📖 [End-to-End Usage Example](./END_TO_END_USAGE_EXAMPLE.md) - Complete workflow
-3. 📋 [CLI Reference](./CLI_REFERENCE.md) - All commands
-4. ⚙️ [Event Publishing Usage](./EVENT_PUBLISHING_USAGE.md) - Configuration details
-5. 🏗️ [NATS Architecture](./NATS_STREAMING_ARCHITECTURE.md) - System design
-6. 💻 [CLAUDE.md](../CLAUDE.md) - Development guidelines
+2. 📖 [End-to-End Workflow](../guides/end-to-end-workflow.md) - Complete workflow
+3. 📋 [CLI Reference](../guides/cli-reference.md) - All commands
+4. 🏗️ [NATS Architecture](../../technical/architecture/nats-streaming.md) - System design
+5. 💻 [CLAUDE.md](../../../CLAUDE.md) - Development guidelines
 
 ---
 

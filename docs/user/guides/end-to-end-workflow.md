@@ -30,15 +30,17 @@ cargo --version
 mkdir -p ./cim-keys-output
 ```
 
-### Optional: NATS Server (for Online Mode)
+### NATS Server (Localhost Only)
 
 ```bash
-# Start a local NATS server for testing
-nats-server -js
+# Start NATS server bound to localhost only - NO network binding
+nats-server -js --addr 127.0.0.1
 
-# In another terminal, verify NATS is running
+# Verify NATS is running locally
 nats server info
 ```
+
+**IMPORTANT**: cim-keys operates exclusively in air-gapped mode. NATS runs on localhost only for event bus functionality. All events are projected to JSON files on the encrypted SD card.
 
 ---
 
@@ -65,66 +67,25 @@ cp config.example.toml config.toml
 vim config.toml
 ```
 
-**Example Configuration for Offline Mode:**
+**Air-Gapped Configuration (the only mode):**
 
 ```toml
-# Offline mode - no NATS, events logged locally only
-mode = "Offline"
+# Air-gapped mode - NATS on localhost, events projected to SD card
 
 [nats]
-enabled = false
-url = "nats://localhost:4222"
-stream_name = "CIM_GRAPH_EVENTS"
-subject_prefix = "cim.graph"
+# Localhost NATS for event bus
+enabled = true
+url = "nats://127.0.0.1:4222"
+stream_name = "CIM_KEYS_EVENTS"
+subject_prefix = "cim.keys"
 
 [storage]
-keys_output_dir = "./cim-keys-output/keys"
-offline_events_dir = "./cim-keys-output/events"
-backup_dir = "./cim-keys-output/backup"
-```
-
-**Example Configuration for Online Mode:**
-
-```toml
-# Online mode - real-time NATS publishing
-mode = "Online"
-
-[nats]
-enabled = true
-url = "nats://leaf-node-1.local:4222"
-stream_name = "CIM_GRAPH_EVENTS"
-subject_prefix = "cim.graph.person"
-credentials_file = "../cim-keys/nsc/nkeys/creds/CowboyAI/InfraUser/infrastructure.creds"
-
-[nats.tls]
-enabled = true
-ca_file = "./ca.pem"
-cert_file = "./cert.pem"
-key_file = "./key.pem"
-
-[storage]
+# Output to encrypted SD card
 keys_output_dir = "/mnt/encrypted/cim-keys/keys"
-offline_events_dir = "/mnt/encrypted/cim-keys/events"
-backup_dir = "/backup/cim-keys"
+events_dir = "/mnt/encrypted/cim-keys/events"
 ```
 
-**Example Configuration for Hybrid Mode:**
-
-```toml
-# Hybrid mode - queue events for batch upload
-mode = "Hybrid"
-
-[nats]
-enabled = false  # Initially disabled, will enable for batch upload
-url = "nats://leaf-node-1.local:4222"
-stream_name = "CIM_GRAPH_EVENTS"
-subject_prefix = "cim.graph.person"
-
-[storage]
-keys_output_dir = "./cim-keys-output/keys"
-offline_events_dir = "./cim-keys-output/events"  # Events queued here
-backup_dir = "./cim-keys-output/backup"
-```
+**Note**: There is no "online mode" or "hybrid mode". cim-keys is designed for air-gapped PKI bootstrap. The SD card containing the JSON projections is physically transported to target systems.
 
 ---
 
@@ -307,53 +268,25 @@ cat ./cim-keys-output/manifest.json | jq .
 
 ## Operational Modes
 
-### Offline Mode Workflow
+### Air-Gapped Workflow (The Only Mode)
 
-**Use Case:** Air-gapped key generation, no network
-
-```bash
-# 1. Configure for offline mode
-cat > config.toml <<EOF
-mode = "Offline"
-
-[nats]
-enabled = false
-
-[storage]
-keys_output_dir = "./cim-keys-output/keys"
-offline_events_dir = "./cim-keys-output/events"
-backup_dir = "./cim-keys-output/backup"
-EOF
-
-# 2. Run GUI
-cargo run --bin cim-keys-gui --features gui
-
-# 3. Generate keys and export
-# ... (use GUI to create domain and generate keys)
-
-# 4. Events are logged to ./cim-keys-output/events/
-# 5. Keys are stored in ./cim-keys-output/keys/
-# 6. Export to encrypted SD card when ready
-```
-
-### Online Mode Workflow
-
-**Use Case:** Real-time event publishing to NATS infrastructure
+**cim-keys operates EXCLUSIVELY air-gapped.** There is no "online mode" or "hybrid mode".
 
 ```bash
-# 1. Ensure NATS server is running
-nats server info
+# 1. Start localhost NATS (no network binding)
+nats-server -js --addr 127.0.0.1
 
-# 2. Configure for online mode
+# 2. Configure for air-gapped operation
 cat > config.toml <<EOF
-mode = "Online"
-
 [nats]
 enabled = true
-url = "nats://leaf-node-1.local:4222"
-stream_name = "CIM_GRAPH_EVENTS"
-subject_prefix = "cim.graph.person"
-credentials_file = "./creds/infrastructure.creds"
+url = "nats://127.0.0.1:4222"
+stream_name = "CIM_KEYS_EVENTS"
+subject_prefix = "cim.keys"
+
+[storage]
+keys_output_dir = "/mnt/encrypted/cim-keys/keys"
+events_dir = "/mnt/encrypted/cim-keys/events"
 EOF
 
 # 3. Validate configuration
@@ -362,47 +295,49 @@ cargo run --bin cim-keys -- validate-config
 # 4. Run GUI
 cargo run --bin cim-keys-gui --features gui
 
-# 5. Create domain objects - events published in real-time
-# Observe in NATS:
-nats stream view CIM_GRAPH_EVENTS
+# 5. Use GUI to:
+#    - Create organization domain
+#    - Add people
+#    - Establish relationships
+#    - Generate root CA keys
+#    - Export to SD card
 
-# 6. Query events by subject
-nats stream get CIM_GRAPH_EVENTS --subject "cim.graph.person.events.context.bounded_context_created"
+# 6. Events flow:
+#    User Action → NATS (localhost) → JSON Projection → SD Card
 ```
 
-### Hybrid Mode Workflow
+### Event Projection
 
-**Use Case:** Work offline, batch publish later
+Events are immediately projected from localhost NATS to JSON files:
 
 ```bash
-# 1. Configure for hybrid mode (NATS disabled initially)
-cat > config.toml <<EOF
-mode = "Hybrid"
+# Observe events on localhost NATS
+nats stream view CIM_KEYS_EVENTS
 
-[nats]
-enabled = false
-url = "nats://leaf-node-1.local:4222"
-stream_name = "CIM_GRAPH_EVENTS"
-subject_prefix = "cim.graph.person"
+# Events are also written to JSON on the SD card
+ls /mnt/encrypted/cim-keys/events/
 
-[storage]
-offline_events_dir = "./cim-keys-output/events"
-EOF
+# Each event becomes a JSON file
+cat /mnt/encrypted/cim-keys/events/2025-01-20/001-organization-created.json
+```
 
-# 2. Run GUI offline
-cargo run --bin cim-keys-gui --features gui
+### Physical Transport
 
-# 3. Create domain objects (events queued locally)
-# ... use GUI ...
+The encrypted SD card is the portable artifact:
 
-# 4. Later, when network available, batch upload:
-# TODO (v0.9.0): Implement batch upload command
-cargo run --bin cim-keys -- batch-upload \
-  --config config.toml \
-  --events-dir ./cim-keys-output/events
+```bash
+# 1. Unmount SD card from air-gapped machine
+sudo umount /mnt/encrypted
+sudo cryptsetup close cim-keys
 
-# 5. Verify events published to NATS
-nats stream info CIM_GRAPH_EVENTS
+# 2. Physically transport SD card to target system
+
+# 3. Mount on target system
+sudo cryptsetup open /dev/sdb1 cim-keys
+sudo mount /dev/mapper/cim-keys /mnt/encrypted
+
+# 4. Target system reads JSON projections
+# (No network transfer - physical transport only)
 ```
 
 ---
@@ -532,55 +467,61 @@ systemctl status pcscd
 
 ### v0.9.0 Features (Upcoming)
 
-- **Full NATS Integration**: Real event publishing when `config.nats.enabled = true`
-- **Batch Upload**: Upload queued events from Hybrid mode
-- **Event Replay**: Reconstruct state from event history
+- **Event Replay**: Reconstruct state from event history on SD card
 - **IPLD Object Store**: Store event payloads as content-addressed objects
+- **Enhanced Projections**: More sophisticated JSON projection formats
 
 ### v0.10.0 Features (Roadmap)
 
-- **Multi-Node Support**: Synchronize events across multiple leaf nodes
-- **Conflict Resolution**: Handle concurrent updates with CRDTs
-- **Event Subscriptions**: React to remote events in real-time
-- **Distributed Queries**: Query events across cluster
+- **YubiKey Provisioning**: Full PIV slot management
+- **Certificate Chain Validation**: Verify certificate hierarchies
+- **Multi-YubiKey Support**: Manage multiple hardware keys
+- **Import from SD Card**: Read existing PKI from other air-gapped systems
 
 ---
 
 ## Complete Example Session
 
 ```bash
-# 1. Setup
+# 1. Setup air-gapped machine
 nix develop
-mkdir -p ./cim-keys-output
 
-# 2. Configuration
+# 2. Mount encrypted SD card
+sudo cryptsetup open /dev/sdb1 cim-keys
+sudo mount /dev/mapper/cim-keys /mnt/encrypted
+mkdir -p /mnt/encrypted/cim-keys
+
+# 3. Start localhost NATS
+nats-server -js --addr 127.0.0.1 &
+
+# 4. Configuration
 cargo run --bin cim-keys -- create-example-config
 cp config.example.toml config.toml
-vim config.toml  # Set mode = "Offline"
+# Edit to use /mnt/encrypted/cim-keys as output
 
-# 3. Validation
+# 5. Validation
 cargo run --bin cim-keys -- validate-config
 
-# 4. Run GUI
+# 6. Run GUI
 RUST_LOG=cim_keys=debug cargo run --bin cim-keys-gui --features gui -- \
   --config config.toml \
-  --verbose \
-  ./cim-keys-output
+  --verbose
 
-# 5. In GUI:
+# 7. In GUI:
 #    - Create organization "cowboyai"
 #    - Add people: Alice, Bob, Carol
 #    - Establish relationships
 #    - Generate root CA key
-#    - Export to encrypted SD card
 
-# 6. Verify output
-tree ./cim-keys-output/
-cat ./cim-keys-output/manifest.json | jq .
-cat ./cim-keys-output/events/2025-01-20/001-organization-created.json | jq .
+# 8. Verify output on SD card
+tree /mnt/encrypted/cim-keys/
+cat /mnt/encrypted/cim-keys/manifest.json | jq .
+cat /mnt/encrypted/cim-keys/events/2025-01-20/001-organization-created.json | jq .
 
-# 7. Deploy
-rsync -avz ./cim-keys-output/ leaf-node-1.local:/opt/cim/keys/
+# 9. Unmount and physically transport SD card
+sudo umount /mnt/encrypted
+sudo cryptsetup close cim-keys
+# Physically move SD card to target system
 ```
 
 ---

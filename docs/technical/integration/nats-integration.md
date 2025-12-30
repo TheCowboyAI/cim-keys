@@ -1,14 +1,18 @@
 # NATS Integration with IPLD/CID Support
 
+<!-- Copyright (c) 2025 - Cowboy AI, LLC. -->
+
 ## Overview
 
-cim-keys now includes **real NATS client integration** with content-addressed events using IPLD/CID. This enables:
+cim-keys uses **localhost NATS** as an event bus with content-addressed events using IPLD/CID. This enables:
 
-- ✅ Real-time event publishing to NATS JetStream
+- ✅ Event publishing to localhost NATS JetStream
 - ✅ Content-addressed events with cryptographic integrity
-- ✅ Offline-first design with local queue persistence
-- ✅ Automatic retry and reconnection
+- ✅ JSON projection to encrypted SD card
+- ✅ Standard NATS API for CIM ecosystem consistency
 - ✅ Subject-based routing for different event types
+
+**IMPORTANT**: cim-keys operates EXCLUSIVELY in air-gapped mode. NATS runs on localhost only (127.0.0.1). Events are projected to JSON files on the encrypted SD card, which is then physically transported to target systems.
 
 ## Architecture
 
@@ -17,9 +21,11 @@ KeyEvent → IPLD CID → ContentAddressedEvent
                     ↓
               NATS Subject (cim.keys.{aggregate}.{event})
                     ↓
-         JetStream (Persistent Stream)
+         JetStream (localhost only)
                     ↓
-              Subscribers (Other CIM Components)
+              JSON Projection → Encrypted SD Card
+                    ↓
+              Physical Transport to Target Systems
 ```
 
 ## Features
@@ -117,52 +123,41 @@ This enables subscribers to filter by aggregate or event type.
 
 ```toml
 [nats]
+# LOCALHOST ONLY - air-gapped operation
 enabled = true
-url = "nats://leaf-node-1.local:4222"
+url = "nats://127.0.0.1:4222"
 stream_name = "CIM_KEYS_EVENTS"
 object_store_bucket = "cim-keys-objects"
 source_id = "cim-keys-v0.8.0"
 subject_prefix = "cim.keys"
 enable_jetstream = true
 enable_ipld = true
-max_retries = 3
-connection_timeout_secs = 10
-
-# Optional TLS
-[nats.tls]
-ca_cert = "/path/to/ca-cert.pem"
-client_cert = "/path/to/client-cert.pem"
-client_key = "/path/to/client-key.pem"
-
-# Optional credentials
-credentials_file = "/path/to/nats.creds"
 
 [storage]
-offline_events_dir = "/mnt/encrypted/cim-keys/events"
+# All output to encrypted SD card
+events_dir = "/mnt/encrypted/cim-keys/events"
 keys_output_dir = "/mnt/encrypted/cim-keys/keys"
-enable_backup = true
-backup_dir = "/backup/cim-keys"
-
-[mode]
-mode = "Hybrid"  # Offline, Online, or Hybrid
 ```
+
+**Note**: There is no "mode" setting. cim-keys always operates air-gapped with localhost NATS.
 
 ### Programmatic Configuration
 
 ```rust
-use cim_keys::config::{Config, NatsConfig, OperationalMode};
+use cim_keys::config::{Config, NatsConfig};
 
 let mut config = Config::default();
 
-// Enable NATS
+// Enable localhost NATS (air-gapped)
 config.nats.enabled = true;
-config.nats.url = "nats://localhost:4222".to_string();
+config.nats.url = "nats://127.0.0.1:4222".to_string();
 
-// Enable IPLD
+// Enable IPLD for content addressing
 config.nats.enable_ipld = true;
 
-// Set operational mode
-config.mode = OperationalMode::Hybrid;
+// Configure output to SD card
+config.storage.events_dir = "/mnt/encrypted/cim-keys/events".into();
+config.storage.keys_output_dir = "/mnt/encrypted/cim-keys/keys".into();
 
 // Validate
 config.validate()?;

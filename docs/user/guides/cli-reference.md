@@ -415,40 +415,21 @@ cim-keys bootstrap \
 cim-keys-gui /mnt/encrypted/keys
 ```
 
-### Online Event Publishing
+### Event Flow (Air-Gapped)
+
+All operations are air-gapped. Events flow through localhost NATS to JSON projections:
 
 ```bash
-# 1. Configure for online mode
-vim config.toml
-# Set mode = "Online" and nats.enabled = true
+# 1. Start localhost NATS (no network binding)
+nats-server --addr 127.0.0.1
 
-# 2. Validate configuration
-cim-keys validate-config
-
-# 3. Launch GUI with config
-cim-keys-gui --config config.toml
-
-# Events will now be published to NATS in real-time
-```
-
-### Hybrid Mode (Offline + Later Upload)
-
-```bash
-# 1. Configure for hybrid mode
-vim config.toml
-# Set mode = "Hybrid" and nats.enabled = false
-
-# 2. Generate keys offline
+# 2. Launch GUI
 cim-keys-gui /mnt/encrypted/keys
 
-# Events logged to offline_events_dir
-
-# 3. Later, when connected to secure network
-vim config.toml
-# Set nats.enabled = true
-
-# 4. Upload offline events (future feature)
-# cim-keys upload-offline-events
+# Events are:
+# 1. Published to localhost NATS
+# 2. Projected to JSON files on encrypted SD card
+# 3. SD card physically transported to target systems
 ```
 
 ## Configuration File Format
@@ -456,15 +437,14 @@ vim config.toml
 ### Complete Example
 
 ```toml
-# Operational mode
-mode = "Offline"  # or "Online" or "Hybrid"
+# Air-gapped configuration (there is no "online" mode)
 
 [nats]
-# Enable NATS event publishing
-enabled = false
+# Localhost NATS for event bus
+enabled = true
 
-# NATS server URL
-url = "nats://leaf-node-1.local:4222"
+# LOCALHOST ONLY - no network connectivity
+url = "nats://127.0.0.1:4222"
 
 # JetStream stream name
 stream_name = "CIM_GRAPH_EVENTS"

@@ -33,7 +33,7 @@ cim-graph Events (BoundedContextCreated, AggregateAdded, etc.)
   ↓
 NATS JetStream + IPLD Storage
   ↓
-[FUTURE] Remote subscribers / Event replay
+JSON Projection → Encrypted SD Card
 ```
 
 ### Components
@@ -190,23 +190,29 @@ pub struct EventEnvelope {
 }
 ```
 
-## Offline vs Online Operation
+## Air-Gapped Operation (The Only Mode)
 
-### Offline Mode (Current)
-- Events generated and logged locally
-- No NATS connection required
-- Suitable for air-gapped key generation scenarios
+**cim-keys operates EXCLUSIVELY in air-gapped mode.** There is no "online mode".
 
-### Online Mode (Proposed)
-- Events published to NATS as they're generated
-- Real-time event streaming to leaf nodes/clusters
-- Enables distributed key management across organizations
+### Architecture
+- NATS runs on **localhost only** (127.0.0.1:4222)
+- Events flow through localhost NATS as an event bus
+- All events are **projected to JSON files** on the encrypted SD card
+- The SD card is **physically transported** to target systems
+- No network connectivity - ever
 
-### Hybrid Mode (Best for cim-keys)
-- Generate events offline (air-gapped key generation)
-- Batch export events to encrypted SD card
-- Later upload to NATS when connected to secure network
-- Replay protection via event_id deduplication
+### Event Flow
+```
+GUI Event → Localhost NATS → JSON Projection → Encrypted SD Card
+                                                      ↓
+                                        Physical Transport to Target
+```
+
+### Why Localhost NATS?
+- Provides JetStream for event ordering and replay
+- Provides IPLD object store for content-addressed payloads
+- Standard NATS API for consistency with rest of CIM ecosystem
+- Event bus functionality without network exposure
 
 ## Security Considerations
 
@@ -224,17 +230,17 @@ pub struct EventEnvelope {
 - [ ] Add NATS connection configuration to CimKeysApp
 - [ ] Add optional NATS publishing to GUI event handlers
 
-### Phase 2: Batch Operations (v0.10.0)
+### Phase 2: Enhanced Projections (v0.10.0)
 - [ ] Batch event export to JSON files
 - [ ] Batch event import from JSON files
-- [ ] Batch NATS publish from offline events
-- [ ] Deduplication via event_id checking
+- [ ] SD card manifest generation
+- [ ] Event deduplication via event_id
 
 ### Phase 3: Advanced Features (v0.11.0)
-- [ ] Event replay capabilities
-- [ ] Distributed event sourcing across leaf nodes
-- [ ] Real-time graph synchronization between GUI instances
-- [ ] Event-driven projections to other CIM modules
+- [ ] Event replay from JSON files
+- [ ] State reconstruction from event history
+- [ ] Import PKI from other SD cards
+- [ ] YubiKey state synchronization
 
 ## Testing Strategy
 
@@ -248,32 +254,28 @@ pub struct EventEnvelope {
 
 ```toml
 [nats]
+# Localhost NATS - no network binding
 enabled = true
-url = "nats://leaf-node-1.local:4222"
-credentials = "/path/to/nats.creds"
-tls_cert = "/path/to/client-cert.pem"
-tls_key = "/path/to/client-key.pem"
-tls_ca = "/path/to/ca-cert.pem"
+url = "nats://127.0.0.1:4222"
 
 [nats.jetstream]
-stream_name = "CIM_GRAPH_EVENTS"
-object_store_bucket = "cim-graph-payloads"
+stream_name = "CIM_KEYS_EVENTS"
+object_store_bucket = "cim-keys-payloads"
 
-[offline]
-# If true, events are logged but not published to NATS
-offline_mode = false
-# Where to store offline events for later batch upload
-offline_storage = "/mnt/encrypted/cim-keys/events"
+[storage]
+# All output to encrypted SD card
+keys_output_dir = "/mnt/encrypted/cim-keys/keys"
+events_dir = "/mnt/encrypted/cim-keys/events"
 ```
 
 ## Benefits
 
-1. **Event Sourcing**: Complete audit trail of all key operations
-2. **Distributed Systems**: Multiple leaf nodes can subscribe to events
-3. **Replay**: Reconstruct state by replaying events from NATS
-4. **Integration**: Other CIM modules can subscribe to graph events
-5. **Scalability**: NATS JetStream handles high-throughput event streams
-6. **Content Addressing**: IPLD ensures payload immutability and deduplication
+1. **Event Sourcing**: Complete audit trail of all key operations on SD card
+2. **Portable State**: Encrypted SD card can be physically transported
+3. **Replay**: Reconstruct state by replaying events from JSON files
+4. **Standard API**: NATS API for consistency with CIM ecosystem
+5. **Content Addressing**: IPLD ensures payload immutability and deduplication
+6. **Air-Gapped Security**: Private keys never touch any network
 
 ## Future Enhancements
 

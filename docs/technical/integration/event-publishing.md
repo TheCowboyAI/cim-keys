@@ -1,10 +1,14 @@
 # Event Publishing Usage Guide
 
-This guide demonstrates how to use the event publishing system in cim-keys for distributed event sourcing.
+<!-- Copyright (c) 2025 - Cowboy AI, LLC. -->
+
+This guide demonstrates how to use the event publishing system in cim-keys for air-gapped PKI bootstrap.
 
 ## Overview
 
-The cim-keys event publishing system provides a functorial projection from domain events to cim-graph events, with optional publishing to NATS JetStream for distributed systems.
+The cim-keys event publishing system provides a functorial projection from domain events to cim-graph events, with localhost NATS as the event bus and JSON projection to encrypted SD card.
+
+**IMPORTANT**: cim-keys operates EXCLUSIVELY in air-gapped mode. There is no "online mode".
 
 ## Event Flow
 
@@ -19,9 +23,9 @@ GraphProjector.lift_*_event()
   ↓
 cim-graph Events (BoundedContextCreated, AggregateAdded, etc.)
   ↓
-[When NATS enabled] EventEnvelope → NATS Subject
+NATS (localhost only) → JSON Projection
   ↓
-[When NATS enabled] EventPayload → IPLD Object Store
+Encrypted SD Card (physical transport to target)
 ```
 
 ## Configuration
@@ -32,47 +36,27 @@ cim-graph Events (BoundedContextCreated, AggregateAdded, etc.)
 cp config.example.toml config.toml
 ```
 
-### 2. Configure for Your Environment
+### 2. Configure for Air-Gapped Operation
 
-**Offline Mode (Air-Gapped Key Generation):**
+**Air-Gapped Configuration (the only mode):**
 ```toml
-mode = "Offline"
-
 [nats]
-enabled = false
+# Localhost NATS - event bus without network
+enabled = true
+url = "nats://127.0.0.1:4222"
+stream_name = "CIM_KEYS_EVENTS"
 
 [storage]
-offline_events_dir = "/mnt/encrypted/cim-keys/events"
+# Output to encrypted SD card
+events_dir = "/mnt/encrypted/cim-keys/events"
 keys_output_dir = "/mnt/encrypted/cim-keys/keys"
 ```
 
-**Online Mode (Real-Time Event Publishing):**
-```toml
-mode = "Online"
-
-[nats]
-enabled = true
-url = "nats://leaf-node-1.local:4222"
-stream_name = "CIM_GRAPH_EVENTS"
-credentials_file = "/path/to/nats.creds"
-```
-
-**Hybrid Mode (Local + Queued Upload):**
-```toml
-mode = "Hybrid"
-
-[nats]
-enabled = false  # Enable later for batch upload
-
-[storage]
-offline_events_dir = "/mnt/encrypted/cim-keys/events"
-enable_backup = true
-backup_dir = "/backup/cim-keys"
-```
+**Note**: There is no "online mode" or "hybrid mode". cim-keys always operates air-gapped with localhost NATS and JSON projections to the SD card.
 
 ## Usage Examples
 
-### Basic Usage (Offline Mode)
+### Basic Usage
 
 ```rust
 use cim_keys::config::Config;
@@ -96,70 +80,37 @@ let domain_event = PersonEvent::PersonCreated(PersonCreated {
 // Lift to cim-graph events
 let graph_events = projector.lift_person_event(&domain_event)?;
 
-// In offline mode, events are logged but not published
+// Events flow to localhost NATS and are projected to JSON
 tracing::info!("Generated {} graph events", graph_events.len());
 for (i, event) in graph_events.iter().enumerate() {
     tracing::debug!("Event {}: {:?}", i+1, event);
 }
 ```
 
-### NATS Publishing (Online Mode)
+### JSON Projection to SD Card
 
-**NOTE: Full implementation pending. Current stub demonstrates architecture.**
-
-```rust
-use cim_keys::config::Config;
-use cim_keys::adapters::{EventEnvelope, build_subject};
-
-// Load configuration
-let config = Config::from_file(&"config.toml".into())?;
-
-if config.nats.enabled {
-    // TODO: Initialize NATS publisher
-    // let publisher = NatsEventPublisher::new(
-    //     &config.nats.url,
-    //     config.nats.stream_name,
-    //     config.nats.source_id,
-    // ).await?;
-
-    // Build subject for event
-    let subject = build_subject(
-        &config.nats.subject_prefix,
-        "person",
-        &graph_event.payload,
-    );
-
-    tracing::info!("Would publish to subject: {}", subject);
-    // subject: "cim.graph.person.events.context.bounded_context_created"
-}
-```
-
-### Batch Upload (Hybrid Mode)
+Events published to localhost NATS are projected to JSON files:
 
 ```rust
 use cim_keys::config::Config;
 use std::fs;
 
-// 1. Generate keys offline (NATS disabled)
 let config = Config::from_file(&"config.toml".into())?;
-assert_eq!(config.mode, OperationalMode::Hybrid);
 
-// ... generate keys and events offline ...
+// Events are automatically projected to JSON files
+// on the encrypted SD card in the events_dir
 
-// 2. Later, when connected to secure network, enable NATS
-let mut online_config = config.clone();
-online_config.nats.enabled = true;
-
-// 3. Read offline events and publish in batch
-let events_dir = config.storage.offline_events_dir;
+// Read projected events
+let events_dir = &config.storage.events_dir;
 for entry in fs::read_dir(events_dir)? {
     let path = entry?.path();
     if path.extension() == Some("json".as_ref()) {
-        // TODO: Parse event and publish
-        // let event = serde_json::from_str(&fs::read_to_string(path)?)?;
-        // publisher.publish_event(&event, "person").await?;
+        let event_json = fs::read_to_string(&path)?;
+        tracing::info!("Projected event: {}", path.display());
     }
 }
+
+// The SD card can then be physically transported to target systems
 ```
 
 ## Subject Hierarchy
@@ -222,15 +173,15 @@ cargo run --bin cim-keys-gui -- --config config.toml
 ## Security Considerations
 
 ### Air-Gapped Operation
-- Offline mode ensures no network communication
-- Events stored on encrypted partitions only
-- Keys never leave secure environment
+- NATS runs on localhost only (127.0.0.1) - no network binding
+- Events projected to encrypted SD card
+- Private keys never touch any network
+- SD card physically transported to target systems
 
-### NATS Security
-- Always use TLS for production
-- Use JWT-based authentication
-- Configure subject-based authorization
-- Rotate credentials regularly
+### Localhost NATS Security
+- Bound to 127.0.0.1 only (not 0.0.0.0)
+- No external network access
+- Provides event bus functionality without network exposure
 
 ### Payload Encryption
 Consider encrypting IPLD payloads for sensitive key material:
@@ -262,25 +213,32 @@ cargo run --bin cim-keys -- --create-example-config
 
 ## Next Steps
 
-1. **Implement Full NATS Integration** (v0.9.0)
-   - Add async-nats dependency
-   - Implement NatsEventPublisher
-   - Add integration tests
+1. **Enhanced JSON Projection** (v0.9.0)
+   - Complete event projection to SD card
+   - Manifest generation with checksums
+   - Event replay from JSON files
 
 2. **IPLD Object Store** (v0.9.0)
    - Implement IpldObjectStore adapter
    - Content-addressed payload storage
    - Deduplication support
 
-3. **Batch Operations** (v0.10.0)
-   - Offline event queue management
-   - Batch NATS publish
-   - Conflict resolution
+3. **Import/Export** (v0.10.0)
+   - Import existing PKI from SD cards
+   - Export for specific target systems
+   - Merge multiple organizational PKIs
 
-4. **Advanced Features** (v0.11.0)
-   - Event replay
-   - Distributed projections
-   - Real-time graph sync
+## Relationship to CIM Ecosystem
+
+cim-keys is the **air-gapped genesis point** for distributed CIM infrastructure:
+
+1. **Generate** - Create organization PKI offline with cim-keys
+2. **Project** - Events flow through localhost NATS to JSON on SD card
+3. **Transport** - Physically move encrypted SD card to target systems
+4. **Bootstrap** - Target CIM leaf nodes/clusters import the PKI
+5. **Operate** - Distributed CIM system uses the generated keys
+
+The distributed nature of CIM comes AFTER keys are generated and transported.
 
 ## See Also
 
