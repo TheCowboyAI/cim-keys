@@ -59,14 +59,13 @@ pub struct Manifest {
     pub organization_name: String,
     pub created_at: String,
     pub created_by: String,
-    pub passphrase_hash: String, // SHA-256 of passphrase for verification
 }
 
 /// Secrets record - stored separately for secure backup
-/// This file contains all secrets needed to reconstruct the PKI
+/// Contains YubiKey PINs needed to access the keys
+/// NOTE: Master passphrase is NEVER stored - it's generated randomly and destroyed
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecretsRecord {
-    pub master_passphrase: String,
     pub yubikey_pins: Vec<YubiKeyPinRecord>,
     pub created_at: String,
     pub warning: String,
@@ -177,20 +176,31 @@ pub struct KeyInfo {
     pub created_at: String,
 }
 
+/// Generated YubiKey credentials (random, stored only for output)
+#[derive(Debug, Clone)]
+struct GeneratedYubiKeyCredentials {
+    serial: String,
+    pin: String,
+    puk: String,
+    management_key: String,
+    assigned_to: String,
+    role: String,
+}
+
 /// Bootstrap workflow engine
 pub struct BootstrapWorkflow {
     bootstrap_data: BootstrapData,
     output_dir: PathBuf,
-    master_passphrase: String,
     audit_trail: Vec<AuditEvent>,
     correlation_id: Uuid,
+    /// Generated credentials for each YubiKey - created during workflow
+    generated_credentials: Vec<GeneratedYubiKeyCredentials>,
 }
 
 impl BootstrapWorkflow {
     pub fn new(
         bootstrap_path: impl AsRef<Path>,
         output_dir: impl AsRef<Path>,
-        master_passphrase: String,
     ) -> Result<Self, String> {
         let bootstrap_data = SecretsLoader::load_from_bootstrap_file(bootstrap_path)
             .map_err(|e| format!("Failed to load bootstrap file: {}", e))?;
@@ -200,10 +210,48 @@ impl BootstrapWorkflow {
         Ok(Self {
             bootstrap_data,
             output_dir: output_dir.as_ref().to_path_buf(),
-            master_passphrase,
             audit_trail: Vec::new(),
             correlation_id,
+            generated_credentials: Vec::new(),
         })
+    }
+
+    /// Generate a cryptographically secure random passphrase
+    /// This passphrase is used once and then destroyed - never stored
+    fn generate_ephemeral_passphrase() -> String {
+        use rand::RngCore;
+        let mut rng = rand::thread_rng();
+        // 64 bytes of randomness, hex encoded = 128 character passphrase
+        let mut random_bytes = [0u8; 64];
+        rng.fill_bytes(&mut random_bytes);
+        hex::encode(random_bytes)
+    }
+
+    /// Generate a random 6-8 digit PIN
+    fn generate_random_pin() -> String {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        // 6 digit PIN (YubiKey default)
+        let pin: u32 = rng.gen_range(100000..999999);
+        pin.to_string()
+    }
+
+    /// Generate a random 8 digit PUK
+    fn generate_random_puk() -> String {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        // 8 digit PUK (YubiKey default)
+        let puk: u32 = rng.gen_range(10000000..99999999);
+        puk.to_string()
+    }
+
+    /// Generate a random 24-byte (48 hex chars) management key
+    fn generate_random_management_key() -> String {
+        use rand::RngCore;
+        let mut rng = rand::thread_rng();
+        let mut key_bytes = [0u8; 24];
+        rng.fill_bytes(&mut key_bytes);
+        hex::encode(key_bytes)
     }
 
     /// Add an audit event
@@ -221,10 +269,32 @@ impl BootstrapWorkflow {
         self.audit_trail.push(event);
     }
 
+    /// Generate random credentials for all YubiKeys
+    fn generate_yubikey_credentials(&mut self) {
+        println!("  Generating random credentials for YubiKeys...");
+        for assignment in &self.bootstrap_data.yubikey_assignments {
+            let creds = GeneratedYubiKeyCredentials {
+                serial: assignment.serial.clone(),
+                pin: Self::generate_random_pin(),
+                puk: Self::generate_random_puk(),
+                management_key: Self::generate_random_management_key(),
+                assigned_to: format!("{} ({})", assignment.name, assignment.person_id),
+                role: assignment.role.clone(),
+            };
+            self.generated_credentials.push(creds);
+        }
+        println!("  ✓ Generated credentials for {} YubiKeys", self.generated_credentials.len());
+    }
+
     /// Execute the complete bootstrap workflow
     pub async fn execute(&mut self) -> Result<BootstrapOutput, String> {
         // Create output directory structure
         self.create_output_structure()?;
+
+        // Phase 0: Generate random credentials for all YubiKeys
+        println!("\n=== Phase 0: Generating YubiKey Credentials ===");
+        self.generate_yubikey_credentials();
+        self.audit("credentials_generated", "Random YubiKey credentials generated", None, HashMap::new());
 
         // Phase 1: Generate PKI
         println!("\n=== Phase 1: Generating PKI Hierarchy ===");
@@ -291,12 +361,18 @@ impl BootstrapWorkflow {
         let org = self.bootstrap_data.organization.clone();
         let units = self.bootstrap_data.units.clone();
 
+        // Generate ephemeral passphrase - used once and destroyed
+        // This passphrase is NEVER stored or displayed
+        let ephemeral_passphrase = Self::generate_ephemeral_passphrase();
+
         // Derive master seed from passphrase (Argon2id - intentionally slow for security)
-        println!("  Deriving master seed from passphrase (this may take a moment)...");
+        println!("  Deriving master seed (this may take a moment)...");
         std::io::Write::flush(&mut std::io::stdout()).ok();
-        let master_seed = derive_master_seed(&self.master_passphrase, &org.name)
+        let master_seed = derive_master_seed(&ephemeral_passphrase, &org.name)
             .map_err(|e| format!("Failed to derive master seed: {}", e))?;
-        println!("  ✓ Master seed derived");
+        // ephemeral_passphrase is dropped here and never used again
+        drop(ephemeral_passphrase);
+        println!("  ✓ Master seed derived (passphrase destroyed)");
 
         // Generate Root CA
         println!("  Generating Root CA for {}...", org.display_name);
@@ -818,18 +894,12 @@ impl BootstrapWorkflow {
     }
 
     fn create_manifest(&self) -> Manifest {
-        use sha2::{Sha256, Digest};
-        let mut hasher = Sha256::new();
-        hasher.update(self.master_passphrase.as_bytes());
-        let passphrase_hash = hex::encode(hasher.finalize());
-
         Manifest {
             version: "1.0.0".to_string(),
             organization_id: self.bootstrap_data.organization.id.to_string(),
             organization_name: self.bootstrap_data.organization.display_name.clone(),
             created_at: Utc::now().to_rfc3339(),
             created_by: "cim-keys".to_string(),
-            passphrase_hash,
         }
     }
 
@@ -914,32 +984,33 @@ impl BootstrapWorkflow {
         println!("  - nats/users/*.creds");
         println!("  - keys/key_map.json");
         println!("  - events/audit_trail.json");
-        println!("  - SECRETS.json (⚠️  MASTER PASSPHRASE + ALL PINS)");
+        println!("  - SECRETS.json (⚠️  YUBIKEY PINS - MEMORIZE THEN DESTROY)");
         println!("  - bootstrap_output.json (complete)");
 
         Ok(())
     }
 
     /// Create the secrets record containing all sensitive information
+    /// Uses the randomly generated credentials, NOT the bootstrap file
     fn create_secrets_record(&self) -> SecretsRecord {
-        let yubikey_pins: Vec<YubiKeyPinRecord> = self.bootstrap_data.yubikey_assignments
+        let yubikey_pins: Vec<YubiKeyPinRecord> = self.generated_credentials
             .iter()
-            .map(|assignment| YubiKeyPinRecord {
-                serial: assignment.serial.clone(),
-                pin: assignment.pin.clone(),
-                puk: assignment.puk.clone(),
-                management_key: Some(assignment.mgmt_key.clone()),
-                assigned_to: Some(format!("{} ({})", assignment.name, assignment.person_id)),
-                role: assignment.role.clone(),
+            .map(|creds| YubiKeyPinRecord {
+                serial: creds.serial.clone(),
+                pin: creds.pin.clone(),
+                puk: creds.puk.clone(),
+                management_key: Some(creds.management_key.clone()),
+                assigned_to: Some(creds.assigned_to.clone()),
+                role: creds.role.clone(),
             })
             .collect();
 
         SecretsRecord {
-            master_passphrase: self.master_passphrase.clone(),
             yubikey_pins,
             created_at: chrono::Utc::now().to_rfc3339(),
-            warning: "⚠️  THIS FILE CONTAINS ALL SECRETS. Store on encrypted media only. \
-                     Do not transmit over network. Physical security required.".to_string(),
+            warning: "⚠️  MEMORIZE THESE CREDENTIALS THEN DESTROY THIS FILE. \
+                     Store offline only. Physical security required. \
+                     These credentials CANNOT be recovered if lost.".to_string(),
         }
     }
 }
@@ -961,10 +1032,8 @@ async fn test_complete_bootstrap_workflow() {
     // Create temp output directory
     let output_dir = std::env::temp_dir().join(format!("cim-keys-bootstrap-{}", Uuid::now_v7()));
 
-    // Use a test passphrase (in production this would be prompted)
-    let master_passphrase = "test-passphrase-for-cowboyai-2025";
-
-    let mut workflow = BootstrapWorkflow::new(&bootstrap_path, &output_dir, master_passphrase.to_string())
+    // Passphrase is generated internally and never exposed
+    let mut workflow = BootstrapWorkflow::new(&bootstrap_path, &output_dir)
         .expect("Failed to create workflow");
 
     let result = workflow.execute().await;
@@ -1024,16 +1093,7 @@ async fn test_interactive_bootstrap() {
     println!("║       CIM-KEYS INTERACTIVE BOOTSTRAP (WITH YUBIKEYS)         ║");
     println!("╚═══════════════════════════════════════════════════════════════╝\n");
 
-    // Prompt for passphrase
-    print!("Enter master passphrase: ");
-    io::stdout().flush().unwrap();
-    let mut passphrase = String::new();
-    io::stdin().read_line(&mut passphrase).unwrap();
-    let passphrase = passphrase.trim().to_string();
-
-    if passphrase.len() < 12 {
-        panic!("Passphrase must be at least 12 characters");
-    }
+    // No passphrase prompt - it's generated internally and destroyed
 
     // Prompt for output directory
     let default_output = format!("/tmp/cim-keys-{}", chrono::Utc::now().format("%Y%m%d-%H%M%S"));
@@ -1056,7 +1116,7 @@ async fn test_interactive_bootstrap() {
     let bootstrap_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("secrets/domain-bootstrap.json");
 
-    let mut workflow = BootstrapWorkflow::new(&bootstrap_path, &output_dir, passphrase)
+    let mut workflow = BootstrapWorkflow::new(&bootstrap_path, &output_dir)
         .expect("Failed to create workflow");
 
     let result = workflow.execute().await;
