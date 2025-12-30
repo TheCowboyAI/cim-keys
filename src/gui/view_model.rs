@@ -333,3 +333,207 @@ impl ColorPalette {
         Color::from_rgba(color.r, color.g, color.b, alpha)
     }
 }
+
+// ============================================================================
+// GRAPH NODE VIEW MODEL - DDD SEPARATION OF UI CONCERNS
+// ============================================================================
+
+use iced::Point;
+use uuid::Uuid;
+
+/// View model for individual graph node visualization.
+///
+/// Separates UI concerns (position, selection, sizing) from domain data.
+/// The domain entity (DomainNode) remains pure while the view layer
+/// handles all rendering-specific properties.
+///
+/// ## DDD Compliance
+///
+/// This separation achieves:
+/// - Domain layer purity (no UI concerns in entities)
+/// - Clear responsibility boundaries
+/// - Easier testing (domain logic vs UI logic)
+#[derive(Debug, Clone)]
+pub struct NodeView {
+    /// Reference to the domain entity
+    pub entity_id: Uuid,
+
+    /// Position in the graph canvas (UI concern)
+    pub position: Point,
+
+    /// Display color (derived from domain node type)
+    pub color: Color,
+
+    /// Display label (derived from domain node data)
+    pub label: String,
+
+    /// Secondary text for additional info
+    pub secondary_text: Option<String>,
+
+    /// Whether this node is currently selected
+    pub selected: bool,
+
+    /// Whether this node is being dragged
+    pub dragging: bool,
+
+    /// Radius for rendering
+    pub radius: f32,
+}
+
+impl NodeView {
+    /// Create a new node view with default state
+    pub fn new(entity_id: Uuid, position: Point, color: Color, label: String) -> Self {
+        Self {
+            entity_id,
+            position,
+            color,
+            label,
+            secondary_text: None,
+            selected: false,
+            dragging: false,
+            radius: 30.0,
+        }
+    }
+
+    /// Update position during drag
+    pub fn with_position(mut self, position: Point) -> Self {
+        self.position = position;
+        self
+    }
+
+    /// Set selection state
+    pub fn with_selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
+    }
+
+    /// Set dragging state
+    pub fn with_dragging(mut self, dragging: bool) -> Self {
+        self.dragging = dragging;
+        self
+    }
+
+    /// Check if a point is within this node's bounds
+    pub fn contains_point(&self, point: Point) -> bool {
+        let dx = point.x - self.position.x;
+        let dy = point.y - self.position.y;
+        (dx * dx + dy * dy).sqrt() <= self.radius
+    }
+
+    /// Get the effective radius (larger when selected)
+    pub fn effective_radius(&self) -> f32 {
+        if self.selected {
+            self.radius * 1.2
+        } else {
+            self.radius
+        }
+    }
+
+    /// Get the border color (different when selected or dragging)
+    pub fn border_color(&self) -> Color {
+        if self.dragging {
+            Color::from_rgb(0.0, 0.8, 0.0)
+        } else if self.selected {
+            Color::from_rgb(0.2, 0.6, 1.0)
+        } else {
+            Color::from_rgba(0.0, 0.0, 0.0, 0.3)
+        }
+    }
+}
+
+/// View model for graph edge visualization.
+#[derive(Debug, Clone)]
+pub struct EdgeView {
+    /// Source node ID
+    pub from_id: Uuid,
+
+    /// Target node ID
+    pub to_id: Uuid,
+
+    /// Edge color
+    pub color: Color,
+
+    /// Edge style (solid, dashed, etc.)
+    pub style: EdgeStyle,
+
+    /// Optional label on the edge
+    pub label: Option<String>,
+}
+
+/// Style of edge line
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EdgeStyle {
+    /// Solid line
+    #[default]
+    Solid,
+    /// Dashed line
+    Dashed,
+    /// Dotted line
+    Dotted,
+}
+
+impl EdgeView {
+    /// Create a new edge view
+    pub fn new(from_id: Uuid, to_id: Uuid, color: Color) -> Self {
+        Self {
+            from_id,
+            to_id,
+            color,
+            style: EdgeStyle::Solid,
+            label: None,
+        }
+    }
+
+    /// Set edge style
+    pub fn with_style(mut self, style: EdgeStyle) -> Self {
+        self.style = style;
+        self
+    }
+
+    /// Set edge label
+    pub fn with_label(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+}
+
+// ============================================================================
+// TESTS
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_node_view_contains_point() {
+        let view = NodeView::new(
+            Uuid::now_v7(),
+            Point::new(100.0, 100.0),
+            Color::WHITE,
+            "Test".to_string(),
+        );
+
+        // Point inside
+        assert!(view.contains_point(Point::new(100.0, 100.0)));
+        assert!(view.contains_point(Point::new(110.0, 110.0)));
+
+        // Point outside
+        assert!(!view.contains_point(Point::new(200.0, 200.0)));
+    }
+
+    #[test]
+    fn test_node_view_effective_radius() {
+        let view = NodeView::new(
+            Uuid::now_v7(),
+            Point::new(0.0, 0.0),
+            Color::WHITE,
+            "Test".to_string(),
+        );
+
+        assert_eq!(view.effective_radius(), 30.0);
+
+        let selected = view.with_selected(true);
+        assert_eq!(selected.effective_radius(), 36.0); // 30 * 1.2
+    }
+}
