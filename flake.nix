@@ -8,10 +8,15 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     flake-utils.url = "github:numtide/flake-utils";
+    nixos-generators = {
+      url = "github:nix-community/nixos-generators";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, rust-overlay, flake-utils, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs = { self, nixpkgs, rust-overlay, flake-utils, nixos-generators, ... }:
+    nixpkgs.lib.recursiveUpdate
+    (flake-utils.lib.eachDefaultSystem (system:
       let
         overlays = [ (import rust-overlay) ];
         pkgs = import nixpkgs {
@@ -144,6 +149,90 @@
           '' else ""}
         '';
 
+        # Build package (CLI)
+        cimKeysPackage = pkgs.rustPlatform.buildRustPackage {
+          pname = "cim-keys";
+          version = "0.8.0";
+
+          src = ./.;
+
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+            allowBuiltinFetchGit = true;
+          };
+
+          inherit nativeBuildInputs buildInputs;
+
+          preBuild = envVars;
+
+          # Disable tests that require hardware tokens
+          checkPhase = ''
+            cargo test --lib --bins -- --skip yubikey --skip gpg
+          '';
+
+          meta = with pkgs.lib; {
+            description = "Comprehensive cryptographic key management library for CIM";
+            homepage = "https://github.com/thecowboyai/cim-keys";
+            license = licenses.mit;
+            maintainers = [];
+          };
+        };
+
+        # Build GUI package
+        cimKeysGuiPackage = pkgs.rustPlatform.buildRustPackage {
+          pname = "cim-keys-gui";
+          version = "0.8.0";
+
+          src = ./.;
+
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+            allowBuiltinFetchGit = true;
+          };
+
+          nativeBuildInputs = nativeBuildInputs ++ (with pkgs; [
+            pkg-config
+            makeWrapper
+          ]);
+
+          buildInputs = buildInputs ++ guiBuildInputs;
+
+          # Build with GUI features
+          buildFeatures = [ "gui" ];
+
+          preBuild = ''
+            ${envVars}
+
+            # Copy assets that need to be embedded
+            mkdir -p assets/fonts
+            cp ${pkgs.noto-fonts-emoji}/share/fonts/noto/NotoColorEmoji.ttf assets/fonts/
+
+            # Note: logo.png should already be in the source tree
+
+            # Additional GUI environment variables
+            export LD_LIBRARY_PATH="${pkgs.wayland}/lib:${pkgs.libGL}/lib:${pkgs.vulkan-loader}/lib:$LD_LIBRARY_PATH"
+          '';
+
+          # Only build the GUI binary
+          cargoBuildFlags = [ "--bin" "cim-keys-gui" "--features" "gui" ];
+
+          # Disable tests for GUI build
+          doCheck = false;
+
+          # Wrap binary with runtime library paths
+          postFixup = ''
+            wrapProgram $out/bin/cim-keys-gui \
+              --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath (buildInputs ++ guiBuildInputs)}"
+          '';
+
+          meta = with pkgs.lib; {
+            description = "GUI for CIM Keys - Cryptographic key management";
+            homepage = "https://github.com/thecowboyai/cim-keys";
+            license = licenses.mit;
+            maintainers = [];
+          };
+        };
+
       in
       {
         devShells.default = pkgs.mkShell {
@@ -213,94 +302,14 @@
           '';
         };
 
-        # Build package (CLI)
-        packages.default = pkgs.rustPlatform.buildRustPackage {
-          pname = "cim-keys";
-          version = "0.8.0";
-
-          src = ./.;
-
-          cargoLock = {
-            lockFile = ./Cargo.lock;
-            allowBuiltinFetchGit = true;
-          };
-
-          inherit nativeBuildInputs buildInputs;
-
-          preBuild = envVars;
-
-          # Disable tests that require hardware tokens
-          checkPhase = ''
-            cargo test --lib --bins -- --skip yubikey --skip gpg
-          '';
-
-          meta = with pkgs.lib; {
-            description = "Comprehensive cryptographic key management library for CIM";
-            homepage = "https://github.com/thecowboyai/cim-keys";
-            license = licenses.mit;
-            maintainers = [];
-          };
-        };
-
-        # Build GUI package
-        packages.cim-keys-gui = pkgs.rustPlatform.buildRustPackage {
-          pname = "cim-keys-gui";
-          version = "0.8.0";
-
-          src = ./.;
-
-          cargoLock = {
-            lockFile = ./Cargo.lock;
-            allowBuiltinFetchGit = true;
-          };
-
-          nativeBuildInputs = nativeBuildInputs ++ (with pkgs; [
-            pkg-config
-            makeWrapper
-          ]);
-
-          buildInputs = buildInputs ++ guiBuildInputs;
-
-          # Build with GUI features
-          buildFeatures = [ "gui" ];
-
-          preBuild = ''
-            ${envVars}
-
-            # Copy assets that need to be embedded
-            mkdir -p assets/fonts
-            cp ${pkgs.noto-fonts-emoji}/share/fonts/noto/NotoColorEmoji.ttf assets/fonts/
-
-            # Note: logo.png should already be in the source tree
-
-            # Additional GUI environment variables
-            export LD_LIBRARY_PATH="${pkgs.wayland}/lib:${pkgs.libGL}/lib:${pkgs.vulkan-loader}/lib:$LD_LIBRARY_PATH"
-          '';
-
-          # Only build the GUI binary
-          cargoBuildFlags = [ "--bin" "cim-keys-gui" "--features" "gui" ];
-
-          # Disable tests for GUI build
-          doCheck = false;
-
-          # Wrap binary with runtime library paths
-          postFixup = ''
-            wrapProgram $out/bin/cim-keys-gui \
-              --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath (buildInputs ++ guiBuildInputs)}"
-          '';
-
-          meta = with pkgs.lib; {
-            description = "GUI for CIM Keys - Cryptographic key management";
-            homepage = "https://github.com/thecowboyai/cim-keys";
-            license = licenses.mit;
-            maintainers = [];
-          };
-        };
+        # Expose packages
+        packages.default = cimKeysPackage;
+        packages.cim-keys-gui = cimKeysGuiPackage;
 
         # Apps for nix run
         apps.default = {
           type = "app";
-          program = "${self.packages.${system}.default}/bin/cim-keys";
+          program = "${cimKeysPackage}/bin/cim-keys";
         };
 
         # GUI app that properly sets runtime library paths
@@ -323,8 +332,65 @@
             echo "Starting GUI..."
 
             # Run the nix-built GUI binary
-            exec ${self.packages.${system}.cim-keys-gui}/bin/cim-keys-gui "$OUTPUT_DIR"
+            exec ${cimKeysGuiPackage}/bin/cim-keys-gui "$OUTPUT_DIR"
           '';
         };
-      });
+      }))
+    # NixOS image outputs - Second argument to recursiveUpdate
+    # Note: cim-keys cannot be pre-built in the image due to path dependencies
+    # to sibling repositories. The image includes the source and development
+    # tools to build it on first boot.
+    {
+      # SD card image for Raspberry Pi 4/5 (aarch64)
+      packages.aarch64-linux.sdImage = nixos-generators.nixosGenerate {
+        system = "aarch64-linux";
+        format = "sd-aarch64";
+        modules = [
+          ./nixos/sd-image/default.nix
+          ({ pkgs, ... }: {
+            # Include cim-keys source for building on-device
+            environment.etc."cim-keys-source".source = ./.;
+          })
+        ];
+      };
+
+      # ISO image for x86_64 USB boot
+      packages.x86_64-linux.isoImage = nixos-generators.nixosGenerate {
+        system = "x86_64-linux";
+        format = "iso";
+        modules = [
+          ./nixos/sd-image/default.nix
+          ({ pkgs, lib, ... }: {
+            # ISO-specific overrides
+            services.cage.enable = lib.mkForce false;
+            services.xserver = {
+              enable = true;
+              displayManager.lightdm.enable = true;
+              windowManager.openbox.enable = true;
+            };
+            services.displayManager.autoLogin = {
+              enable = true;
+              user = "cimkeys";
+            };
+            # Include cim-keys source for building on-device
+            environment.etc."cim-keys-source".source = ./.;
+          })
+        ];
+      };
+
+      # Raw disk image for x86_64
+      packages.x86_64-linux.rawImage = nixos-generators.nixosGenerate {
+        system = "x86_64-linux";
+        format = "raw";
+        modules = [
+          ./nixos/sd-image/default.nix
+          ({ pkgs, lib, ... }: {
+            services.cage.enable = lib.mkForce false;
+            services.getty.autologinUser = "cimkeys";
+            # Include cim-keys source for building on-device
+            environment.etc."cim-keys-source".source = ./.;
+          })
+        ];
+      };
+    };
 }
