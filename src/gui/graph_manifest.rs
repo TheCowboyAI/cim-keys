@@ -111,7 +111,7 @@ impl ManifestAnalysis {
         // Extract manifest details from node type
         // Note: Current graph doesn't have a Manifest node type yet
         // This is a placeholder implementation
-        let manifest_name = node.label.clone();
+        let manifest_name = node.visualization().primary_text;
         let timestamp = Utc::now(); // TODO: Extract from node metadata
         let version = None; // TODO: Extract from node metadata
         let destination = None; // TODO: Extract from node metadata
@@ -141,7 +141,7 @@ impl ManifestAnalysis {
                         if let Some(exported_node) = graph.nodes.get(&edge.to) {
                             match exported_node.domain_node.data() {
                                 DomainNodeData::Key(key) => {
-                                    exported_keys.push((key.id.as_uuid(), exported_node.label.clone()));
+                                    exported_keys.push((key.id.as_uuid(), exported_node.visualization().primary_text));
                                 }
                                 DomainNodeData::RootCertificate(cert) => {
                                     exported_certificates.push((edge.to, cert.subject.clone()));

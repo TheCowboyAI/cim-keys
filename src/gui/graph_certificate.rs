@@ -181,7 +181,7 @@ impl CertificateAnalysis {
                     EdgeType::StoredAt => {
                         // Storage location for this certificate
                         if let Some(location_node) = graph.nodes.get(&edge.to) {
-                            storage_locations.push((edge.to, location_node.label.clone()));
+                            storage_locations.push((edge.to, location_node.visualization().primary_text));
                         }
                     }
                     EdgeType::StoredInYubiKeySlot(slot) => {

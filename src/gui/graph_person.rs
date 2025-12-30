@@ -105,7 +105,7 @@ impl PersonAnalysis {
                     }
                     EdgeType::OwnsKey => {
                         if let Some(target_node) = graph.nodes.get(&edge.to) {
-                            owned_keys.insert(edge.to, target_node.label.clone());
+                            owned_keys.insert(edge.to, target_node.visualization().primary_text);
                         }
                     }
                     EdgeType::DelegatesKey(ref delegation) => {

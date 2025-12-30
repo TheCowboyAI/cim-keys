@@ -158,10 +158,10 @@ pub fn determine_generation_order(hierarchy: &NatsHierarchy) -> Vec<NatsGenerati
 }
 
 /// Generate NATS hierarchy from organizational graph
-/// Returns list of (NATS node, parent NATS entity ID) to add to graph
+/// Returns list of (NATS node, position, parent NATS entity ID) to add to graph
 pub fn generate_nats_from_graph(
     graph: &OrganizationConcept,
-) -> Result<Vec<(ConceptEntity, Option<Uuid>)>, String> {
+) -> Result<Vec<(ConceptEntity, Point, Option<Uuid>)>, String> {
     // Step 1: Analyze graph structure
     let hierarchy = analyze_graph_for_nats(graph);
 
@@ -181,10 +181,10 @@ pub fn generate_nats_from_graph(
             NatsGenerationOrder::Operator(org_id) => {
                 if let Some((_, org)) = &hierarchy.root_organization {
                     let nats_id = Uuid::now_v7();
-                    let nats_node = create_nats_operator_node(nats_id, org)?;
+                    let (nats_node, position) = create_nats_operator_node(nats_id, org)?;
 
                     nats_id_map.insert(org_id, nats_id);
-                    nats_nodes.push((nats_node, None)); // Operator has no parent
+                    nats_nodes.push((nats_node, position, None)); // Operator has no parent
 
                     tracing::info!("Generated NATS Operator for organization: {}", org.name);
                 }
@@ -204,10 +204,10 @@ pub fn generate_nats_from_graph(
 
                     let parent_nats_id = parent_nats_id.unwrap();
                     let nats_id = Uuid::now_v7();
-                    let nats_node = create_nats_account_node(nats_id, unit, &parent_nats_id)?;
+                    let (nats_node, position) = create_nats_account_node(nats_id, unit, &parent_nats_id)?;
 
                     nats_id_map.insert(unit_id, nats_id);
-                    nats_nodes.push((nats_node, Some(parent_nats_id)));
+                    nats_nodes.push((nats_node, position, Some(parent_nats_id)));
 
                     tracing::info!("Generated NATS Account for unit: {}", unit.name);
                 }
@@ -227,10 +227,10 @@ pub fn generate_nats_from_graph(
 
                     let parent_nats_id = parent_nats_id.unwrap();
                     let nats_id = Uuid::now_v7();
-                    let nats_node = create_nats_user_node(nats_id, person, role, &parent_nats_id)?;
+                    let (nats_node, position) = create_nats_user_node(nats_id, person, role, &parent_nats_id)?;
 
                     nats_id_map.insert(person_id, nats_id);
-                    nats_nodes.push((nats_node, Some(parent_nats_id)));
+                    nats_nodes.push((nats_node, position, Some(parent_nats_id)));
 
                     tracing::info!("Generated NATS User for person: {}", person.name);
                 }
@@ -242,7 +242,7 @@ pub fn generate_nats_from_graph(
 }
 
 /// Create NATS Operator node from Organization
-fn create_nats_operator_node(nats_id: Uuid, org: &Organization) -> Result<ConceptEntity, String> {
+fn create_nats_operator_node(nats_id: Uuid, org: &Organization) -> Result<(ConceptEntity, Point), String> {
     // Create a simplified identity projection for visualization
     // TODO: Generate actual NKeys and JWTs using NatsProjection when NSC integration is complete
     use crate::value_objects::{NKeyPair, NatsJwt, NKeyType, NKeySeed, NKeyPublic};
@@ -282,7 +282,8 @@ fn create_nats_operator_node(nats_id: Uuid, org: &Organization) -> Result<Concep
 
     let domain_node = DomainNode::inject_nats_operator(identity);
     let position = Point::new(400.0, 100.0); // Top center
-    Ok(ConceptEntity::from_domain_node(nats_id, domain_node, position))
+    let entity = ConceptEntity::from_domain_node(nats_id, domain_node);
+    Ok((entity, position))
 }
 
 /// Create NATS Account node from OrganizationalUnit
@@ -290,7 +291,7 @@ fn create_nats_account_node(
     nats_id: Uuid,
     unit: &OrganizationUnit,
     _parent_nats_id: &Uuid,
-) -> Result<ConceptEntity, String> {
+) -> Result<(ConceptEntity, Point), String> {
     use crate::value_objects::{NKeyPair, NatsJwt, NKeyType, NKeySeed, NKeyPublic};
     use crate::domain_projections::NatsIdentityProjection;
 
@@ -331,7 +332,8 @@ fn create_nats_account_node(
 
     let domain_node = DomainNode::inject_nats_account(identity);
     let position = Point::new(400.0, 250.0); // Middle
-    Ok(ConceptEntity::from_domain_node(nats_id, domain_node, position))
+    let entity = ConceptEntity::from_domain_node(nats_id, domain_node);
+    Ok((entity, position))
 }
 
 /// Create NATS User node from Person
@@ -340,7 +342,7 @@ fn create_nats_user_node(
     person: &Person,
     _role: &KeyOwnerRole,
     _parent_nats_id: &Uuid,
-) -> Result<ConceptEntity, String> {
+) -> Result<(ConceptEntity, Point), String> {
     use crate::value_objects::{NKeyPair, NatsJwt, NatsCredential, NKeyType, NKeySeed, NKeyPublic};
     use crate::domain_projections::NatsIdentityProjection;
 
@@ -390,19 +392,24 @@ fn create_nats_user_node(
 
     let domain_node = DomainNode::inject_nats_user(identity);
     let position = Point::new(400.0, 400.0); // Bottom
-    Ok(ConceptEntity::from_domain_node(nats_id, domain_node, position))
+    let entity = ConceptEntity::from_domain_node(nats_id, domain_node);
+    Ok((entity, position))
 }
 
 /// Add NATS nodes and edges to the organizational graph
 pub fn add_nats_to_graph(
     graph: &mut OrganizationConcept,
-    nats_nodes: Vec<(ConceptEntity, Option<Uuid>)>,
+    nats_nodes: Vec<(ConceptEntity, Point, Option<Uuid>)>,
 ) {
-    for (nats_node, parent_nats_id) in nats_nodes {
+    for (nats_node, position, parent_nats_id) in nats_nodes {
         let nats_id = nats_node.id;
 
-        // Add NATS node
+        // Create view for the node
+        let view = nats_node.create_view(position);
+
+        // Add NATS node and view
         graph.nodes.insert(nats_id, nats_node);
+        graph.node_views.insert(nats_id, view);
 
         // Add "manages" edge from parent NATS entity
         if let Some(parent_id) = parent_nats_id {

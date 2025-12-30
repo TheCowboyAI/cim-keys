@@ -160,11 +160,11 @@ pub fn determine_generation_order(hierarchy: &PkiHierarchy) -> Vec<CertificateOr
 }
 
 /// Generate PKI hierarchy from organizational graph
-/// Returns list of (certificate node, parent certificate ID) to add to graph
+/// Returns list of (certificate node, position, parent certificate ID) to add to graph
 pub fn generate_pki_from_graph(
     graph: &OrganizationConcept,
     _root_passphrase: &str,
-) -> Result<Vec<(ConceptEntity, Option<Uuid>)>, String> {
+) -> Result<Vec<(ConceptEntity, Point, Option<Uuid>)>, String> {
     // Step 1: Analyze graph structure
     let hierarchy = analyze_graph_for_pki(graph);
 
@@ -184,10 +184,10 @@ pub fn generate_pki_from_graph(
             CertificateOrder::Root(org_id) => {
                 if let Some((_, org)) = &hierarchy.root_organization {
                     let cert_id = Uuid::now_v7();
-                    let cert_node = create_root_ca_node(cert_id, org)?;
+                    let (cert_node, position) = create_root_ca_node(cert_id, org)?;
 
                     cert_id_map.insert(org_id, cert_id);
-                    certificate_nodes.push((cert_node, None)); // Root has no parent
+                    certificate_nodes.push((cert_node, position, None)); // Root has no parent
 
                     tracing::info!("Generated Root CA for organization: {}", org.name);
                 }
@@ -207,10 +207,10 @@ pub fn generate_pki_from_graph(
 
                     let parent_cert_id = parent_cert_id.unwrap();
                     let cert_id = Uuid::now_v7();
-                    let cert_node = create_intermediate_ca_node(cert_id, unit, &parent_cert_id)?;
+                    let (cert_node, position) = create_intermediate_ca_node(cert_id, unit, &parent_cert_id)?;
 
                     cert_id_map.insert(unit_id, cert_id);
-                    certificate_nodes.push((cert_node, Some(parent_cert_id)));
+                    certificate_nodes.push((cert_node, position, Some(parent_cert_id)));
 
                     tracing::info!("Generated Intermediate CA for unit: {}", unit.name);
                 }
@@ -230,10 +230,10 @@ pub fn generate_pki_from_graph(
 
                     let parent_cert_id = parent_cert_id.unwrap();
                     let cert_id = Uuid::now_v7();
-                    let cert_node = create_leaf_certificate_node(cert_id, person, role, &parent_cert_id)?;
+                    let (cert_node, position) = create_leaf_certificate_node(cert_id, person, role, &parent_cert_id)?;
 
                     cert_id_map.insert(person_id, cert_id);
-                    certificate_nodes.push((cert_node, Some(parent_cert_id)));
+                    certificate_nodes.push((cert_node, position, Some(parent_cert_id)));
 
                     tracing::info!("Generated leaf certificate for person: {}", person.name);
                 }
@@ -245,7 +245,7 @@ pub fn generate_pki_from_graph(
 }
 
 /// Create Root CA certificate node from Organization
-fn create_root_ca_node(cert_id: Uuid, org: &Organization) -> Result<ConceptEntity, String> {
+fn create_root_ca_node(cert_id: Uuid, org: &Organization) -> Result<(ConceptEntity, Point), String> {
     let now = Utc::now();
     let valid_until = now + chrono::Duration::days(3650); // 10 years
 
@@ -264,7 +264,8 @@ fn create_root_ca_node(cert_id: Uuid, org: &Organization) -> Result<ConceptEntit
         ],
     );
     let position = Point::new(400.0, 100.0); // Top center
-    Ok(ConceptEntity::from_domain_node(cert_id, domain_node, position))
+    let entity = ConceptEntity::from_domain_node(cert_id, domain_node);
+    Ok((entity, position))
 }
 
 /// Create Intermediate CA certificate node from OrganizationalUnit
@@ -272,7 +273,7 @@ fn create_intermediate_ca_node(
     cert_id: Uuid,
     unit: &OrganizationUnit,
     parent_cert_id: &Uuid,
-) -> Result<ConceptEntity, String> {
+) -> Result<(ConceptEntity, Point), String> {
     let now = Utc::now();
     let valid_until = now + chrono::Duration::days(1825); // 5 years
 
@@ -291,7 +292,8 @@ fn create_intermediate_ca_node(
         ],
     );
     let position = Point::new(400.0, 250.0); // Middle
-    Ok(ConceptEntity::from_domain_node(cert_id, domain_node, position))
+    let entity = ConceptEntity::from_domain_node(cert_id, domain_node);
+    Ok((entity, position))
 }
 
 /// Create Leaf certificate node from Person
@@ -300,7 +302,7 @@ fn create_leaf_certificate_node(
     person: &Person,
     role: &KeyOwnerRole,
     parent_cert_id: &Uuid,
-) -> Result<ConceptEntity, String> {
+) -> Result<(ConceptEntity, Point), String> {
     let now = Utc::now();
     let valid_until = now + chrono::Duration::days(365); // 1 year
 
@@ -327,19 +329,24 @@ fn create_leaf_certificate_node(
         vec![person.email.clone()], // Subject Alternative Name
     );
     let position = Point::new(400.0, 400.0); // Bottom
-    Ok(ConceptEntity::from_domain_node(cert_id, domain_node, position))
+    let entity = ConceptEntity::from_domain_node(cert_id, domain_node);
+    Ok((entity, position))
 }
 
 /// Add PKI nodes and edges to the organizational graph
 pub fn add_pki_to_graph(
     graph: &mut OrganizationConcept,
-    certificate_nodes: Vec<(ConceptEntity, Option<Uuid>)>,
+    certificate_nodes: Vec<(ConceptEntity, Point, Option<Uuid>)>,
 ) {
-    for (cert_node, parent_cert_id) in certificate_nodes {
+    for (cert_node, position, parent_cert_id) in certificate_nodes {
         let cert_id = cert_node.id;
 
-        // Add certificate node
+        // Create view for the node
+        let view = cert_node.create_view(position);
+
+        // Add certificate node and view
         graph.nodes.insert(cert_id, cert_node);
+        graph.node_views.insert(cert_id, view);
 
         // Add "signs" edge from parent certificate
         if let Some(parent_id) = parent_cert_id {

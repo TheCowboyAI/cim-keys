@@ -73,6 +73,9 @@ pub struct PersonRoleBadges {
 #[derive(Clone)]
 pub struct OrganizationConcept {
     pub nodes: HashMap<Uuid, ConceptEntity>,
+    /// UI state for each node (position, color, label, selection)
+    /// Separates UI concerns from domain data per DDD principles
+    pub node_views: HashMap<Uuid, super::view_model::NodeView>,
     pub edges: Vec<ConceptRelation>,
     pub selected_node: Option<Uuid>,
     pub selected_edge: Option<usize>,  // Index of selected edge in edges Vec
@@ -142,34 +145,28 @@ pub struct DraggingRole {
 ///
 /// Uses the categorical coproduct pattern via `DomainNode` for type-safe
 /// node representation. The `visualization()` method provides rendering data.
+///
+/// ## DDD Compliance
+///
+/// UI concerns (position, color, label) are stored separately in `NodeView`
+/// within `OrganizationConcept.node_views`. This keeps domain data pure.
 #[derive(Debug, Clone)]
 pub struct ConceptEntity {
     pub id: Uuid,
     /// Domain node using categorical coproduct pattern
     pub domain_node: super::domain_node::DomainNode,
-    pub position: Point,
-    /// Computed from domain_node.fold(&FoldVisualization).color
-    pub color: Color,
-    /// Computed from domain_node.fold(&FoldVisualization).primary_text
-    pub label: String,
 }
 
 impl ConceptEntity {
     /// Create a new ConceptEntity from a DomainNode
     ///
     /// Uses the categorical coproduct pattern - domain_node carries all type
-    /// information. Visualization data (color, label) is derived via FoldVisualization.
-    pub fn from_domain_node(id: Uuid, domain_node: super::domain_node::DomainNode, position: Point) -> Self {
-        use super::domain_node::FoldVisualization;
-
-        let viz = domain_node.fold(&FoldVisualization);
-
+    /// information. UI concerns (position, color, label) are stored separately
+    /// in `NodeView` within `OrganizationConcept.node_views`.
+    pub fn from_domain_node(id: Uuid, domain_node: super::domain_node::DomainNode) -> Self {
         Self {
             id,
             domain_node,
-            position,
-            color: viz.color,
-            label: viz.primary_text,
         }
     }
 
@@ -185,6 +182,19 @@ impl ConceptEntity {
     /// Get the injection type (what kind of domain entity this is)
     pub fn injection(&self) -> super::domain_node::Injection {
         self.domain_node.injection()
+    }
+
+    /// Create a NodeView for this entity at the given position
+    ///
+    /// Derives color and label from the domain node's visualization.
+    pub fn create_view(&self, position: Point) -> super::view_model::NodeView {
+        let viz = self.visualization();
+        super::view_model::NodeView::new(
+            self.id,
+            position,
+            viz.color,
+            viz.primary_text,
+        )
     }
 }
 
@@ -443,6 +453,7 @@ impl OrganizationConcept {
     pub fn new() -> Self {
         Self {
             nodes: HashMap::new(),
+            node_views: HashMap::new(),
             edges: Vec::new(),
             selected_node: None,
             selected_edge: None,
@@ -476,6 +487,7 @@ impl OrganizationConcept {
     /// Clear all nodes and edges from the graph
     pub fn clear(&mut self) {
         self.nodes.clear();
+        self.node_views.clear();
         self.edges.clear();
         self.selected_node = None;
         self.selected_edge = None;
@@ -497,6 +509,40 @@ impl OrganizationConcept {
     /// Clear all role badges
     pub fn clear_role_badges(&mut self) {
         self.role_badges.clear();
+    }
+
+    // ===== Node View Access Helpers (DDD UI Separation) =====
+
+    /// Get node position from view (UI concern)
+    pub fn get_node_position(&self, id: &Uuid) -> Option<Point> {
+        self.node_views.get(id).map(|v| v.position)
+    }
+
+    /// Set node position in view (UI concern)
+    pub fn set_node_position(&mut self, id: &Uuid, position: Point) {
+        if let Some(view) = self.node_views.get_mut(id) {
+            view.position = position;
+        }
+    }
+
+    /// Get node color from view (UI concern)
+    pub fn get_node_color(&self, id: &Uuid) -> Option<Color> {
+        self.node_views.get(id).map(|v| v.color)
+    }
+
+    /// Get node label from view (UI concern)
+    pub fn get_node_label(&self, id: &Uuid) -> Option<&str> {
+        self.node_views.get(id).map(|v| v.label.as_str())
+    }
+
+    /// Get mutable reference to node view
+    pub fn get_node_view_mut(&mut self, id: &Uuid) -> Option<&mut super::view_model::NodeView> {
+        self.node_views.get_mut(id)
+    }
+
+    /// Get immutable reference to node view
+    pub fn get_node_view(&self, id: &Uuid) -> Option<&super::view_model::NodeView> {
+        self.node_views.get(id)
     }
 
     /// Start dragging a role
@@ -526,16 +572,12 @@ impl OrganizationConcept {
 
     /// Find person node at the given position (within node radius)
     pub fn find_person_at_position(&self, position: Point) -> Option<Uuid> {
-        let node_radius = 25.0;  // Standard node radius
-
         for (id, node) in &self.nodes {
             if node.injection() == super::domain_node::Injection::Person {
-                let dx = position.x - node.position.x;
-                let dy = position.y - node.position.y;
-                let distance = (dx * dx + dy * dy).sqrt();
-
-                if distance <= node_radius {
-                    return Some(*id);
+                if let Some(view) = self.node_views.get(id) {
+                    if view.contains_point(position) {
+                        return Some(*id);
+                    }
                 }
             }
         }
@@ -575,9 +617,11 @@ impl OrganizationConcept {
         let node_id = person.id;
         let domain_node = DomainNode::inject_person(person, role);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let view = node.create_view(position);
 
         self.nodes.insert(node_id, node);
+        self.node_views.insert(node_id, view);
     }
 
     /// Add an organization node to the graph
@@ -585,9 +629,11 @@ impl OrganizationConcept {
         let node_id = org.id;
         let domain_node = DomainNode::inject_organization(org);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let view = node.create_view(position);
 
         self.nodes.insert(node_id, node);
+        self.node_views.insert(node_id, view);
     }
 
     /// Add an organizational unit node to the graph
@@ -595,9 +641,11 @@ impl OrganizationConcept {
         let node_id = unit.id;
         let domain_node = DomainNode::inject_organization_unit(unit);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let view = node.create_view(position);
 
         self.nodes.insert(node_id, node);
+        self.node_views.insert(node_id, view);
     }
 
     /// Add a location node to the graph
@@ -606,9 +654,11 @@ impl OrganizationConcept {
         let node_id = *location.id().as_uuid();
         let domain_node = DomainNode::inject_location(location);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let view = node.create_view(position);
 
         self.nodes.insert(node_id, node);
+        self.node_views.insert(node_id, view);
     }
 
     /// Add a role node to the graph (domain Role type)
@@ -616,9 +666,11 @@ impl OrganizationConcept {
         let node_id = role.id;
         let domain_node = DomainNode::inject_role(role);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let view = node.create_view(position);
 
         self.nodes.insert(node_id, node);
+        self.node_views.insert(node_id, view);
     }
 
     /// Add a policy-based role node to the graph
@@ -636,9 +688,11 @@ impl OrganizationConcept {
             role_id, name, purpose, level, separation_class, claim_count
         );
         let position = self.calculate_node_position(role_id);
-        let node = ConceptEntity::from_domain_node(role_id, domain_node, position);
+        let node = ConceptEntity::from_domain_node(role_id, domain_node);
+        let view = node.create_view(position);
 
         self.nodes.insert(role_id, node);
+        self.node_views.insert(role_id, view);
     }
 
     /// Add a claim node to the graph
@@ -651,9 +705,11 @@ impl OrganizationConcept {
     ) {
         let domain_node = DomainNode::inject_policy_claim_uuid(claim_id, name, category);
         let position = self.calculate_node_position(claim_id);
-        let node = ConceptEntity::from_domain_node(claim_id, domain_node, position);
+        let node = ConceptEntity::from_domain_node(claim_id, domain_node);
+        let view = node.create_view(position);
 
         self.nodes.insert(claim_id, node);
+        self.node_views.insert(claim_id, view);
     }
 
     /// Add a policy category node to the graph (for progressive disclosure)
@@ -666,9 +722,11 @@ impl OrganizationConcept {
     ) {
         let domain_node = DomainNode::inject_policy_category_uuid(category_id, name, claim_count, expanded);
         let position = self.calculate_node_position(category_id);
-        let node = ConceptEntity::from_domain_node(category_id, domain_node, position);
+        let node = ConceptEntity::from_domain_node(category_id, domain_node);
+        let view = node.create_view(position);
 
         self.nodes.insert(category_id, node);
+        self.node_views.insert(category_id, view);
     }
 
     /// Add a separation class group node to the graph (for progressive disclosure)
@@ -684,9 +742,11 @@ impl OrganizationConcept {
             class_id, name, separation_class, role_count, expanded
         );
         let position = self.calculate_node_position(class_id);
-        let node = ConceptEntity::from_domain_node(class_id, domain_node, position);
+        let node = ConceptEntity::from_domain_node(class_id, domain_node);
+        let view = node.create_view(position);
 
         self.nodes.insert(class_id, node);
+        self.node_views.insert(class_id, view);
     }
 
     /// Add a policy node to the graph
@@ -694,9 +754,11 @@ impl OrganizationConcept {
         let node_id = policy.id;
         let domain_node = DomainNode::inject_policy(policy);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let view = node.create_view(position);
 
         self.nodes.insert(node_id, node);
+        self.node_views.insert(node_id, view);
     }
 
     // ===== NATS Infrastructure Nodes (Phase 1) =====
@@ -705,36 +767,44 @@ impl OrganizationConcept {
     pub fn add_nats_operator_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, _label: String) {
         let domain_node = DomainNode::inject_nats_operator(nats_identity);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let view = node.create_view(position);
 
         self.nodes.insert(node_id, node);
+        self.node_views.insert(node_id, view);
     }
 
     /// Add a NATS account node to the graph
     pub fn add_nats_account_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, _label: String) {
         let domain_node = DomainNode::inject_nats_account(nats_identity);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let view = node.create_view(position);
 
         self.nodes.insert(node_id, node);
+        self.node_views.insert(node_id, view);
     }
 
     /// Add a NATS user node to the graph
     pub fn add_nats_user_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, _label: String) {
         let domain_node = DomainNode::inject_nats_user(nats_identity);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let view = node.create_view(position);
 
         self.nodes.insert(node_id, node);
+        self.node_views.insert(node_id, view);
     }
 
     /// Add a NATS service account node to the graph
     pub fn add_nats_service_account_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, _label: String) {
         let domain_node = DomainNode::inject_nats_service_account(nats_identity);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let view = node.create_view(position);
 
         self.nodes.insert(node_id, node);
+        self.node_views.insert(node_id, view);
     }
 
     // ===== Simple NATS Nodes (Visualization Only) =====
@@ -743,24 +813,30 @@ impl OrganizationConcept {
     pub fn add_nats_operator_simple(&mut self, node_id: Uuid, name: String, organization_id: Option<Uuid>) {
         let domain_node = DomainNode::inject_nats_operator_simple(name, organization_id);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let view = node.create_view(position);
         self.nodes.insert(node_id, node);
+        self.node_views.insert(node_id, view);
     }
 
     /// Add a simple NATS account node (visualization without crypto)
     pub fn add_nats_account_simple(&mut self, node_id: Uuid, name: String, unit_id: Option<Uuid>, is_system: bool) {
         let domain_node = DomainNode::inject_nats_account_simple(name, unit_id, is_system);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let view = node.create_view(position);
         self.nodes.insert(node_id, node);
+        self.node_views.insert(node_id, view);
     }
 
     /// Add a simple NATS user node (visualization without crypto)
     pub fn add_nats_user_simple(&mut self, node_id: Uuid, name: String, person_id: Option<Uuid>, account_name: String) {
         let domain_node = DomainNode::inject_nats_user_simple(name, person_id, account_name);
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node, position);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let view = node.create_view(position);
         self.nodes.insert(node_id, node);
+        self.node_views.insert(node_id, view);
     }
 
     // ===== PKI Trust Chain Nodes (Phase 2) =====
@@ -779,9 +855,11 @@ impl OrganizationConcept {
             cert_id, subject, issuer, not_before, not_after, key_usage
         );
         let position = self.calculate_node_position(cert_id);
-        let node = ConceptEntity::from_domain_node(cert_id, domain_node, position);
+        let node = ConceptEntity::from_domain_node(cert_id, domain_node);
+        let view = node.create_view(position);
 
         self.nodes.insert(cert_id, node);
+        self.node_views.insert(cert_id, view);
     }
 
     /// Add an intermediate CA certificate node to the graph
@@ -798,9 +876,11 @@ impl OrganizationConcept {
             cert_id, subject, issuer, not_before, not_after, key_usage
         );
         let position = self.calculate_node_position(cert_id);
-        let node = ConceptEntity::from_domain_node(cert_id, domain_node, position);
+        let node = ConceptEntity::from_domain_node(cert_id, domain_node);
+        let view = node.create_view(position);
 
         self.nodes.insert(cert_id, node);
+        self.node_views.insert(cert_id, view);
     }
 
     /// Add a leaf certificate node to the graph
@@ -818,9 +898,11 @@ impl OrganizationConcept {
             cert_id, subject, issuer, not_before, not_after, key_usage, san
         );
         let position = self.calculate_node_position(cert_id);
-        let node = ConceptEntity::from_domain_node(cert_id, domain_node, position);
+        let node = ConceptEntity::from_domain_node(cert_id, domain_node);
+        let view = node.create_view(position);
 
         self.nodes.insert(cert_id, node);
+        self.node_views.insert(cert_id, view);
     }
 
     // ===== NATS Infrastructure Graph Population (Phase 1) =====
@@ -917,9 +999,11 @@ impl OrganizationConcept {
             device_id, serial, version, provisioned_at, slots_used
         );
         let position = self.calculate_node_position(device_id);
-        let node = ConceptEntity::from_domain_node(device_id, domain_node, position);
+        let node = ConceptEntity::from_domain_node(device_id, domain_node);
+        let view = node.create_view(position);
 
         self.nodes.insert(device_id, node);
+        self.node_views.insert(device_id, view);
     }
 
     /// Add a PIV slot node to the graph
@@ -935,9 +1019,11 @@ impl OrganizationConcept {
             slot_id, slot_name, yubikey_serial, has_key, certificate_subject
         );
         let position = self.calculate_node_position(slot_id);
-        let node = ConceptEntity::from_domain_node(slot_id, domain_node, position);
+        let node = ConceptEntity::from_domain_node(slot_id, domain_node);
+        let view = node.create_view(position);
 
         self.nodes.insert(slot_id, node);
+        self.node_views.insert(slot_id, view);
     }
 
     // ===== PKI Trust Chain Graph Population (Phase 2) =====
@@ -1217,15 +1303,17 @@ impl OrganizationConcept {
     pub fn apply_event(&mut self, event: &GraphEvent) {
         match event {
             GraphEvent::NodeCreated { node_id, domain_node, position, color, label, .. } => {
-                // Use from_domain_node - the preferred constructor
-                // Override color/label with event values for event-sourced consistency
-                let mut node = ConceptEntity::from_domain_node(*node_id, domain_node.clone(), *position);
-                node.color = *color;
-                node.label = label.clone();
+                // Create domain entity (pure domain data)
+                let node = ConceptEntity::from_domain_node(*node_id, domain_node.clone());
+                // Create view with UI state from event (for undo/redo consistency)
+                let mut view = super::view_model::NodeView::new(*node_id, *position, *color, label.clone());
+                view.color = *color;  // Override with event color for consistency
                 self.nodes.insert(*node_id, node);
+                self.node_views.insert(*node_id, view);
             }
             GraphEvent::NodeDeleted { node_id, .. } => {
                 self.nodes.remove(node_id);
+                self.node_views.remove(node_id);
                 // Remove all edges connected to this node
                 self.edges.retain(|edge| edge.from != *node_id && edge.to != *node_id);
                 // Clear selection if this was the selected node
@@ -1236,12 +1324,14 @@ impl OrganizationConcept {
             GraphEvent::NodePropertiesChanged { node_id, new_domain_node, new_label, .. } => {
                 if let Some(node) = self.nodes.get_mut(node_id) {
                     node.domain_node = new_domain_node.clone();
-                    node.label = new_label.clone();
+                }
+                if let Some(view) = self.node_views.get_mut(node_id) {
+                    view.label = new_label.clone();
                 }
             }
             GraphEvent::NodeMoved { node_id, new_position, .. } => {
-                if let Some(node) = self.nodes.get_mut(node_id) {
-                    node.position = *new_position;
+                if let Some(view) = self.node_views.get_mut(node_id) {
+                    view.position = *new_position;
                 }
             }
             GraphEvent::EdgeCreated { from, to, edge_type, color, .. } => {
@@ -1354,8 +1444,8 @@ impl OrganizationConcept {
         let radius = (width.min(height) / 2.0 - 100.0).max(100.0);
         for (bi, &idx) in boundary_indices.iter().enumerate() {
             let angle = 2.0 * std::f32::consts::PI * (bi as f32) / (num_boundary as f32);
-            if let Some(node) = self.nodes.get_mut(&node_ids[idx]) {
-                node.position = Point {
+            if let Some(view) = self.node_views.get_mut(&node_ids[idx]) {
+                view.position = Point {
                     x: center.x + radius * angle.cos(),
                     y: center.y + radius * angle.sin(),
                 };
@@ -1379,21 +1469,22 @@ impl OrganizationConcept {
                 let neighbor_count = adj[i].len() as f32;
 
                 for &j in &adj[i] {
-                    let neighbor_pos = self.nodes[&node_ids[j]].position;
-                    sum_x += neighbor_pos.x;
-                    sum_y += neighbor_pos.y;
+                    if let Some(neighbor_view) = self.node_views.get(&node_ids[j]) {
+                        sum_x += neighbor_view.position.x;
+                        sum_y += neighbor_view.position.y;
+                    }
                 }
 
                 let new_x = sum_x / neighbor_count;
                 let new_y = sum_y / neighbor_count;
 
-                if let Some(node) = self.nodes.get_mut(&node_ids[i]) {
-                    let dx = new_x - node.position.x;
-                    let dy = new_y - node.position.y;
+                if let Some(view) = self.node_views.get_mut(&node_ids[i]) {
+                    let dx = new_x - view.position.x;
+                    let dy = new_y - view.position.y;
                     max_move = max_move.max((dx * dx + dy * dy).sqrt());
 
-                    node.position.x = new_x;
-                    node.position.y = new_y;
+                    view.position.x = new_x;
+                    view.position.y = new_y;
                 }
             }
 
@@ -1431,8 +1522,8 @@ impl OrganizationConcept {
                     let id_i = node_ids[i];
                     let id_j = node_ids[j];
 
-                    let pos_i = self.nodes[&id_i].position;
-                    let pos_j = self.nodes[&id_j].position;
+                    let pos_i = self.node_views.get(&id_i).map(|v| v.position).unwrap_or(Point::ORIGIN);
+                    let pos_j = self.node_views.get(&id_j).map(|v| v.position).unwrap_or(Point::ORIGIN);
 
                     let dx = pos_i.x - pos_j.x;
                     let dy = pos_i.y - pos_j.y;
@@ -1453,8 +1544,8 @@ impl OrganizationConcept {
 
             // Calculate attractive forces: f_a(d) = d²/k
             for edge in &self.edges {
-                let pos_from = self.nodes[&edge.from].position;
-                let pos_to = self.nodes[&edge.to].position;
+                let pos_from = self.node_views.get(&edge.from).map(|v| v.position).unwrap_or(Point::ORIGIN);
+                let pos_to = self.node_views.get(&edge.to).map(|v| v.position).unwrap_or(Point::ORIGIN);
 
                 let dx = pos_to.x - pos_from.x;
                 let dy = pos_to.y - pos_from.y;
@@ -1481,13 +1572,13 @@ impl OrganizationConcept {
                     let capped_mag = mag.min(temperature);
                     let ratio = capped_mag / mag;
 
-                    if let Some(node) = self.nodes.get_mut(&id) {
-                        node.position.x += dx * ratio;
-                        node.position.y += dy * ratio;
+                    if let Some(view) = self.node_views.get_mut(&id) {
+                        view.position.x += dx * ratio;
+                        view.position.y += dy * ratio;
 
                         // Keep within bounds
-                        node.position.x = node.position.x.max(50.0).min(width - 50.0);
-                        node.position.y = node.position.y.max(50.0).min(height - 50.0);
+                        view.position.x = view.position.x.max(50.0).min(width - 50.0);
+                        view.position.y = view.position.y.max(50.0).min(height - 50.0);
                     }
                 }
             }
@@ -1510,9 +1601,9 @@ impl OrganizationConcept {
         let radius = (width.min(height) / 2.0 - 80.0).max(100.0);
 
         for (i, &id) in node_ids.iter().enumerate() {
-            if let Some(node) = self.nodes.get_mut(&id) {
+            if let Some(view) = self.node_views.get_mut(&id) {
                 let angle = 2.0 * std::f32::consts::PI * (i as f32) / (n as f32);
-                node.position = Point {
+                view.position = Point {
                     x: center.x + radius * angle.cos(),
                     y: center.y + radius * angle.sin(),
                 };
@@ -1534,13 +1625,13 @@ impl OrganizationConcept {
                     continue;
                 }
 
-                if let (Some(n1), Some(n2), Some(n3), Some(n4)) = (
-                    self.nodes.get(&e1.from),
-                    self.nodes.get(&e1.to),
-                    self.nodes.get(&e2.from),
-                    self.nodes.get(&e2.to),
+                if let (Some(v1), Some(v2), Some(v3), Some(v4)) = (
+                    self.node_views.get(&e1.from),
+                    self.node_views.get(&e1.to),
+                    self.node_views.get(&e2.from),
+                    self.node_views.get(&e2.to),
                 ) {
-                    if segments_intersect(n1.position, n2.position, n3.position, n4.position) {
+                    if segments_intersect(v1.position, v2.position, v3.position, v4.position) {
                         count += 1;
                     }
                 }
@@ -1570,13 +1661,13 @@ impl OrganizationConcept {
                     continue;
                 }
 
-                if let (Some(n1), Some(n2), Some(n3), Some(n4)) = (
-                    self.nodes.get(&e1.from),
-                    self.nodes.get(&e1.to),
-                    self.nodes.get(&e2.from),
-                    self.nodes.get(&e2.to),
+                if let (Some(v1), Some(v2), Some(v3), Some(v4)) = (
+                    self.node_views.get(&e1.from),
+                    self.node_views.get(&e1.to),
+                    self.node_views.get(&e2.from),
+                    self.node_views.get(&e2.to),
                 ) {
-                    if segments_intersect(n1.position, n2.position, n3.position, n4.position) {
+                    if segments_intersect(v1.position, v2.position, v3.position, v4.position) {
                         count += 1;
                     }
                 }
@@ -1599,13 +1690,13 @@ impl OrganizationConcept {
                     continue;
                 }
 
-                if let (Some(n1), Some(n2), Some(n3), Some(n4)) = (
-                    self.nodes.get(&e1.from),
-                    self.nodes.get(&e1.to),
-                    self.nodes.get(&e2.from),
-                    self.nodes.get(&e2.to),
+                if let (Some(v1), Some(v2), Some(v3), Some(v4)) = (
+                    self.node_views.get(&e1.from),
+                    self.node_views.get(&e1.to),
+                    self.node_views.get(&e2.from),
+                    self.node_views.get(&e2.to),
                 ) {
-                    if segments_intersect(n1.position, n2.position, n3.position, n4.position) {
+                    if segments_intersect(v1.position, v2.position, v3.position, v4.position) {
                         crossings.push((i, j));
                     }
                 }
@@ -1743,8 +1834,8 @@ impl OrganizationConcept {
             let total_width = (tier.len() as f32 - 1.0) * x_spacing;
             let start_x = center.x - total_width / 2.0;
             for (i, &node_id) in tier.iter().enumerate() {
-                if let Some(node) = self.nodes.get_mut(&node_id) {
-                    node.position = Point {
+                if let Some(view) = self.node_views.get_mut(&node_id) {
+                    view.position = Point {
                         x: start_x + (i as f32) * x_spacing,
                         y: y_offset,
                     };
@@ -1771,8 +1862,8 @@ impl OrganizationConcept {
             let total_width = (tier.len() as f32 - 1.0) * x_spacing;
             let start_x = center.x - total_width / 2.0;
             for (i, &node_id) in tier.iter().enumerate() {
-                if let Some(node) = self.nodes.get_mut(&node_id) {
-                    node.position = Point {
+                if let Some(view) = self.node_views.get_mut(&node_id) {
+                    view.position = Point {
                         x: start_x + (i as f32) * x_spacing,
                         y: y_offset,
                     };
@@ -1819,8 +1910,8 @@ impl OrganizationConcept {
             let total_width = (tier.len() as f32 - 1.0) * x_spacing;
             let start_x = center.x - total_width / 2.0;
             for (i, &node_id) in tier.iter().enumerate() {
-                if let Some(node) = self.nodes.get_mut(&node_id) {
-                    node.position = Point {
+                if let Some(view) = self.node_views.get_mut(&node_id) {
+                    view.position = Point {
                         x: start_x + (i as f32) * x_spacing,
                         y: y_offset,
                     };
@@ -1952,12 +2043,14 @@ impl OrganizationConcept {
         let k = (area / self.nodes.len() as f32).sqrt(); // Optimal distance
 
         // Initialize random positions if needed
-        for node in self.nodes.values_mut() {
-            if node.position.x == 0.0 && node.position.y == 0.0 {
-                node.position = Point {
-                    x: (rand::random::<f32>() * width),
-                    y: (rand::random::<f32>() * height),
-                };
+        for (&node_id, _node) in self.nodes.iter() {
+            if let Some(view) = self.node_views.get_mut(&node_id) {
+                if view.position.x == 0.0 && view.position.y == 0.0 {
+                    view.position = Point {
+                        x: (rand::random::<f32>() * width),
+                        y: (rand::random::<f32>() * height),
+                    };
+                }
             }
         }
 
@@ -1980,13 +2073,13 @@ impl OrganizationConcept {
                     let id_v = node_ids[i];
                     let id_u = node_ids[j];
 
-                    if let (Some(node_v), Some(node_u)) = (
-                        self.nodes.get(&id_v),
-                        self.nodes.get(&id_u),
+                    if let (Some(view_v), Some(view_u)) = (
+                        self.node_views.get(&id_v),
+                        self.node_views.get(&id_u),
                     ) {
                         let delta = Vector::new(
-                            node_v.position.x - node_u.position.x,
-                            node_v.position.y - node_u.position.y,
+                            view_v.position.x - view_u.position.x,
+                            view_v.position.y - view_u.position.y,
                         );
 
                         let distance = (delta.x * delta.x + delta.y * delta.y).sqrt().max(0.01);
@@ -2007,13 +2100,13 @@ impl OrganizationConcept {
 
             // Attractive forces (edges only)
             for edge in &self.edges {
-                if let (Some(node_from), Some(node_to)) = (
-                    self.nodes.get(&edge.from),
-                    self.nodes.get(&edge.to),
+                if let (Some(view_from), Some(view_to)) = (
+                    self.node_views.get(&edge.from),
+                    self.node_views.get(&edge.to),
                 ) {
                     let delta = Vector::new(
-                        node_to.position.x - node_from.position.x,
-                        node_to.position.y - node_from.position.y,
+                        view_to.position.x - view_from.position.x,
+                        view_to.position.y - view_from.position.y,
                     );
 
                     let distance = (delta.x * delta.x + delta.y * delta.y).sqrt().max(0.01);
@@ -2044,22 +2137,22 @@ impl OrganizationConcept {
                         continue;
                     }
 
-                    if let (Some(n1), Some(n2), Some(n3), Some(n4)) = (
-                        self.nodes.get(&edge1.from),
-                        self.nodes.get(&edge1.to),
-                        self.nodes.get(&edge2.from),
-                        self.nodes.get(&edge2.to),
+                    if let (Some(v1), Some(v2), Some(v3), Some(v4)) = (
+                        self.node_views.get(&edge1.from),
+                        self.node_views.get(&edge1.to),
+                        self.node_views.get(&edge2.from),
+                        self.node_views.get(&edge2.to),
                     ) {
                         // Check if edges cross
-                        if segments_intersect(n1.position, n2.position, n3.position, n4.position) {
+                        if segments_intersect(v1.position, v2.position, v3.position, v4.position) {
                             // Push edge midpoints apart
                             let mid1 = Point::new(
-                                (n1.position.x + n2.position.x) / 2.0,
-                                (n1.position.y + n2.position.y) / 2.0,
+                                (v1.position.x + v2.position.x) / 2.0,
+                                (v1.position.y + v2.position.y) / 2.0,
                             );
                             let mid2 = Point::new(
-                                (n3.position.x + n4.position.x) / 2.0,
-                                (n3.position.y + n4.position.y) / 2.0,
+                                (v3.position.x + v4.position.x) / 2.0,
+                                (v3.position.y + v4.position.y) / 2.0,
                             );
 
                             let delta = Vector::new(mid1.x - mid2.x, mid1.y - mid2.y);
@@ -2085,16 +2178,16 @@ impl OrganizationConcept {
 
             // Apply displacements with cooling
             for (&id, displacement) in &displacements {
-                if let Some(node) = self.nodes.get_mut(&id) {
+                if let Some(view) = self.node_views.get_mut(&id) {
                     let length = (displacement.x * displacement.x + displacement.y * displacement.y).sqrt();
                     if length > 0.0 {
                         let capped = length.min(temperature);
-                        node.position.x += (displacement.x / length) * capped;
-                        node.position.y += (displacement.y / length) * capped;
+                        view.position.x += (displacement.x / length) * capped;
+                        view.position.y += (displacement.y / length) * capped;
 
                         // Keep within bounds
-                        node.position.x = node.position.x.max(50.0).min(width - 50.0);
-                        node.position.y = node.position.y.max(50.0).min(height - 50.0);
+                        view.position.x = view.position.x.max(50.0).min(width - 50.0);
+                        view.position.y = view.position.y.max(50.0).min(height - 50.0);
                     }
                 }
             }
@@ -2122,19 +2215,19 @@ impl OrganizationConcept {
                 self.dragging_node = Some(node_id);
                 self.drag_offset = offset;
                 // Capture starting position for NodeMoved event
-                if let Some(node) = self.nodes.get(&node_id) {
-                    self.drag_start_position = Some(node.position);
+                if let Some(view) = self.node_views.get(&node_id) {
+                    self.drag_start_position = Some(view.position);
                 }
             }
             OrganizationIntent::NodeDragged(cursor_pos) => {
                 if let Some(node_id) = self.dragging_node {
-                    if let Some(node) = self.nodes.get_mut(&node_id) {
+                    if let Some(view) = self.node_views.get_mut(&node_id) {
                         // Adjust for zoom and pan transformations
                         let adjusted_x = (cursor_pos.x - self.pan_offset.x) / self.zoom;
                         let adjusted_y = (cursor_pos.y - self.pan_offset.y) / self.zoom;
 
                         // Temporary position update during drag (no event yet)
-                        node.position = Point::new(
+                        view.position = Point::new(
                             adjusted_x - self.drag_offset.x,
                             adjusted_y - self.drag_offset.y,
                         );
@@ -2144,23 +2237,21 @@ impl OrganizationConcept {
             OrganizationIntent::NodeDragEnded => {
                 // Create NodeMoved event when drag completes
                 if let (Some(node_id), Some(old_position)) = (self.dragging_node, self.drag_start_position) {
-                    if let Some(node) = self.nodes.get(&node_id) {
-                        let new_position = node.position;
+                    let new_position = self.node_views.get(&node_id).map(|v| v.position).unwrap_or(old_position);
 
-                        // Only create event if position actually changed
-                        if (new_position.x - old_position.x).abs() > 0.1
-                            || (new_position.y - old_position.y).abs() > 0.1 {
-                            use chrono::Utc;
+                    // Only create event if position actually changed
+                    if (new_position.x - old_position.x).abs() > 0.1
+                        || (new_position.y - old_position.y).abs() > 0.1 {
+                        use chrono::Utc;
 
-                            let event = GraphEvent::NodeMoved {
-                                node_id,
-                                old_position,
-                                new_position,
-                                timestamp: Utc::now(),
-                            };
+                        let event = GraphEvent::NodeMoved {
+                            node_id,
+                            old_position,
+                            new_position,
+                            timestamp: Utc::now(),
+                        };
 
-                            self.event_stack.push(event);
-                        }
+                        self.event_stack.push(event);
                     }
                 }
 
@@ -2194,16 +2285,16 @@ impl OrganizationConcept {
 
                 // Store CURRENT visual positions as animation start (before any changes)
                 // This captures mid-animation positions if animation is in progress
-                let current_positions: HashMap<Uuid, Point> = self.nodes.iter()
-                    .map(|(id, node)| (*id, node.position))
+                let current_positions: HashMap<Uuid, Point> = self.node_views.iter()
+                    .map(|(id, view)| (*id, view.position))
                     .collect();
 
                 // If animation was in progress, set nodes to their TARGET positions
                 // so the layout algorithm has stable positions to work with
                 if self.animating {
                     for (id, target) in &self.animation_targets {
-                        if let Some(node) = self.nodes.get_mut(id) {
-                            node.position = *target;
+                        if let Some(view) = self.node_views.get_mut(id) {
+                            view.position = *target;
                         }
                     }
                     self.animation_targets.clear();
@@ -2240,16 +2331,16 @@ impl OrganizationConcept {
                 }
 
                 // Store new layout positions as animation targets
-                self.animation_targets = self.nodes.iter()
-                    .map(|(id, node)| (*id, node.position))
+                self.animation_targets = self.node_views.iter()
+                    .map(|(id, view)| (*id, view.position))
                     .collect();
 
                 // Restore the CURRENT visual positions (including mid-animation positions)
                 // so animation starts from where nodes visually are, not where they would end up
                 self.animation_start = current_positions.clone();
                 for (id, pos) in &current_positions {
-                    if let Some(node) = self.nodes.get_mut(id) {
-                        node.position = *pos;
+                    if let Some(view) = self.node_views.get_mut(id) {
+                        view.position = *pos;
                     }
                 }
 
@@ -2272,8 +2363,8 @@ impl OrganizationConcept {
                     if raw_progress >= 1.0 {
                         // Animation complete - set final positions
                         for (id, target) in &self.animation_targets {
-                            if let Some(node) = self.nodes.get_mut(id) {
-                                node.position = *target;
+                            if let Some(view) = self.node_views.get_mut(id) {
+                                view.position = *target;
                             }
                         }
                         self.animation_targets.clear();
@@ -2288,11 +2379,11 @@ impl OrganizationConcept {
 
                         // Interpolate positions
                         for (id, target) in &self.animation_targets {
-                            if let (Some(start), Some(node)) = (
+                            if let (Some(start), Some(view)) = (
                                 self.animation_start.get(id),
-                                self.nodes.get_mut(id)
+                                self.node_views.get_mut(id)
                             ) {
-                                node.position = Point::new(
+                                view.position = Point::new(
                                     start.x + (target.x - start.x) * eased,
                                     start.y + (target.y - start.y) * eased,
                                 );
@@ -2343,8 +2434,8 @@ impl OrganizationConcept {
             }
             OrganizationIntent::EdgeCreationStarted(from_node) => {
                 // Start edge creation indicator from this node
-                if let Some(node) = self.nodes.get(&from_node) {
-                    self.edge_indicator.start(from_node, node.position);
+                if let Some(view) = self.node_views.get(&from_node) {
+                    self.edge_indicator.start(from_node, view.position);
                 }
             }
             OrganizationIntent::EdgeDeleted(index) => {
@@ -2490,8 +2581,8 @@ impl OrganizationConcept {
 
         // Apply all position updates
         for (id, pos) in position_updates {
-            if let Some(node) = self.nodes.get_mut(&id) {
-                node.position = pos;
+            if let Some(view) = self.node_views.get_mut(&id) {
+                view.position = pos;
             }
         }
     }
@@ -2555,8 +2646,8 @@ impl OrganizationConcept {
 
         // Apply all position updates
         for (id, pos) in position_updates {
-            if let Some(node) = self.nodes.get_mut(&id) {
-                node.position = pos;
+            if let Some(view) = self.node_views.get_mut(&id) {
+                view.position = pos;
             }
         }
     }
@@ -2579,10 +2670,13 @@ impl OrganizationConcept {
                     operators.push(*id);
                 }
                 Injection::NatsAccount | Injection::NatsAccountSimple => {
-                    // Use the nats_account_name accessor, fall back to label
+                    // Use the nats_account_name accessor, fall back to label from view
+                    let fallback_label = self.node_views.get(id)
+                        .map(|v| v.label.clone())
+                        .unwrap_or_default();
                     let name = node.domain_node.nats_account_name()
                         .map(|s| s.to_string())
-                        .unwrap_or_else(|| node.label.clone());
+                        .unwrap_or(fallback_label);
                     accounts.push((*id, name));
                 }
                 Injection::NatsUser | Injection::NatsUserSimple => {
@@ -2642,8 +2736,8 @@ impl OrganizationConcept {
 
         // Apply all position updates
         for (id, pos) in position_updates {
-            if let Some(node) = self.nodes.get_mut(&id) {
-                node.position = pos;
+            if let Some(view) = self.node_views.get_mut(&id) {
+                view.position = pos;
             }
         }
     }
@@ -2731,8 +2825,8 @@ impl OrganizationConcept {
             let start_x = -layer_width / 2.0;
 
             for (node_index, node_id) in layer.iter().enumerate() {
-                if let Some(node) = self.nodes.get_mut(node_id) {
-                    node.position = Point::new(
+                if let Some(view) = self.node_views.get_mut(node_id) {
+                    view.position = Point::new(
                         start_x + (node_index as f32) * node_spacing,
                         y,
                     );
@@ -2758,9 +2852,9 @@ impl OrganizationConcept {
                     let id1 = node_ids[i];
                     let id2 = node_ids[j];
 
-                    if let (Some(node1), Some(node2)) = (self.nodes.get(&id1), self.nodes.get(&id2)) {
-                        let dx = node2.position.x - node1.position.x;
-                        let dy = node2.position.y - node1.position.y;
+                    if let (Some(view1), Some(view2)) = (self.node_views.get(&id1), self.node_views.get(&id2)) {
+                        let dx = view2.position.x - view1.position.x;
+                        let dy = view2.position.y - view1.position.y;
                         let distance = (dx * dx + dy * dy).sqrt().max(0.1);
 
                         let repulsion = (k * k) / distance;
@@ -2777,9 +2871,9 @@ impl OrganizationConcept {
 
             // Calculate attractive forces for connected nodes
             for edge in &self.edges {
-                if let (Some(node1), Some(node2)) = (self.nodes.get(&edge.from), self.nodes.get(&edge.to)) {
-                    let dx = node2.position.x - node1.position.x;
-                    let dy = node2.position.y - node1.position.y;
+                if let (Some(view1), Some(view2)) = (self.node_views.get(&edge.from), self.node_views.get(&edge.to)) {
+                    let dx = view2.position.x - view1.position.x;
+                    let dy = view2.position.y - view1.position.y;
                     let distance = (dx * dx + dy * dy).sqrt().max(0.1);
 
                     let attraction = (distance * distance) / k;
@@ -2796,9 +2890,9 @@ impl OrganizationConcept {
             // Apply forces with cooling
             let temperature = 1.0 - (iteration as f32 / iterations as f32);
             for (node_id, force) in forces {
-                if let Some(node) = self.nodes.get_mut(&node_id) {
-                    node.position.x += force.x * c * temperature;
-                    node.position.y += force.y * c * temperature;
+                if let Some(view) = self.node_views.get_mut(&node_id) {
+                    view.position.x += force.x * c * temperature;
+                    view.position.y += force.y * c * temperature;
                 }
             }
         }
@@ -2853,8 +2947,8 @@ impl OrganizationConcept {
 
         for (index, node_id) in node_ids.iter().enumerate() {
             let angle = index as f32 * angle_step;
-            if let Some(node) = self.nodes.get_mut(node_id) {
-                node.position = Point::new(
+            if let Some(view) = self.node_views.get_mut(node_id) {
+                view.position = Point::new(
                     radius * angle.cos(),
                     radius * angle.sin(),
                 );
@@ -2914,10 +3008,17 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                 if !self.should_show_node(from_node) || !self.should_show_node(to_node) {
                     continue;
                 }
-                let edge_path = canvas::Path::line(
-                    from_node.position,
-                    to_node.position,
-                );
+
+                // Get positions from node_views
+                let (from_pos, to_pos) = match (
+                    self.node_views.get(&edge.from),
+                    self.node_views.get(&edge.to),
+                ) {
+                    (Some(from_view), Some(to_view)) => (from_view.position, to_view.position),
+                    _ => continue,
+                };
+
+                let edge_path = canvas::Path::line(from_pos, to_pos);
 
                 // Use dashed line for IncompatibleWith (SoD) edges
                 let stroke = if matches!(edge.edge_type, EdgeType::IncompatibleWith) {
@@ -2942,24 +3043,24 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                 frame.stroke(&edge_path, stroke);
 
                 // Draw arrow head for directed edges
-                let dx = to_node.position.x - from_node.position.x;
-                let dy = to_node.position.y - from_node.position.y;
+                let dx = to_pos.x - from_pos.x;
+                let dy = to_pos.y - from_pos.y;
                 let angle = dy.atan2(dx);
 
                 let arrow_size = 10.0;
                 let arrow_point1 = Point::new(
-                    to_node.position.x - arrow_size * (angle - 0.5).cos(),
-                    to_node.position.y - arrow_size * (angle - 0.5).sin(),
+                    to_pos.x - arrow_size * (angle - 0.5).cos(),
+                    to_pos.y - arrow_size * (angle - 0.5).sin(),
                 );
                 let arrow_point2 = Point::new(
-                    to_node.position.x - arrow_size * (angle + 0.5).cos(),
-                    to_node.position.y - arrow_size * (angle + 0.5).sin(),
+                    to_pos.x - arrow_size * (angle + 0.5).cos(),
+                    to_pos.y - arrow_size * (angle + 0.5).sin(),
                 );
 
                 let arrow = canvas::Path::new(|builder| {
-                    builder.move_to(to_node.position);
+                    builder.move_to(to_pos);
                     builder.line_to(arrow_point1);
-                    builder.move_to(to_node.position);
+                    builder.move_to(to_pos);
                     builder.line_to(arrow_point2);
                 });
 
@@ -3037,8 +3138,8 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                 };
 
                 // Calculate midpoint for label
-                let mid_x = (from_node.position.x + to_node.position.x) / 2.0;
-                let mid_y = (from_node.position.y + to_node.position.y) / 2.0;
+                let mid_x = (from_pos.x + to_pos.x) / 2.0;
+                let mid_y = (from_pos.y + to_pos.y) / 2.0;
 
                 // Offset label perpendicular to edge
                 let perp_angle = angle + std::f32::consts::PI / 2.0;
@@ -3091,9 +3192,15 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                         continue;
                     }
 
+                    // Get position from node_views
+                    let node_pos = match self.node_views.get(node_id) {
+                        Some(view) => view.position,
+                        None => continue,
+                    };
+
                     // Draw a subtle pulsing ring around valid drop targets
                     let indicator_radius = 30.0;
-                    let indicator_circle = canvas::Path::circle(node.position, indicator_radius);
+                    let indicator_circle = canvas::Path::circle(node_pos, indicator_radius);
                     let indicator_stroke = canvas::Stroke::default()
                         .with_color(Color::from_rgba(0.4, 0.7, 0.9, 0.4)) // Light blue, semi-transparent
                         .with_width(2.0);
@@ -3102,7 +3209,7 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                     // Draw small "+" indicator to show this is a drop target
                     frame.fill_text(canvas::Text {
                         content: "+".to_string(),
-                        position: Point::new(node.position.x + 25.0, node.position.y - 20.0),
+                        position: Point::new(node_pos.x + 25.0, node_pos.y - 20.0),
                         color: Color::from_rgba(0.4, 0.7, 0.9, 0.7),
                         size: iced::Pixels(12.0),
                         font: iced::Font::DEFAULT,
@@ -3122,6 +3229,12 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                 continue;
             }
 
+            // Get position and color from node_views
+            let (node_pos, node_color) = match self.node_views.get(node_id) {
+                Some(view) => (view.position, view.color),
+                None => continue,
+            };
+
             let is_selected = self.selected_node == Some(*node_id);
             let radius = if is_selected { 25.0 } else { 20.0 };
 
@@ -3129,8 +3242,8 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
 
             // 1. Drop shadow (offset down-right for depth)
             let shadow_offset = Point::new(
-                node.position.x + 2.0,
-                node.position.y + 2.0,
+                node_pos.x + 2.0,
+                node_pos.y + 2.0,
             );
             let shadow_circle = canvas::Path::circle(shadow_offset, radius);
             frame.fill(&shadow_circle, Color::from_rgba(0.0, 0.0, 0.0, 0.3));
@@ -3138,39 +3251,39 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
             // 2. Base disc with gradient effect (concentric circles)
             // Outer layer (darker edge for depth)
             let outer_color = Color {
-                r: node.color.r * 0.7,
-                g: node.color.g * 0.7,
-                b: node.color.b * 0.7,
+                r: node_color.r * 0.7,
+                g: node_color.g * 0.7,
+                b: node_color.b * 0.7,
                 a: 1.0,
             };
-            let outer_circle = canvas::Path::circle(node.position, radius);
+            let outer_circle = canvas::Path::circle(node_pos, radius);
             frame.fill(&outer_circle, outer_color);
 
             // Middle layer (base color)
-            let mid_circle = canvas::Path::circle(node.position, radius * 0.85);
-            frame.fill(&mid_circle, node.color);
+            let mid_circle = canvas::Path::circle(node_pos, radius * 0.85);
+            frame.fill(&mid_circle, node_color);
 
             // Inner highlight (lighter center for 3D effect)
             let highlight_color = Color {
-                r: (node.color.r + 0.3).min(1.0),
-                g: (node.color.g + 0.3).min(1.0),
-                b: (node.color.b + 0.3).min(1.0),
+                r: (node_color.r + 0.3).min(1.0),
+                g: (node_color.g + 0.3).min(1.0),
+                b: (node_color.b + 0.3).min(1.0),
                 a: 1.0,
             };
-            let inner_circle = canvas::Path::circle(node.position, radius * 0.5);
+            let inner_circle = canvas::Path::circle(node_pos, radius * 0.5);
             frame.fill(&inner_circle, highlight_color);
 
             // 3. Top highlight (glossy effect - small bright spot)
             let highlight_pos = Point::new(
-                node.position.x - radius * 0.3,
-                node.position.y - radius * 0.3,
+                node_pos.x - radius * 0.3,
+                node_pos.y - radius * 0.3,
             );
             let highlight = canvas::Path::circle(highlight_pos, radius * 0.25);
             frame.fill(&highlight, Color::from_rgba(1.0, 1.0, 1.0, 0.5));
 
             // 4. Selection ring if selected
             if is_selected {
-                let selection_ring = canvas::Path::circle(node.position, radius + 3.0);
+                let selection_ring = canvas::Path::circle(node_pos, radius + 3.0);
                 let stroke = canvas::Stroke::default()
                     .with_color(Color::from_rgb(1.0, 0.84, 0.0)) // Gold color
                     .with_width(3.0);
@@ -3178,7 +3291,7 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
             }
 
             // 5. Border (defines the disc edge) - bright for visibility on black
-            let circle = canvas::Path::circle(node.position, radius);
+            let circle = canvas::Path::circle(node_pos, radius);
             let border_stroke = canvas::Stroke::default()
                 .with_color(Color::from_rgba(0.8, 0.8, 0.9, 0.7))  // Light border for black bg
                 .with_width(if is_selected { 2.5 } else { 2.0 });  // Slightly thicker
@@ -3196,8 +3309,8 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
 
             // Primary text (below node)
             let name_position = Point::new(
-                node.position.x,
-                node.position.y + radius + 12.0,
+                node_pos.x,
+                node_pos.y + radius + 12.0,
             );
             frame.fill_text(canvas::Text {
                 content: primary_text,
@@ -3213,8 +3326,8 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
 
             // Secondary text (below primary)
             let email_position = Point::new(
-                node.position.x,
-                node.position.y + radius + 27.0,
+                node_pos.x,
+                node_pos.y + radius + 27.0,
             );
             frame.fill_text(canvas::Text {
                 content: secondary_text,
@@ -3234,8 +3347,8 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                 let expanded = viz.expanded;
 
                 // Position indicator below secondary text (with extra spacing)
-                let indicator_y = node.position.y + radius + 52.0;
-                let indicator_center = Point::new(node.position.x, indicator_y);
+                let indicator_y = node_pos.y + radius + 52.0;
+                let indicator_center = Point::new(node_pos.x, indicator_y);
                 let indicator_radius = 10.0;
 
                 // Draw indicator circle (blue background)
@@ -3267,10 +3380,10 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
             // Using injection() to check node type
             if node.injection() == super::domain_node::Injection::Person {
                 if let Some(badges) = self.role_badges.get(&node.id) {
-                    let badge_y = node.position.y + radius + 42.0;
+                    let badge_y = node_pos.y + radius + 42.0;
                     let badge_spacing = 24.0;
                     let total_width = (badges.badges.len() as f32) * badge_spacing;
-                    let start_x = node.position.x - total_width / 2.0 + badge_spacing / 2.0;
+                    let start_x = node_pos.x - total_width / 2.0 + badge_spacing / 2.0;
 
                     for (i, badge) in badges.badges.iter().enumerate() {
                         let badge_x = start_x + (i as f32) * badge_spacing;
@@ -3314,13 +3427,13 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
 
             // Type icon (above node)
             let icon_position = Point::new(
-                node.position.x,
-                node.position.y - radius - 8.0,
+                node_pos.x,
+                node_pos.y - radius - 8.0,
             );
             frame.fill_text(canvas::Text {
                 content: type_icon.to_string(),
                 position: icon_position,
-                color: node.color,
+                color: node_color,
                 size: iced::Pixels(18.0),
                 font: type_font,
                 horizontal_alignment: iced::alignment::Horizontal::Center,
@@ -3411,14 +3524,16 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
 
             // Highlight the hovered person node
             if let Some(hover_id) = drag.hover_person {
-                if let Some(hover_node) = self.nodes.get(&hover_id) {
+                if self.nodes.contains_key(&hover_id) {
                     let highlight_color = if drag.sod_conflicts.is_empty() {
                         Color::from_rgba(0.2, 0.8, 0.3, 0.3) // Green glow
                     } else {
                         Color::from_rgba(0.9, 0.3, 0.2, 0.3) // Red glow
                     };
-                    let highlight_circle = canvas::Path::circle(hover_node.position, 35.0);
-                    frame.fill(&highlight_circle, highlight_color);
+                    if let Some(hover_view) = self.node_views.get(&hover_id) {
+                        let highlight_circle = canvas::Path::circle(hover_view.position, 35.0);
+                        frame.fill(&highlight_circle, highlight_color);
+                    }
                 }
             }
 
@@ -3573,26 +3688,35 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                         );
 
                         if is_expandable {
-                            // Check if click is on the +/- indicator
-                            let indicator_center_y = node.position.y + indicator_offset;
-                            let indicator_distance = ((adjusted_position.x - node.position.x).powi(2)
-                                + (adjusted_position.y - indicator_center_y).powi(2))
-                            .sqrt();
+                            // Get position from node_views
+                            if let Some(node_view) = self.node_views.get(node_id) {
+                                // Check if click is on the +/- indicator
+                                let indicator_center_y = node_view.position.y + indicator_offset;
+                                let indicator_distance = ((adjusted_position.x - node_view.position.x).powi(2)
+                                    + (adjusted_position.y - indicator_center_y).powi(2))
+                                .sqrt();
 
-                            if indicator_distance <= indicator_radius + 2.0 {  // Small tolerance
-                                // Click on expansion indicator - expand/collapse
-                                return (
-                                    canvas::event::Status::Captured,
-                                    Some(OrganizationIntent::ExpandIndicatorClicked(*node_id)),
-                                );
+                                if indicator_distance <= indicator_radius + 2.0 {  // Small tolerance
+                                    // Click on expansion indicator - expand/collapse
+                                    return (
+                                        canvas::event::Status::Captured,
+                                        Some(OrganizationIntent::ExpandIndicatorClicked(*node_id)),
+                                    );
+                                }
                             }
                         }
                     }
 
                     // Check if click is on a node (not indicator)
-                    for (node_id, node) in &self.nodes {
-                        let distance = ((adjusted_position.x - node.position.x).powi(2)
-                            + (adjusted_position.y - node.position.y).powi(2))
+                    for (node_id, _node) in &self.nodes {
+                        // Get position from node_views
+                        let node_view = match self.node_views.get(node_id) {
+                            Some(v) => v,
+                            None => continue,
+                        };
+
+                        let distance = ((adjusted_position.x - node_view.position.x).powi(2)
+                            + (adjusted_position.y - node_view.position.y).powi(2))
                         .sqrt();
 
                         if distance <= node_radius {
@@ -3609,12 +3733,12 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                                 // Center click - start node drag
                                 // Track drag in canvas state
                                 state.dragging_node = Some(*node_id);
-                                state.drag_start_pos = Some(node.position);
+                                state.drag_start_pos = Some(node_view.position);
 
                                 // Calculate offset from node center to cursor
                                 let offset = Vector::new(
-                                    adjusted_position.x - node.position.x,
-                                    adjusted_position.y - node.position.y,
+                                    adjusted_position.x - node_view.position.x,
+                                    adjusted_position.y - node_view.position.y,
                                 );
                                 return (
                                     canvas::event::Status::Captured,
@@ -3638,13 +3762,19 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                     if self.edge_indicator.is_active() {
                         if let Some(from_node_id) = self.edge_indicator.from_node() {
                             // Check if we released over a different node
-                            for (node_id, node) in &self.nodes {
+                            for (node_id, _node) in &self.nodes {
                                 if *node_id == from_node_id {
                                     continue; // Skip the source node
                                 }
 
-                                let distance = ((adjusted_position.x - node.position.x).powi(2)
-                                    + (adjusted_position.y - node.position.y).powi(2))
+                                // Get position from node_views
+                                let node_view = match self.node_views.get(node_id) {
+                                    Some(v) => v,
+                                    None => continue,
+                                };
+
+                                let distance = ((adjusted_position.x - node_view.position.x).powi(2)
+                                    + (adjusted_position.y - node_view.position.y).powi(2))
                                 .sqrt();
 
                                 if distance <= 20.0 {
@@ -3671,9 +3801,13 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                     // End dragging if we were dragging
                     if let Some(node_id) = state.dragging_node {
                         // Check if node actually moved significantly (more than 5 pixels)
-                        let moved_significantly = if let (Some(start_pos), Some(node)) = (state.drag_start_pos, self.nodes.get(&node_id)) {
-                            let distance = ((node.position.x - start_pos.x).powi(2) + (node.position.y - start_pos.y).powi(2)).sqrt();
-                            distance > 5.0
+                        let moved_significantly = if let Some(start_pos) = state.drag_start_pos {
+                            if let Some(node_view) = self.node_views.get(&node_id) {
+                                let distance = ((node_view.position.x - start_pos.x).powi(2) + (node_view.position.y - start_pos.y).powi(2)).sqrt();
+                                distance > 5.0
+                            } else {
+                                false
+                            }
                         } else {
                             false
                         };
@@ -3699,11 +3833,15 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                         // Not dragging - check if we clicked on an edge
                         const EDGE_CLICK_THRESHOLD: f32 = 10.0;  // pixels
                         for (index, edge) in self.edges.iter().enumerate() {
-                            if let (Some(from_node), Some(to_node)) = (self.nodes.get(&edge.from), self.nodes.get(&edge.to)) {
+                            // Get positions from node_views
+                            if let (Some(from_view), Some(to_view)) = (
+                                self.node_views.get(&edge.from),
+                                self.node_views.get(&edge.to)
+                            ) {
                                 let distance = distance_to_line_segment(
                                     adjusted_position,
-                                    from_node.position,
-                                    to_node.position
+                                    from_view.position,
+                                    to_view.position
                                 );
                                 if distance <= EDGE_CLICK_THRESHOLD {
                                     return (

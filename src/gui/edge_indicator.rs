@@ -77,9 +77,10 @@ impl EdgeCreationIndicator {
             return;
         }
 
-        if let Some(from) = graph.nodes.get(&self.from_node.unwrap()) {
+        let from_id = self.from_node.unwrap();
+        if let Some(from_view) = graph.node_views.get(&from_id) {
             // Draw dashed line from source node to cursor
-            let path = canvas::Path::line(from.position, self.current_position);
+            let path = canvas::Path::line(from_view.position, self.current_position);
 
             let stroke = canvas::Stroke {
                 style: canvas::stroke::Style::Solid(Color::from_rgb(0.5, 0.5, 1.0)),
@@ -95,8 +96,8 @@ impl EdgeCreationIndicator {
             frame.stroke(&path, stroke);
 
             // Draw arrow at cursor position to show direction
-            let dx = self.current_position.x - from.position.x;
-            let dy = self.current_position.y - from.position.y;
+            let dx = self.current_position.x - from_view.position.x;
+            let dy = self.current_position.y - from_view.position.y;
             let angle = dy.atan2(dx);
 
             let arrow_size = 12.0;

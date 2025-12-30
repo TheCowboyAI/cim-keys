@@ -81,9 +81,9 @@ mod graph_first_integration_tests {
         // And: We should have certificates for org (root), unit (intermediate), and person (leaf)
         assert!(cert_nodes.len() >= 3, "Should generate at least 3 certificates");
 
-        // And: Root CA should have no parent
+        // And: Root CA should have no parent (3-tuple: node, position, parent_id)
         let root_certs = cert_nodes.iter()
-            .filter(|(_, parent)| parent.is_none())
+            .filter(|(_, _, parent)| parent.is_none())
             .count();
         assert_eq!(root_certs, 1, "Should have exactly one root CA");
     }
@@ -116,9 +116,9 @@ mod graph_first_integration_tests {
         // And: We should have NATS entities for org (operator), unit (account), and person (user)
         assert!(nats_nodes.len() >= 3, "Should generate at least 3 NATS entities");
 
-        // And: Operator should have no parent (it's the root)
+        // And: Operator should have no parent (3-tuple: node, position, parent_id)
         let operators = nats_nodes.iter()
-            .filter(|(_, parent)| parent.is_none())
+            .filter(|(_, _, parent)| parent.is_none())
             .count();
         assert_eq!(operators, 1, "Should have exactly one NATS Operator");
     }
@@ -157,8 +157,8 @@ mod graph_first_integration_tests {
         // And: We should have one provision plan per person
         assert_eq!(yubikey_nodes.len(), 3, "Should have 3 YubiKey provision plans");
 
-        // And: Each person should have a YubiKey requirement
-        for (node, _) in &yubikey_nodes {
+        // And: Each person should have a YubiKey requirement (5-tuple: node, position, color, label, person_id)
+        for (node, _, _, _, _) in &yubikey_nodes {
             if let DomainNodeData::YubiKeyStatus(status) = node.domain_node.data() {
                 assert!(!status.slots_needed.is_empty(), "Each person should need at least one PIV slot");
             } else {

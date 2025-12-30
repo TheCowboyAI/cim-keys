@@ -181,9 +181,10 @@ pub fn analyze_graph_for_yubikey(graph: &OrganizationConcept) -> YubiKeyProvisio
 }
 
 /// Generate YubiKey provisioning commands (placeholder for actual provisioning)
+/// Returns (ConceptEntity, position, custom_color, custom_label, person_id)
 pub fn generate_yubikey_provision_from_graph(
     graph: &OrganizationConcept,
-) -> Result<Vec<(ConceptEntity, Uuid)>, String> {
+) -> Result<Vec<(ConceptEntity, Point, Color, String, Uuid)>, String> {
     // Step 1: Analyze graph structure
     let hierarchy = analyze_graph_for_yubikey(graph);
 
@@ -204,6 +205,13 @@ pub fn generate_yubikey_provision_from_graph(
             format!("⏳ {} YubiKey ({} slots needed)", plan.person.name, plan.slots.len())
         };
 
+        // Color based on provisioning status
+        let status_color = if plan.already_provisioned {
+            Color::from_rgb(0.2, 0.8, 0.2) // Green for provisioned
+        } else {
+            Color::from_rgb(0.9, 0.6, 0.2) // Orange for pending
+        };
+
         // Convert local PIVSlot to domain PIVSlot
         let slots_as_domain: Vec<DomainPIVSlot> = plan.slots.iter().map(|s| s.to_domain()).collect();
         let domain_node = DomainNode::inject_yubikey_status(
@@ -213,17 +221,9 @@ pub fn generate_yubikey_provision_from_graph(
             slots_as_domain,
         );
         let position = Point::new(400.0, 500.0); // Below person nodes
-        let mut provision_node = ConceptEntity::from_domain_node(provision_node_id, domain_node, position);
+        let provision_node = ConceptEntity::from_domain_node(provision_node_id, domain_node);
 
-        // Override color based on provisioning status
-        provision_node.color = if plan.already_provisioned {
-            Color::from_rgb(0.2, 0.8, 0.2) // Green for provisioned
-        } else {
-            Color::from_rgb(0.9, 0.6, 0.2) // Orange for pending
-        };
-        provision_node.label = status_label;
-
-        provision_nodes.push((provision_node, person_id));
+        provision_nodes.push((provision_node, position, status_color, status_label, person_id));
 
         tracing::info!(
             "YubiKey provision plan for {}: {} slots ({})",
@@ -239,15 +239,21 @@ pub fn generate_yubikey_provision_from_graph(
 /// Add YubiKey provision status nodes to the organizational graph
 pub fn add_yubikey_status_to_graph(
     graph: &mut OrganizationConcept,
-    provision_nodes: Vec<(ConceptEntity, Uuid)>,
+    provision_nodes: Vec<(ConceptEntity, Point, Color, String, Uuid)>,
 ) {
     use crate::gui::graph::{ConceptRelation, EdgeType};
+    use super::view_model::NodeView;
 
-    for (provision_node, person_id) in provision_nodes {
+    for (provision_node, position, custom_color, custom_label, person_id) in provision_nodes {
         let provision_node_id = provision_node.id;
 
-        // Add provision status node
+        // Create view with custom color and label (overriding defaults)
+        let mut view = NodeView::new(provision_node_id, position, custom_color, custom_label);
+        view.color = custom_color; // Ensure custom color is used
+
+        // Add provision status node and view
         graph.nodes.insert(provision_node_id, provision_node);
+        graph.node_views.insert(provision_node_id, view);
 
         // Add "requires" edge from person to YubiKey status
         graph.edges.push(ConceptRelation {

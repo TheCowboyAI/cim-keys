@@ -565,7 +565,7 @@ pub enum Message {
     NatsHierarchyGenerated(Result<String, String>),
     NatsBootstrapCreated(Box<crate::domain_projections::OrganizationBootstrap>),
     GenerateNatsFromGraph,  // Graph-first NATS generation
-    NatsFromGraphGenerated(Result<Vec<(graph::ConceptEntity, Option<Uuid>)>, String>),
+    NatsFromGraphGenerated(Result<Vec<(graph::ConceptEntity, iced::Point, Option<Uuid>)>, String>),
     ExportToNsc,
     NscExported(Result<String, String>),
 
@@ -579,14 +579,14 @@ pub enum Message {
     // PKI operations
     PkiCertificatesLoaded(Vec<crate::projections::CertificateEntry>),
     GeneratePkiFromGraph,  // Graph-first PKI generation
-    PkiGenerated(Result<Vec<(graph::ConceptEntity, Option<Uuid>)>, String>),
+    PkiGenerated(Result<Vec<(graph::ConceptEntity, iced::Point, Option<Uuid>)>, String>),
     RootCAGenerated(Result<crate::crypto::x509::X509Certificate, String>),
     PersonalKeysGenerated(Result<(crate::crypto::x509::X509Certificate, Vec<String>), String>), // (cert, nats_keys)
 
     // YubiKey operations
     YubiKeyDataLoaded(Vec<crate::projections::YubiKeyEntry>, Vec<crate::projections::PersonEntry>),
     ProvisionYubiKeysFromGraph,  // Graph-first YubiKey provisioning
-    YubiKeysProvisioned(Result<Vec<(graph::ConceptEntity, Uuid)>, String>),
+    YubiKeysProvisioned(Result<Vec<(graph::ConceptEntity, iced::Point, iced::Color, String, Uuid)>, String>),
 
     // Root passphrase operations
     RootPassphraseChanged(String),
@@ -1765,7 +1765,7 @@ impl CimKeysApp {
 
                         // Clone old state for compensating event (undo)
                         let old_domain_node = node.domain_node.clone();
-                        let old_label = node.label.clone();
+                        let old_label = node.visualization().primary_text;
 
                         // Create PropertyUpdate with new name
                         // Uses DomainNode::with_properties() - Sprint 13 migration
@@ -2240,12 +2240,16 @@ impl CimKeysApp {
                             vec!["keyCertSign".to_string(), "cRLSign".to_string()],
                         );
                         let position = iced::Point::new(400.0, 100.0); // Center top of graph
-                        let mut root_ca_node = graph::ConceptEntity::from_domain_node(cert_id, domain_node, position);
-                        root_ca_node.color = iced::Color::from_rgb(0.2, 0.8, 0.2); // Green for Root CA
-                        root_ca_node.label = format!("{} Root CA", self.organization_name);
+                        let root_ca_node = graph::ConceptEntity::from_domain_node(cert_id, domain_node);
+
+                        // Create view with custom color and label
+                        let custom_color = iced::Color::from_rgb(0.2, 0.8, 0.2); // Green for Root CA
+                        let custom_label = format!("{} Root CA", self.organization_name);
+                        let view = view_model::NodeView::new(cert_id, position, custom_color, custom_label);
 
                         // Add to graph
                         self.org_graph.nodes.insert(cert_id, root_ca_node);
+                        self.org_graph.node_views.insert(cert_id, view);
 
                         // Switch to PKI view to show the new certificate
                         self.graph_view = GraphView::PkiTrustChain;
@@ -2282,12 +2286,16 @@ impl CimKeysApp {
                             vec![], // san
                         );
                         let position = iced::Point::new(400.0, 300.0); // Below Root CA
-                        let mut leaf_cert_node = graph::ConceptEntity::from_domain_node(cert_id, domain_node, position);
-                        leaf_cert_node.color = iced::Color::from_rgb(0.4, 0.6, 0.8); // Blue for Leaf
-                        leaf_cert_node.label = "Personal Certificate".to_string();
+                        let leaf_cert_node = graph::ConceptEntity::from_domain_node(cert_id, domain_node);
+
+                        // Create view with custom color and label
+                        let custom_color = iced::Color::from_rgb(0.4, 0.6, 0.8); // Blue for Leaf
+                        let custom_label = "Personal Certificate".to_string();
+                        let view = view_model::NodeView::new(cert_id, position, custom_color, custom_label);
 
                         // Add to graph
                         self.org_graph.nodes.insert(cert_id, leaf_cert_node);
+                        self.org_graph.node_views.insert(cert_id, view);
 
                         // Switch to PKI view
                         self.graph_view = GraphView::PkiTrustChain;
@@ -3407,7 +3415,7 @@ impl CimKeysApp {
                                         self.org_graph.nodes.get(id)
                                     ) {
                                         self.status_message = format!("Created edge from '{}' to '{}' (Total edges: {})",
-                                            from_node.label, to_node.label, self.org_graph.edges.len());
+                                            from_node.visualization().primary_text, to_node.visualization().primary_text, self.org_graph.edges.len());
                                     } else {
                                         self.status_message = format!("Edge created but nodes not found (Total edges: {})", self.org_graph.edges.len());
                                     }
@@ -3426,7 +3434,7 @@ impl CimKeysApp {
                             if let Some(node) = self.policy_graph.nodes.get(id) {
                                 self.policy_graph.selected_node = Some(*id);
                                 self.property_card.set_node(*id, node.domain_node.clone());
-                                self.status_message = format!("Selected '{}'", node.label);
+                                self.status_message = format!("Selected '{}'", node.visualization().primary_text);
                                 return Task::none();
                             }
 
@@ -3434,7 +3442,7 @@ impl CimKeysApp {
                             if let Some(node) = self.org_graph.nodes.get(id) {
                                 self.property_card.set_node(*id, node.domain_node.clone());
                                 self.status_message = format!("Selected '{}' - property card: {}, selected_node: {:?}",
-                                    node.label,
+                                    node.visualization().primary_text,
                                     if self.property_card.is_editing() { "open" } else { "closed" },
                                     self.org_graph.selected_node);
                             } else {
@@ -3448,12 +3456,13 @@ impl CimKeysApp {
                             // PolicyGroup expansion - use DomainNode accessor
                             if let Some(separation_class) = node.domain_node.separation_class() {
                                 let class = separation_class.clone();
+                                let node_label = node.visualization().primary_text;
                                 if self.expanded_separation_classes.contains(&class) {
                                     self.expanded_separation_classes.remove(&class);
-                                    self.status_message = format!("Collapsed {} class", node.label);
+                                    self.status_message = format!("Collapsed {} class", node_label);
                                 } else {
                                     self.expanded_separation_classes.insert(class);
-                                    self.status_message = format!("Expanded {} class - showing roles", node.label);
+                                    self.status_message = format!("Expanded {} class - showing roles", node_label);
                                 }
                                 self.populate_policy_graph();
                                 return Task::none();
@@ -3462,12 +3471,13 @@ impl CimKeysApp {
                             // PolicyCategory expansion - use DomainNode accessor
                             if let Some(cat_name) = node.domain_node.policy_category_name() {
                                 let cat_name = cat_name.to_string();
+                                let node_label = node.visualization().primary_text;
                                 if self.expanded_categories.contains(&cat_name) {
                                     self.expanded_categories.remove(&cat_name);
-                                    self.status_message = format!("Collapsed {} category", node.label);
+                                    self.status_message = format!("Collapsed {} category", node_label);
                                 } else {
                                     self.expanded_categories.insert(cat_name);
-                                    self.status_message = format!("Expanded {} category - showing claims", node.label);
+                                    self.status_message = format!("Expanded {} category - showing claims", node_label);
                                 }
                                 self.populate_policy_graph();
                                 return Task::none();
@@ -3477,30 +3487,30 @@ impl CimKeysApp {
                     OrganizationIntent::NodeDragStarted { node_id, offset } => {
                         self.org_graph.dragging_node = Some(*node_id);
                         self.org_graph.drag_offset = *offset;
-                        if let Some(node) = self.org_graph.nodes.get(node_id) {
-                            self.org_graph.drag_start_position = Some(node.position);
+                        if let Some(view) = self.org_graph.node_views.get(node_id) {
+                            self.org_graph.drag_start_position = Some(view.position);
                         }
                     }
                     OrganizationIntent::NodeDragged(cursor_position) => {
                         if let Some(node_id) = self.org_graph.dragging_node {
-                            if let Some(node) = self.org_graph.nodes.get_mut(&node_id) {
+                            if let Some(view) = self.org_graph.node_views.get_mut(&node_id) {
                                 // Update node position based on cursor and drag offset
                                 let adjusted_x = (cursor_position.x - self.org_graph.pan_offset.x) / self.org_graph.zoom;
                                 let adjusted_y = (cursor_position.y - self.org_graph.pan_offset.y) / self.org_graph.zoom;
-                                node.position.x = adjusted_x - self.org_graph.drag_offset.x;
-                                node.position.y = adjusted_y - self.org_graph.drag_offset.y;
+                                view.position.x = adjusted_x - self.org_graph.drag_offset.x;
+                                view.position.y = adjusted_y - self.org_graph.drag_offset.y;
                             }
                         }
                     }
                     OrganizationIntent::NodeDragEnded => {
                         if let Some(node_id) = self.org_graph.dragging_node {
                             // Check if node actually moved
-                            if let (Some(start_pos), Some(node)) = (
+                            if let (Some(start_pos), Some(view)) = (
                                 self.org_graph.drag_start_position,
-                                self.org_graph.nodes.get(&node_id)
+                                self.org_graph.node_views.get(&node_id)
                             ) {
-                                let distance = ((node.position.x - start_pos.x).powi(2)
-                                    + (node.position.y - start_pos.y).powi(2)).sqrt();
+                                let distance = ((view.position.x - start_pos.x).powi(2)
+                                    + (view.position.y - start_pos.y).powi(2)).sqrt();
 
                                 if distance > 5.0 {
                                     // Create NodeMoved event for undo/redo
@@ -3510,12 +3520,12 @@ impl CimKeysApp {
                                     let event = GraphEvent::NodeMoved {
                                         node_id,
                                         old_position: start_pos,
-                                        new_position: node.position,
+                                        new_position: view.position,
                                         timestamp: Utc::now(),
                                     };
                                     self.org_graph.event_stack.push(event);
                                     self.status_message = format!("Moved node to ({:.0}, {:.0})",
-                                        node.position.x, node.position.y);
+                                        view.position.x, view.position.y);
                                 }
                             }
                         }
@@ -3581,17 +3591,24 @@ impl CimKeysApp {
                                 use crate::gui::graph_events::GraphEvent;
                                 use chrono::Utc;
 
+                                // Get view data for event snapshot
+                                let (position, color, label) = if let Some(view) = self.org_graph.node_views.get(&node_id) {
+                                    (view.position, view.color, view.label.clone())
+                                } else {
+                                    let viz = node.visualization();
+                                    (iced::Point::ORIGIN, viz.color, viz.primary_text)
+                                };
+
                                 // Create NodeDeleted event with snapshot for redo
                                 let event = GraphEvent::NodeDeleted {
                                     node_id,
                                     domain_node: node.domain_node.clone(),
-                                    position: node.position,
-                                    color: node.color,
-                                    label: node.label.clone(),
+                                    position,
+                                    color,
+                                    label: label.clone(),
                                     timestamp: Utc::now(),
                                 };
 
-                                let label = node.label.clone();
                                 self.org_graph.event_stack.push(event.clone());
                                 self.org_graph.apply_event(&event);
 
@@ -4004,10 +4021,14 @@ impl CimKeysApp {
                         let source_node = self.context_menu_node.or(self.selected_person);
 
                         if let Some(from_id) = source_node {
-                            if let Some(from_node) = self.org_graph.nodes.get(&from_id) {
+                            // Get position from view and label from node
+                            let from_position = self.org_graph.node_views.get(&from_id).map(|v| v.position);
+                            let from_label = self.org_graph.nodes.get(&from_id).map(|n| n.visualization().primary_text);
+
+                            if let (Some(position), Some(label)) = (from_position, from_label) {
                                 // Start edge creation indicator
-                                self.org_graph.edge_indicator.start(from_id, from_node.position);
-                                self.status_message = format!("Edge creation mode active - click target node (from: '{}')", from_node.label);
+                                self.org_graph.edge_indicator.start(from_id, position);
+                                self.status_message = format!("Edge creation mode active - click target node (from: '{}')", label);
                             } else {
                                 self.status_message = "Error: Source node not found in graph".to_string();
                             }
@@ -4056,7 +4077,7 @@ impl CimKeysApp {
 
                                 // Capture old state (using DomainNode)
                                 let old_domain_node = node.domain_node.clone();
-                                let old_label = node.label.clone();
+                                let old_label = node.visualization().primary_text;
 
                                 // Create PropertyUpdate with all changed values
                                 // DomainNode::with_properties() applies only relevant updates per type:
@@ -4465,15 +4486,23 @@ impl CimKeysApp {
                     exported_at: chrono::Utc::now().to_rfc3339(),
                     graph_view: format!("{:?}", self.graph_view),
                     nodes: self.org_graph.nodes.iter().map(|(id, node)| {
+                        // Get view data (position, label, color) - fall back to defaults if not found
+                        let (pos_x, pos_y, label, color_r, color_g, color_b) =
+                            if let Some(view) = self.org_graph.node_views.get(id) {
+                                (view.position.x, view.position.y, view.label.clone(), view.color.r, view.color.g, view.color.b)
+                            } else {
+                                let viz = node.visualization();
+                                (0.0, 0.0, viz.primary_text, viz.color.r, viz.color.g, viz.color.b)
+                            };
                         ConceptEntityExport {
                             id: *id,
                             node_type: node.domain_node.injection().display_name().to_string(),
-                            position_x: node.position.x,
-                            position_y: node.position.y,
-                            label: node.label.clone(),
-                            color_r: node.color.r,
-                            color_g: node.color.g,
-                            color_b: node.color.b,
+                            position_x: pos_x,
+                            position_y: pos_y,
+                            label,
+                            color_r,
+                            color_g,
+                            color_b,
                         }
                     }).collect(),
                     edges: self.org_graph.edges.iter().map(|edge| {
@@ -4555,8 +4584,8 @@ impl CimKeysApp {
                         // Restore node positions from imported data
                         let mut restored_count = 0;
                         for node_export in &graph_data.nodes {
-                            if let Some(node) = self.org_graph.nodes.get_mut(&node_export.id) {
-                                node.position = Point::new(node_export.position_x, node_export.position_y);
+                            if let Some(view) = self.org_graph.node_views.get_mut(&node_export.id) {
+                                view.position = Point::new(node_export.position_x, node_export.position_y);
                                 restored_count += 1;
                             }
                         }
@@ -4805,7 +4834,7 @@ impl CimKeysApp {
 
                             // Find person name for status message
                             let person_name = self.org_graph.nodes.get(&person_id)
-                                .map(|n| n.label.clone())
+                                .map(|n| n.visualization().primary_text)
                                 .unwrap_or_else(|| "Unknown".to_string());
 
                             // Get role details from policy data for badge
@@ -5459,8 +5488,8 @@ impl CimKeysApp {
 
                 // Position at top
                 let x = base_x + (class_idx as f32) * class_spacing_x;
-                if let Some(node) = self.policy_graph.nodes.get_mut(&class_id) {
-                    node.position = Point::new(x, base_y);
+                if let Some(view) = self.policy_graph.node_views.get_mut(&class_id) {
+                    view.position = Point::new(x, base_y);
                 }
 
                 // If expanded, show roles in this class
@@ -5485,8 +5514,8 @@ impl CimKeysApp {
                                 role.claims.len(),
                             );
 
-                            if let Some(node) = self.policy_graph.nodes.get_mut(&role_id) {
-                                node.position = Point::new(x, y);
+                            if let Some(view) = self.policy_graph.node_views.get_mut(&role_id) {
+                                view.position = Point::new(x, y);
                             }
 
                             // Add edge from class to role
@@ -5539,8 +5568,8 @@ impl CimKeysApp {
                     );
 
                     let x = base_x + (cat_idx as f32) * category_spacing_x;
-                    if let Some(node) = self.policy_graph.nodes.get_mut(&category_id) {
-                        node.position = Point::new(x, claim_base_y);
+                    if let Some(view) = self.policy_graph.node_views.get_mut(&category_id) {
+                        view.position = Point::new(x, claim_base_y);
                     }
 
                     // If category is expanded, show individual claims
@@ -5557,8 +5586,8 @@ impl CimKeysApp {
                                 category.clone(),
                             );
 
-                            if let Some(node) = self.policy_graph.nodes.get_mut(&claim_id) {
-                                node.position = Point::new(x, y);
+                            if let Some(view) = self.policy_graph.node_views.get_mut(&claim_id) {
+                                view.position = Point::new(x, y);
                             }
 
                             // Add edge from category to claim
@@ -5644,8 +5673,8 @@ impl CimKeysApp {
                     if let Some(roles) = connected_roles {
                         for role_name in roles {
                             if let Some(&role_id) = role_node_ids.get(role_name) {
-                                if let Some(role_node) = self.policy_graph.nodes.get(&role_id) {
-                                    x_sum += role_node.position.x;
+                                if let Some(role_view) = self.policy_graph.node_views.get(&role_id) {
+                                    x_sum += role_view.position.x;
                                     count += 1;
                                 }
                             }
@@ -5655,8 +5684,8 @@ impl CimKeysApp {
                     // Barycenter is average x, or original position if no connections
                     let barycenter = if count > 0 {
                         x_sum / count as f32
-                    } else if let Some(node) = self.policy_graph.nodes.get(&claim_id) {
-                        node.position.x // Keep original position
+                    } else if let Some(view) = self.policy_graph.node_views.get(&claim_id) {
+                        view.position.x // Keep original position
                     } else {
                         0.0
                     };
@@ -5670,21 +5699,21 @@ impl CimKeysApp {
 
             // Get category position for base x
             let category_x = category_node_ids.get(category)
-                .and_then(|id| self.policy_graph.nodes.get(id))
-                .map(|n| n.position.x)
+                .and_then(|id| self.policy_graph.node_views.get(id))
+                .map(|v| v.position.x)
                 .unwrap_or(100.0);
 
             let category_y = category_node_ids.get(category)
-                .and_then(|id| self.policy_graph.nodes.get(id))
-                .map(|n| n.position.y)
+                .and_then(|id| self.policy_graph.node_views.get(id))
+                .map(|v| v.position.y)
                 .unwrap_or(700.0);
 
             // Reposition claims in sorted order
             let claim_spacing_y = 40.0;
             for (idx, (claim_name, _barycenter)) in claim_barycenters.iter().enumerate() {
                 if let Some(&claim_id) = claim_node_ids.get(claim_name) {
-                    if let Some(node) = self.policy_graph.nodes.get_mut(&claim_id) {
-                        node.position = Point::new(
+                    if let Some(view) = self.policy_graph.node_views.get_mut(&claim_id) {
+                        view.position = Point::new(
                             category_x,
                             category_y + 60.0 + (idx as f32) * claim_spacing_y,
                         );
@@ -5998,13 +6027,13 @@ impl CimKeysApp {
 
             // Add inline edit overlay if editing a newly created node
             if let Some(node_id) = self.editing_new_node {
-                if let Some(node) = self.org_graph.nodes.get(&node_id) {
+                if let Some(view) = self.org_graph.node_views.get(&node_id) {
                     use iced::widget::text_input;
                     const TOOLBAR_OFFSET: f32 = 36.0;
 
                     // Transform node position to screen coordinates
-                    let screen_x = node.position.x * self.org_graph.zoom + self.org_graph.pan_offset.x;
-                    let screen_y = node.position.y * self.org_graph.zoom + self.org_graph.pan_offset.y + TOOLBAR_OFFSET;
+                    let screen_x = view.position.x * self.org_graph.zoom + self.org_graph.pan_offset.x;
+                    let screen_y = view.position.y * self.org_graph.zoom + self.org_graph.pan_offset.y + TOOLBAR_OFFSET;
 
                     // Position input slightly below the node
                     let input_y = screen_y + 30.0;
