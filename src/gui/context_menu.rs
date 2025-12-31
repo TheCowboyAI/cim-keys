@@ -8,6 +8,7 @@ use iced::{
 };
 
 use crate::mvi::intent::NodeCreationType;
+use super::view_model::ViewModel;
 
 /// Context menu for graph operations
 #[derive(Debug, Clone)]
@@ -67,16 +68,14 @@ impl ContextMenu {
     }
 
     /// Render the context menu positioned at the stored location
-    pub fn view(&self) -> Element<'_, ContextMenuMessage> {
+    pub fn view(&self, vm: &ViewModel) -> Element<'_, ContextMenuMessage> {
         if !self.visible {
             return container(column![]).into();
         }
 
-        // Scale text sizes and spacing based on ui_scale
-        let header_size = (14.0 * self.ui_scale) as u16;
-        let item_size = (12.0 * self.ui_scale) as u16;
-        let spacing = (2.0 * self.ui_scale) as u16;
-        let padding = (8.0 * self.ui_scale) as u16;
+        // Use ViewModel for consistent sizing across the UI
+        let header_size = vm.text_normal;
+        let item_size = vm.text_small;
 
         let menu_items: Column<'_, ContextMenuMessage> = column![
             text("Create Node").size(header_size),
@@ -98,7 +97,7 @@ impl ContextMenu {
             button(text("Policy").size(item_size))
                 .on_press(ContextMenuMessage::CreateNode(NodeCreationType::Policy))
                 .width(Length::Fill),
-            text("").size(4), // Separator
+            text("").size(vm.spacing_xs), // Separator
             text("Other Actions").size(header_size),
             button(text("Create Edge").size(item_size))
                 .on_press(ContextMenuMessage::CreateEdge)
@@ -107,10 +106,11 @@ impl ContextMenu {
                 .on_press(ContextMenuMessage::Dismiss)
                 .width(Length::Fill),
         ]
-        .spacing(spacing)
-        .padding(padding);
+        .spacing(vm.spacing_xs)
+        .padding(vm.padding_sm);
 
-        let menu_width = 180.0 * self.ui_scale;
+        // Menu width scales with scale factor
+        let menu_width = 180.0 * vm.scale;
         let menu_container = container(menu_items)
             .width(Length::Fixed(menu_width))
             .style(|theme: &Theme| {

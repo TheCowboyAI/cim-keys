@@ -5995,7 +5995,7 @@ impl CimKeysApp {
                     vertical_space().height(Length::Fixed(pos.y + TOOLBAR_OFFSET)),
                     row![
                         horizontal_space().width(Length::Fixed(pos.x)),
-                        self.context_menu.view()
+                        self.context_menu.view(&self.view_model)
                             .map(Message::ContextMenuMessage)
                     ]
                 ];
