@@ -12,6 +12,10 @@
       url = "github:nix-community/nixos-generators";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    disko = {
+      url = "github:nix-community/disko";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
     # CIM dependencies - fetched via SSH for internal repos
     cim-domain = {
@@ -56,7 +60,7 @@
     };
   };
 
-  outputs = { self, nixpkgs, rust-overlay, flake-utils, nixos-generators
+  outputs = { self, nixpkgs, rust-overlay, flake-utils, nixos-generators, disko
             , cim-domain, cim-domain-location, cim-domain-person
             , cim-domain-organization, cim-domain-policy, cim-domain-agent
             , cim-domain-relationship, cim-domain-spaces, cim-graph, cim-ipld
@@ -383,99 +387,82 @@
         };
       }))
     # NixOS image outputs - Second argument to recursiveUpdate
-    # All CIM dependencies are pre-fetched from GitHub and included in /tmp/cim-build
-    # A first-boot script sets up the workspace and builds cim-keys
+    # Pre-built binaries are included directly from ./target/release/
     (let
-      # Module to include all CIM sources for on-device build
-      cimSourcesModule = { pkgs, lib, ... }: {
-        # Include cim-keys source
-        environment.etc."cim-build/cim-keys".source = ./.;
+      pkgsForImage = import nixpkgs { system = "x86_64-linux"; overlays = [ (import rust-overlay) ]; };
 
-        # Include all dependencies from GitHub
-        environment.etc."cim-build/cim-domain".source = cim-domain;
-        environment.etc."cim-build/cim-domain-location".source = cim-domain-location;
-        environment.etc."cim-build/cim-domain-person".source = cim-domain-person;
-        environment.etc."cim-build/cim-domain-organization".source = cim-domain-organization;
-        environment.etc."cim-build/cim-domain-policy".source = cim-domain-policy;
-        environment.etc."cim-build/cim-domain-agent".source = cim-domain-agent;
-        environment.etc."cim-build/cim-domain-relationship".source = cim-domain-relationship;
-        environment.etc."cim-build/cim-domain-spaces".source = cim-domain-spaces;
-        environment.etc."cim-build/cim-graph".source = cim-graph;
-        environment.etc."cim-build/cim-ipld".source = cim-ipld;
+      # Pre-built binary included in nixos/sd-image/bin/ (copied from target/release/)
+      # Build first with: cargo build --release --bin cim-keys-gui --features gui
+      # Then copy: cp target/release/cim-keys-gui nixos/sd-image/bin/
+      prebuiltBinary = ./nixos/sd-image/bin/cim-keys-gui;
 
-        # First-boot build script
-        systemd.services.cim-keys-build = {
-          description = "Build CIM Keys on first boot";
-          wantedBy = [ "multi-user.target" ];
-          after = [ "network.target" ];
-          serviceConfig = {
-            Type = "oneshot";
-            RemainAfterExit = true;
-            User = "cimkeys";
-            WorkingDirectory = "/tmp/cim-build";
-          };
-          path = with pkgs; [ coreutils cargo rustc pkg-config openssl.dev gcc gnumake ];
-          script = ''
-            # Only run once
-            if [ -f /home/cimkeys/.cim-keys-built ]; then
-              exit 0
-            fi
+      # Package the pre-built binary - use autoPatchelfHook to fix glibc interpreter
+      cimKeysGuiForImage = pkgsForImage.stdenv.mkDerivation {
+        pname = "cim-keys-gui";
+        version = "0.8.0";
+        src = prebuiltBinary;
+        dontUnpack = true;
 
-            echo "Setting up CIM Keys build environment..."
+        nativeBuildInputs = with pkgsForImage; [ autoPatchelfHook makeWrapper ];
 
-            # Copy sources to writable location
-            mkdir -p /tmp/cim-build
-            cp -r /etc/cim-build/* /tmp/cim-build/
-            chmod -R u+w /tmp/cim-build
+        # Libraries that autoPatchelfHook will use to resolve dependencies
+        buildInputs = with pkgsForImage; [
+          stdenv.cc.cc.lib  # libstdc++, libgcc_s
+          glibc
+          # Wayland
+          wayland libxkbcommon
+          # X11
+          xorg.libX11 xorg.libXcursor xorg.libXrandr xorg.libXi xorg.libxcb
+          # Graphics
+          vulkan-loader mesa libGL libglvnd libdrm
+          # Fonts
+          fontconfig freetype harfbuzz
+          # System
+          openssl pcsclite zlib
+        ];
 
-            # Update Cargo.toml to use local paths
-            cd /tmp/cim-build/cim-keys
-            sed -i 's|path = "\.\./cim-domain"|path = "/tmp/cim-build/cim-domain"|g' Cargo.toml
-            sed -i 's|path = "\.\./cim-domain-location"|path = "/tmp/cim-build/cim-domain-location"|g' Cargo.toml
-            sed -i 's|path = "\.\./cim-domain-person"|path = "/tmp/cim-build/cim-domain-person"|g' Cargo.toml
-            sed -i 's|path = "\.\./cim-domain-organization"|path = "/tmp/cim-build/cim-domain-organization"|g' Cargo.toml
-            sed -i 's|path = "\.\./cim-domain-policy"|path = "/tmp/cim-build/cim-domain-policy"|g' Cargo.toml
-            sed -i 's|path = "\.\./cim-domain-agent"|path = "/tmp/cim-build/cim-domain-agent"|g' Cargo.toml
-            sed -i 's|path = "\.\./cim-domain-relationship"|path = "/tmp/cim-build/cim-domain-relationship"|g' Cargo.toml
-            sed -i 's|path = "\.\./cim-domain-spaces"|path = "/tmp/cim-build/cim-domain-spaces"|g' Cargo.toml
-            sed -i 's|path = "\.\./cim-graph"|path = "/tmp/cim-build/cim-graph"|g' Cargo.toml
-            sed -i 's|path = "\.\./cim-ipld"|path = "/tmp/cim-build/cim-ipld"|g' Cargo.toml
+        installPhase = ''
+          mkdir -p $out/bin
+          cp $src $out/bin/cim-keys-gui
+          chmod +x $out/bin/cim-keys-gui
+        '';
 
-            # Set up environment
-            export OPENSSL_DIR="${pkgs.openssl.dev}"
-            export OPENSSL_LIB_DIR="${pkgs.openssl.out}/lib"
-            export PKG_CONFIG_PATH="${pkgs.openssl.dev}/lib/pkgconfig:${pkgs.pcsclite}/lib/pkgconfig"
+        # After autoPatchelf fixes the binary, wrap it for runtime paths
+        postFixup = ''
+          wrapProgram $out/bin/cim-keys-gui \
+            --prefix LD_LIBRARY_PATH : "${pkgsForImage.lib.makeLibraryPath (with pkgsForImage; [
+              wayland libxkbcommon xorg.libX11 xorg.libXcursor xorg.libXrandr xorg.libXi xorg.libxcb
+              vulkan-loader mesa mesa.drivers libGL libglvnd libdrm
+              fontconfig freetype harfbuzz openssl pcsclite zlib
+            ])}" \
+            --set FONTCONFIG_FILE "${pkgsForImage.fontconfig.out}/etc/fonts/fonts.conf"
+        '';
+      };
 
-            # Build
-            echo "Building cim-keys..."
-            cargo build --release 2>&1 | tee /tmp/cim-keys-build.log
+      # Module that adds pre-built cim-keys-gui and secrets to system
+      cimKeysModule = { pkgs, lib, ... }: {
+        environment.systemPackages = [ cimKeysGuiForImage ];
 
-            # Install binaries
-            if [ -f target/release/cim-keys ]; then
-              mkdir -p /home/cimkeys/.local/bin
-              cp target/release/cim-keys /home/cimkeys/.local/bin/
-              cp target/release/cim-keys-gui /home/cimkeys/.local/bin/ 2>/dev/null || true
-              chown -R cimkeys:users /home/cimkeys/.local
-              touch /home/cimkeys/.cim-keys-built
-              echo "CIM Keys built successfully!"
-            else
-              echo "Build failed - check /tmp/cim-keys-build.log"
-            fi
-          '';
-        };
+        # Include secrets files at /secrets/
+        environment.etc."secrets/domain-bootstrap.json".source = ./secrets/domain-bootstrap.json;
+        environment.etc."secrets/policy-bootstrap.json".source = ./secrets/policy-bootstrap.json;
+        environment.etc."secrets/secrets.json".source = ./secrets/secrets.json;
+        environment.etc."secrets/cowboyai.json".source = ./secrets/cowboyai.json;
 
-        # Add local bin to PATH
-        environment.variables.PATH = lib.mkForce "/home/cimkeys/.local/bin:/run/current-system/sw/bin";
+        # Symlink /secrets -> /etc/secrets for convenience
+        system.activationScripts.secretsSymlink = ''
+          ln -sfn /etc/secrets /secrets
+        '';
       };
 
     in {
       # SD card image for Raspberry Pi 4/5 (aarch64)
+      # Note: aarch64 needs separate build, using module without pre-built x86_64 binary
       packages.aarch64-linux.sdImage = nixos-generators.nixosGenerate {
         system = "aarch64-linux";
         format = "sd-aarch64";
         modules = [
           ./nixos/sd-image/default.nix
-          cimSourcesModule
         ];
       };
 
@@ -485,7 +472,7 @@
         format = "iso";
         modules = [
           ./nixos/sd-image/default.nix
-          cimSourcesModule
+          cimKeysModule
           ({ pkgs, lib, ... }: {
             # ISO-specific overrides
             services.cage.enable = lib.mkForce false;
@@ -502,16 +489,118 @@
         ];
       };
 
-      # Raw disk image for x86_64
+      # Raw EFI disk image for x86_64
       packages.x86_64-linux.rawImage = nixos-generators.nixosGenerate {
         system = "x86_64-linux";
-        format = "raw";
+        format = "raw-efi";
         modules = [
           ./nixos/sd-image/default.nix
-          cimSourcesModule
+          cimKeysModule
+          ({ pkgs, lib, ... }: {
+            # Disable Wayland kiosk
+            services.cage.enable = lib.mkForce false;
+
+            # X11 with LightDM and Openbox (same as isoImage)
+            services.xserver = {
+              enable = true;
+              displayManager.lightdm.enable = true;
+              windowManager.openbox.enable = true;
+            };
+            services.displayManager.autoLogin = {
+              enable = true;
+              user = "cimkeys";
+            };
+
+            # Start cim-keys-gui on login
+            environment.etc."xdg/openbox/autostart".text = ''
+              ${cimKeysGuiForImage}/bin/cim-keys-gui /home/cimkeys/cim-keys-output &
+            '';
+          })
+        ];
+      };
+
+      # SD card image for x86_64 (bootable live image)
+      packages.x86_64-linux.sdImage = nixos-generators.nixosGenerate {
+        system = "x86_64-linux";
+        format = "sd-x86_64";
+        modules = [
+          ./nixos/sd-image/default.nix
+          cimKeysModule
           ({ pkgs, lib, ... }: {
             services.cage.enable = lib.mkForce false;
             services.getty.autologinUser = "cimkeys";
+          })
+        ];
+      };
+
+      # NixOS configuration for disko-install (primary SD card install method)
+      nixosConfigurations.cim-keys = nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          disko.nixosModules.disko
+          ./nixos/sd-image/disko.nix
+          ./nixos/sd-image/default.nix
+          cimKeysModule
+          ({ pkgs, lib, modulesPath, ... }: {
+            imports = [ (modulesPath + "/installer/scan/not-detected.nix") ];
+
+            nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
+
+            # Secure boot partition mount options (must match disko.nix)
+            fileSystems."/boot".options = [ "umask=0077" "uid=0" "gid=0" ];
+
+            # Use systemd-boot for UEFI
+            boot.loader.systemd-boot.enable = lib.mkForce true;
+            boot.loader.efi.canTouchEfiVariables = true;
+            boot.loader.grub.enable = false;
+
+            # Secure the random seed file
+            boot.loader.systemd-boot.graceful = true;
+
+            boot.initrd = {
+              availableKernelModules = [
+                "ext4" "vfat" "ahci" "nvme" "xhci_pci" "thunderbolt"
+                "usb_storage" "sd_mod" "rtsx_pci_sdmmc" "sdhci_pci"
+                "mmc_block" "sdhci" "sdhci_acpi"
+              ];
+              supportedFilesystems = [ "ext4" "vfat" ];
+            };
+            boot.kernelModules = [ "kvm-intel" "kvm-amd" ];
+
+            # Cage kiosk running pre-built cim-keys-gui directly
+            services.cage.program = lib.mkForce "${pkgs.writeShellScript "cim-keys-launcher" ''
+              OUTPUT_DIR="/home/cimkeys/cim-keys-output"
+              mkdir -p "$OUTPUT_DIR"
+
+              # Wait for smart card daemon
+              sleep 2
+
+              # CRITICAL: Tell winit/iced to use Wayland backend
+              export WINIT_UNIX_BACKEND=wayland
+              export XDG_SESSION_TYPE=wayland
+
+              # wgpu backend preferences
+              export WGPU_BACKEND=vulkan,gl
+              export WGPU_POWER_PREF=low
+
+              # Reduce debug noise
+              export VK_LOADER_DEBUG=none
+              export RUST_BACKTRACE=1
+              export RUST_LOG=warn,iced=info
+
+              # Log startup
+              echo "Starting cim-keys-gui at $(date)" >> /tmp/cim-keys.log
+              echo "WAYLAND_DISPLAY=$WAYLAND_DISPLAY" >> /tmp/cim-keys.log
+              echo "WINIT_UNIX_BACKEND=$WINIT_UNIX_BACKEND" >> /tmp/cim-keys.log
+              env >> /tmp/cim-keys.log
+
+              # Run with error capture
+              ${cimKeysGuiForImage}/bin/cim-keys-gui "$OUTPUT_DIR" 2>&1 | tee -a /tmp/cim-keys.log
+
+              # If we get here, the app crashed - show error in terminal
+              echo "cim-keys-gui exited, showing log..." >> /tmp/cim-keys.log
+              exec ${pkgs.foot}/bin/foot -e ${pkgs.bash}/bin/bash -c 'echo "=== CIM Keys crashed ===" && cat /tmp/cim-keys.log && echo "" && echo "Press Enter to retry..." && read && exec ${cimKeysGuiForImage}/bin/cim-keys-gui /home/cimkeys/cim-keys-output'
+            ''}";
           })
         ];
       };

@@ -11,6 +11,7 @@ use std::collections::HashSet;
 
 use crate::gui::graph::EdgeType;
 use crate::gui::domain_node::{DomainNode, DomainNodeData, Injection};
+use crate::gui::view_model::ViewModel;
 use crate::domain::{PolicyClaim, RoleType, LocationType};
 use crate::icons::{self, ICON_CLOSE};
 
@@ -504,45 +505,45 @@ impl PropertyCard {
     }
 
     /// Render the property card
-    pub fn view(&self) -> Element<'_, PropertyCardMessage> {
+    pub fn view(&self, vm: &ViewModel) -> Element<'_, PropertyCardMessage> {
         if !self.is_editing() {
-            return container(text("Select a node or edge to edit"))
-                .padding(20)
+            return container(text("Select a node or edge to edit").size(vm.text_normal))
+                .padding(vm.padding_xl)
                 .into();
         }
 
         match &self.edit_target {
-            Some(EditTarget::Node { domain_node, .. }) => self.view_node(domain_node),
-            Some(EditTarget::Edge { edge_type, .. }) => self.view_edge(edge_type),
-            None => container(text("Select a node or edge to edit"))
-                .padding(20)
+            Some(EditTarget::Node { domain_node, .. }) => self.view_node(domain_node, vm),
+            Some(EditTarget::Edge { edge_type, .. }) => self.view_edge(edge_type, vm),
+            None => container(text("Select a node or edge to edit").size(vm.text_normal))
+                .padding(vm.padding_xl)
                 .into(),
         }
     }
 
     /// Render property card for editing a node
-    fn view_node<'a>(&self, domain_node: &'a DomainNode) -> Element<'a, PropertyCardMessage> {
+    fn view_node<'a>(&self, domain_node: &'a DomainNode, vm: &ViewModel) -> Element<'a, PropertyCardMessage> {
         // For read-only infrastructure types, show detailed info panel instead of edit fields
         let injection = domain_node.injection();
         if injection.is_nats() {
-            return self.view_nats_details(domain_node);
+            return self.view_nats_details(domain_node, vm);
         }
         if injection.is_certificate() {
-            return self.view_certificate_details(domain_node);
+            return self.view_certificate_details(domain_node, vm);
         }
         if matches!(injection, Injection::YubiKey | Injection::PivSlot) {
-            return self.view_yubikey_details(domain_node);
+            return self.view_yubikey_details(domain_node, vm);
         }
         if matches!(injection, Injection::PolicyRole | Injection::PolicyCategory | Injection::PolicyGroup) {
-            return self.view_policy_details(domain_node);
+            return self.view_policy_details(domain_node, vm);
         }
 
         // Get the display label using injection's display_name()
         let node_type_label = injection.display_name();
 
         let header: Row<'_, PropertyCardMessage> = row![
-            text(node_type_label).size(18),
-            button(icons::icon_sized(ICON_CLOSE, 16))
+            text(node_type_label).size(vm.text_large),
+            button(icons::icon_sized(ICON_CLOSE, vm.text_medium))
                 .on_press(PropertyCardMessage::Close)
                 .style(|theme: &Theme, _status| {
                     button::Style {
@@ -553,22 +554,22 @@ impl PropertyCard {
                     }
                 }),
         ]
-        .spacing(10)
+        .spacing(vm.spacing_md)
         .align_y(iced::Alignment::Center);
 
         let mut fields: Column<'_, PropertyCardMessage> = column![]
-            .spacing(10)
-            .padding(10);
+            .spacing(vm.spacing_md)
+            .padding(vm.padding_md);
 
         // Name field (all types have this)
         fields = fields.push(
             column![
-                text("Name:").size(12),
+                text("Name:").size(vm.text_small),
                 text_input("Enter name", &self.edit_name)
                     .on_input(PropertyCardMessage::NameChanged)
                     .width(Length::Fill),
             ]
-            .spacing(4)
+            .spacing(vm.spacing_xs)
         );
 
         // Location-specific fields

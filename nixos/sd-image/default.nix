@@ -55,8 +55,37 @@
 
   security.sudo.wheelNeedsPassword = false;
 
-  # Graphics
-  hardware.graphics.enable = true;
+  # Enable firmware for Intel GPU
+  hardware.enableRedistributableFirmware = true;
+  hardware.cpu.intel.updateMicrocode = true;
+
+  # Graphics - Intel integrated GPU support
+  hardware.graphics = {
+    enable = true;
+    enable32Bit = false;
+    extraPackages = with pkgs; [
+      # Intel GPU (Iris/UHD)
+      intel-media-driver    # iHD driver for newer Intel
+      vaapiIntel           # i965 driver for older Intel
+      intel-compute-runtime # OpenCL
+      # Mesa Vulkan drivers
+      mesa.drivers
+    ];
+  };
+
+  # Environment for GPU/Vulkan - set driver paths correctly
+  environment.sessionVariables = {
+    # DRI/Mesa driver paths
+    LIBGL_DRIVERS_PATH = "/run/opengl-driver/lib/dri";
+    __EGL_VENDOR_LIBRARY_DIRS = "/run/opengl-driver/share/glvnd/egl_vendor.d";
+    # Vulkan ICD (Intel ANV driver)
+    VK_ICD_FILENAMES = "/run/opengl-driver/share/vulkan/icd.d/intel_icd.x86_64.json";
+    # Wayland
+    XDG_SESSION_TYPE = "wayland";
+    XDG_RUNTIME_DIR = "/run/user/1000";
+    # Reduce debug noise
+    VK_LOADER_DEBUG = "none";
+  };
 
   # Cage kiosk for single-app display (Wayland)
   services.cage = {
@@ -93,7 +122,7 @@
     ''}";
   };
 
-  # System packages
+  # System packages (cim-keys-gui is added by cimKeysModule in flake.nix)
   environment.systemPackages = with pkgs; [
     # YubiKey tools
     yubikey-manager
@@ -105,14 +134,6 @@
     openssl
     gnupg
 
-    # Rust toolchain for building cim-keys
-    rustc
-    cargo
-
-    # Build dependencies
-    pkg-config
-    cmake
-
     # NATS tools
     natscli
 
@@ -121,7 +142,6 @@
     htop
     tree
     file
-    git
     jq
 
     # Terminal
@@ -137,13 +157,6 @@
     noto-fonts-emoji
     fira-code
   ];
-
-  # Clone cim-keys on first boot
-  system.activationScripts.cloneCimKeys = ''
-    if [ ! -d /home/cimkeys/cim-keys ]; then
-      echo "Note: cim-keys source should be copied to /home/cimkeys/cim-keys"
-    fi
-  '';
 
   users.motd = ''
     ============================================
