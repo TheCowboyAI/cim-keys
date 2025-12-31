@@ -24,6 +24,7 @@ use super::graph_events::{EventStack, GraphEvent};
 use super::GraphLayout;
 use super::cowboy_theme::CowboyAppTheme as CowboyCustomTheme;
 use super::domain_node::{DomainNode, DomainNodeData, Injection};
+use super::view_model::ViewModel;
 
 /// Role badge for compact display mode (shown on person nodes)
 #[derive(Debug, Clone)]
@@ -3944,62 +3945,62 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
 }
 
 /// Create a view element for the graph
-pub fn view_graph(graph: &OrganizationConcept) -> Element<'_, OrganizationIntent> {
+pub fn view_graph<'a>(graph: &'a OrganizationConcept, vm: &'a ViewModel) -> Element<'a, OrganizationIntent> {
     // Full Canvas-based graph visualization
     let canvas = Canvas::new(graph)
         .width(Length::Fill)
         .height(Length::Fill);
 
     let controls = row![
-        button(text("+").size(16).font(crate::icons::FONT_BODY))
+        button(text("+").size(vm.text_medium).font(crate::icons::FONT_BODY))
             .on_press(OrganizationIntent::ZoomIn)
             .style(CowboyCustomTheme::glass_button())
-            .padding(6),
-        button(text("-").size(16).font(crate::icons::FONT_BODY))
+            .padding(vm.padding_sm),
+        button(text("-").size(vm.text_medium).font(crate::icons::FONT_BODY))
             .on_press(OrganizationIntent::ZoomOut)
             .style(CowboyCustomTheme::glass_button())
-            .padding(6),
-        button(text("🔄").size(14).font(crate::icons::EMOJI_FONT))
+            .padding(vm.padding_sm),
+        button(text("🔄").size(vm.text_normal).font(crate::icons::EMOJI_FONT))
             .on_press(OrganizationIntent::ResetView)
             .style(CowboyCustomTheme::glass_button())
-            .padding(6),
-        button(text("Auto Layout").size(12).font(crate::icons::FONT_BODY))
+            .padding(vm.padding_sm),
+        button(text("Auto Layout").size(vm.text_small).font(crate::icons::FONT_BODY))
             .on_press(OrganizationIntent::AutoLayout)
             .style(CowboyCustomTheme::glass_button())
-            .padding(6),
+            .padding(vm.padding_sm),
         // Layout algorithm buttons
-        button(text("Tutte").size(11).font(crate::icons::FONT_BODY))
+        button(text("Tutte").size(vm.text_tiny).font(crate::icons::FONT_BODY))
             .on_press(OrganizationIntent::ApplyLayout(LayoutAlgorithm::Tutte))
             .style(CowboyCustomTheme::glass_button())
-            .padding(4),
-        button(text("F-R").size(11).font(crate::icons::FONT_BODY))
+            .padding(vm.padding_xs),
+        button(text("F-R").size(vm.text_tiny).font(crate::icons::FONT_BODY))
             .on_press(OrganizationIntent::ApplyLayout(LayoutAlgorithm::FruchtermanReingold))
             .style(CowboyCustomTheme::glass_button())
-            .padding(4),
-        button(text("Circle").size(11).font(crate::icons::FONT_BODY))
+            .padding(vm.padding_xs),
+        button(text("Circle").size(vm.text_tiny).font(crate::icons::FONT_BODY))
             .on_press(OrganizationIntent::ApplyLayout(LayoutAlgorithm::Circular))
             .style(CowboyCustomTheme::glass_button())
-            .padding(4),
-        button(text("Tree").size(11).font(crate::icons::FONT_BODY))
+            .padding(vm.padding_xs),
+        button(text("Tree").size(vm.text_tiny).font(crate::icons::FONT_BODY))
             .on_press(OrganizationIntent::ApplyLayout(LayoutAlgorithm::Hierarchical))
             .style(CowboyCustomTheme::glass_button())
-            .padding(4),
-        button(text("YubiKey").size(11).font(crate::icons::FONT_BODY))
+            .padding(vm.padding_xs),
+        button(text("YubiKey").size(vm.text_tiny).font(crate::icons::FONT_BODY))
             .on_press(OrganizationIntent::ApplyLayout(LayoutAlgorithm::YubiKeyGrouped))
             .style(CowboyCustomTheme::glass_button())
-            .padding(4),
-        button(text("NATS").size(11).font(crate::icons::FONT_BODY))
+            .padding(vm.padding_xs),
+        button(text("NATS").size(vm.text_tiny).font(crate::icons::FONT_BODY))
             .on_press(OrganizationIntent::ApplyLayout(LayoutAlgorithm::NatsHierarchical))
             .style(CowboyCustomTheme::glass_button())
-            .padding(4),
+            .padding(vm.padding_xs),
     ]
-    .spacing(8);
+    .spacing(vm.spacing_sm);
 
     let mut items = column![
         controls,
         canvas,
     ]
-    .spacing(10)
+    .spacing(vm.spacing_md)
     .height(Length::Fill);
 
 
@@ -4012,7 +4013,7 @@ pub fn view_graph(graph: &OrganizationConcept) -> Element<'_, OrganizationIntent
 
             // Build the column from DetailPanelData
             let mut details = column![
-                text(detail_data.title).size(16),
+                text(detail_data.title).size(vm.text_medium),
             ];
 
             for (label, value) in detail_data.fields {
@@ -4022,8 +4023,13 @@ pub fn view_graph(graph: &OrganizationConcept) -> Element<'_, OrganizationIntent
             // Special handling for Person nodes: show role badges
             if node.injection() == super::domain_node::Injection::Person {
                 if let Some(badges) = graph.role_badges.get(&selected_id) {
-                    details = details.push(text("").size(6)); // Spacer
-                    details = details.push(text("ASSIGNED ROLES:").size(14));
+                    // Capture ViewModel values for use in loop
+                    let text_small = vm.text_small;
+                    let text_tiny = vm.text_tiny;
+                    let text_normal = vm.text_normal;
+
+                    details = details.push(text("").size(vm.spacing_xs)); // Spacer
+                    details = details.push(text("ASSIGNED ROLES:").size(text_normal));
 
                     for badge in &badges.badges {
                         let level_indicator = "●".repeat(badge.level as usize).chars().take(5).collect::<String>();
@@ -4041,17 +4047,17 @@ pub fn view_graph(graph: &OrganizationConcept) -> Element<'_, OrganizationIntent
                                 badge.name,
                                 level_indicator,
                                 empty_indicator,
-                            )).size(12)
+                            )).size(text_small)
                         );
                     }
 
                     if badges.has_more {
-                        details = details.push(text("  (+more roles...)").size(11));
+                        details = details.push(text("  (+more roles...)").size(text_tiny));
                     }
                 }
             }
 
-            items = items.push(details.spacing(5));
+            items = items.push(details.spacing(vm.spacing_sm));
         }
     }
 
@@ -4059,6 +4065,6 @@ pub fn view_graph(graph: &OrganizationConcept) -> Element<'_, OrganizationIntent
         .width(Length::Fill)
         .height(Length::Fill)
         .style(CowboyCustomTheme::glass_container())
-        .padding(10)
+        .padding(vm.padding_md)
         .into()
 }

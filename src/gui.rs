@@ -5938,31 +5938,31 @@ impl CimKeysApp {
             let graph_content: Element<'_, graph::OrganizationIntent> = match self.graph_view {
                 GraphView::Organization => {
                     // Show full organization graph (all nodes)
-                    view_graph(&self.org_graph)
+                    view_graph(&self.org_graph, &self.view_model)
                 }
                 GraphView::PkiTrustChain => {
                     // Show only PKI-related nodes
-                    view_graph(&self.pki_graph)
+                    view_graph(&self.pki_graph, &self.view_model)
                 }
                 GraphView::NatsInfrastructure => {
                     // Show only NATS identity nodes
-                    view_graph(&self.nats_graph)
+                    view_graph(&self.nats_graph, &self.view_model)
                 }
                 GraphView::YubiKeyDetails => {
                     // Show only YubiKey hardware and keys
-                    view_graph(&self.yubikey_graph)
+                    view_graph(&self.yubikey_graph, &self.view_model)
                 }
                 GraphView::Policies => {
                     // Show policy roles, claims, and SoD relationships
-                    view_graph(&self.policy_graph)
+                    view_graph(&self.policy_graph, &self.view_model)
                 }
                 GraphView::Aggregates => {
                     // Show aggregate state machines (placeholder)
-                    view_graph(&self.location_graph)
+                    view_graph(&self.location_graph, &self.view_model)
                 }
                 GraphView::CommandHistory | GraphView::CausalityChains => {
                     // Empty graph for read-only derived views
-                    view_graph(&self.empty_graph)
+                    view_graph(&self.empty_graph, &self.view_model)
                 }
             };
 
