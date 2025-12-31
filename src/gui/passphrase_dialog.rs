@@ -9,7 +9,7 @@
 
 use iced::{
     widget::{button, checkbox, column, container, row, text, text_input, Column},
-    Color, Element, Length, Theme,
+    Element, Length, Theme,
 };
 use der::zeroize::{Zeroize, Zeroizing};
 use super::view_model::ViewModel;
@@ -159,20 +159,6 @@ impl PassphraseDialog {
         score.min(1.0)
     }
 
-    /// Get strength color
-    fn strength_color(&self) -> Color {
-        let strength = self.strength();
-        if strength < 0.3 {
-            Color::from_rgb(0.8, 0.2, 0.2) // Red
-        } else if strength < 0.6 {
-            Color::from_rgb(0.8, 0.6, 0.2) // Orange
-        } else if strength < 0.8 {
-            Color::from_rgb(0.8, 0.8, 0.2) // Yellow
-        } else {
-            Color::from_rgb(0.2, 0.8, 0.2) // Green
-        }
-    }
-
     /// Get strength label
     fn strength_label(&self) -> &str {
         let strength = self.strength();
@@ -248,11 +234,12 @@ impl PassphraseDialog {
         );
 
         // Description
+        let text_tertiary = vm.colors.text_tertiary;
         content = content.push(
             text(self.purpose.description())
                 .size(vm.text_normal)
-                .style(|_theme: &Theme| text::Style {
-                    color: Some(Color::from_rgb(0.6, 0.6, 0.6)),
+                .style(move |_theme: &Theme| text::Style {
+                    color: Some(text_tertiary),
                 })
         );
 
@@ -295,9 +282,9 @@ impl PassphraseDialog {
         // Passphrase match indicator
         if !self.passphrase.is_empty() && !self.passphrase_confirm.is_empty() {
             let match_color = if self.passphrase == self.passphrase_confirm {
-                Color::from_rgb(0.2, 0.8, 0.2)
+                vm.colors.green_success
             } else {
-                Color::from_rgb(0.8, 0.2, 0.2)
+                vm.colors.red_error
             };
             let match_text = if self.passphrase == self.passphrase_confirm {
                 "✓ Passphrases match"
@@ -316,7 +303,8 @@ impl PassphraseDialog {
         // Strength indicator
         if !self.passphrase.is_empty() {
             let strength = self.strength();
-            let strength_color = self.strength_color();
+            let strength_color = vm.colors.strength_color(strength);
+            let strength_bar_bg = vm.colors.strength_bar_background;
             let text_small = vm.text_small;
             content = content.push(
                 column![
@@ -340,8 +328,8 @@ impl PassphraseDialog {
                     )
                     .width(Length::Fill)
                     .height(Length::Fixed(4.0))
-                    .style(|_theme| container::Style {
-                        background: Some(iced::Background::Color(Color::from_rgb(0.2, 0.2, 0.2))),
+                    .style(move |_theme| container::Style {
+                        background: Some(iced::Background::Color(strength_bar_bg)),
                         ..Default::default()
                     })
                 ]
@@ -363,22 +351,28 @@ impl PassphraseDialog {
             .align_y(iced::Alignment::Center)
         );
 
-        // Action buttons
+        // Action buttons - using ontological color mapping
         let text_normal = vm.text_normal;
+        let text_light = vm.colors.text_light;
+        let success_color = vm.colors.success;
+        let error_color = vm.colors.error;
+        let disabled_bg = vm.colors.button_disabled;
+        let disabled_text = vm.colors.button_disabled_text;
+
         let submit_button = if self.is_valid() {
             button(text("OK").size(text_normal))
                 .on_press(PassphraseDialogMessage::Submit)
-                .style(|theme: &Theme, _status| button::Style {
-                    background: Some(iced::Background::Color(theme.palette().success)),
-                    text_color: Color::WHITE,
+                .style(move |_theme: &Theme, _status| button::Style {
+                    background: Some(iced::Background::Color(success_color)),
+                    text_color: text_light,
                     border: iced::Border::default(),
                     shadow: iced::Shadow::default(),
                 })
         } else {
             button(text("OK").size(text_normal))
-                .style(|_theme: &Theme, _status| button::Style {
-                    background: Some(iced::Background::Color(Color::from_rgb(0.3, 0.3, 0.3))),
-                    text_color: Color::from_rgb(0.5, 0.5, 0.5),
+                .style(move |_theme: &Theme, _status| button::Style {
+                    background: Some(iced::Background::Color(disabled_bg)),
+                    text_color: disabled_text,
                     border: iced::Border::default(),
                     shadow: iced::Shadow::default(),
                 })
@@ -389,9 +383,9 @@ impl PassphraseDialog {
                 submit_button,
                 button(text("Cancel").size(text_normal))
                     .on_press(PassphraseDialogMessage::Cancel)
-                    .style(|theme: &Theme, _status| button::Style {
-                        background: Some(iced::Background::Color(theme.palette().danger)),
-                        text_color: Color::WHITE,
+                    .style(move |_theme: &Theme, _status| button::Style {
+                        background: Some(iced::Background::Color(error_color)),
+                        text_color: text_light,
                         border: iced::Border::default(),
                         shadow: iced::Shadow::default(),
                     }),
@@ -399,20 +393,28 @@ impl PassphraseDialog {
             .spacing(vm.spacing_md)
         );
 
-        // Wrap in centered overlay
+        // Wrap in centered overlay - using ontological color mapping
+        let modal_bg = vm.colors.modal_content_background;
+        let modal_border = vm.colors.modal_border;
+        let shadow_color = vm.colors.shadow_medium;
+        let overlay_bg = vm.colors.overlay_background;
+        let border_width = vm.border_normal;
+        let border_radius = vm.radius_md;
+        let shadow_blur = vm.shadow_lg;
+
         container(
             container(content)
-                .style(|_theme| container::Style {
-                    background: Some(iced::Background::Color(Color::from_rgba8(30, 30, 40, 0.98))),
+                .style(move |_theme| container::Style {
+                    background: Some(iced::Background::Color(modal_bg)),
                     border: iced::Border {
-                        color: Color::from_rgb(0.4, 0.6, 0.8),
-                        width: 2.0,
-                        radius: 8.0.into(),
+                        color: modal_border,
+                        width: border_width,
+                        radius: border_radius.into(),
                     },
                     shadow: iced::Shadow {
-                        color: Color::from_rgba8(0, 0, 0, 0.5),
+                        color: shadow_color,
                         offset: iced::Vector::new(0.0, 4.0),
-                        blur_radius: 16.0,
+                        blur_radius: shadow_blur,
                     },
                     ..Default::default()
                 })
@@ -421,8 +423,8 @@ impl PassphraseDialog {
         .height(Length::Fill)
         .center_x(Length::Fill)
         .center_y(Length::Fill)
-        .style(|_theme| container::Style {
-            background: Some(iced::Background::Color(Color::from_rgba8(0, 0, 0, 0.7))),
+        .style(move |_theme| container::Style {
+            background: Some(iced::Background::Color(overlay_bg)),
             ..Default::default()
         })
         .into()

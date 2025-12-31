@@ -185,6 +185,8 @@ pub struct ColorPalette {
     pub text_disabled: Color,
     pub text_light: Color,
     pub text_dark: Color,
+    pub text_hint: Color,           // Subtle hint text (blue-tinted, info ontology)
+    pub text_subtle_success: Color, // Subtle positive text (green-tinted, life ontology)
 
     // Status colors
     pub success: Color,
@@ -206,6 +208,14 @@ pub struct ColorPalette {
     pub button_primary: Color,
     pub button_secondary: Color,
     pub button_security: Color,
+    pub button_disabled: Color,
+    pub button_disabled_text: Color,
+
+    // Button/interactive states (for closures)
+    pub surface_hover: Color,
+    pub surface_pressed: Color,
+    pub panel_background: Color,
+    pub border_subtle: Color,
 
     // Graph/visualization colors
     pub node_default: Color,
@@ -222,22 +232,37 @@ pub struct ColorPalette {
     pub node_policy: Color,
     pub node_edge_highlight: Color,
 
+    // Separation class colors (domain ontology for role segregation)
+    pub class_operational: Color,     // Blue - day-to-day tasks
+    pub class_administrative: Color,  // Purple - user/policy management
+    pub class_audit: Color,           // Teal - monitoring/review
+    pub class_emergency: Color,       // Red - break-glass access
+    pub class_financial: Color,       // Gold - budgets/spending
+    pub class_personnel: Color,       // Rose - HR/staffing
+
     // Semantic colors
     pub blue_bright: Color,
     pub blue_glow: Color,
     pub green_success: Color,
     pub red_error: Color,
     pub yellow_warning: Color,
+    pub orange_caution: Color,  // Solid orange for "fair" states (H40°, S75%, L50%)
     pub orange_warning: Color,
 
     // Overlay/Modal colors
     pub overlay_background: Color,
     pub modal_background: Color,
+    pub modal_border: Color,
+    pub modal_content_background: Color,
 
     // Shadow colors
     pub shadow_default: Color,
+    pub shadow_medium: Color,
     pub shadow_blue: Color,
     pub shadow_yellow: Color,
+
+    // Strength indicator background
+    pub strength_bar_background: Color,
 }
 
 impl Default for ColorPalette {
@@ -250,6 +275,8 @@ impl Default for ColorPalette {
             text_disabled: Color::from_rgb(0.5, 0.5, 0.5),
             text_light: Color::from_rgb(1.0, 1.0, 1.0),
             text_dark: Color::from_rgb(0.1, 0.1, 0.1),
+            text_hint: Color::from_rgb(0.6, 0.6, 0.7),           // Info ontology (blue-tint)
+            text_subtle_success: Color::from_rgb(0.5, 0.6, 0.5), // Life ontology (green-tint)
 
             // Status colors
             success: Color::from_rgb(0.3, 0.8, 0.3),
@@ -271,6 +298,14 @@ impl Default for ColorPalette {
             button_primary: Color::from_rgb(0.3, 0.6, 1.0),
             button_secondary: Color::from_rgb(0.5, 0.5, 0.6),
             button_security: Color::from_rgb(0.8, 0.3, 0.3),
+            button_disabled: Color::from_rgb(0.3, 0.3, 0.3),       // L30% neutral
+            button_disabled_text: Color::from_rgb(0.5, 0.5, 0.5),  // L50% neutral
+
+            // Button/interactive states
+            surface_hover: Color::from_rgba(0.3, 0.3, 0.35, 0.9),
+            surface_pressed: Color::from_rgba(0.25, 0.25, 0.3, 0.9),
+            panel_background: Color::from_rgba(0.15, 0.15, 0.2, 0.9),
+            border_subtle: Color::from_rgba(0.3, 0.3, 0.35, 0.5),
 
             // Graph/visualization colors
             node_default: Color::from_rgba(0.2, 0.2, 0.3, 0.9),
@@ -287,27 +322,81 @@ impl Default for ColorPalette {
             node_policy: Color::from_rgb(0.8, 0.6, 0.2),
             node_edge_highlight: Color::from_rgb(0.3, 0.3, 0.7),
 
+            // Separation class colors (domain ontology)
+            class_operational: Color::from_rgb(0.3, 0.6, 0.9),     // Blue - H210°
+            class_administrative: Color::from_rgb(0.6, 0.4, 0.8),  // Purple - H270°
+            class_audit: Color::from_rgb(0.2, 0.7, 0.5),           // Teal - H160°
+            class_emergency: Color::from_rgb(0.9, 0.3, 0.2),       // Red - H10°
+            class_financial: Color::from_rgb(0.9, 0.7, 0.2),       // Gold - H45°
+            class_personnel: Color::from_rgb(0.8, 0.4, 0.6),       // Rose - H340°
+
             // Semantic colors
             blue_bright: Color::from_rgba(0.3, 0.6, 1.0, 0.8),
             blue_glow: Color::from_rgba(0.3, 0.6, 1.0, 0.6),
             green_success: Color::from_rgb(0.2, 0.9, 0.2),
             red_error: Color::from_rgb(0.9, 0.2, 0.2),
             yellow_warning: Color::from_rgb(1.0, 0.8, 0.0),
+            orange_caution: Color::from_rgb(0.8, 0.6, 0.2),  // H40°, solid orange for "fair"
             orange_warning: Color::from_rgba(0.8, 0.6, 0.0, 0.15),
 
             // Overlay/Modal colors
             overlay_background: Color::from_rgba(0.0, 0.0, 0.0, 0.7),
             modal_background: Color::from_rgba(0.1, 0.1, 0.15, 0.95),
+            modal_border: Color::from_rgb(0.4, 0.6, 0.8),    // H210°, soft blue border
+            modal_content_background: Color::from_rgba(0.12, 0.12, 0.16, 0.98),
 
             // Shadow colors
             shadow_default: Color::from_rgba(0.0, 0.0, 0.0, 0.3),
+            shadow_medium: Color::from_rgba(0.0, 0.0, 0.0, 0.5),
             shadow_blue: Color::from_rgba(0.3, 0.6, 1.0, 0.3),
             shadow_yellow: Color::from_rgba(1.0, 0.8, 0.0, 0.3),
+
+            // Strength indicator background
+            strength_bar_background: Color::from_rgb(0.2, 0.2, 0.2),
         }
     }
 }
 
 impl ColorPalette {
+    /// Get color for password/passphrase strength indicator
+    ///
+    /// Ontological mapping:
+    /// - Weak (< 0.3): Red → Danger/Error ontology
+    /// - Fair (< 0.6): Orange → Caution ontology
+    /// - Good (< 0.8): Yellow → Warning/Progress ontology
+    /// - Strong (>= 0.8): Green → Success/Life ontology
+    pub fn strength_color(&self, strength: f32) -> Color {
+        if strength < 0.3 {
+            self.red_error
+        } else if strength < 0.6 {
+            self.orange_caution
+        } else if strength < 0.8 {
+            self.yellow_warning
+        } else {
+            self.green_success
+        }
+    }
+
+    /// Get color for separation class (duty segregation ontology)
+    ///
+    /// Each class maps to a distinct hue family for clear visual distinction:
+    /// - Operational: Blue (trust, routine)
+    /// - Administrative: Purple (authority, elevation)
+    /// - Audit: Teal (observation, neutrality)
+    /// - Emergency: Red (urgency, danger)
+    /// - Financial: Gold (value, caution)
+    /// - Personnel: Rose (people, warmth)
+    pub fn separation_class_color(&self, class: &crate::policy::SeparationClass) -> Color {
+        match class {
+            crate::policy::SeparationClass::Operational => self.class_operational,
+            crate::policy::SeparationClass::Administrative => self.class_administrative,
+            crate::policy::SeparationClass::Audit => self.class_audit,
+            crate::policy::SeparationClass::Emergency => self.class_emergency,
+            crate::policy::SeparationClass::Financial => self.class_financial,
+            crate::policy::SeparationClass::Personnel => self.class_personnel,
+        }
+    }
+
     /// Create a lighter variant of any color (for hover states, etc.)
     pub fn lighten(&self, color: Color, amount: f32) -> Color {
         Color::from_rgba(

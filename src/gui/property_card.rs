@@ -1094,7 +1094,7 @@ impl PropertyCard {
                     self.detail_row("Type:", "Root Authority", vm),
                     self.detail_row("Public Key:", &identity.nkey.public_key.public_key()[..32], vm),
                     self.detail_row("Key Type:", &format!("{:?}", identity.nkey.key_type), vm),
-                    text("JWT Token:").size(vm.text_small).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    text("JWT Token:").size(vm.text_small).color(vm.colors.text_secondary),
                     scrollable(
                         text(identity.jwt.token())
                             .size(vm.text_tiny)
@@ -1109,7 +1109,7 @@ impl PropertyCard {
                     self.detail_row("Type:", "Account (Organizational Unit)", vm),
                     self.detail_row("Public Key:", &identity.nkey.public_key.public_key()[..32], vm),
                     self.detail_row("Key Type:", &format!("{:?}", identity.nkey.key_type), vm),
-                    text("JWT Token:").size(vm.text_small).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    text("JWT Token:").size(vm.text_small).color(vm.colors.text_secondary),
                     scrollable(
                         text(identity.jwt.token())
                             .size(vm.text_tiny)
@@ -1124,7 +1124,7 @@ impl PropertyCard {
                     self.detail_row("Type:", "User (Person)", vm),
                     self.detail_row("Public Key:", &identity.nkey.public_key.public_key()[..32], vm),
                     self.detail_row("Key Type:", &format!("{:?}", identity.nkey.key_type), vm),
-                    text("JWT Token:").size(vm.text_small).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    text("JWT Token:").size(vm.text_small).color(vm.colors.text_secondary),
                     scrollable(
                         text(identity.jwt.token())
                             .size(vm.text_tiny)
@@ -1139,7 +1139,7 @@ impl PropertyCard {
                     self.detail_row("Type:", "Service (Automation)", vm),
                     self.detail_row("Public Key:", &identity.nkey.public_key.public_key()[..32], vm),
                     self.detail_row("Key Type:", &format!("{:?}", identity.nkey.key_type), vm),
-                    text("JWT Token:").size(vm.text_small).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    text("JWT Token:").size(vm.text_small).color(vm.colors.text_secondary),
                     scrollable(
                         text(identity.jwt.token())
                             .size(vm.text_tiny)
@@ -1188,7 +1188,7 @@ impl PropertyCard {
                     self.detail_row("Valid From:", &cert.not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
                     self.detail_row("Valid Until:", &cert.not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
                     self.detail_row("Validity:", &format!("{} days", (cert.not_after.signed_duration_since(cert.not_before).num_days())), vm),
-                    text("Key Usage:").size(vm.text_small).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    text("Key Usage:").size(vm.text_small).color(vm.colors.text_secondary),
                     column(cert.key_usage.iter().map(|usage| {
                         text(format!("  • {}", usage)).size(text_tiny).into()
                     }).collect::<Vec<_>>()).spacing(spacing_xs),
@@ -1205,7 +1205,7 @@ impl PropertyCard {
                     self.detail_row("Valid From:", &cert.not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
                     self.detail_row("Valid Until:", &cert.not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
                     self.detail_row("Validity:", &format!("{} days", (cert.not_after.signed_duration_since(cert.not_before).num_days())), vm),
-                    text("Key Usage:").size(vm.text_small).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    text("Key Usage:").size(vm.text_small).color(vm.colors.text_secondary),
                     column(cert.key_usage.iter().map(|usage| {
                         text(format!("  • {}", usage)).size(text_tiny).into()
                     }).collect::<Vec<_>>()).spacing(spacing_xs),
@@ -1222,13 +1222,13 @@ impl PropertyCard {
                     self.detail_row("Valid From:", &cert.not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
                     self.detail_row("Valid Until:", &cert.not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
                     self.detail_row("Validity:", &format!("{} days", (cert.not_after.signed_duration_since(cert.not_before).num_days())), vm),
-                    text("Key Usage:").size(vm.text_small).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    text("Key Usage:").size(vm.text_small).color(vm.colors.text_secondary),
                     column(cert.key_usage.iter().map(|usage| {
                         text(format!("  • {}", usage)).size(text_tiny).into()
                     }).collect::<Vec<_>>()).spacing(spacing_xs),
                     if !cert.san.is_empty() {
                         column![
-                            text("Subject Alternative Names:").size(vm.text_small).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                            text("Subject Alternative Names:").size(vm.text_small).color(vm.colors.text_secondary),
                             column(cert.san.iter().map(|name| {
                                 text(format!("  • {}", name)).size(text_tiny).into()
                             }).collect::<Vec<_>>()).spacing(spacing_xs),
@@ -1282,15 +1282,15 @@ impl PropertyCard {
                             .unwrap_or_else(|| "Not provisioned".to_string())
                     , vm),
                     self.detail_row("Slots Used:", &format!("{} / 4", yk.slots_used.len()), vm),
-                    text("Active PIV Slots:").size(vm.text_small).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    text("Active PIV Slots:").size(vm.text_small).color(vm.colors.text_secondary),
                     if !yk.slots_used.is_empty() {
                         column(yk.slots_used.iter().map(|slot| {
                             text(format!("  • Slot {}", slot)).size(text_tiny).into()
                         }).collect::<Vec<_>>()).spacing(spacing_xs)
                     } else {
-                        column![text("  No slots in use").size(text_tiny).color(Color::from_rgb(0.5, 0.5, 0.5))].into()
+                        column![text("  No slots in use").size(text_tiny).color(vm.colors.text_disabled)].into()
                     },
-                    text("Available Slots:").size(vm.text_small).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    text("Available Slots:").size(vm.text_small).color(vm.colors.text_secondary),
                     column![
                         text("  • 9A - Authentication (PIV)").size(text_tiny),
                         text("  • 9C - Digital Signature (PIV)").size(text_tiny),
@@ -1383,7 +1383,7 @@ impl PropertyCard {
                 column![
                     self.detail_row("Category:", &category.name, vm),
                     self.detail_row("Total Claims:", &format!("{}", category.claim_count), vm),
-                    text("Claim categories group related permissions.").size(vm.text_tiny).color(Color::from_rgb(0.6, 0.6, 0.7)),
+                    text("Claim categories group related permissions.").size(vm.text_tiny).color(vm.colors.text_hint),
                 ].spacing(vm.spacing_sm)
             ),
             DomainNodeData::PolicyGroup(group) => (
@@ -1392,7 +1392,7 @@ impl PropertyCard {
                     self.detail_row("Class:", &group.name, vm),
                     self.detail_row("Type:", &format!("{:?}", group.separation_class), vm),
                     self.detail_row("Roles:", &format!("{} roles", group.role_count), vm),
-                    text("Separation classes enforce duty segregation.").size(vm.text_tiny).color(Color::from_rgb(0.6, 0.6, 0.7)),
+                    text("Separation classes enforce duty segregation.").size(vm.text_tiny).color(vm.colors.text_hint),
                     text(match group.separation_class {
                         crate::policy::SeparationClass::Operational => "Operational roles handle day-to-day tasks.",
                         crate::policy::SeparationClass::Administrative => "Administrative roles manage users and policies.",
@@ -1400,7 +1400,7 @@ impl PropertyCard {
                         crate::policy::SeparationClass::Emergency => "Emergency roles provide break-glass access.",
                         crate::policy::SeparationClass::Financial => "Financial roles manage budgets and spending.",
                         crate::policy::SeparationClass::Personnel => "Personnel roles handle HR and staffing.",
-                    }).size(vm.text_tiny).color(Color::from_rgb(0.5, 0.6, 0.5)),
+                    }).size(vm.text_tiny).color(vm.colors.text_subtle_success),
                 ].spacing(vm.spacing_sm)
             ),
             _ => ("Policy", column![].spacing(vm.spacing_sm)),
@@ -1435,7 +1435,7 @@ impl PropertyCard {
         let label_str = label.into();
         let value_str = value.into();
         row![
-            text(label_str).size(vm.text_small).color(Color::from_rgb(0.7, 0.7, 0.8)).width(Length::Fixed(150.0)),
+            text(label_str).size(vm.text_small).color(vm.colors.text_secondary).width(Length::Fixed(150.0)),
             text(value_str).size(vm.text_small),
         ]
         .spacing(vm.spacing_md)

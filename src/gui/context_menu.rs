@@ -109,23 +109,28 @@ impl ContextMenu {
         .spacing(vm.spacing_xs)
         .padding(vm.padding_sm);
 
-        // Menu width scales with scale factor
+        // Menu styling with ontological color mapping
         let menu_width = 180.0 * vm.scale;
+        let shadow_color = vm.colors.shadow_default;
+        let border_width = vm.border_thin;
+        let border_radius = vm.radius_sm;
+        let shadow_blur = vm.shadow_sm;
+
         let menu_container = container(menu_items)
             .width(Length::Fixed(menu_width))
-            .style(|theme: &Theme| {
+            .style(move |theme: &Theme| {
                 container::Style {
                     background: Some(iced::Background::Color(theme.palette().background)),
                     border: iced::Border {
                         color: theme.palette().text,
-                        width: 1.0,
-                        radius: 4.0.into(),
+                        width: border_width,
+                        radius: border_radius.into(),
                     },
                     text_color: Some(theme.palette().text),
                     shadow: iced::Shadow {
-                        color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.3),
+                        color: shadow_color,
                         offset: iced::Vector::new(2.0, 2.0),
-                        blur_radius: 4.0,
+                        blur_radius: shadow_blur,
                     },
                 }
             });

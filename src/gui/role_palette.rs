@@ -96,18 +96,6 @@ impl RolePalette {
         self.expanded.contains(class)
     }
 
-    /// Get the color for a separation class
-    fn class_color(class: &SeparationClass) -> Color {
-        match class {
-            SeparationClass::Operational => Color::from_rgb(0.3, 0.6, 0.9),    // Blue
-            SeparationClass::Administrative => Color::from_rgb(0.6, 0.4, 0.8), // Purple
-            SeparationClass::Audit => Color::from_rgb(0.2, 0.7, 0.5),          // Teal
-            SeparationClass::Emergency => Color::from_rgb(0.9, 0.3, 0.2),      // Red
-            SeparationClass::Financial => Color::from_rgb(0.9, 0.7, 0.2),      // Gold
-            SeparationClass::Personnel => Color::from_rgb(0.8, 0.4, 0.6),      // Rose
-        }
-    }
-
     /// Get display name for a separation class
     fn class_name(class: &SeparationClass) -> &'static str {
         match class {
@@ -141,7 +129,13 @@ impl RolePalette {
 
     /// Create a role badge element
     fn role_badge<'a>(role: &'a StandardRoleEntry, class: SeparationClass, vm: &ViewModel) -> Element<'a, RolePaletteMessage> {
-        let color = Self::class_color(&class);
+        // Get colors from ontological palette
+        let color = vm.colors.separation_class_color(&class);
+        let text_tertiary = vm.colors.text_tertiary;
+        let text_disabled = vm.colors.text_disabled;
+        let text_light = vm.colors.text_light;
+        let surface_bg = vm.colors.surface;
+        let border_radius = vm.radius_sm;
         let claim_count = role.claims.len();
 
         let badge_content = row![
@@ -165,12 +159,12 @@ impl RolePalette {
             text(format!(" L{}", role.level))
                 .size(vm.text_tiny)
                 .font(icons::FONT_BODY)
-                .color(Color::from_rgb(0.6, 0.6, 0.6)),
+                .color(text_tertiary),
             // Claim count
             text(format!(" ({})", claim_count))
                 .size(vm.text_tiny)
                 .font(icons::FONT_BODY)
-                .color(Color::from_rgb(0.5, 0.5, 0.5)),
+                .color(text_disabled),
         ]
         .spacing(vm.padding_xs)
         .align_y(iced::Alignment::Center);
@@ -185,13 +179,13 @@ impl RolePalette {
                 let bg = match status {
                     button::Status::Hovered => Color::from_rgba(color.r, color.g, color.b, 0.2),
                     button::Status::Pressed => Color::from_rgba(color.r, color.g, color.b, 0.3),
-                    _ => Color::from_rgba(0.2, 0.2, 0.25, 0.8),
+                    _ => surface_bg,
                 };
                 button::Style {
                     background: Some(iced::Background::Color(bg)),
-                    text_color: Color::WHITE,
+                    text_color: text_light,
                     border: iced::Border {
-                        radius: 4.0.into(),
+                        radius: border_radius.into(),
                         width: 1.0,
                         color: Color::from_rgba(color.r, color.g, color.b, 0.4),
                     },
@@ -204,7 +198,13 @@ impl RolePalette {
 
     /// Create a category header element
     fn category_header<'a>(class: SeparationClass, is_expanded: bool, role_count: usize, vm: &ViewModel) -> Element<'a, RolePaletteMessage> {
-        let color = Self::class_color(&class);
+        // Get colors from ontological palette
+        let color = vm.colors.separation_class_color(&class);
+        let text_light = vm.colors.text_light;
+        let surface_bg = vm.colors.surface;
+        let secondary_bg = vm.colors.secondary;
+        let border_radius = vm.radius_sm;
+
         let name = Self::class_name(&class);
         let arrow = if is_expanded { "▼" } else { "▶" };
 
@@ -235,11 +235,11 @@ impl RolePalette {
                 text(format!("{}", role_count))
                     .size(vm.text_tiny)
                     .font(icons::FONT_BODY)
-                    .color(Color::WHITE)
+                    .color(text_light)
             )
             .padding([1, 4])
-            .style(|_theme: &Theme| container::Style {
-                background: Some(iced::Background::Color(Color::from_rgba(0.4, 0.4, 0.4, 0.6))),
+            .style(move |_theme: &Theme| container::Style {
+                background: Some(iced::Background::Color(secondary_bg)),
                 border: iced::Border {
                     radius: 8.0.into(),
                     ..Default::default()
@@ -250,19 +250,22 @@ impl RolePalette {
         .spacing(vm.spacing_sm)
         .align_y(iced::Alignment::Center);
 
+        let surface_hover = vm.colors.surface_hover;
+        let surface_pressed = vm.colors.surface_pressed;
+
         button(header_content)
             .on_press(RolePaletteMessage::ToggleCategory(class))
-            .style(|_theme: &Theme, status| {
+            .style(move |_theme: &Theme, status| {
                 let bg = match status {
-                    button::Status::Hovered => Color::from_rgba(0.3, 0.3, 0.35, 0.9),
-                    button::Status::Pressed => Color::from_rgba(0.25, 0.25, 0.3, 0.9),
-                    _ => Color::from_rgba(0.2, 0.2, 0.25, 0.8),
+                    button::Status::Hovered => surface_hover,
+                    button::Status::Pressed => surface_pressed,
+                    _ => surface_bg,
                 };
                 button::Style {
                     background: Some(iced::Background::Color(bg)),
-                    text_color: Color::WHITE,
+                    text_color: text_light,
                     border: iced::Border {
-                        radius: 4.0.into(),
+                        radius: border_radius.into(),
                         ..Default::default()
                     },
                     ..Default::default()
@@ -275,12 +278,22 @@ impl RolePalette {
 
     /// Render the role palette as a widget
     pub fn view<'a>(&self, policy_data: Option<&'a PolicyBootstrapData>, vm: &ViewModel) -> Element<'a, RolePaletteMessage> {
+        // Get colors from ontological palette
+        let text_disabled = vm.colors.text_disabled;
+        let text_primary = vm.colors.text_primary;
+        let text_tertiary = vm.colors.text_tertiary;
+        let panel_bg = vm.colors.panel_background;
+        let modal_bg = vm.colors.modal_background;
+        let border_subtle = vm.colors.border_subtle;
+        let border_radius = vm.radius_sm;
+        let border_radius_lg = vm.radius_md;
+
         let Some(policy) = policy_data else {
             return container(
                 text("No policy data loaded")
                     .size(vm.text_small)
                     .font(icons::FONT_BODY)
-                    .color(Color::from_rgb(0.5, 0.5, 0.5))
+                    .color(text_disabled)
             )
             .padding(vm.padding_md)
             .into();
@@ -322,19 +335,19 @@ impl RolePalette {
                     text("Role Palette")
                         .size(vm.text_normal)
                         .font(icons::FONT_HEADING)
-                        .color(Color::from_rgb(0.9, 0.9, 0.9)),
+                        .color(text_primary),
                     text(format!("  ({})", policy.standard_roles.len()))
                         .size(vm.text_tiny)
                         .font(icons::FONT_BODY)
-                        .color(Color::from_rgb(0.6, 0.6, 0.6)),
+                        .color(text_tertiary),
                 ]
                 .align_y(iced::Alignment::Center)
             )
             .padding([8, 10])
-            .style(|_theme: &Theme| container::Style {
-                background: Some(iced::Background::Color(Color::from_rgba(0.15, 0.15, 0.2, 0.9))),
+            .style(move |_theme: &Theme| container::Style {
+                background: Some(iced::Background::Color(panel_bg)),
                 border: iced::Border {
-                    radius: 4.0.into(),  // Top rounded corners
+                    radius: border_radius.into(),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -347,7 +360,7 @@ impl RolePalette {
                 text("Drag roles onto people to assign")
                     .size(vm.text_tiny)
                     .font(icons::FONT_BODY)
-                    .color(Color::from_rgb(0.5, 0.5, 0.5))
+                    .color(text_disabled)
             )
             .padding([4, 10])
         );
@@ -384,12 +397,12 @@ impl RolePalette {
             .width(Length::Fixed(220.0));
 
         container(scrollable_content)
-            .style(|_theme: &Theme| container::Style {
-                background: Some(iced::Background::Color(Color::from_rgba(0.12, 0.12, 0.15, 0.95))),
+            .style(move |_theme: &Theme| container::Style {
+                background: Some(iced::Background::Color(modal_bg)),
                 border: iced::Border {
-                    radius: 6.0.into(),
+                    radius: border_radius_lg.into(),
                     width: 1.0,
-                    color: Color::from_rgba(0.3, 0.3, 0.35, 0.5),
+                    color: border_subtle,
                 },
                 ..Default::default()
             })
