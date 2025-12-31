@@ -6083,11 +6083,11 @@ impl CimKeysApp {
         let graph_row: Element<'_, Message> = if show_role_palette {
             // Show role palette on the left side
             row![
-                self.role_palette.view(self.policy_data.as_ref())
+                self.role_palette.view(self.policy_data.as_ref(), &self.view_model)
                     .map(Message::RolePaletteMessage),
                 graph_canvas,
             ]
-            .spacing(4)
+            .spacing(self.view_model.padding_xs)
             .height(Length::Fill)
             .into()
         } else {

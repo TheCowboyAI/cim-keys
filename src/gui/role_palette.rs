@@ -36,6 +36,7 @@ use crate::policy::SeparationClass;
 use crate::policy_loader::{PolicyBootstrapData, StandardRoleEntry};
 use super::graph::DragSource;
 use super::cowboy_theme::CowboyAppTheme as CowboyCustomTheme;
+use super::view_model::ViewModel;
 use crate::icons;
 
 /// Message emitted by the role palette
@@ -139,13 +140,13 @@ impl RolePalette {
     }
 
     /// Create a role badge element
-    fn role_badge<'a>(role: &'a StandardRoleEntry, class: SeparationClass) -> Element<'a, RolePaletteMessage> {
+    fn role_badge<'a>(role: &'a StandardRoleEntry, class: SeparationClass, vm: &ViewModel) -> Element<'a, RolePaletteMessage> {
         let color = Self::class_color(&class);
         let claim_count = role.claims.len();
 
         let badge_content = row![
             // Colored circle indicator
-            container(text(" ").size(8))
+            container(text(" ").size(vm.padding_sm))
                 .width(12)
                 .height(12)
                 .style(move |_theme: &Theme| container::Style {
@@ -158,20 +159,20 @@ impl RolePalette {
                 }),
             // Role name
             text(&role.name)
-                .size(12)
+                .size(vm.text_small)
                 .font(icons::FONT_BODY),
             // Level indicator
             text(format!(" L{}", role.level))
-                .size(10)
+                .size(vm.text_tiny)
                 .font(icons::FONT_BODY)
                 .color(Color::from_rgb(0.6, 0.6, 0.6)),
             // Claim count
             text(format!(" ({})", claim_count))
-                .size(10)
+                .size(vm.text_tiny)
                 .font(icons::FONT_BODY)
                 .color(Color::from_rgb(0.5, 0.5, 0.5)),
         ]
-        .spacing(4)
+        .spacing(vm.padding_xs)
         .align_y(iced::Alignment::Center);
 
         let role_name = role.name.clone();
@@ -202,7 +203,7 @@ impl RolePalette {
     }
 
     /// Create a category header element
-    fn category_header<'a>(class: SeparationClass, is_expanded: bool, role_count: usize) -> Element<'a, RolePaletteMessage> {
+    fn category_header<'a>(class: SeparationClass, is_expanded: bool, role_count: usize, vm: &ViewModel) -> Element<'a, RolePaletteMessage> {
         let color = Self::class_color(&class);
         let name = Self::class_name(&class);
         let arrow = if is_expanded { "▼" } else { "▶" };
@@ -210,10 +211,10 @@ impl RolePalette {
         let header_content = row![
             // Expansion arrow
             text(arrow)
-                .size(10)
+                .size(vm.text_tiny)
                 .font(icons::FONT_BODY),
             // Colored circle
-            container(text(" ").size(6))
+            container(text(" ").size(vm.spacing_xs))
                 .width(10)
                 .height(10)
                 .style(move |_theme: &Theme| container::Style {
@@ -226,13 +227,13 @@ impl RolePalette {
                 }),
             // Category name
             text(name)
-                .size(13)
+                .size(vm.text_small)
                 .font(icons::FONT_BODY)
                 .color(color),
             // Role count badge
             container(
                 text(format!("{}", role_count))
-                    .size(10)
+                    .size(vm.text_tiny)
                     .font(icons::FONT_BODY)
                     .color(Color::WHITE)
             )
@@ -246,7 +247,7 @@ impl RolePalette {
                 ..Default::default()
             }),
         ]
-        .spacing(6)
+        .spacing(vm.spacing_sm)
         .align_y(iced::Alignment::Center);
 
         button(header_content)
@@ -273,27 +274,27 @@ impl RolePalette {
     }
 
     /// Render the role palette as a widget
-    pub fn view<'a>(&self, policy_data: Option<&'a PolicyBootstrapData>) -> Element<'a, RolePaletteMessage> {
+    pub fn view<'a>(&self, policy_data: Option<&'a PolicyBootstrapData>, vm: &ViewModel) -> Element<'a, RolePaletteMessage> {
         let Some(policy) = policy_data else {
             return container(
                 text("No policy data loaded")
-                    .size(12)
+                    .size(vm.text_small)
                     .font(icons::FONT_BODY)
                     .color(Color::from_rgb(0.5, 0.5, 0.5))
             )
-            .padding(10)
+            .padding(vm.padding_md)
             .into();
         };
 
         if self.collapsed {
             // Collapsed state - just show a small expand button
             return container(
-                button(text("▶ Roles").size(11).font(icons::FONT_BODY))
+                button(text("▶ Roles").size(vm.text_tiny).font(icons::FONT_BODY))
                     .on_press(RolePaletteMessage::ToggleCategory(SeparationClass::Operational)) // Any will do, handled externally
                     .style(CowboyCustomTheme::glass_button())
                     .padding([4, 8])
             )
-            .padding(4)
+            .padding(vm.padding_xs)
             .into();
         }
 
@@ -311,7 +312,7 @@ impl RolePalette {
         ];
 
         let mut content = Column::new()
-            .spacing(4)
+            .spacing(vm.padding_xs)
             .width(Length::Fill);
 
         // Title
@@ -319,11 +320,11 @@ impl RolePalette {
             container(
                 row![
                     text("Role Palette")
-                        .size(14)
+                        .size(vm.text_normal)
                         .font(icons::FONT_HEADING)
                         .color(Color::from_rgb(0.9, 0.9, 0.9)),
                     text(format!("  ({})", policy.standard_roles.len()))
-                        .size(11)
+                        .size(vm.text_tiny)
                         .font(icons::FONT_BODY)
                         .color(Color::from_rgb(0.6, 0.6, 0.6)),
                 ]
@@ -344,7 +345,7 @@ impl RolePalette {
         content = content.push(
             container(
                 text("Drag roles onto people to assign")
-                    .size(10)
+                    .size(vm.text_tiny)
                     .font(icons::FONT_BODY)
                     .color(Color::from_rgb(0.5, 0.5, 0.5))
             )
@@ -361,16 +362,16 @@ impl RolePalette {
             let is_expanded = self.is_expanded(class);
 
             // Category header
-            content = content.push(Self::category_header(*class, is_expanded, roles.len()));
+            content = content.push(Self::category_header(*class, is_expanded, roles.len(), vm));
 
             // Role badges (if expanded)
             if is_expanded {
                 let mut role_column = Column::new()
-                    .spacing(3)
+                    .spacing(vm.spacing_xs)
                     .padding(Padding::default().left(16)); // Left indent
 
                 for role in roles {
-                    role_column = role_column.push(Self::role_badge(role, *class));
+                    role_column = role_column.push(Self::role_badge(role, *class, vm));
                 }
 
                 content = content.push(role_column);
@@ -392,7 +393,7 @@ impl RolePalette {
                 },
                 ..Default::default()
             })
-            .padding(4)
+            .padding(vm.padding_xs)
             .into()
     }
 }
