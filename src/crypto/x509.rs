@@ -767,6 +767,7 @@ mod tests {
             common_name: "Engineering Intermediate CA".to_string(),
             country: Some("US".to_string()),
             validity_years: 10,
+            pathlen: 0,
         };
         let intermediate_correlation_id = uuid::Uuid::now_v7();
         let root_ca_id = uuid::Uuid::now_v7();

@@ -9,6 +9,18 @@
 //! 2. **Universal property**: `FoldDomainNode` trait with `fold()` method
 //! 3. **Type-safe projections**: Each injection preserves identity
 //!
+//! ## Related Modules
+//!
+//! For new code, consider using the per-context coproducts in `crate::domains::`:
+//! - `organization` - Organization, Person, Location, Role, Policy entities
+//! - `pki` - Certificates and Keys
+//! - `nats` - Operators, Accounts, Users
+//! - `yubikey` - YubiKey devices and slots
+//! - `typography` - Verified themes and labelled elements (solves tofu problem)
+//!
+//! The `LiftableDomain` trait in `crate::lifting` provides domain → graph
+//! transformations that work with the per-context entities.
+//!
 //! ## Categorical Foundation
 //!
 //! A coproduct A + B + C + ... has:
@@ -85,6 +97,12 @@ pub enum Injection {
     PolicyClaim,
     PolicyCategory,
     PolicyGroup,
+
+    // Aggregate Roots (DDD bounded contexts)
+    AggregateOrganization,
+    AggregatePkiChain,
+    AggregateNatsSecurity,
+    AggregateYubiKeyProvisioning,
 }
 
 impl Injection {
@@ -116,6 +134,10 @@ impl Injection {
             Self::PolicyClaim => "Policy Claim",
             Self::PolicyCategory => "Policy Category",
             Self::PolicyGroup => "Separation Class",
+            Self::AggregateOrganization => "Organization Aggregate",
+            Self::AggregatePkiChain => "PKI Chain Aggregate",
+            Self::AggregateNatsSecurity => "NATS Security Aggregate",
+            Self::AggregateYubiKeyProvisioning => "YubiKey Provisioning Aggregate",
         }
     }
 
@@ -127,13 +149,17 @@ impl Injection {
     /// - Tier 2: Leaf entities (Person, Location, NATS User, Leaf Cert, Key, Manifest, PolicyClaim)
     pub fn layout_tier(&self) -> u8 {
         match self {
-            // Tier 0: Root entities
+            // Tier 0: Root entities and Aggregates
             Self::Organization => 0,
             Self::NatsOperator | Self::NatsOperatorSimple => 0,
             Self::RootCertificate => 0,
             Self::YubiKey => 0,
             Self::YubiKeyStatus => 0,
             Self::PolicyGroup => 0,
+            Self::AggregateOrganization |
+            Self::AggregatePkiChain |
+            Self::AggregateNatsSecurity |
+            Self::AggregateYubiKeyProvisioning => 0,
 
             // Tier 1: Intermediate entities
             Self::OrganizationUnit => 1,
@@ -307,6 +333,39 @@ pub enum DomainNodeData {
     PolicyCategory(PolicyCategory),
     /// Policy separation class group (uses PolicyGroupId)
     PolicyGroup(PolicyGroup),
+
+    // =========================================================================
+    // AGGREGATE BOUNDED CONTEXTS (DDD State)
+    // =========================================================================
+    /// Organization aggregate state
+    AggregateOrganization {
+        name: String,
+        version: u64,
+        people_count: usize,
+        units_count: usize,
+    },
+    /// PKI Certificate Chain aggregate state
+    AggregatePkiChain {
+        name: String,
+        version: u64,
+        certificates_count: usize,
+        keys_count: usize,
+    },
+    /// NATS Security aggregate state
+    AggregateNatsSecurity {
+        name: String,
+        version: u64,
+        operators_count: usize,
+        accounts_count: usize,
+        users_count: usize,
+    },
+    /// YubiKey Provisioning aggregate state
+    AggregateYubiKeyProvisioning {
+        name: String,
+        version: u64,
+        devices_count: usize,
+        slots_provisioned: usize,
+    },
 }
 
 // ============================================================================
@@ -647,6 +706,84 @@ impl DomainNode {
     }
 
     // =========================================================================
+    // AGGREGATE INJECTIONS (DDD Aggregate State)
+    // =========================================================================
+
+    /// Injection ι_AggregateOrganization: Organization aggregate state
+    pub fn inject_aggregate_organization(
+        name: String,
+        version: u64,
+        people_count: usize,
+        units_count: usize,
+    ) -> Self {
+        Self {
+            injection: Injection::AggregateOrganization,
+            data: DomainNodeData::AggregateOrganization {
+                name,
+                version,
+                people_count,
+                units_count,
+            },
+        }
+    }
+
+    /// Injection ι_AggregatePkiChain: PKI Certificate Chain aggregate state
+    pub fn inject_aggregate_pki_chain(
+        name: String,
+        version: u64,
+        certificates_count: usize,
+        keys_count: usize,
+    ) -> Self {
+        Self {
+            injection: Injection::AggregatePkiChain,
+            data: DomainNodeData::AggregatePkiChain {
+                name,
+                version,
+                certificates_count,
+                keys_count,
+            },
+        }
+    }
+
+    /// Injection ι_AggregateNatsSecurity: NATS Security aggregate state
+    pub fn inject_aggregate_nats_security(
+        name: String,
+        version: u64,
+        operators_count: usize,
+        accounts_count: usize,
+        users_count: usize,
+    ) -> Self {
+        Self {
+            injection: Injection::AggregateNatsSecurity,
+            data: DomainNodeData::AggregateNatsSecurity {
+                name,
+                version,
+                operators_count,
+                accounts_count,
+                users_count,
+            },
+        }
+    }
+
+    /// Injection ι_AggregateYubiKeyProvisioning: YubiKey Provisioning aggregate state
+    pub fn inject_aggregate_yubikey_provisioning(
+        name: String,
+        version: u64,
+        devices_count: usize,
+        slots_provisioned: usize,
+    ) -> Self {
+        Self {
+            injection: Injection::AggregateYubiKeyProvisioning,
+            data: DomainNodeData::AggregateYubiKeyProvisioning {
+                name,
+                version,
+                devices_count,
+                slots_provisioned,
+            },
+        }
+    }
+
+    // =========================================================================
     // BACKWARD-COMPATIBLE INJECTIONS (take raw Uuid, convert to phantom-typed)
     // =========================================================================
     // These methods maintain API compatibility with existing callers.
@@ -965,6 +1102,16 @@ impl DomainNode {
                 folder.fold_policy_category(node.id.as_uuid(), &node.name, node.claim_count, node.expanded),
             DomainNodeData::PolicyGroup(node) =>
                 folder.fold_policy_group(node.id.as_uuid(), &node.name, node.separation_class, node.role_count, node.expanded),
+
+            // Aggregate state nodes
+            DomainNodeData::AggregateOrganization { name, version, people_count, units_count } =>
+                folder.fold_aggregate_organization(name, *version, *people_count, *units_count),
+            DomainNodeData::AggregatePkiChain { name, version, certificates_count, keys_count } =>
+                folder.fold_aggregate_pki_chain(name, *version, *certificates_count, *keys_count),
+            DomainNodeData::AggregateNatsSecurity { name, version, operators_count, accounts_count, users_count } =>
+                folder.fold_aggregate_nats_security(name, *version, *operators_count, *accounts_count, *users_count),
+            DomainNodeData::AggregateYubiKeyProvisioning { name, version, devices_count, slots_provisioned } =>
+                folder.fold_aggregate_yubikey_provisioning(name, *version, *devices_count, *slots_provisioned),
         }
     }
 }
@@ -1118,6 +1265,40 @@ pub trait FoldDomainNode {
         separation_class: SeparationClass,
         role_count: usize,
         expanded: bool,
+    ) -> Self::Output;
+
+    // Aggregate State Machines
+    fn fold_aggregate_organization(
+        &self,
+        name: &str,
+        version: u64,
+        people_count: usize,
+        units_count: usize,
+    ) -> Self::Output;
+
+    fn fold_aggregate_pki_chain(
+        &self,
+        name: &str,
+        version: u64,
+        certificates_count: usize,
+        keys_count: usize,
+    ) -> Self::Output;
+
+    fn fold_aggregate_nats_security(
+        &self,
+        name: &str,
+        version: u64,
+        operators_count: usize,
+        accounts_count: usize,
+        users_count: usize,
+    ) -> Self::Output;
+
+    fn fold_aggregate_yubikey_provisioning(
+        &self,
+        name: &str,
+        version: u64,
+        devices_count: usize,
+        slots_provisioned: usize,
     ) -> Self::Output;
 }
 
@@ -1593,6 +1774,81 @@ impl FoldDomainNode for FoldVisualization {
             expanded,
         }
     }
+
+    // Aggregate state machines
+    // Note: Colors are placeholder - actual colors set in populate_aggregates_graph from ColorPalette
+    fn fold_aggregate_organization(
+        &self,
+        name: &str,
+        version: u64,
+        people_count: usize,
+        units_count: usize,
+    ) -> Self::Output {
+        VisualizationData {
+            color: iced::Color::WHITE,  // Placeholder - overridden by ColorPalette.aggregate_organization
+            primary_text: name.to_string(),
+            secondary_text: format!("v{} | {} people, {} units", version, people_count, units_count),
+            icon: '🏢',
+            icon_font: iced::Font::DEFAULT,
+            expandable: false,
+            expanded: false,
+        }
+    }
+
+    fn fold_aggregate_pki_chain(
+        &self,
+        name: &str,
+        version: u64,
+        certificates_count: usize,
+        keys_count: usize,
+    ) -> Self::Output {
+        VisualizationData {
+            color: iced::Color::WHITE,  // Placeholder - overridden by ColorPalette.aggregate_pki_chain
+            primary_text: name.to_string(),
+            secondary_text: format!("v{} | {} certs, {} keys", version, certificates_count, keys_count),
+            icon: '📜',
+            icon_font: iced::Font::DEFAULT,
+            expandable: false,
+            expanded: false,
+        }
+    }
+
+    fn fold_aggregate_nats_security(
+        &self,
+        name: &str,
+        version: u64,
+        operators_count: usize,
+        accounts_count: usize,
+        users_count: usize,
+    ) -> Self::Output {
+        VisualizationData {
+            color: iced::Color::WHITE,  // Placeholder - overridden by ColorPalette.aggregate_nats_security
+            primary_text: name.to_string(),
+            secondary_text: format!("v{} | {} ops, {} accts, {} users", version, operators_count, accounts_count, users_count),
+            icon: '🔌',
+            icon_font: iced::Font::DEFAULT,
+            expandable: false,
+            expanded: false,
+        }
+    }
+
+    fn fold_aggregate_yubikey_provisioning(
+        &self,
+        name: &str,
+        version: u64,
+        devices_count: usize,
+        slots_provisioned: usize,
+    ) -> Self::Output {
+        VisualizationData {
+            color: iced::Color::WHITE,  // Placeholder - overridden by ColorPalette.aggregate_yubikey
+            primary_text: name.to_string(),
+            secondary_text: format!("v{} | {} devices, {} slots", version, devices_count, slots_provisioned),
+            icon: '🔑',
+            icon_font: iced::Font::DEFAULT,
+            expandable: false,
+            expanded: false,
+        }
+    }
 }
 
 // ============================================================================
@@ -1994,6 +2250,56 @@ impl FoldDomainNode for FoldDetailPanel {
             ],
         }
     }
+
+    // Aggregate state machines
+    fn fold_aggregate_organization(&self, name: &str, version: u64, people_count: usize, units_count: usize) -> Self::Output {
+        DetailPanelData {
+            title: "Organization Aggregate:".to_string(),
+            fields: vec![
+                ("Name".to_string(), name.to_string()),
+                ("Version".to_string(), version.to_string()),
+                ("People".to_string(), people_count.to_string()),
+                ("Units".to_string(), units_count.to_string()),
+            ],
+        }
+    }
+
+    fn fold_aggregate_pki_chain(&self, name: &str, version: u64, certificates_count: usize, keys_count: usize) -> Self::Output {
+        DetailPanelData {
+            title: "PKI Certificate Chain Aggregate:".to_string(),
+            fields: vec![
+                ("Name".to_string(), name.to_string()),
+                ("Version".to_string(), version.to_string()),
+                ("Certificates".to_string(), certificates_count.to_string()),
+                ("Keys".to_string(), keys_count.to_string()),
+            ],
+        }
+    }
+
+    fn fold_aggregate_nats_security(&self, name: &str, version: u64, operators_count: usize, accounts_count: usize, users_count: usize) -> Self::Output {
+        DetailPanelData {
+            title: "NATS Security Aggregate:".to_string(),
+            fields: vec![
+                ("Name".to_string(), name.to_string()),
+                ("Version".to_string(), version.to_string()),
+                ("Operators".to_string(), operators_count.to_string()),
+                ("Accounts".to_string(), accounts_count.to_string()),
+                ("Users".to_string(), users_count.to_string()),
+            ],
+        }
+    }
+
+    fn fold_aggregate_yubikey_provisioning(&self, name: &str, version: u64, devices_count: usize, slots_provisioned: usize) -> Self::Output {
+        DetailPanelData {
+            title: "YubiKey Provisioning Aggregate:".to_string(),
+            fields: vec![
+                ("Name".to_string(), name.to_string()),
+                ("Version".to_string(), version.to_string()),
+                ("Devices".to_string(), devices_count.to_string()),
+                ("Slots Provisioned".to_string(), slots_provisioned.to_string()),
+            ],
+        }
+    }
 }
 
 /// Helper method on DomainNode for getting detail panel data
@@ -2284,6 +2590,34 @@ impl FoldDomainNode for FoldSearchableText {
             keywords: vec!["class".to_string(), "separation".to_string()],
         }
     }
+
+    fn fold_aggregate_organization(&self, name: &str, _version: u64, _people_count: usize, _units_count: usize) -> Self::Output {
+        SearchableText {
+            fields: vec![name.to_string()],
+            keywords: vec!["aggregate".to_string(), "organization".to_string()],
+        }
+    }
+
+    fn fold_aggregate_pki_chain(&self, name: &str, _version: u64, _certificates_count: usize, _keys_count: usize) -> Self::Output {
+        SearchableText {
+            fields: vec![name.to_string()],
+            keywords: vec!["aggregate".to_string(), "pki".to_string(), "certificate".to_string()],
+        }
+    }
+
+    fn fold_aggregate_nats_security(&self, name: &str, _version: u64, _operators_count: usize, _accounts_count: usize, _users_count: usize) -> Self::Output {
+        SearchableText {
+            fields: vec![name.to_string()],
+            keywords: vec!["aggregate".to_string(), "nats".to_string(), "security".to_string()],
+        }
+    }
+
+    fn fold_aggregate_yubikey_provisioning(&self, name: &str, _version: u64, _devices_count: usize, _slots_provisioned: usize) -> Self::Output {
+        SearchableText {
+            fields: vec![name.to_string()],
+            keywords: vec!["aggregate".to_string(), "yubikey".to_string(), "provisioning".to_string()],
+        }
+    }
 }
 
 /// Helper method on DomainNode for getting searchable text
@@ -2536,6 +2870,10 @@ mod tests {
         fn fold_policy_claim(&self, _: Uuid, _: &str, _: &str) -> Self::Output { Injection::PolicyClaim }
         fn fold_policy_category(&self, _: Uuid, _: &str, _: usize, _: bool) -> Self::Output { Injection::PolicyCategory }
         fn fold_policy_group(&self, _: Uuid, _: &str, _: SeparationClass, _: usize, _: bool) -> Self::Output { Injection::PolicyGroup }
+        fn fold_aggregate_organization(&self, _: &str, _: u64, _: usize, _: usize) -> Self::Output { Injection::AggregateOrganization }
+        fn fold_aggregate_pki_chain(&self, _: &str, _: u64, _: usize, _: usize) -> Self::Output { Injection::AggregatePkiChain }
+        fn fold_aggregate_nats_security(&self, _: &str, _: u64, _: usize, _: usize, _: usize) -> Self::Output { Injection::AggregateNatsSecurity }
+        fn fold_aggregate_yubikey_provisioning(&self, _: &str, _: u64, _: usize, _: usize) -> Self::Output { Injection::AggregateYubiKeyProvisioning }
     }
 
     #[test]

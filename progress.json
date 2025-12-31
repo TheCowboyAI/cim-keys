@@ -2,7 +2,7 @@
   "project": "cim-keys-architectural-refactoring",
   "version": "2.0.0",
   "created": "2025-12-28",
-  "last_updated": "2025-12-30",
+  "last_updated": "2025-12-31",
   "backward_compatibility": false,
   "notes": "User confirmed: NO backward compatibility required. Overwrite existing APIs freely.",
 
@@ -486,6 +486,55 @@
         "Migration guide written - ACHIEVED (~500 lines)"
       ],
       "notes": "Final sprint completing the architectural refactoring. Created comprehensive documentation: ARCHITECTURE.md (system diagrams), MIGRATION_GUIDE.md (module adoption guide), updated README.md and CLAUDE.md. All 392 tests pass."
+    },
+    "sprint_21": {
+      "name": "Compositional Coproduct Architecture",
+      "status": "completed",
+      "started": "2025-12-31",
+      "completed": "2025-12-31",
+      "retrospective": "retrospectives/sprint_21.md",
+      "tasks": [
+        { "id": "21.1", "description": "Create per-context coproduct modules in src/domains/", "status": "completed" },
+        { "id": "21.2", "description": "Implement Organization context coproduct", "status": "completed" },
+        { "id": "21.3", "description": "Implement PKI context coproduct", "status": "completed" },
+        { "id": "21.4", "description": "Implement NATS context coproduct", "status": "completed" },
+        { "id": "21.5", "description": "Implement YubiKey context coproduct", "status": "completed" },
+        { "id": "21.6", "description": "Implement Visualization context coproduct", "status": "completed" },
+        { "id": "21.7", "description": "Create fold structure in src/gui/folds/", "status": "completed" },
+        { "id": "21.8", "description": "Implement FoldVisualization", "status": "completed" },
+        { "id": "21.9", "description": "Implement FoldSearchableText", "status": "completed" },
+        { "id": "21.10", "description": "Create ADR-001 documentation", "status": "completed" }
+      ],
+      "acceptance_criteria": [
+        "Per-context coproducts created - ACHIEVED (5 modules)",
+        "Fold structure organized by FRP pipeline role - ACHIEVED (view/, query/)",
+        "All tests pass - ACHIEVED"
+      ],
+      "notes": "Replaced monolithic domain_node.rs approach with per-context coproducts. Each bounded context now has its own injection + entity + fold structure following the universal property pattern."
+    },
+    "sprint_22": {
+      "name": "Typography Bounded Context",
+      "status": "completed",
+      "started": "2025-12-31",
+      "completed": "2025-12-31",
+      "retrospective": "retrospectives/sprint_22.md",
+      "tasks": [
+        { "id": "22.1", "description": "Create Typography bounded context (13 files)", "status": "completed" },
+        { "id": "22.2", "description": "Implement VerifiedTheme aggregate root", "status": "completed" },
+        { "id": "22.3", "description": "Implement IconChain with fallback (emoji→material→symbol→text)", "status": "completed" },
+        { "id": "22.4", "description": "Implement LabelledElement output type", "status": "completed" },
+        { "id": "22.5", "description": "Create ThemedVisualizationFold", "status": "completed" },
+        { "id": "22.6", "description": "Add LiftableDomain for Role and Policy", "status": "completed" },
+        { "id": "22.7", "description": "Add color constants for NATS/PKI/YubiKey", "status": "completed" },
+        { "id": "22.8", "description": "Add documentation to domain_node.rs (not deprecation)", "status": "completed" }
+      ],
+      "acceptance_criteria": [
+        "Typography bounded context complete - ACHIEVED (13 files, 28 tests)",
+        "VerifiedTheme guarantees no tofu - ACHIEVED (icon fallback chains)",
+        "Gradual merge approach (not aggressive deprecation) - ACHIEVED",
+        "All 384 tests pass - ACHIEVED"
+      ],
+      "notes": "Created Typography as a DDD bounded context to solve the tofu problem. User feedback changed approach from aggressive deprecation to gradual merge. LiftableDomain now supports 6 types: Organization, OrganizationUnit, Person, Location, Role, Policy."
     }
   },
 

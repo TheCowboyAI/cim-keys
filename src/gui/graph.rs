@@ -1027,6 +1027,89 @@ impl OrganizationConcept {
         self.node_views.insert(slot_id, view);
     }
 
+    // ===== Aggregate Nodes (DDD Bounded Context State) =====
+
+    /// Add an Organization Aggregate node to the graph
+    pub fn add_aggregate_organization_node(
+        &mut self,
+        node_id: Uuid,
+        name: String,
+        version: u64,
+        people_count: usize,
+        units_count: usize,
+    ) {
+        let domain_node = DomainNode::inject_aggregate_organization(
+            name, version, people_count, units_count
+        );
+        let position = self.calculate_node_position(node_id);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let view = node.create_view(position);
+
+        self.nodes.insert(node_id, node);
+        self.node_views.insert(node_id, view);
+    }
+
+    /// Add a PKI Chain Aggregate node to the graph
+    pub fn add_aggregate_pki_chain_node(
+        &mut self,
+        node_id: Uuid,
+        name: String,
+        version: u64,
+        certificates_count: usize,
+        keys_count: usize,
+    ) {
+        let domain_node = DomainNode::inject_aggregate_pki_chain(
+            name, version, certificates_count, keys_count
+        );
+        let position = self.calculate_node_position(node_id);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let view = node.create_view(position);
+
+        self.nodes.insert(node_id, node);
+        self.node_views.insert(node_id, view);
+    }
+
+    /// Add a NATS Security Aggregate node to the graph
+    pub fn add_aggregate_nats_security_node(
+        &mut self,
+        node_id: Uuid,
+        name: String,
+        version: u64,
+        operators_count: usize,
+        accounts_count: usize,
+        users_count: usize,
+    ) {
+        let domain_node = DomainNode::inject_aggregate_nats_security(
+            name, version, operators_count, accounts_count, users_count
+        );
+        let position = self.calculate_node_position(node_id);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let view = node.create_view(position);
+
+        self.nodes.insert(node_id, node);
+        self.node_views.insert(node_id, view);
+    }
+
+    /// Add a YubiKey Provisioning Aggregate node to the graph
+    pub fn add_aggregate_yubikey_provisioning_node(
+        &mut self,
+        node_id: Uuid,
+        name: String,
+        version: u64,
+        devices_count: usize,
+        slots_provisioned: usize,
+    ) {
+        let domain_node = DomainNode::inject_aggregate_yubikey_provisioning(
+            name, version, devices_count, slots_provisioned
+        );
+        let position = self.calculate_node_position(node_id);
+        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let view = node.create_view(position);
+
+        self.nodes.insert(node_id, node);
+        self.node_views.insert(node_id, view);
+    }
+
     // ===== PKI Trust Chain Graph Population (Phase 2) =====
 
     /// Populate the graph from PKI certificate hierarchy

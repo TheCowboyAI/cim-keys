@@ -49,7 +49,7 @@ use iced::Color;
 use uuid::Uuid;
 
 use crate::gui::domain_node::Injection;
-use crate::domain::{Organization, OrganizationUnit, Person, Location};
+use crate::domain::{Organization, OrganizationUnit, Person, Location, Role, Policy};
 
 // ============================================================================
 // DOMAIN-SPECIFIC COLORS
@@ -66,6 +66,30 @@ pub const COLOR_PERSON: Color = Color::from_rgb(0.5, 0.7, 0.3);
 
 /// Color for Location nodes
 pub const COLOR_LOCATION: Color = Color::from_rgb(0.6, 0.5, 0.4);
+
+/// Color for Role nodes
+pub const COLOR_ROLE: Color = Color::from_rgb(0.4, 0.5, 0.6);
+
+/// Color for Policy nodes
+pub const COLOR_POLICY: Color = Color::from_rgb(0.5, 0.3, 0.6);
+
+/// Color for NATS Operator nodes
+pub const COLOR_NATS_OPERATOR: Color = Color::from_rgb(0.6, 0.2, 0.8);
+
+/// Color for NATS Account nodes
+pub const COLOR_NATS_ACCOUNT: Color = Color::from_rgb(0.5, 0.3, 0.7);
+
+/// Color for NATS User nodes
+pub const COLOR_NATS_USER: Color = Color::from_rgb(0.4, 0.4, 0.6);
+
+/// Color for Certificate nodes
+pub const COLOR_CERTIFICATE: Color = Color::from_rgb(0.7, 0.5, 0.2);
+
+/// Color for Key nodes
+pub const COLOR_KEY: Color = Color::from_rgb(0.6, 0.6, 0.2);
+
+/// Color for YubiKey nodes
+pub const COLOR_YUBIKEY: Color = Color::from_rgb(0.0, 0.6, 0.4);
 
 // ============================================================================
 // LIFTED NODE - Graph representation of any domain entity
@@ -510,6 +534,62 @@ impl LiftableDomain for Location {
     fn entity_id(&self) -> Uuid {
         use cim_domain::AggregateRoot;
         *self.id().as_uuid()
+    }
+}
+
+impl LiftableDomain for Role {
+    fn lift(&self) -> LiftedNode {
+        LiftedNode::new(
+            self.id,
+            Injection::Role,
+            &self.name,
+            COLOR_ROLE,
+            self.clone(),
+        )
+        .with_secondary(self.description.clone())
+    }
+
+    fn unlift(node: &LiftedNode) -> Option<Self> {
+        if node.injection != Injection::Role {
+            return None;
+        }
+        node.downcast::<Role>().cloned()
+    }
+
+    fn injection() -> Injection {
+        Injection::Role
+    }
+
+    fn entity_id(&self) -> Uuid {
+        self.id
+    }
+}
+
+impl LiftableDomain for Policy {
+    fn lift(&self) -> LiftedNode {
+        LiftedNode::new(
+            self.id,
+            Injection::Policy,
+            &self.name,
+            COLOR_POLICY,
+            self.clone(),
+        )
+        .with_secondary(self.description.clone())
+    }
+
+    fn unlift(node: &LiftedNode) -> Option<Self> {
+        if node.injection != Injection::Policy {
+            return None;
+        }
+        node.downcast::<Policy>().cloned()
+    }
+
+    fn injection() -> Injection {
+        Injection::Policy
+    }
+
+    fn entity_id(&self) -> Uuid {
+        self.id
     }
 }
 

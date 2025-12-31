@@ -232,6 +232,12 @@ pub struct ColorPalette {
     pub node_policy: Color,
     pub node_edge_highlight: Color,
 
+    // Aggregate node colors (DDD bounded context visualization)
+    pub aggregate_organization: Color,
+    pub aggregate_pki_chain: Color,
+    pub aggregate_nats_security: Color,
+    pub aggregate_yubikey: Color,
+
     // Separation class colors (domain ontology for role segregation)
     pub class_operational: Color,     // Blue - day-to-day tasks
     pub class_administrative: Color,  // Purple - user/policy management
@@ -322,6 +328,12 @@ impl Default for ColorPalette {
             node_policy: Color::from_rgb(0.8, 0.6, 0.2),
             node_edge_highlight: Color::from_rgb(0.3, 0.3, 0.7),
 
+            // Aggregate node colors (DDD bounded context visualization)
+            aggregate_organization: Color::from_rgb(0.2, 0.5, 0.8),   // Blue - Organization domain
+            aggregate_pki_chain: Color::from_rgb(0.8, 0.4, 0.2),      // Orange - PKI/Security
+            aggregate_nats_security: Color::from_rgb(0.3, 0.7, 0.5),  // Green - NATS/Messaging
+            aggregate_yubikey: Color::from_rgb(0.7, 0.3, 0.6),        // Purple - Hardware keys
+
             // Separation class colors (domain ontology)
             class_operational: Color::from_rgb(0.3, 0.6, 0.9),     // Blue - H210°
             class_administrative: Color::from_rgb(0.6, 0.4, 0.8),  // Purple - H270°
@@ -394,6 +406,24 @@ impl ColorPalette {
             crate::policy::SeparationClass::Emergency => self.class_emergency,
             crate::policy::SeparationClass::Financial => self.class_financial,
             crate::policy::SeparationClass::Personnel => self.class_personnel,
+        }
+    }
+
+    /// Get color for aggregate type nodes (DDD bounded context visualization)
+    ///
+    /// Each aggregate represents a consistency boundary in the domain model:
+    /// - Organization: Blue (structure, hierarchy)
+    /// - PKI Chain: Orange (security, certificates)
+    /// - NATS Security: Green (messaging, connectivity)
+    /// - YubiKey: Purple (hardware, provisioning)
+    pub fn aggregate_color(&self, injection: &super::domain_node::Injection) -> Color {
+        use super::domain_node::Injection;
+        match injection {
+            Injection::AggregateOrganization => self.aggregate_organization,
+            Injection::AggregatePkiChain => self.aggregate_pki_chain,
+            Injection::AggregateNatsSecurity => self.aggregate_nats_security,
+            Injection::AggregateYubiKeyProvisioning => self.aggregate_yubikey,
+            _ => self.node_default,  // Non-aggregate nodes use default
         }
     }
 

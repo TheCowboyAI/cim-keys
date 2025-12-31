@@ -40,6 +40,7 @@ pub mod graph_nats;
 pub mod graph_yubikey;
 pub mod graph_events;
 pub mod domain_node;
+pub mod folds;
 
 // Aggregate-specific graph views for DDD organization
 pub mod graph_person;
@@ -119,6 +120,7 @@ pub struct CimKeysApp {
     yubikey_graph: OrganizationConcept,
     location_graph: OrganizationConcept,
     policy_graph: OrganizationConcept,
+    aggregates_graph: OrganizationConcept,
     empty_graph: OrganizationConcept,
     graph_projector: crate::graph_projection::GraphProjector,  // Functorial projection to cim-graph
     selected_person: Option<Uuid>,
@@ -987,6 +989,7 @@ impl CimKeysApp {
                 yubikey_graph: OrganizationConcept::new(),
                 location_graph: OrganizationConcept::new(),
                 policy_graph: OrganizationConcept::new(),
+                aggregates_graph: OrganizationConcept::new(),
                 empty_graph: OrganizationConcept::new(),
                 graph_projector: crate::graph_projection::GraphProjector::new(),
                 selected_person: None,
@@ -1132,6 +1135,11 @@ impl CimKeysApp {
             Message::GraphViewSelected(view) => {
                 // Simple: just change the context
                 self.graph_view = view;
+
+                // Populate aggregates graph when switching to Aggregates view
+                if view == GraphView::Aggregates {
+                    self.populate_aggregates_graph();
+                }
 
                 // Context changed - space menu will update automatically based on self.graph_view
                 // Graph rendering will show the appropriate graph for this context
@@ -5361,7 +5369,7 @@ impl CimKeysApp {
             GraphView::NatsInfrastructure => &mut self.nats_graph,
             GraphView::YubiKeyDetails => &mut self.yubikey_graph,
             GraphView::Policies => &mut self.policy_graph,
-            GraphView::Aggregates => &mut self.location_graph,  // Reuse location_graph for aggregates (placeholder)
+            GraphView::Aggregates => &mut self.aggregates_graph,
             GraphView::CommandHistory | GraphView::CausalityChains => &mut self.empty_graph,
         }
     }
@@ -5787,6 +5795,121 @@ impl CimKeysApp {
         tracing::debug!("Applied barycenter ordering to claims");
     }
 
+    /// Populate the aggregates graph with DDD aggregate state
+    fn populate_aggregates_graph(&mut self) {
+        // Clear existing aggregates graph
+        self.aggregates_graph.nodes.clear();
+        self.aggregates_graph.edges.clear();
+        self.aggregates_graph.node_views.clear();
+
+        let base_x = 200.0;
+        let base_y = 150.0;
+        let spacing_x = 350.0;
+
+        // Organization Aggregate
+        let org_id = Uuid::now_v7();
+        let people_count = self.org_graph.nodes.values()
+            .filter(|n| n.injection() == super::gui::domain_node::Injection::Person)
+            .count();
+        let units_count = self.org_graph.nodes.values()
+            .filter(|n| n.injection() == super::gui::domain_node::Injection::OrganizationUnit)
+            .count();
+        self.aggregates_graph.add_aggregate_organization_node(
+            org_id,
+            "Organization".to_string(),
+            0,  // Version - calculated from event count
+            people_count,
+            units_count,
+        );
+        if let Some(view) = self.aggregates_graph.node_views.get_mut(&org_id) {
+            view.position = Point::new(base_x, base_y);
+            view.color = self.view_model.colors.aggregate_organization;
+        }
+
+        // PKI Certificate Chain Aggregate
+        let pki_id = Uuid::now_v7();
+        // Count PKI nodes from pki_graph
+        let certs_count = self.pki_graph.nodes.values()
+            .filter(|n| matches!(n.injection(),
+                super::gui::domain_node::Injection::RootCertificate |
+                super::gui::domain_node::Injection::IntermediateCertificate |
+                super::gui::domain_node::Injection::LeafCertificate))
+            .count();
+        let keys_count = self.pki_graph.nodes.values()
+            .filter(|n| n.injection() == super::gui::domain_node::Injection::Key)
+            .count();
+        self.aggregates_graph.add_aggregate_pki_chain_node(
+            pki_id,
+            "PKI Certificate Chain".to_string(),
+            certs_count as u64,
+            certs_count,
+            keys_count,
+        );
+        if let Some(view) = self.aggregates_graph.node_views.get_mut(&pki_id) {
+            view.position = Point::new(base_x + spacing_x, base_y);
+            view.color = self.view_model.colors.aggregate_pki_chain;
+        }
+
+        // NATS Security Aggregate
+        let nats_id = Uuid::now_v7();
+        let operators_count = self.nats_graph.nodes.values()
+            .filter(|n| matches!(n.injection(),
+                super::gui::domain_node::Injection::NatsOperator |
+                super::gui::domain_node::Injection::NatsOperatorSimple))
+            .count();
+        let accounts_count = self.nats_graph.nodes.values()
+            .filter(|n| matches!(n.injection(),
+                super::gui::domain_node::Injection::NatsAccount |
+                super::gui::domain_node::Injection::NatsAccountSimple))
+            .count();
+        let users_count = self.nats_graph.nodes.values()
+            .filter(|n| matches!(n.injection(),
+                super::gui::domain_node::Injection::NatsUser |
+                super::gui::domain_node::Injection::NatsUserSimple))
+            .count();
+        self.aggregates_graph.add_aggregate_nats_security_node(
+            nats_id,
+            "NATS Security".to_string(),
+            0,  // Version
+            operators_count,
+            accounts_count,
+            users_count,
+        );
+        if let Some(view) = self.aggregates_graph.node_views.get_mut(&nats_id) {
+            view.position = Point::new(base_x, base_y + 200.0);
+            view.color = self.view_model.colors.aggregate_nats_security;
+        }
+
+        // YubiKey Provisioning Aggregate
+        let yubikey_id = Uuid::now_v7();
+        let devices_count = self.yubikey_graph.nodes.values()
+            .filter(|n| n.injection() == super::gui::domain_node::Injection::YubiKey)
+            .count();
+        let slots_count = self.yubikey_graph.nodes.values()
+            .filter(|n| n.injection() == super::gui::domain_node::Injection::PivSlot)
+            .count();
+        self.aggregates_graph.add_aggregate_yubikey_provisioning_node(
+            yubikey_id,
+            "YubiKey Provisioning".to_string(),
+            0,  // Version
+            devices_count,
+            slots_count,
+        );
+        if let Some(view) = self.aggregates_graph.node_views.get_mut(&yubikey_id) {
+            view.position = Point::new(base_x + spacing_x, base_y + 200.0);
+            view.color = self.view_model.colors.aggregate_yubikey;
+        }
+
+        tracing::info!(
+            "Aggregates graph populated with {} nodes: Org({} people, {} units), PKI({} certs, {} keys), NATS({} ops, {} accts, {} users), YubiKey({} devices, {} slots)",
+            self.aggregates_graph.nodes.len(),
+            people_count, units_count,
+            certs_count, keys_count,
+            operators_count, accounts_count, users_count,
+            devices_count, slots_count
+        );
+    }
+
     fn tab_button_style(&self, _theme: &Theme, is_active: bool) -> button::Style {
         if is_active {
             button::Style {
@@ -6041,8 +6164,8 @@ impl CimKeysApp {
                     view_graph(&self.policy_graph, &self.view_model)
                 }
                 GraphView::Aggregates => {
-                    // Show aggregate state machines (placeholder)
-                    view_graph(&self.location_graph, &self.view_model)
+                    // Show aggregate state machines
+                    view_graph(&self.aggregates_graph, &self.view_model)
                 }
                 GraphView::CommandHistory | GraphView::CausalityChains => {
                     // Empty graph for read-only derived views

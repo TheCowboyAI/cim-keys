@@ -84,6 +84,10 @@ pub mod combinators;
 // Master domain model - cim-keys owns the initial domain creation
 pub mod domain;
 
+// Per-context coproducts (DDD bounded contexts)
+// Each context owns its entity types with injection functions and fold traits
+pub mod domains;
+
 // State machines for workflow control
 pub mod state_machines;
 

@@ -323,6 +323,31 @@ impl PropertyCard {
                 self.edit_email = String::new();
                 self.edit_enabled = true;
             }
+            // Aggregate Bounded Contexts - read-only state visualization
+            DomainNodeData::AggregateOrganization { name, version, people_count, units_count } => {
+                self.edit_name = name.clone();
+                self.edit_description = format!("v{} | {} people, {} units", version, people_count, units_count);
+                self.edit_email = String::new();
+                self.edit_enabled = true;
+            }
+            DomainNodeData::AggregatePkiChain { name, version, certificates_count, keys_count } => {
+                self.edit_name = name.clone();
+                self.edit_description = format!("v{} | {} certs, {} keys", version, certificates_count, keys_count);
+                self.edit_email = String::new();
+                self.edit_enabled = true;
+            }
+            DomainNodeData::AggregateNatsSecurity { name, version, operators_count, accounts_count, users_count } => {
+                self.edit_name = name.clone();
+                self.edit_description = format!("v{} | {} ops, {} accts, {} users", version, operators_count, accounts_count, users_count);
+                self.edit_email = String::new();
+                self.edit_enabled = true;
+            }
+            DomainNodeData::AggregateYubiKeyProvisioning { name, version, devices_count, slots_provisioned } => {
+                self.edit_name = name.clone();
+                self.edit_description = format!("v{} | {} devices, {} slots", version, devices_count, slots_provisioned);
+                self.edit_email = String::new();
+                self.edit_enabled = true;
+            }
         }
     }
 
