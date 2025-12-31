@@ -4,7 +4,7 @@
 
 use iced::{
     widget::{button, checkbox, column, container, row, text, text_input, scrollable, Column, Row},
-    Color, Element, Length, Theme,
+    Element, Length, Theme,
 };
 use uuid::Uuid;
 use std::collections::HashSet;

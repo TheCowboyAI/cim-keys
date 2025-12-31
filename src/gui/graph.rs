@@ -3470,11 +3470,11 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
             // Draw ghost node circle with transparency
             let ghost_radius = 20.0;
             let ghost_circle = canvas::Path::circle(ghost_pos, ghost_radius);
-            frame.fill(&ghost_circle, Color::from_rgba8(
-                (role_color.r * 255.0) as u8,
-                (role_color.g * 255.0) as u8,
-                (role_color.b * 255.0) as u8,
-                180.0, // Semi-transparent (alpha as f32, 0.0-255.0 range)
+            frame.fill(&ghost_circle, Color::from_rgba(
+                role_color.r,
+                role_color.g,
+                role_color.b,
+                0.7, // Semi-transparent (≈180/255)
             ));
 
             // Draw border
