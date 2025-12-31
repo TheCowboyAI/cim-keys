@@ -691,16 +691,17 @@
       },
       "sprint_16": {
         "name": "Final Integration and SD Card Testing",
-        "status": "pending",
-        "started": null,
+        "status": "in_progress",
+        "started": "2025-12-31",
         "completed": null,
         "description": "Final integration testing and SD card deployment",
         "tasks": [
-          { "id": "16.1", "description": "Full cargo build --release", "status": "pending" },
-          { "id": "16.2", "description": "Test Ctrl+/- scaling with all components", "status": "pending" },
-          { "id": "16.3", "description": "Rebuild SD card image with updated binary", "status": "pending" },
-          { "id": "16.4", "description": "Flash to SD card and test on target hardware", "status": "pending" }
-        ]
+          { "id": "16.1", "description": "Full cargo build --release", "status": "completed" },
+          { "id": "16.2", "description": "Test Ctrl+/- scaling with all components", "status": "completed" },
+          { "id": "16.3", "description": "Rebuild SD card image with updated binary", "status": "completed" },
+          { "id": "16.4", "description": "Flash to SD card and test on target hardware", "status": "pending", "notes": "Requires physical hardware" }
+        ],
+        "notes": "Tasks 16.1-16.3 completed. Task 16.4 requires physical SD card and target hardware."
       }
     }
   }
