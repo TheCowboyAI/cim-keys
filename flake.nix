@@ -250,6 +250,46 @@
           # Build with GUI features
           buildFeatures = [ "gui" ];
 
+          # Copy CIM dependencies from flake inputs and patch workspace inheritance
+          # Cargo.toml uses "../cim-*" paths, so we need them in parent of sourceRoot
+          postUnpack = ''
+            echo "Setting up CIM dependencies..."
+            echo "sourceRoot=$sourceRoot"
+
+            # Get the parent directory where ../cim-* paths will resolve
+            parentDir=$(dirname $sourceRoot)
+            echo "parentDir=$parentDir"
+
+            # Copy CIM dependencies (not symlink, so we can patch them)
+            cp -r ${cim-domain} $parentDir/cim-domain
+            cp -r ${cim-domain-location} $parentDir/cim-domain-location
+            cp -r ${cim-domain-person} $parentDir/cim-domain-person
+            cp -r ${cim-domain-organization} $parentDir/cim-domain-organization
+            cp -r ${cim-domain-policy} $parentDir/cim-domain-policy
+            cp -r ${cim-domain-agent} $parentDir/cim-domain-agent
+            cp -r ${cim-domain-relationship} $parentDir/cim-domain-relationship
+            cp -r ${cim-domain-spaces} $parentDir/cim-domain-spaces
+            cp -r ${cim-graph} $parentDir/cim-graph
+            cp -r ${cim-ipld} $parentDir/cim-ipld
+
+            # Make writable so we can patch
+            chmod -R u+w $parentDir/cim-*
+
+            # Remove workspace lints inheritance from all Cargo.toml files
+            # This is needed because these crates are now outside their workspace
+            for toml in $parentDir/cim-*/Cargo.toml; do
+              echo "Patching $toml..."
+              # Remove [lints] section with workspace = true
+              ${pkgs.gnused}/bin/sed -i '/^\[lints\]/,/^workspace = true$/d' "$toml"
+              # Also remove standalone lints.workspace = true
+              ${pkgs.gnused}/bin/sed -i '/^lints\.workspace = true/d' "$toml"
+              ${pkgs.gnused}/bin/sed -i '/^lints.workspace = true/d' "$toml"
+            done
+
+            echo "CIM dependencies set up:"
+            ls -la $parentDir/cim-* || true
+          '';
+
           preBuild = ''
             ${envVars}
 
