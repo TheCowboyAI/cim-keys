@@ -66,10 +66,10 @@
     extraPackages = with pkgs; [
       # Intel GPU (Iris/UHD)
       intel-media-driver    # iHD driver for newer Intel
-      vaapiIntel           # i965 driver for older Intel
+      intel-vaapi-driver   # i965 driver for older Intel
       intel-compute-runtime # OpenCL
       # Mesa Vulkan drivers
-      mesa.drivers
+      mesa
     ];
   };
 
@@ -154,7 +154,7 @@
   # Fonts
   fonts.packages = with pkgs; [
     noto-fonts
-    noto-fonts-emoji
+    noto-fonts-color-emoji
     fira-code
   ];
 

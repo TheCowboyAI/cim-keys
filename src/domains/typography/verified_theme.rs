@@ -117,6 +117,10 @@ impl Default for ThemeMetrics {
 }
 
 /// Verification result for theme initialization
+///
+/// This type is prepared for when full font verification is implemented.
+/// Currently unused as we use text_only_fallback().
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct VerificationResult {
     /// Did all fonts load successfully?
@@ -131,6 +135,7 @@ pub struct VerificationResult {
     pub errors: Vec<TypographyVerificationError>,
 }
 
+#[allow(dead_code)]
 impl VerificationResult {
     /// Check if verification completely succeeded
     pub fn is_ok(&self) -> bool {

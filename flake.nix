@@ -482,7 +482,7 @@
           wrapProgram $out/bin/cim-keys-gui \
             --prefix LD_LIBRARY_PATH : "${pkgsForImage.lib.makeLibraryPath (with pkgsForImage; [
               wayland libxkbcommon xorg.libX11 xorg.libXcursor xorg.libXrandr xorg.libXi xorg.libxcb
-              vulkan-loader mesa mesa.drivers libGL libglvnd libdrm
+              vulkan-loader mesa libGL libglvnd libdrm
               fontconfig freetype harfbuzz openssl pcsclite zlib
             ])}" \
             --set FONTCONFIG_FILE "${pkgsForImage.fontconfig.out}/etc/fonts/fonts.conf"

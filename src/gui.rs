@@ -31,7 +31,7 @@ use crate::{
         YubiKeyCliAdapter,
     },
     // Icons
-    icons::{self, verified, EMOJI_FONT, FONT_BODY},
+    icons::{verified, EMOJI_FONT, FONT_BODY},
 };
 
 pub mod graph;
