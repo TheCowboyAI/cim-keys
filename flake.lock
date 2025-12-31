@@ -19,11 +19,11 @@
     "cim-domain-agent": {
       "flake": false,
       "locked": {
-        "lastModified": 1762843860,
-        "narHash": "sha256-7sNSWNo3dQqeFl2DvQJvJvFHpt5NJNKGOoPVMEmsIQg=",
+        "lastModified": 1767208694,
+        "narHash": "sha256-M0k7RC7eYmrDN7BpLxyhOOIwTWdKWsG6tzI3J3BvpM4=",
         "ref": "refs/heads/main",
-        "rev": "dfaf92c026ca8bcc5a1df9d81e97a7fc72d2249d",
-        "revCount": 31,
+        "rev": "6cf190606666164c496ac04e1f729346a4427210",
+        "revCount": 32,
         "type": "git",
         "url": "ssh://git@github.com/TheCowboyAI/cim-domain-agent"
       },
@@ -115,11 +115,11 @@
     "cim-domain-spaces": {
       "flake": false,
       "locked": {
-        "lastModified": 1762660089,
-        "narHash": "sha256-GLOteCXl6HbcSj63ZFdKFyW+ve/ACeE4nZT55VgtQ2I=",
+        "lastModified": 1767208680,
+        "narHash": "sha256-Et4lKSlYA+CliT6cwg4skhfbt6VJZ3p3SqfWJV1XTe0=",
         "ref": "refs/heads/main",
-        "rev": "6a4f3b9126caedb93e0cbaeefd28d6c2e8a37c3e",
-        "revCount": 1,
+        "rev": "c5546229703393e555f2fb8d1e2dc5b47afdd396",
+        "revCount": 2,
         "type": "git",
         "url": "ssh://git@github.com/TheCowboyAI/cim-domain-spaces"
       },
@@ -131,11 +131,11 @@
     "cim-graph": {
       "flake": false,
       "locked": {
-        "lastModified": 1765753164,
-        "narHash": "sha256-q4dplw8edaUVi7+PKr6EGTgEBmYe25hLkCL9IsDpYBw=",
+        "lastModified": 1767208672,
+        "narHash": "sha256-3N5tKdOuyB1OiWtrU6xvSboybFvQ6WPflgGWG39eFDU=",
         "ref": "refs/heads/main",
-        "rev": "6c6be0e5c5624df916624b4065c04515a6bb8548",
-        "revCount": 46,
+        "rev": "7e1f784ddf3e3dc92dfe02e5698cad6ec49a9d7a",
+        "revCount": 47,
         "type": "git",
         "url": "ssh://git@github.com/TheCowboyAI/cim-graph"
       },
@@ -147,11 +147,11 @@
     "cim-ipld": {
       "flake": false,
       "locked": {
-        "lastModified": 1763933032,
-        "narHash": "sha256-h7psvQB/x3iwKj/IKki+C1L3na8tGtPzz6DDxHnp20I=",
+        "lastModified": 1767208687,
+        "narHash": "sha256-wobAmgzkDxlHoqjq9ZX7QtWjEmcDOKSDh9ZO6pj/wbE=",
         "ref": "refs/heads/main",
-        "rev": "2ef194fc8f5726d4dd09e181f3c1e063ffd4f206",
-        "revCount": 108,
+        "rev": "674933ecf75166b5112d79ed3eb7b51d0a193a83",
+        "revCount": 109,
         "type": "git",
         "url": "ssh://git@github.com/TheCowboyAI/cim-ipld"
       },
