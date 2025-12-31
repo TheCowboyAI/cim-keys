@@ -551,16 +551,27 @@
       },
       "sprint_13": {
         "name": "role_palette.rs Refactor",
-        "status": "pending",
-        "started": null,
-        "completed": null,
-        "description": "Refactor role_palette.rs: 13 .size(), 4 .spacing(), 10 .padding() calls",
+        "status": "completed",
+        "started": "2025-12-31",
+        "completed": "2025-12-31",
+        "description": "Refactor role_palette.rs: 13 .size(), 4 .spacing(), 3 .padding() calls",
+        "retrospective": "retrospectives/sprint_13.md",
         "tasks": [
-          { "id": "13.1", "description": "Add ViewModel parameter to view function", "status": "pending" },
-          { "id": "13.2", "description": "Replace hardcoded sizes in role labels", "status": "pending" },
-          { "id": "13.3", "description": "Update callers to pass ViewModel", "status": "pending" },
-          { "id": "13.4", "description": "Verify compilation", "status": "pending" }
-        ]
+          { "id": "13.1", "description": "Add ViewModel import and parameter to view function", "status": "completed" },
+          { "id": "13.2", "description": "Update role_badge helper to accept vm", "status": "completed" },
+          { "id": "13.3", "description": "Update category_header helper to accept vm", "status": "completed" },
+          { "id": "13.4", "description": "Replace hardcoded sizes in all functions", "status": "completed" },
+          { "id": "13.5", "description": "Update gui.rs caller to pass ViewModel", "status": "completed" },
+          { "id": "13.6", "description": "Verify compilation", "status": "completed" }
+        ],
+        "acceptance_criteria": [
+          "All .size() calls use vm.text_* - ACHIEVED (13 calls)",
+          "All .spacing() calls use vm.spacing_* - ACHIEVED (4 calls)",
+          "All .padding() calls use vm.padding_* - ACHIEVED (3 calls)",
+          "Helper functions accept vm parameter - ACHIEVED",
+          "Compilation successful - ACHIEVED"
+        ],
+        "notes": "No lifetime annotations needed - ViewModel borrow elided. FRP axioms A3, A5, A9 preserved."
       },
       "sprint_14": {
         "name": "passphrase_dialog.rs Refactor",
