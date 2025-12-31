@@ -47,7 +47,7 @@
       flake = false;
     };
     cim-domain-spaces = {
-      url = "git+ssh://git@github.com/TheCowboyAI/cim-domain-conceptualspaces";
+      url = "git+ssh://git@github.com/TheCowboyAI/cim-domain-spaces";
       flake = false;
     };
     cim-graph = {
@@ -55,7 +55,7 @@
       flake = false;
     };
     cim-ipld = {
-      url = "git+ssh://git@github.com/TheCowboyAI/cim-ipld-graph";
+      url = "git+ssh://git@github.com/TheCowboyAI/cim-ipld";
       flake = false;
     };
   };
@@ -251,43 +251,53 @@
           buildFeatures = [ "gui" ];
 
           # Copy CIM dependencies from flake inputs and patch workspace inheritance
-          # Cargo.toml uses "../cim-*" paths, so we need them in parent of sourceRoot
+          # Cargo.toml uses "../cim-*" paths, so we need them in /build/
           postUnpack = ''
             echo "Setting up CIM dependencies..."
             echo "sourceRoot=$sourceRoot"
+            echo "PWD=$PWD"
 
-            # Get the parent directory where ../cim-* paths will resolve
-            parentDir=$(dirname $sourceRoot)
-            echo "parentDir=$parentDir"
-
-            # Copy CIM dependencies (not symlink, so we can patch them)
-            cp -r ${cim-domain} $parentDir/cim-domain
-            cp -r ${cim-domain-location} $parentDir/cim-domain-location
-            cp -r ${cim-domain-person} $parentDir/cim-domain-person
-            cp -r ${cim-domain-organization} $parentDir/cim-domain-organization
-            cp -r ${cim-domain-policy} $parentDir/cim-domain-policy
-            cp -r ${cim-domain-agent} $parentDir/cim-domain-agent
-            cp -r ${cim-domain-relationship} $parentDir/cim-domain-relationship
-            cp -r ${cim-domain-spaces} $parentDir/cim-domain-spaces
-            cp -r ${cim-graph} $parentDir/cim-graph
-            cp -r ${cim-ipld} $parentDir/cim-ipld
+            # Copy CIM dependencies to /build/ (parent of source directory)
+            # The source is at /build/<hash>-source, so ../cim-* resolves to /build/cim-*
+            cp -r ${cim-domain} /build/cim-domain
+            cp -r ${cim-domain-location} /build/cim-domain-location
+            cp -r ${cim-domain-person} /build/cim-domain-person
+            cp -r ${cim-domain-organization} /build/cim-domain-organization
+            cp -r ${cim-domain-policy} /build/cim-domain-policy
+            cp -r ${cim-domain-agent} /build/cim-domain-agent
+            cp -r ${cim-domain-relationship} /build/cim-domain-relationship
+            cp -r ${cim-domain-spaces} /build/cim-domain-spaces
+            cp -r ${cim-graph} /build/cim-graph
+            cp -r ${cim-ipld} /build/cim-ipld
 
             # Make writable so we can patch
-            chmod -R u+w $parentDir/cim-*
+            chmod -R u+w /build/cim-*
 
             # Remove workspace lints inheritance from all Cargo.toml files
             # This is needed because these crates are now outside their workspace
-            for toml in $parentDir/cim-*/Cargo.toml; do
+            for toml in /build/cim-*/Cargo.toml; do
               echo "Patching $toml..."
               # Remove [lints] section with workspace = true
               ${pkgs.gnused}/bin/sed -i '/^\[lints\]/,/^workspace = true$/d' "$toml"
               # Also remove standalone lints.workspace = true
               ${pkgs.gnused}/bin/sed -i '/^lints\.workspace = true/d' "$toml"
               ${pkgs.gnused}/bin/sed -i '/^lints.workspace = true/d' "$toml"
+
+              # Replace git URLs with local path dependencies
+              # This is needed because GitHub repos may have git references
+              ${pkgs.gnused}/bin/sed -i 's|cim-domain = { git = "[^"]*"[^}]*}|cim-domain = { path = "../cim-domain" }|g' "$toml"
+              ${pkgs.gnused}/bin/sed -i 's|cim-domain-spaces = { git = "[^"]*"[^}]*}|cim-domain-spaces = { path = "../cim-domain-spaces" }|g' "$toml"
+              ${pkgs.gnused}/bin/sed -i 's|cim-domain-location = { git = "[^"]*"[^}]*}|cim-domain-location = { path = "../cim-domain-location" }|g' "$toml"
+              ${pkgs.gnused}/bin/sed -i 's|cim-domain-person = { git = "[^"]*"[^}]*}|cim-domain-person = { path = "../cim-domain-person" }|g' "$toml"
+              ${pkgs.gnused}/bin/sed -i 's|cim-domain-organization = { git = "[^"]*"[^}]*}|cim-domain-organization = { path = "../cim-domain-organization" }|g' "$toml"
+              ${pkgs.gnused}/bin/sed -i 's|cim-domain-policy = { git = "[^"]*"[^}]*}|cim-domain-policy = { path = "../cim-domain-policy" }|g' "$toml"
+              ${pkgs.gnused}/bin/sed -i 's|cim-domain-agent = { git = "[^"]*"[^}]*}|cim-domain-agent = { path = "../cim-domain-agent" }|g' "$toml"
+              ${pkgs.gnused}/bin/sed -i 's|cim-domain-relationship = { git = "[^"]*"[^}]*}|cim-domain-relationship = { path = "../cim-domain-relationship" }|g' "$toml"
+              ${pkgs.gnused}/bin/sed -i 's|cim-graph = { git = "[^"]*"[^}]*}|cim-graph = { path = "../cim-graph" }|g' "$toml"
+              ${pkgs.gnused}/bin/sed -i 's|cim-ipld = { git = "[^"]*"[^}]*}|cim-ipld = { path = "../cim-ipld" }|g' "$toml"
             done
 
-            echo "CIM dependencies set up:"
-            ls -la $parentDir/cim-* || true
+            echo "CIM dependencies set up successfully"
           '';
 
           preBuild = ''
@@ -295,7 +305,7 @@
 
             # Copy assets that need to be embedded
             mkdir -p assets/fonts
-            cp ${pkgs.noto-fonts-emoji}/share/fonts/noto/NotoColorEmoji.ttf assets/fonts/
+            cp ${pkgs.noto-fonts-color-emoji}/share/fonts/noto/NotoColorEmoji.ttf assets/fonts/
 
             # Note: logo.png should already be in the source tree
 
