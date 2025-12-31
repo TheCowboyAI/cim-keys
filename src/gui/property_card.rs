@@ -951,10 +951,10 @@ impl PropertyCard {
     }
 
     /// Render property card for editing an edge
-    fn view_edge(&self, _edge_type: &EdgeType) -> Element<'_, PropertyCardMessage> {
+    fn view_edge(&self, _edge_type: &EdgeType, vm: &ViewModel) -> Element<'_, PropertyCardMessage> {
         let header: Row<'_, PropertyCardMessage> = row![
-            text("Edge Relationship").size(18),
-            button(icons::icon_sized(ICON_CLOSE, 16))
+            text("Edge Relationship").size(vm.text_large),
+            button(icons::icon_sized(ICON_CLOSE, vm.text_medium))
                 .on_press(PropertyCardMessage::Close)
                 .style(|theme: &Theme, _status| {
                     button::Style {
@@ -965,16 +965,16 @@ impl PropertyCard {
                     }
                 }),
         ]
-        .spacing(10)
+        .spacing(vm.spacing_md)
         .align_y(iced::Alignment::Center);
 
         let mut fields: Column<'_, PropertyCardMessage> = column![]
-            .spacing(5)
-            .padding(5);
+            .spacing(vm.spacing_sm)
+            .padding(vm.padding_sm);
 
         // Edge type label
         fields = fields.push(
-            text("Relationship Type:").size(12)
+            text("Relationship Type:").size(vm.text_small)
         );
 
         // Edge type picker (list of buttons for each type)
@@ -1003,7 +1003,7 @@ impl PropertyCard {
             );
 
             fields = fields.push(
-                button(text(label).size(12))
+                button(text(label).size(vm.text_small))
                     .on_press(PropertyCardMessage::EdgeTypeChanged(et))
                     .width(Length::Fill)
                     .style(move |theme: &Theme, _status| {
@@ -1025,7 +1025,7 @@ impl PropertyCard {
         if self.dirty {
             fields = fields.push(
                 text("* Unsaved changes")
-                    .size(11)
+                    .size(vm.text_tiny)
                     .style(|theme: &Theme| {
                         text::Style {
                             color: Some(theme.palette().danger),
@@ -1036,7 +1036,7 @@ impl PropertyCard {
 
         // Action buttons
         let buttons: Row<'_, PropertyCardMessage> = row![
-            button(text("Save").size(12))
+            button(text("Save").size(vm.text_small))
                 .on_press(PropertyCardMessage::Save)
                 .style(|theme: &Theme, _status| {
                     button::Style {
@@ -1046,7 +1046,7 @@ impl PropertyCard {
                         shadow: iced::Shadow::default(),
                     }
                 }),
-            button(text("Delete").size(12))
+            button(text("Delete").size(vm.text_small))
                 .on_press(PropertyCardMessage::DeleteEdge)
                 .style(|theme: &Theme, _status| {
                     button::Style {
@@ -1056,7 +1056,7 @@ impl PropertyCard {
                         shadow: iced::Shadow::default(),
                     }
                 }),
-            button(text("Cancel").size(12))
+            button(text("Cancel").size(vm.text_small))
                 .on_press(PropertyCardMessage::Cancel)
                 .style(|theme: &Theme, _status| {
                     button::Style {
@@ -1067,7 +1067,7 @@ impl PropertyCard {
                     }
                 }),
         ]
-        .spacing(10);
+        .spacing(vm.spacing_md);
 
         use crate::gui::cowboy_theme::CowboyAppTheme as CowboyCustomTheme;
 
@@ -1076,8 +1076,8 @@ impl PropertyCard {
             fields,
             buttons,
         ]
-        .spacing(12)
-        .padding(16);
+        .spacing(vm.spacing_md)
+        .padding(vm.padding_lg);
 
         container(content)
             .width(Length::Fixed(300.0))
@@ -1086,76 +1086,76 @@ impl PropertyCard {
     }
 
     /// Render detailed NATS infrastructure information (read-only)
-    fn view_nats_details<'a>(&self, domain_node: &'a DomainNode) -> Element<'a, PropertyCardMessage> {
+    fn view_nats_details<'a>(&self, domain_node: &'a DomainNode, vm: &ViewModel) -> Element<'a, PropertyCardMessage> {
         let (title, details) = match domain_node.data() {
             DomainNodeData::NatsOperator(identity) => (
                 "NATS Operator",
                 column![
-                    self.detail_row("Type:", "Root Authority"),
-                    self.detail_row("Public Key:", &identity.nkey.public_key.public_key()[..32]),
-                    self.detail_row("Key Type:", &format!("{:?}", identity.nkey.key_type)),
-                    text("JWT Token:").size(12).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    self.detail_row("Type:", "Root Authority", vm),
+                    self.detail_row("Public Key:", &identity.nkey.public_key.public_key()[..32], vm),
+                    self.detail_row("Key Type:", &format!("{:?}", identity.nkey.key_type), vm),
+                    text("JWT Token:").size(vm.text_small).color(Color::from_rgb(0.7, 0.7, 0.8)),
                     scrollable(
                         text(identity.jwt.token())
-                            .size(10)
+                            .size(vm.text_tiny)
                             .font(iced::Font::MONOSPACE)
                     ).height(Length::Fixed(100.0)),
-                    self.detail_row("Has Credential:", if identity.credential.is_some() { "Yes" } else { "No" }),
-                ].spacing(8)
+                    self.detail_row("Has Credential:", if identity.credential.is_some() { "Yes" } else { "No" }, vm),
+                ].spacing(vm.spacing_sm)
             ),
             DomainNodeData::NatsAccount(identity) => (
                 "NATS Account",
                 column![
-                    self.detail_row("Type:", "Account (Organizational Unit)"),
-                    self.detail_row("Public Key:", &identity.nkey.public_key.public_key()[..32]),
-                    self.detail_row("Key Type:", &format!("{:?}", identity.nkey.key_type)),
-                    text("JWT Token:").size(12).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    self.detail_row("Type:", "Account (Organizational Unit)", vm),
+                    self.detail_row("Public Key:", &identity.nkey.public_key.public_key()[..32], vm),
+                    self.detail_row("Key Type:", &format!("{:?}", identity.nkey.key_type), vm),
+                    text("JWT Token:").size(vm.text_small).color(Color::from_rgb(0.7, 0.7, 0.8)),
                     scrollable(
                         text(identity.jwt.token())
-                            .size(10)
+                            .size(vm.text_tiny)
                             .font(iced::Font::MONOSPACE)
                     ).height(Length::Fixed(100.0)),
-                    self.detail_row("Has Credential:", if identity.credential.is_some() { "Yes" } else { "No" }),
-                ].spacing(8)
+                    self.detail_row("Has Credential:", if identity.credential.is_some() { "Yes" } else { "No" }, vm),
+                ].spacing(vm.spacing_sm)
             ),
             DomainNodeData::NatsUser(identity) => (
                 "NATS User",
                 column![
-                    self.detail_row("Type:", "User (Person)"),
-                    self.detail_row("Public Key:", &identity.nkey.public_key.public_key()[..32]),
-                    self.detail_row("Key Type:", &format!("{:?}", identity.nkey.key_type)),
-                    text("JWT Token:").size(12).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    self.detail_row("Type:", "User (Person)", vm),
+                    self.detail_row("Public Key:", &identity.nkey.public_key.public_key()[..32], vm),
+                    self.detail_row("Key Type:", &format!("{:?}", identity.nkey.key_type), vm),
+                    text("JWT Token:").size(vm.text_small).color(Color::from_rgb(0.7, 0.7, 0.8)),
                     scrollable(
                         text(identity.jwt.token())
-                            .size(10)
+                            .size(vm.text_tiny)
                             .font(iced::Font::MONOSPACE)
                     ).height(Length::Fixed(100.0)),
-                    self.detail_row("Has Credential:", if identity.credential.is_some() { "Yes" } else { "No" }),
-                ].spacing(8)
+                    self.detail_row("Has Credential:", if identity.credential.is_some() { "Yes" } else { "No" }, vm),
+                ].spacing(vm.spacing_sm)
             ),
             DomainNodeData::NatsServiceAccount(identity) => (
                 "NATS Service Account",
                 column![
-                    self.detail_row("Type:", "Service (Automation)"),
-                    self.detail_row("Public Key:", &identity.nkey.public_key.public_key()[..32]),
-                    self.detail_row("Key Type:", &format!("{:?}", identity.nkey.key_type)),
-                    text("JWT Token:").size(12).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    self.detail_row("Type:", "Service (Automation)", vm),
+                    self.detail_row("Public Key:", &identity.nkey.public_key.public_key()[..32], vm),
+                    self.detail_row("Key Type:", &format!("{:?}", identity.nkey.key_type), vm),
+                    text("JWT Token:").size(vm.text_small).color(Color::from_rgb(0.7, 0.7, 0.8)),
                     scrollable(
                         text(identity.jwt.token())
-                            .size(10)
+                            .size(vm.text_tiny)
                             .font(iced::Font::MONOSPACE)
                     ).height(Length::Fixed(100.0)),
-                    self.detail_row("Has Credential:", if identity.credential.is_some() { "Yes" } else { "No" }),
-                ].spacing(8)
+                    self.detail_row("Has Credential:", if identity.credential.is_some() { "Yes" } else { "No" }, vm),
+                ].spacing(vm.spacing_sm)
             ),
-            _ => ("Unknown", column![].spacing(8)),
+            _ => ("Unknown", column![].spacing(vm.spacing_sm)),
         };
 
         container(
             column![
                 row![
-                    text(title).size(18),
-                    button(icons::icon_sized(ICON_CLOSE, 16))
+                    text(title).size(vm.text_large),
+                    button(icons::icon_sized(ICON_CLOSE, vm.text_medium))
                         .on_press(PropertyCardMessage::Close)
                         .style(|theme: &Theme, _status| {
                             button::Style {
@@ -1165,9 +1165,9 @@ impl PropertyCard {
                                 shadow: iced::Shadow::default(),
                             }
                         }),
-                ].spacing(10).align_y(iced::Alignment::Center),
+                ].spacing(vm.spacing_md).align_y(iced::Alignment::Center),
                 scrollable(details).height(Length::Fill),
-            ].spacing(10).padding(15)
+            ].spacing(vm.spacing_md).padding(vm.padding_md)
         )
         .width(Length::Fill)
         .height(Length::Fill)
@@ -1175,76 +1175,78 @@ impl PropertyCard {
     }
 
     /// Render detailed PKI certificate information (read-only)
-    fn view_certificate_details<'a>(&self, domain_node: &'a DomainNode) -> Element<'a, PropertyCardMessage> {
+    fn view_certificate_details<'a>(&self, domain_node: &'a DomainNode, vm: &ViewModel) -> Element<'a, PropertyCardMessage> {
+        let text_tiny = vm.text_tiny;
+        let spacing_xs = vm.spacing_xs;
         let (title, details) = match domain_node.data() {
             DomainNodeData::RootCertificate(cert) => (
                 "Root CA Certificate",
                 column![
-                    self.detail_row("Certificate Type:", "Root Certificate Authority"),
-                    self.detail_row("Subject:", &cert.subject),
-                    self.detail_row("Issuer:", &cert.issuer),
-                    self.detail_row("Valid From:", &cert.not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
-                    self.detail_row("Valid Until:", &cert.not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
-                    self.detail_row("Validity:", &format!("{} days", (cert.not_after.signed_duration_since(cert.not_before).num_days()))),
-                    text("Key Usage:").size(12).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    self.detail_row("Certificate Type:", "Root Certificate Authority", vm),
+                    self.detail_row("Subject:", &cert.subject, vm),
+                    self.detail_row("Issuer:", &cert.issuer, vm),
+                    self.detail_row("Valid From:", &cert.not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
+                    self.detail_row("Valid Until:", &cert.not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
+                    self.detail_row("Validity:", &format!("{} days", (cert.not_after.signed_duration_since(cert.not_before).num_days())), vm),
+                    text("Key Usage:").size(vm.text_small).color(Color::from_rgb(0.7, 0.7, 0.8)),
                     column(cert.key_usage.iter().map(|usage| {
-                        text(format!("  • {}", usage)).size(11).into()
-                    }).collect::<Vec<_>>()).spacing(2),
-                    self.detail_row("Trust Level:", "Root (Highest)"),
-                    self.detail_row("Path Length:", "Unlimited"),
-                ].spacing(8)
+                        text(format!("  • {}", usage)).size(text_tiny).into()
+                    }).collect::<Vec<_>>()).spacing(spacing_xs),
+                    self.detail_row("Trust Level:", "Root (Highest)", vm),
+                    self.detail_row("Path Length:", "Unlimited", vm),
+                ].spacing(vm.spacing_sm)
             ),
             DomainNodeData::IntermediateCertificate(cert) => (
                 "Intermediate CA Certificate",
                 column![
-                    self.detail_row("Certificate Type:", "Intermediate Certificate Authority"),
-                    self.detail_row("Subject:", &cert.subject),
-                    self.detail_row("Issuer:", &cert.issuer),
-                    self.detail_row("Valid From:", &cert.not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
-                    self.detail_row("Valid Until:", &cert.not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
-                    self.detail_row("Validity:", &format!("{} days", (cert.not_after.signed_duration_since(cert.not_before).num_days()))),
-                    text("Key Usage:").size(12).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    self.detail_row("Certificate Type:", "Intermediate Certificate Authority", vm),
+                    self.detail_row("Subject:", &cert.subject, vm),
+                    self.detail_row("Issuer:", &cert.issuer, vm),
+                    self.detail_row("Valid From:", &cert.not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
+                    self.detail_row("Valid Until:", &cert.not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
+                    self.detail_row("Validity:", &format!("{} days", (cert.not_after.signed_duration_since(cert.not_before).num_days())), vm),
+                    text("Key Usage:").size(vm.text_small).color(Color::from_rgb(0.7, 0.7, 0.8)),
                     column(cert.key_usage.iter().map(|usage| {
-                        text(format!("  • {}", usage)).size(11).into()
-                    }).collect::<Vec<_>>()).spacing(2),
-                    self.detail_row("Trust Level:", "Intermediate"),
-                    self.detail_row("Can Sign:", "Leaf Certificates"),
-                ].spacing(8)
+                        text(format!("  • {}", usage)).size(text_tiny).into()
+                    }).collect::<Vec<_>>()).spacing(spacing_xs),
+                    self.detail_row("Trust Level:", "Intermediate", vm),
+                    self.detail_row("Can Sign:", "Leaf Certificates", vm),
+                ].spacing(vm.spacing_sm)
             ),
             DomainNodeData::LeafCertificate(cert) => (
                 "Leaf Certificate",
                 column![
-                    self.detail_row("Certificate Type:", "End Entity Certificate"),
-                    self.detail_row("Subject:", &cert.subject),
-                    self.detail_row("Issuer:", &cert.issuer),
-                    self.detail_row("Valid From:", &cert.not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
-                    self.detail_row("Valid Until:", &cert.not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
-                    self.detail_row("Validity:", &format!("{} days", (cert.not_after.signed_duration_since(cert.not_before).num_days()))),
-                    text("Key Usage:").size(12).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    self.detail_row("Certificate Type:", "End Entity Certificate", vm),
+                    self.detail_row("Subject:", &cert.subject, vm),
+                    self.detail_row("Issuer:", &cert.issuer, vm),
+                    self.detail_row("Valid From:", &cert.not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
+                    self.detail_row("Valid Until:", &cert.not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
+                    self.detail_row("Validity:", &format!("{} days", (cert.not_after.signed_duration_since(cert.not_before).num_days())), vm),
+                    text("Key Usage:").size(vm.text_small).color(Color::from_rgb(0.7, 0.7, 0.8)),
                     column(cert.key_usage.iter().map(|usage| {
-                        text(format!("  • {}", usage)).size(11).into()
-                    }).collect::<Vec<_>>()).spacing(2),
+                        text(format!("  • {}", usage)).size(text_tiny).into()
+                    }).collect::<Vec<_>>()).spacing(spacing_xs),
                     if !cert.san.is_empty() {
                         column![
-                            text("Subject Alternative Names:").size(12).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                            text("Subject Alternative Names:").size(vm.text_small).color(Color::from_rgb(0.7, 0.7, 0.8)),
                             column(cert.san.iter().map(|name| {
-                                text(format!("  • {}", name)).size(11).into()
-                            }).collect::<Vec<_>>()).spacing(2),
-                        ].spacing(4)
+                                text(format!("  • {}", name)).size(text_tiny).into()
+                            }).collect::<Vec<_>>()).spacing(spacing_xs),
+                        ].spacing(vm.spacing_xs)
                     } else {
                         column![].into()
                     },
-                    self.detail_row("Trust Level:", "Leaf (End Entity)"),
-                ].spacing(8)
+                    self.detail_row("Trust Level:", "Leaf (End Entity)", vm),
+                ].spacing(vm.spacing_sm)
             ),
-            _ => ("Unknown", column![].spacing(8)),
+            _ => ("Unknown", column![].spacing(vm.spacing_sm)),
         };
 
         container(
             column![
                 row![
-                    text(title).size(18),
-                    button(icons::icon_sized(ICON_CLOSE, 16))
+                    text(title).size(vm.text_large),
+                    button(icons::icon_sized(ICON_CLOSE, vm.text_medium))
                         .on_press(PropertyCardMessage::Close)
                         .style(|theme: &Theme, _status| {
                             button::Style {
@@ -1254,9 +1256,9 @@ impl PropertyCard {
                                 shadow: iced::Shadow::default(),
                             }
                         }),
-                ].spacing(10).align_y(iced::Alignment::Center),
+                ].spacing(vm.spacing_md).align_y(iced::Alignment::Center),
                 scrollable(details).height(Length::Fill),
-            ].spacing(10).padding(15)
+            ].spacing(vm.spacing_md).padding(vm.padding_md)
         )
         .width(Length::Fill)
         .height(Length::Fill)
@@ -1264,43 +1266,45 @@ impl PropertyCard {
     }
 
     /// Render detailed YubiKey hardware information (read-only)
-    fn view_yubikey_details<'a>(&self, domain_node: &'a DomainNode) -> Element<'a, PropertyCardMessage> {
+    fn view_yubikey_details<'a>(&self, domain_node: &'a DomainNode, vm: &ViewModel) -> Element<'a, PropertyCardMessage> {
+        let text_tiny = vm.text_tiny;
+        let spacing_xs = vm.spacing_xs;
         let (title, details) = match domain_node.data() {
             DomainNodeData::YubiKey(yk) => (
                 "YubiKey Hardware Token",
                 column![
-                    self.detail_row("Device Type:", "YubiKey Hardware Security Module"),
-                    self.detail_row("Serial Number:", &yk.serial),
-                    self.detail_row("Firmware Version:", &yk.version),
+                    self.detail_row("Device Type:", "YubiKey Hardware Security Module", vm),
+                    self.detail_row("Serial Number:", &yk.serial, vm),
+                    self.detail_row("Firmware Version:", &yk.version, vm),
                     self.detail_row("Provisioned:",
                         &yk.provisioned_at
                             .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
                             .unwrap_or_else(|| "Not provisioned".to_string())
-                    ),
-                    self.detail_row("Slots Used:", &format!("{} / 4", yk.slots_used.len())),
-                    text("Active PIV Slots:").size(12).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    , vm),
+                    self.detail_row("Slots Used:", &format!("{} / 4", yk.slots_used.len()), vm),
+                    text("Active PIV Slots:").size(vm.text_small).color(Color::from_rgb(0.7, 0.7, 0.8)),
                     if !yk.slots_used.is_empty() {
                         column(yk.slots_used.iter().map(|slot| {
-                            text(format!("  • Slot {}", slot)).size(11).into()
-                        }).collect::<Vec<_>>()).spacing(2)
+                            text(format!("  • Slot {}", slot)).size(text_tiny).into()
+                        }).collect::<Vec<_>>()).spacing(spacing_xs)
                     } else {
-                        column![text("  No slots in use").size(11).color(Color::from_rgb(0.5, 0.5, 0.5))].into()
+                        column![text("  No slots in use").size(text_tiny).color(Color::from_rgb(0.5, 0.5, 0.5))].into()
                     },
-                    text("Available Slots:").size(12).color(Color::from_rgb(0.7, 0.7, 0.8)),
+                    text("Available Slots:").size(vm.text_small).color(Color::from_rgb(0.7, 0.7, 0.8)),
                     column![
-                        text("  • 9A - Authentication (PIV)").size(11),
-                        text("  • 9C - Digital Signature (PIV)").size(11),
-                        text("  • 9D - Key Management (PIV)").size(11),
-                        text("  • 9E - Card Authentication (PIV)").size(11),
-                    ].spacing(2),
-                ].spacing(8)
+                        text("  • 9A - Authentication (PIV)").size(text_tiny),
+                        text("  • 9C - Digital Signature (PIV)").size(text_tiny),
+                        text("  • 9D - Key Management (PIV)").size(text_tiny),
+                        text("  • 9E - Card Authentication (PIV)").size(text_tiny),
+                    ].spacing(spacing_xs),
+                ].spacing(vm.spacing_sm)
             ),
             DomainNodeData::PivSlot(slot) => (
                 "PIV Slot",
                 column![
-                    self.detail_row("Slot:", &slot.slot_name),
-                    self.detail_row("YubiKey:", &slot.yubikey_serial),
-                    self.detail_row("Status:", if slot.has_key { "In Use" } else { "Empty" }),
+                    self.detail_row("Slot:", &slot.slot_name, vm),
+                    self.detail_row("YubiKey:", &slot.yubikey_serial, vm),
+                    self.detail_row("Status:", if slot.has_key { "In Use" } else { "Empty" }, vm),
                     self.detail_row("Purpose:", {
                         if slot.slot_name.contains("9A") {
                             "Authentication - SSH, VPN, System Login"
@@ -1313,26 +1317,26 @@ impl PropertyCard {
                         } else {
                             "Unknown"
                         }
-                    }),
+                    }, vm),
                     if slot.has_key {
                         self.detail_row("Certificate Subject:",
-                            slot.certificate_subject.as_deref().unwrap_or("No certificate loaded"))
+                            slot.certificate_subject.as_deref().unwrap_or("No certificate loaded"), vm)
                     } else {
-                        self.detail_row("Certificate:", "None (empty slot)")
+                        self.detail_row("Certificate:", "None (empty slot)", vm)
                     },
-                    self.detail_row("Algorithm:", if slot.has_key { "RSA 2048 or ECC P-256" } else { "N/A" }),
-                    self.detail_row("Touch Policy:", "Not configured"),
-                    self.detail_row("PIN Policy:", "Default (once per session)"),
-                ].spacing(8)
+                    self.detail_row("Algorithm:", if slot.has_key { "RSA 2048 or ECC P-256" } else { "N/A" }, vm),
+                    self.detail_row("Touch Policy:", "Not configured", vm),
+                    self.detail_row("PIN Policy:", "Default (once per session)", vm),
+                ].spacing(vm.spacing_sm)
             ),
-            _ => ("Unknown", column![].spacing(8)),
+            _ => ("Unknown", column![].spacing(vm.spacing_sm)),
         };
 
         container(
             column![
                 row![
-                    text(title).size(18),
-                    button(icons::icon_sized(ICON_CLOSE, 16))
+                    text(title).size(vm.text_large),
+                    button(icons::icon_sized(ICON_CLOSE, vm.text_medium))
                         .on_press(PropertyCardMessage::Close)
                         .style(|theme: &Theme, _status| {
                             button::Style {
@@ -1342,9 +1346,9 @@ impl PropertyCard {
                                 shadow: iced::Shadow::default(),
                             }
                         }),
-                ].spacing(10).align_y(iced::Alignment::Center),
+                ].spacing(vm.spacing_md).align_y(iced::Alignment::Center),
                 scrollable(details).height(Length::Fill),
-            ].spacing(10).padding(15)
+            ].spacing(vm.spacing_md).padding(vm.padding_md)
         )
         .width(Length::Fill)
         .height(Length::Fill)
@@ -1352,15 +1356,15 @@ impl PropertyCard {
     }
 
     /// Render detailed policy information (read-only)
-    fn view_policy_details<'a>(&self, domain_node: &'a DomainNode) -> Element<'a, PropertyCardMessage> {
+    fn view_policy_details<'a>(&self, domain_node: &'a DomainNode, vm: &ViewModel) -> Element<'a, PropertyCardMessage> {
         use crate::gui::cowboy_theme::CowboyAppTheme as CowboyCustomTheme;
 
         let (title, details) = match domain_node.data() {
             DomainNodeData::PolicyRole(role) => (
                 "Role",
                 column![
-                    self.detail_row("Name:", &role.name),
-                    self.detail_row("Purpose:", &role.purpose),
+                    self.detail_row("Name:", &role.name, vm),
+                    self.detail_row("Purpose:", &role.purpose, vm),
                     self.detail_row("Level:", &format!("{} ({})", role.level, match role.level {
                         0 => "Entry",
                         1 => "Junior",
@@ -1369,26 +1373,26 @@ impl PropertyCard {
                         4 => "Staff/Principal",
                         5 => "Executive",
                         _ => "Custom",
-                    })),
-                    self.detail_row("Separation Class:", &format!("{:?}", role.separation_class)),
-                    self.detail_row("Claims:", &format!("{} permissions", role.claim_count)),
-                ].spacing(8)
+                    }), vm),
+                    self.detail_row("Separation Class:", &format!("{:?}", role.separation_class), vm),
+                    self.detail_row("Claims:", &format!("{} permissions", role.claim_count), vm),
+                ].spacing(vm.spacing_sm)
             ),
             DomainNodeData::PolicyCategory(category) => (
                 "Claim Category",
                 column![
-                    self.detail_row("Category:", &category.name),
-                    self.detail_row("Total Claims:", &format!("{}", category.claim_count)),
-                    text("Claim categories group related permissions.").size(11).color(Color::from_rgb(0.6, 0.6, 0.7)),
-                ].spacing(8)
+                    self.detail_row("Category:", &category.name, vm),
+                    self.detail_row("Total Claims:", &format!("{}", category.claim_count), vm),
+                    text("Claim categories group related permissions.").size(vm.text_tiny).color(Color::from_rgb(0.6, 0.6, 0.7)),
+                ].spacing(vm.spacing_sm)
             ),
             DomainNodeData::PolicyGroup(group) => (
                 "Separation Class",
                 column![
-                    self.detail_row("Class:", &group.name),
-                    self.detail_row("Type:", &format!("{:?}", group.separation_class)),
-                    self.detail_row("Roles:", &format!("{} roles", group.role_count)),
-                    text("Separation classes enforce duty segregation.").size(11).color(Color::from_rgb(0.6, 0.6, 0.7)),
+                    self.detail_row("Class:", &group.name, vm),
+                    self.detail_row("Type:", &format!("{:?}", group.separation_class), vm),
+                    self.detail_row("Roles:", &format!("{} roles", group.role_count), vm),
+                    text("Separation classes enforce duty segregation.").size(vm.text_tiny).color(Color::from_rgb(0.6, 0.6, 0.7)),
                     text(match group.separation_class {
                         crate::policy::SeparationClass::Operational => "Operational roles handle day-to-day tasks.",
                         crate::policy::SeparationClass::Administrative => "Administrative roles manage users and policies.",
@@ -1396,17 +1400,17 @@ impl PropertyCard {
                         crate::policy::SeparationClass::Emergency => "Emergency roles provide break-glass access.",
                         crate::policy::SeparationClass::Financial => "Financial roles manage budgets and spending.",
                         crate::policy::SeparationClass::Personnel => "Personnel roles handle HR and staffing.",
-                    }).size(10).color(Color::from_rgb(0.5, 0.6, 0.5)),
-                ].spacing(8)
+                    }).size(vm.text_tiny).color(Color::from_rgb(0.5, 0.6, 0.5)),
+                ].spacing(vm.spacing_sm)
             ),
-            _ => ("Policy", column![].spacing(8)),
+            _ => ("Policy", column![].spacing(vm.spacing_sm)),
         };
 
         container(
             column![
                 row![
-                    text(title).size(18),
-                    button(icons::icon_sized(ICON_CLOSE, 16))
+                    text(title).size(vm.text_large),
+                    button(icons::icon_sized(ICON_CLOSE, vm.text_medium))
                         .on_press(PropertyCardMessage::Close)
                         .style(|theme: &Theme, _status| {
                             button::Style {
@@ -1416,9 +1420,9 @@ impl PropertyCard {
                                 shadow: iced::Shadow::default(),
                             }
                         }),
-                ].spacing(10).align_y(iced::Alignment::Center),
+                ].spacing(vm.spacing_md).align_y(iced::Alignment::Center),
                 scrollable(details).height(Length::Fill),
-            ].spacing(10).padding(15)
+            ].spacing(vm.spacing_md).padding(vm.padding_md)
         )
         .width(Length::Fill)
         .height(Length::Fill)
@@ -1427,14 +1431,14 @@ impl PropertyCard {
     }
 
     /// Helper to create a detail row (label: value)
-    fn detail_row(&self, label: impl Into<String>, value: impl Into<String>) -> Row<'static, PropertyCardMessage> {
+    fn detail_row(&self, label: impl Into<String>, value: impl Into<String>, vm: &ViewModel) -> Row<'static, PropertyCardMessage> {
         let label_str = label.into();
         let value_str = value.into();
         row![
-            text(label_str).size(12).color(Color::from_rgb(0.7, 0.7, 0.8)).width(Length::Fixed(150.0)),
-            text(value_str).size(12),
+            text(label_str).size(vm.text_small).color(Color::from_rgb(0.7, 0.7, 0.8)).width(Length::Fixed(150.0)),
+            text(value_str).size(vm.text_small),
         ]
-        .spacing(10)
+        .spacing(vm.spacing_md)
         .align_y(iced::Alignment::Center)
     }
 }

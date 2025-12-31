@@ -6050,11 +6050,11 @@ impl CimKeysApp {
                 let card_overlay = container(
                     row![
                         horizontal_space(),
-                        self.property_card.view()
+                        self.property_card.view(&self.view_model)
                             .map(Message::PropertyCardMessage)
                     ]
                 )
-                .padding(20);
+                .padding(self.view_model.padding_xl);
 
                 stack_layers.push(card_overlay.into());
             }
