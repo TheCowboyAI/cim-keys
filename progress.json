@@ -598,16 +598,26 @@
       },
       "sprint_15": {
         "name": "context_menu.rs Refactor",
-        "status": "pending",
-        "started": null,
-        "completed": null,
+        "status": "completed",
+        "started": "2025-12-31",
+        "completed": "2025-12-31",
         "description": "Refactor context_menu.rs: 11 .size(), 1 .spacing(), 1 .padding() calls",
+        "retrospective": "retrospectives/sprint_15.md",
         "tasks": [
-          { "id": "15.1", "description": "Add ViewModel parameter to menu view functions", "status": "pending" },
-          { "id": "15.2", "description": "Replace hardcoded sizes in menu items", "status": "pending" },
-          { "id": "15.3", "description": "Update callers to pass ViewModel", "status": "pending" },
-          { "id": "15.4", "description": "Verify compilation", "status": "pending" }
-        ]
+          { "id": "15.1", "description": "Add ViewModel import and parameter to view function", "status": "completed" },
+          { "id": "15.2", "description": "Replace manual scaling with ViewModel values", "status": "completed" },
+          { "id": "15.3", "description": "Use vm.scale for menu width", "status": "completed" },
+          { "id": "15.4", "description": "Update gui.rs caller to pass ViewModel", "status": "completed" },
+          { "id": "15.5", "description": "Verify compilation", "status": "completed" }
+        ],
+        "acceptance_criteria": [
+          "All .size() calls use vm.text_* - ACHIEVED (11 calls)",
+          "All .spacing() calls use vm.spacing_* - ACHIEVED (1 call)",
+          "All .padding() calls use vm.padding_* - ACHIEVED (1 call)",
+          "Menu width scales with vm.scale - ACHIEVED",
+          "Compilation successful - ACHIEVED"
+        ],
+        "notes": "Context menu previously had its own ui_scale. Now unified with ViewModel for consistent scaling. FRP axioms A3, A5, A9 preserved."
       },
       "sprint_16": {
         "name": "Final Integration and SD Card Testing",
