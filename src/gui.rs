@@ -5050,7 +5050,7 @@ impl CimKeysApp {
         if self.passphrase_dialog.is_visible() {
             stack![
                 base_view,
-                self.passphrase_dialog.view().map(Message::PassphraseDialogMessage)
+                self.passphrase_dialog.view(&self.view_model).map(Message::PassphraseDialogMessage)
             ]
             .width(Length::Fill)
             .height(Length::Fill)

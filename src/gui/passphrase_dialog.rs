@@ -12,6 +12,7 @@ use iced::{
     Color, Element, Length, Theme,
 };
 use der::zeroize::{Zeroize, Zeroizing};
+use super::view_model::ViewModel;
 
 /// Passphrase dialog state
 #[derive(Debug, Clone)]
@@ -229,27 +230,27 @@ impl PassphraseDialog {
     }
 
     /// Render the passphrase dialog
-    pub fn view(&self) -> Element<'_, PassphraseDialogMessage> {
+    pub fn view(&self, vm: &ViewModel) -> Element<'_, PassphraseDialogMessage> {
         if !self.visible {
             return container(column![]).into();
         }
 
         // Dialog content
         let mut content: Column<'_, PassphraseDialogMessage> = column![]
-            .spacing(16)
-            .padding(24)
+            .spacing(vm.spacing_lg)
+            .padding(vm.padding_xl)
             .max_width(500);
 
         // Header
         content = content.push(
             text(self.purpose.title())
-                .size(24)
+                .size(vm.text_header)
         );
 
         // Description
         content = content.push(
             text(self.purpose.description())
-                .size(14)
+                .size(vm.text_normal)
                 .style(|_theme: &Theme| text::Style {
                     color: Some(Color::from_rgb(0.6, 0.6, 0.6)),
                 })
@@ -265,12 +266,12 @@ impl PassphraseDialog {
 
         content = content.push(
             column![
-                text("Passphrase:").size(12),
+                text("Passphrase:").size(vm.text_small),
                 passphrase_input
                     .on_input(PassphraseDialogMessage::PassphraseChanged)
                     .width(Length::Fill),
             ]
-            .spacing(4)
+            .spacing(vm.padding_xs)
         );
 
         // Confirm passphrase input
@@ -283,12 +284,12 @@ impl PassphraseDialog {
 
         content = content.push(
             column![
-                text("Confirm:").size(12),
+                text("Confirm:").size(vm.text_small),
                 confirm_input
                     .on_input(PassphraseDialogMessage::PassphraseConfirmChanged)
                     .width(Length::Fill),
             ]
-            .spacing(4)
+            .spacing(vm.padding_xs)
         );
 
         // Passphrase match indicator
@@ -305,7 +306,7 @@ impl PassphraseDialog {
             };
             content = content.push(
                 text(match_text)
-                    .size(12)
+                    .size(vm.text_small)
                     .style(move |_theme: &Theme| text::Style {
                         color: Some(match_color),
                     })
@@ -316,17 +317,18 @@ impl PassphraseDialog {
         if !self.passphrase.is_empty() {
             let strength = self.strength();
             let strength_color = self.strength_color();
+            let text_small = vm.text_small;
             content = content.push(
                 column![
                     row![
-                        text("Strength:").size(12),
+                        text("Strength:").size(text_small),
                         text(self.strength_label())
-                            .size(12)
+                            .size(text_small)
                             .style(move |_theme: &Theme| text::Style {
                                 color: Some(strength_color),
                             }),
                     ]
-                    .spacing(8),
+                    .spacing(vm.spacing_sm),
                     container(
                         container(text(""))
                             .width(Length::FillPortion((strength * 100.0) as u16))
@@ -343,26 +345,28 @@ impl PassphraseDialog {
                         ..Default::default()
                     })
                 ]
-                .spacing(4)
+                .spacing(vm.padding_xs)
             );
         }
 
         // Options row
+        let text_normal = vm.text_normal;
         content = content.push(
             row![
                 checkbox("Show passphrase", self.show_passphrase)
                     .on_toggle(PassphraseDialogMessage::ToggleVisibility)
-                    .size(14),
-                button(text("Generate Random").size(14))
+                    .size(text_normal),
+                button(text("Generate Random").size(text_normal))
                     .on_press(PassphraseDialogMessage::GenerateRandom)
             ]
-            .spacing(16)
+            .spacing(vm.spacing_lg)
             .align_y(iced::Alignment::Center)
         );
 
         // Action buttons
+        let text_normal = vm.text_normal;
         let submit_button = if self.is_valid() {
-            button(text("OK").size(14))
+            button(text("OK").size(text_normal))
                 .on_press(PassphraseDialogMessage::Submit)
                 .style(|theme: &Theme, _status| button::Style {
                     background: Some(iced::Background::Color(theme.palette().success)),
@@ -371,7 +375,7 @@ impl PassphraseDialog {
                     shadow: iced::Shadow::default(),
                 })
         } else {
-            button(text("OK").size(14))
+            button(text("OK").size(text_normal))
                 .style(|_theme: &Theme, _status| button::Style {
                     background: Some(iced::Background::Color(Color::from_rgb(0.3, 0.3, 0.3))),
                     text_color: Color::from_rgb(0.5, 0.5, 0.5),
@@ -383,7 +387,7 @@ impl PassphraseDialog {
         content = content.push(
             row![
                 submit_button,
-                button(text("Cancel").size(14))
+                button(text("Cancel").size(text_normal))
                     .on_press(PassphraseDialogMessage::Cancel)
                     .style(|theme: &Theme, _status| button::Style {
                         background: Some(iced::Background::Color(theme.palette().danger)),
@@ -392,7 +396,7 @@ impl PassphraseDialog {
                         shadow: iced::Shadow::default(),
                     }),
             ]
-            .spacing(12)
+            .spacing(vm.spacing_md)
         );
 
         // Wrap in centered overlay
