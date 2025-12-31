@@ -5172,9 +5172,18 @@ impl CimKeysApp {
             );
         }
 
+        // Cancel button
+        menu_column = menu_column.push(
+            button(text("Cancel").size(self.view_model.text_normal))
+                .on_press(Message::CancelNodeTypeSelector)
+                .style(CowboyCustomTheme::glass_menu_button(false))
+                .width(Length::Fill)
+                .padding(self.view_model.padding_md)
+        );
+
         // Instructions
         menu_column = menu_column.push(
-            text("↑↓: Navigate • Space/Enter: Select • Esc: Cancel")
+            text("↑↓: Navigate • Enter: Select • Esc: Cancel")
                 .size(self.view_model.text_small)
                 .color(self.view_model.colors.text_light)
         );
@@ -6094,22 +6103,35 @@ impl CimKeysApp {
                     let edit_overlay = column![
                         vertical_space().height(Length::Fixed(input_y)),
                         row![
-                            horizontal_space().width(Length::Fixed(screen_x - 75.0)), // Center on node (150px wide input)
+                            horizontal_space().width(Length::Fixed(screen_x - 100.0)), // Center on node (200px wide container)
                             container(
-                                text_input("Node name...", &self.inline_edit_name)
-                                    .on_input(Message::InlineEditNameChanged)
-                                    .on_submit(Message::InlineEditSubmit)
-                                    .size(14)
-                                    .padding(6)
-                                    .width(Length::Fixed(150.0))
+                                column![
+                                    text_input("Node name...", &self.inline_edit_name)
+                                        .on_input(Message::InlineEditNameChanged)
+                                        .on_submit(Message::InlineEditSubmit)
+                                        .size(14)
+                                        .padding(6)
+                                        .width(Length::Fixed(180.0)),
+                                    row![
+                                        button(text("OK").size(12))
+                                            .on_press(Message::InlineEditSubmit)
+                                            .padding(4)
+                                            .style(CowboyCustomTheme::glass_menu_button(false)),
+                                        horizontal_space().width(Length::Fixed(8.0)),
+                                        button(text("Cancel").size(12))
+                                            .on_press(Message::InlineEditCancel)
+                                            .padding(4)
+                                            .style(CowboyCustomTheme::glass_menu_button(false)),
+                                    ].spacing(4)
+                                ].spacing(6)
                             )
-                            .padding(4)
+                            .padding(8)
                             .style(|_theme| container::Style {
                                 background: Some(Background::Color(Color::from_rgba8(40, 40, 50, 0.95))),
                                 border: Border {
                                     color: Color::from_rgb(0.4, 0.6, 0.8),
                                     width: 2.0,
-                                    radius: 4.0.into(),
+                                    radius: 8.0.into(),
                                 },
                                 ..Default::default()
                             })
