@@ -489,5 +489,99 @@
     }
   },
 
-  "retrospectives": {}
+  "retrospectives": {},
+
+  "gui_scaling_refactor": {
+    "objective": "Make all GUI elements scale uniformly via Ctrl+/- by replacing hardcoded sizes with ViewModel values",
+    "started": "2025-12-31",
+    "metrics": {
+      "total_size_calls_to_fix": 121,
+      "total_spacing_calls_to_fix": 69,
+      "total_padding_calls_to_fix": 33,
+      "files_requiring_changes": 5
+    },
+    "sprints": {
+      "sprint_11": {
+        "name": "property_card.rs Complete Refactor",
+        "status": "in_progress",
+        "started": "2025-12-31",
+        "completed": null,
+        "description": "Refactor property_card.rs: 69 .size(), 54 .spacing(), 10 .padding() calls",
+        "tasks": [
+          { "id": "11.1", "description": "Add ViewModel parameter to public view() function", "status": "completed" },
+          { "id": "11.2", "description": "Thread ViewModel through all internal view functions", "status": "pending" },
+          { "id": "11.3", "description": "Replace all .size(N) calls with vm.text_* values", "status": "pending" },
+          { "id": "11.4", "description": "Replace all .spacing(N) calls with vm.spacing_* values", "status": "pending" },
+          { "id": "11.5", "description": "Replace all .padding(N) calls with vm.padding_* values", "status": "pending" },
+          { "id": "11.6", "description": "Update callers in gui.rs to pass ViewModel", "status": "pending" },
+          { "id": "11.7", "description": "Verify compilation", "status": "pending" }
+        ]
+      },
+      "sprint_12": {
+        "name": "graph.rs Buttons and Labels Refactor",
+        "status": "pending",
+        "started": null,
+        "completed": null,
+        "description": "Refactor graph.rs: 16 .size(), 3 .spacing(), 11 .padding() calls",
+        "tasks": [
+          { "id": "12.1", "description": "Add ViewModel parameter to button rendering functions", "status": "pending" },
+          { "id": "12.2", "description": "Replace hardcoded sizes in button text", "status": "pending" },
+          { "id": "12.3", "description": "Update graph canvas text labels", "status": "pending" },
+          { "id": "12.4", "description": "Verify compilation", "status": "pending" }
+        ]
+      },
+      "sprint_13": {
+        "name": "role_palette.rs Refactor",
+        "status": "pending",
+        "started": null,
+        "completed": null,
+        "description": "Refactor role_palette.rs: 13 .size(), 4 .spacing(), 10 .padding() calls",
+        "tasks": [
+          { "id": "13.1", "description": "Add ViewModel parameter to view function", "status": "pending" },
+          { "id": "13.2", "description": "Replace hardcoded sizes in role labels", "status": "pending" },
+          { "id": "13.3", "description": "Update callers to pass ViewModel", "status": "pending" },
+          { "id": "13.4", "description": "Verify compilation", "status": "pending" }
+        ]
+      },
+      "sprint_14": {
+        "name": "passphrase_dialog.rs Refactor",
+        "status": "pending",
+        "started": null,
+        "completed": null,
+        "description": "Refactor passphrase_dialog.rs: 12 .size(), 7 .spacing(), 1 .padding() calls",
+        "tasks": [
+          { "id": "14.1", "description": "Add ViewModel parameter to dialog view functions", "status": "pending" },
+          { "id": "14.2", "description": "Replace hardcoded sizes in input fields and buttons", "status": "pending" },
+          { "id": "14.3", "description": "Update callers to pass ViewModel", "status": "pending" },
+          { "id": "14.4", "description": "Verify compilation", "status": "pending" }
+        ]
+      },
+      "sprint_15": {
+        "name": "context_menu.rs Refactor",
+        "status": "pending",
+        "started": null,
+        "completed": null,
+        "description": "Refactor context_menu.rs: 11 .size(), 1 .spacing(), 1 .padding() calls",
+        "tasks": [
+          { "id": "15.1", "description": "Add ViewModel parameter to menu view functions", "status": "pending" },
+          { "id": "15.2", "description": "Replace hardcoded sizes in menu items", "status": "pending" },
+          { "id": "15.3", "description": "Update callers to pass ViewModel", "status": "pending" },
+          { "id": "15.4", "description": "Verify compilation", "status": "pending" }
+        ]
+      },
+      "sprint_16": {
+        "name": "Final Integration and SD Card Testing",
+        "status": "pending",
+        "started": null,
+        "completed": null,
+        "description": "Final integration testing and SD card deployment",
+        "tasks": [
+          { "id": "16.1", "description": "Full cargo build --release", "status": "pending" },
+          { "id": "16.2", "description": "Test Ctrl+/- scaling with all components", "status": "pending" },
+          { "id": "16.3", "description": "Rebuild SD card image with updated binary", "status": "pending" },
+          { "id": "16.4", "description": "Flash to SD card and test on target hardware", "status": "pending" }
+        ]
+      }
+    }
+  }
 }
