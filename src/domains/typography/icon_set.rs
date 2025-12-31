@@ -504,6 +504,52 @@ impl CimIconSetBuilder {
                 .try_emoji('🔍')
                 .try_material("search")
                 .fallback_text("[?]"),
+
+            // Additional icons for GUI compatibility
+            IconChain::new("visibility")
+                .try_emoji('👁')
+                .try_material("visibility")
+                .fallback_text("[VIS]"),
+            IconChain::new("visibility_off")
+                .try_emoji('🙈')
+                .try_material("visibility_off")
+                .fallback_text("[HID]"),
+            IconChain::new("cloud")
+                .try_emoji('☁')
+                .try_material("cloud")
+                .fallback_text("[CLD]"),
+            IconChain::new("folder")
+                .try_emoji('📁')
+                .try_material("folder")
+                .fallback_text("[DIR]"),
+            IconChain::new("folder_open")
+                .try_emoji('📂')
+                .try_material("folder_open")
+                .fallback_text("[DIR]"),
+            IconChain::new("usb")
+                .try_emoji('🔌')
+                .try_material("usb")
+                .fallback_text("[USB]"),
+            IconChain::new("download")
+                .try_emoji('📥')
+                .try_material("download")
+                .fallback_text("[DL]"),
+            IconChain::new("help")
+                .try_emoji('❓')
+                .try_material("help")
+                .fallback_text("[?]"),
+            IconChain::new("group")
+                .try_emoji('👥')
+                .try_material("group")
+                .fallback_text("[GRP]"),
+            IconChain::new("check")
+                .try_emoji('✓')
+                .try_symbol('✓')
+                .fallback_text("[OK]"),
+            IconChain::new("check_circle")
+                .try_emoji('✅')
+                .try_material("check_circle")
+                .fallback_text("[OK]"),
         ]
     }
 }

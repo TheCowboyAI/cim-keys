@@ -13,7 +13,7 @@ use crate::gui::graph::EdgeType;
 use crate::gui::domain_node::{DomainNode, DomainNodeData, Injection};
 use crate::gui::view_model::ViewModel;
 use crate::domain::{PolicyClaim, RoleType, LocationType};
-use crate::icons::{self, ICON_CLOSE};
+use crate::icons::verified;
 
 /// What is being edited
 #[derive(Debug, Clone)]
@@ -568,7 +568,7 @@ impl PropertyCard {
 
         let header: Row<'_, PropertyCardMessage> = row![
             text(node_type_label).size(vm.text_large),
-            button(icons::icon_sized(ICON_CLOSE, vm.text_medium))
+            button(verified::icon("close", vm.text_medium))
                 .on_press(PropertyCardMessage::Close)
                 .style(|theme: &Theme, _status| {
                     button::Style {
@@ -979,7 +979,7 @@ impl PropertyCard {
     fn view_edge(&self, _edge_type: &EdgeType, vm: &ViewModel) -> Element<'_, PropertyCardMessage> {
         let header: Row<'_, PropertyCardMessage> = row![
             text("Edge Relationship").size(vm.text_large),
-            button(icons::icon_sized(ICON_CLOSE, vm.text_medium))
+            button(verified::icon("close", vm.text_medium))
                 .on_press(PropertyCardMessage::Close)
                 .style(|theme: &Theme, _status| {
                     button::Style {
@@ -1180,7 +1180,7 @@ impl PropertyCard {
             column![
                 row![
                     text(title).size(vm.text_large),
-                    button(icons::icon_sized(ICON_CLOSE, vm.text_medium))
+                    button(verified::icon("close", vm.text_medium))
                         .on_press(PropertyCardMessage::Close)
                         .style(|theme: &Theme, _status| {
                             button::Style {
@@ -1271,7 +1271,7 @@ impl PropertyCard {
             column![
                 row![
                     text(title).size(vm.text_large),
-                    button(icons::icon_sized(ICON_CLOSE, vm.text_medium))
+                    button(verified::icon("close", vm.text_medium))
                         .on_press(PropertyCardMessage::Close)
                         .style(|theme: &Theme, _status| {
                             button::Style {
@@ -1361,7 +1361,7 @@ impl PropertyCard {
             column![
                 row![
                     text(title).size(vm.text_large),
-                    button(icons::icon_sized(ICON_CLOSE, vm.text_medium))
+                    button(verified::icon("close", vm.text_medium))
                         .on_press(PropertyCardMessage::Close)
                         .style(|theme: &Theme, _status| {
                             button::Style {
@@ -1435,7 +1435,7 @@ impl PropertyCard {
             column![
                 row![
                     text(title).size(vm.text_large),
-                    button(icons::icon_sized(ICON_CLOSE, vm.text_medium))
+                    button(verified::icon("close", vm.text_medium))
                         .on_press(PropertyCardMessage::Close)
                         .style(|theme: &Theme, _status| {
                             button::Style {

@@ -11,7 +11,7 @@ use iced::{
     widget::{button, column, container, row, text, text_input, progress_bar, scrollable, Column},
     Element, Length, Color, Border, Font, Theme, Background, Alignment,
 };
-use crate::icons::{self, ICON_LOCK, ICON_WARNING, ICON_CHECK};
+use crate::icons::verified;
 
 /// Pure view function for MVI layer
 ///
@@ -147,7 +147,7 @@ fn view_error_banner(model: &Model) -> Element<'_, Intent> {
         .width(Length::Fill)
         .style(|_theme: &Theme| {
             container::Style {
-                background: Some(Background::Color(Color::from_rgb(0.8, 0.2, 0.2))),
+                background: Some(Background::Color(verified::colors().error)),
                 text_color: Some(Color::WHITE),
                 border: Border {
                     radius: 4.0.into(),
@@ -184,7 +184,7 @@ fn view_footer(model: &Model) -> Element<'_, Intent> {
 fn view_welcome(model: &Model) -> Element<'_, Intent> {
     let welcome_text = column![
         row![
-            icons::icon_sized(ICON_LOCK, 28),
+            verified::icon("locked", 28),
             text(" CIM Keys - Offline Domain Bootstrap").size(28),
         ].spacing(10),
         text("Secure cryptographic key management for CIM infrastructure").size(16),
@@ -197,9 +197,9 @@ fn view_welcome(model: &Model) -> Element<'_, Intent> {
         text("  • NATS operator/account/user credentials").size(12),
         text("").size(10),
         row![
-            icons::icon_colored(ICON_WARNING, 14, Color::from_rgb(0.9, 0.5, 0.0)),
+            verified::icon_colored("warning", 14, verified::colors().warning),
             text(" Ensure this computer is air-gapped!").size(14)
-                .color(Color::from_rgb(0.9, 0.5, 0.0)),
+                .color(verified::colors().warning),
         ].spacing(5),
     ]
     .spacing(10)
@@ -250,7 +250,7 @@ fn view_organization(model: &Model) -> Element<'_, Intent> {
         }
         DomainStatus::LoadError(err) => {
             column![
-                text("Failed to load domain").size(16).color(Color::from_rgb(0.8, 0.2, 0.2)),
+                text("Failed to load domain").size(16).color(verified::colors().error),
                 text(err).size(12),
             ]
         }
@@ -314,28 +314,28 @@ fn view_keys(model: &Model) -> Element<'_, Intent> {
         };
 
         let strength_color = model.passphrase_strength.map_or(
-            Color::from_rgb(0.5, 0.5, 0.5),
+            verified::colors().disabled,
             |s| match s {
-                crate::crypto::passphrase::PassphraseStrength::TooWeak => Color::from_rgb(0.8, 0.2, 0.2),
-                crate::crypto::passphrase::PassphraseStrength::Weak => Color::from_rgb(0.9, 0.5, 0.2),
-                crate::crypto::passphrase::PassphraseStrength::Moderate => Color::from_rgb(0.9, 0.8, 0.2),
-                crate::crypto::passphrase::PassphraseStrength::Strong => Color::from_rgb(0.3, 0.8, 0.3),
-                crate::crypto::passphrase::PassphraseStrength::VeryStrong => Color::from_rgb(0.2, 0.9, 0.3),
+                crate::crypto::passphrase::PassphraseStrength::TooWeak => verified::colors().error,
+                crate::crypto::passphrase::PassphraseStrength::Weak => verified::colors().warning,
+                crate::crypto::passphrase::PassphraseStrength::Moderate => verified::colors().warning,
+                crate::crypto::passphrase::PassphraseStrength::Strong => verified::colors().success,
+                crate::crypto::passphrase::PassphraseStrength::VeryStrong => verified::colors().success,
             }
         );
 
         let seed_status = if model.master_seed_derived {
             column![
                 row![
-                    icons::icon_colored(ICON_CHECK, 14, Color::from_rgb(0.3, 0.8, 0.3)),
-                    text(" Master Seed Derived").size(14).color(Color::from_rgb(0.3, 0.8, 0.3)),
+                    verified::icon_colored("success", 14, verified::colors().success),
+                    text(" Master Seed Derived").size(14).color(verified::colors().success),
                 ].spacing(5),
                 text("All keys will be deterministically generated from this seed").size(11),
             ]
             .spacing(5)
         } else {
             column![
-                text("Master seed not yet derived").size(14).color(Color::from_rgb(0.7, 0.7, 0.7)),
+                text("Master seed not yet derived").size(14).color(verified::colors().text_muted),
                 text("Enter passphrase to derive cryptographic seed").size(11),
             ]
             .spacing(5)
@@ -344,11 +344,11 @@ fn view_keys(model: &Model) -> Element<'_, Intent> {
         let passphrase_match: Element<Intent> = if !model.passphrase.is_empty() && !model.passphrase_confirmed.is_empty() {
             if model.passphrase == model.passphrase_confirmed {
                 row![
-                    icons::icon_colored(ICON_CHECK, 11, Color::from_rgb(0.3, 0.8, 0.3)),
-                    text(" Passphrases match").size(11).color(Color::from_rgb(0.3, 0.8, 0.3)),
+                    verified::icon_colored("success", 11, verified::colors().success),
+                    text(" Passphrases match").size(11).color(verified::colors().success),
                 ].spacing(3).into()
             } else {
-                text("✗ Passphrases do not match").size(11).color(Color::from_rgb(0.8, 0.2, 0.2)).into()
+                text("✗ Passphrases do not match").size(11).color(verified::colors().error).into()
             }
         } else {
             text("").size(11).into()
@@ -452,10 +452,10 @@ fn view_keys(model: &Model) -> Element<'_, Intent> {
             for ca in &model.key_generation_status.intermediate_cas {
                 ca_list_items.push(
                     row![
-                        icons::icon_colored(ICON_CHECK, 12, Color::from_rgb(0.3, 0.8, 0.3)),
+                        verified::icon_colored("success", 12, verified::colors().success),
                         text(format!(" {} - {}", ca.name, &ca.fingerprint[..16]))
                             .size(12)
-                            .color(Color::from_rgb(0.3, 0.8, 0.3)),
+                            .color(verified::colors().success),
                     ].spacing(3)
                         .into()
                 );
@@ -468,7 +468,7 @@ fn view_keys(model: &Model) -> Element<'_, Intent> {
         ca_list_items.push(
             text("(Intermediate CA generation requires input fields - see gui.rs for full UI)")
                 .size(11)
-                .color(Color::from_rgb(0.7, 0.7, 0.7))
+                .color(verified::colors().text_muted)
                 .into()
         );
 
@@ -491,17 +491,17 @@ fn view_keys(model: &Model) -> Element<'_, Intent> {
             for cert in &model.key_generation_status.server_certificates {
                 cert_list_items.push(
                     row![
-                        icons::icon_colored(ICON_CHECK, 12, Color::from_rgb(0.3, 0.8, 0.3)),
+                        verified::icon_colored("success", 12, verified::colors().success),
                         text(format!(" {} (signed by: {})", cert.common_name, cert.signed_by))
                             .size(12)
-                            .color(Color::from_rgb(0.3, 0.8, 0.3)),
+                            .color(verified::colors().success),
                     ].spacing(3)
                         .into()
                 );
                 cert_list_items.push(
                     text(format!("    Fingerprint: {}", &cert.fingerprint[..16]))
                         .size(11)
-                        .color(Color::from_rgb(0.5, 0.5, 0.5))
+                        .color(verified::colors().disabled)
                         .into()
                 );
             }
@@ -511,7 +511,7 @@ fn view_keys(model: &Model) -> Element<'_, Intent> {
         cert_list_items.push(
             text("(Server cert generation requires input fields - see gui.rs for full UI)")
                 .size(11)
-                .color(Color::from_rgb(0.7, 0.7, 0.7))
+                .color(verified::colors().text_muted)
                 .into()
         );
 
@@ -543,7 +543,7 @@ fn view_keys(model: &Model) -> Element<'_, Intent> {
 
         let provision_status = if is_provisioned {
             row![
-                icons::icon_sized(ICON_CHECK, 12),
+                verified::icon("success", 12),
                 text(" Provisioned"),
             ].spacing(3)
         } else {

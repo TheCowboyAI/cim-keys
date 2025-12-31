@@ -31,7 +31,7 @@ use crate::{
         YubiKeyCliAdapter,
     },
     // Icons
-    icons::{self, EMOJI_FONT, FONT_BODY, ICON_WARNING},
+    icons::{self, verified, EMOJI_FONT, FONT_BODY},
 };
 
 pub mod graph;
@@ -5943,7 +5943,7 @@ impl CimKeysApp {
             container(
                 column![
                     row![
-                        icons::icon_sized(ICON_WARNING, self.view_model.text_large),
+                        verified::icon("warning", self.view_model.text_large),
                         text(" Security Notice").size(self.view_model.text_large),
                     ].spacing(self.view_model.spacing_sm),
                     text("This application should be run on an air-gapped computer for maximum security.").size(self.view_model.text_normal),
@@ -6495,7 +6495,7 @@ impl CimKeysApp {
                             .size(self.view_model.text_large)
                             .color(CowboyTheme::text_primary()),
                         horizontal_space(),
-                        button(if self.show_passphrase { icons::icon(icons::ICON_VISIBILITY_OFF) } else { icons::icon(icons::ICON_VISIBILITY) })
+                        button(if self.show_passphrase { verified::icon("visibility_off", 16) } else { verified::icon("visibility", 16) })
                             .on_press(Message::TogglePassphraseVisibility)
                             .style(CowboyCustomTheme::glass_button()),
                         button(text("Generate Random").size(self.view_model.text_small))

@@ -35,6 +35,10 @@ pub struct ColorPalette {
     pub text_light: Color,
     /// Text color on light background
     pub text_dark: Color,
+    /// Muted text color (for secondary info)
+    pub text_muted: Color,
+    /// Disabled/inactive color
+    pub disabled: Color,
     /// Background colors
     pub background: BackgroundColors,
 }
@@ -61,6 +65,8 @@ impl Default for ColorPalette {
             info: Color::from_rgb(0.3, 0.6, 0.9),
             text_light: Color::from_rgb(0.95, 0.95, 0.95),
             text_dark: Color::from_rgb(0.1, 0.1, 0.1),
+            text_muted: Color::from_rgb(0.6, 0.6, 0.6),
+            disabled: Color::from_rgb(0.5, 0.5, 0.5),
             background: BackgroundColors {
                 primary: Color::from_rgb(0.08, 0.08, 0.1),
                 secondary: Color::from_rgb(0.12, 0.12, 0.15),

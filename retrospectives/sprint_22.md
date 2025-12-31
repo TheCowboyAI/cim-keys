@@ -163,12 +163,42 @@ Established strategy for merging domain_node.rs into per-context coproducts:
 - **Add lift/unlift paths** - LiftableDomain provides functorial transformation
 - **Let usage migrate naturally** - new code uses per-context types
 
-## Remaining Work (Future Sprint)
+## Completed Work (Phase 7)
 
-### Phase 7: Update Existing Icons
-- Migrate `src/icons.rs` constants to `VerifiedIconSet`
-- Update `mvi/view.rs` to use `LabelledElement`
-- Update button icons throughout GUI
+### Phase 7: Update Existing Icons (Complete)
+
+Migrated all icon usages to the verified icon system:
+
+**CimIconSetBuilder Extensions:**
+- Added 12 new icons: visibility, visibility_off, cloud, folder, folder_open, usb, download, help, group, check, check_circle
+
+**ColorPalette Extensions:**
+- Added `text_muted` for secondary text
+- Added `disabled` for inactive elements
+
+**Files Updated:**
+- `src/icons.rs` - Added `verified` module with:
+  - `verified::icon(name, size)` - Render verified icon by name
+  - `verified::icon_colored(name, size, color)` - With color
+  - `verified::colors()` - Access theme ColorPalette
+  - `verified::metrics()` - Access theme ThemeMetrics
+  - Type-safe APIs: `status_icon()`, `navigation_icon()`, `action_icon()`, `entity_icon()`
+
+- `src/mvi/view.rs` - Updated all icons to use verified system:
+  - `ICON_LOCK` → `verified::icon("locked", size)`
+  - `ICON_WARNING` → `verified::icon_colored("warning", size, verified::colors().warning)`
+  - `ICON_CHECK` → `verified::icon_colored("success", size, verified::colors().success)`
+  - Replaced hardcoded colors with theme colors
+
+- `src/gui/property_card.rs` - Updated close buttons:
+  - `ICON_CLOSE` → `verified::icon("close", size)`
+
+- `src/gui.rs` - Updated warning and visibility icons:
+  - `ICON_WARNING` → `verified::icon("warning", size)`
+  - `ICON_VISIBILITY` → `verified::icon("visibility", size)`
+  - `ICON_VISIBILITY_OFF` → `verified::icon("visibility_off", size)`
+
+**Test Results:** 386 tests passing (2 new icon tests)
 
 ## Architecture Summary
 
