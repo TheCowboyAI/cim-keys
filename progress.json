@@ -503,19 +503,28 @@
     "sprints": {
       "sprint_11": {
         "name": "property_card.rs Complete Refactor",
-        "status": "in_progress",
+        "status": "completed",
         "started": "2025-12-31",
-        "completed": null,
+        "completed": "2025-12-31",
         "description": "Refactor property_card.rs: 69 .size(), 54 .spacing(), 10 .padding() calls",
+        "retrospective": "retrospectives/sprint_11.md",
         "tasks": [
           { "id": "11.1", "description": "Add ViewModel parameter to public view() function", "status": "completed" },
-          { "id": "11.2", "description": "Thread ViewModel through all internal view functions", "status": "pending" },
-          { "id": "11.3", "description": "Replace all .size(N) calls with vm.text_* values", "status": "pending" },
-          { "id": "11.4", "description": "Replace all .spacing(N) calls with vm.spacing_* values", "status": "pending" },
-          { "id": "11.5", "description": "Replace all .padding(N) calls with vm.padding_* values", "status": "pending" },
-          { "id": "11.6", "description": "Update callers in gui.rs to pass ViewModel", "status": "pending" },
-          { "id": "11.7", "description": "Verify compilation", "status": "pending" }
-        ]
+          { "id": "11.2", "description": "Thread ViewModel through all internal view functions", "status": "completed" },
+          { "id": "11.3", "description": "Replace all .size(N) calls with vm.text_* values", "status": "completed" },
+          { "id": "11.4", "description": "Replace all .spacing(N) calls with vm.spacing_* values", "status": "completed" },
+          { "id": "11.5", "description": "Replace all .padding(N) calls with vm.padding_* values", "status": "completed" },
+          { "id": "11.6", "description": "Update callers in gui.rs to pass ViewModel", "status": "completed" },
+          { "id": "11.7", "description": "Verify compilation", "status": "completed" }
+        ],
+        "acceptance_criteria": [
+          "All .size() calls use vm.text_* - ACHIEVED (69 calls)",
+          "All .spacing() calls use vm.spacing_* - ACHIEVED (54 calls)",
+          "All .padding() calls use vm.padding_* - ACHIEVED (10 calls)",
+          "ViewModel threaded through all functions - ACHIEVED (7 functions)",
+          "Compilation successful - ACHIEVED"
+        ],
+        "notes": "Used closure variable capture pattern for iterators. FRP axioms A3, A5, A9 preserved."
       },
       "sprint_12": {
         "name": "graph.rs Buttons and Labels Refactor",
