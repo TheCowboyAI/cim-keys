@@ -3447,9 +3447,13 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
         // Phase 4: Draw edge creation indicator (if active)
         self.edge_indicator.draw(&mut frame, self);
 
-        // Draw ghost node during role drag
+        // Draw ghost node during role drag (only if cursor position is being tracked)
+        // For click-to-assign mode, cursor_position is ORIGIN so we skip the ghost
         if let Some(ref drag) = self.dragging_role {
             let ghost_pos = drag.cursor_position;
+            // Only draw ghost node and tooltip if cursor position is being tracked
+            // (not at origin, which indicates click-to-assign mode)
+            if ghost_pos != Point::ORIGIN {
             let role_name = match &drag.source {
                 DragSource::RoleFromPalette { role_name, .. } => role_name,
                 DragSource::RoleFromPerson { role_name, .. } => role_name,
@@ -3639,6 +3643,7 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                     shaping: Shaping::Advanced,
                 });
             }
+            } // End of if ghost_pos != Point::ORIGIN
         }
 
         vec![frame.into_geometry()]

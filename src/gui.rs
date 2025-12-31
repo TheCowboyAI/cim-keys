@@ -3361,7 +3361,75 @@ impl CimKeysApp {
             Message::OrganizationIntent(graph_msg) => {
                 match &graph_msg {
                     OrganizationIntent::NodeClicked(id) => {
-                        self.status_message = format!("DEBUG: NodeClicked received for node {:?}", id);
+                        // Check if we have a role selected for assignment
+                        if let Some(ref drag) = self.org_graph.dragging_role.clone() {
+                            // Check if clicked node is a Person
+                            let is_person = self.org_graph.nodes.get(id)
+                                .map(|n| n.injection() == Injection::Person)
+                                .unwrap_or(false);
+
+                            if is_person {
+                                // Get the role being assigned
+                                let role_name = match &drag.source {
+                                    graph::DragSource::RoleFromPalette { role_name, .. } => role_name.clone(),
+                                    graph::DragSource::RoleFromPerson { role_name, .. } => role_name.clone(),
+                                };
+                                let separation_class = match &drag.source {
+                                    graph::DragSource::RoleFromPalette { separation_class, .. } => separation_class.clone(),
+                                    graph::DragSource::RoleFromPerson { separation_class, .. } => separation_class.clone(),
+                                };
+
+                                // Check for SoD conflicts
+                                let mut sod_conflicts = Vec::new();
+                                if let Some(ref policy_data) = self.policy_data {
+                                    let current_roles = policy_data.get_roles_for_person(*id);
+                                    for current_role in current_roles {
+                                        if policy_data.are_roles_incompatible(&role_name, &current_role.name) {
+                                            let reason = policy_data.separation_of_duties_rules.iter()
+                                                .find(|rule| {
+                                                    (rule.role_a == role_name && rule.conflicts_with.contains(&current_role.name)) ||
+                                                    (rule.role_a == current_role.name && rule.conflicts_with.contains(&role_name))
+                                                })
+                                                .and_then(|rule| rule.reason.clone())
+                                                .unwrap_or_else(|| "Separation of duties violation".to_string());
+                                            sod_conflicts.push((current_role.name.clone(), reason));
+                                        }
+                                    }
+                                }
+
+                                if sod_conflicts.is_empty() {
+                                    // No conflicts - assign the role
+                                    let badge = graph::RoleBadge {
+                                        name: role_name.clone(),
+                                        separation_class: separation_class.clone(),
+                                        level: 1,
+                                    };
+                                    let person_badges = self.org_graph.role_badges
+                                        .entry(*id)
+                                        .or_insert_with(graph::PersonRoleBadges::default);
+                                    // Only add if not already assigned
+                                    if !person_badges.badges.iter().any(|b| b.name == role_name) {
+                                        person_badges.badges.push(badge);
+                                    }
+
+                                    self.status_message = format!("Assigned role '{}' to person", role_name);
+                                } else {
+                                    // Has conflicts - show warning
+                                    let conflict_names: Vec<_> = sod_conflicts.iter().map(|(n, _)| n.as_str()).collect();
+                                    self.status_message = format!("Cannot assign '{}': conflicts with {}",
+                                        role_name, conflict_names.join(", "));
+                                }
+
+                                // Clear the selected role
+                                self.org_graph.cancel_role_drag();
+                                return Task::none();
+                            } else {
+                                // Clicked on non-Person node - cancel role selection
+                                self.org_graph.cancel_role_drag();
+                                self.status_message = "Role assignment cancelled - click on a Person node".to_string();
+                            }
+                        }
+
                         // Check if we're in edge creation mode
                         if self.org_graph.edge_indicator.is_active() {
                             // Complete edge creation
@@ -3616,6 +3684,13 @@ impl CimKeysApp {
                     }
                     // Canvas clicked - place new node if node type is selected
                     OrganizationIntent::CanvasClicked(position) => {
+                        // If a role is selected, clicking canvas cancels the selection
+                        if self.org_graph.dragging_role.is_some() {
+                            self.org_graph.cancel_role_drag();
+                            self.status_message = "Role selection cancelled".to_string();
+                            return Task::none();
+                        }
+
                         if let Some(ref node_type_str) = self.selected_node_type {
                             use crate::domain::{OrganizationUnit, OrganizationUnitType, Person};
                             use crate::gui::graph_events::GraphEvent;
@@ -4730,13 +4805,13 @@ impl CimKeysApp {
                         self.role_palette.toggle_category(class);
                     }
                     role_palette::RolePaletteMessage::StartDrag { role_name, separation_class } => {
-                        // Start drag operation on the graph
+                        // Select role for assignment - click on Person node to assign
                         let source = graph::DragSource::RoleFromPalette {
                             role_name: role_name.clone(),
                             separation_class,
                         };
                         self.org_graph.start_role_drag(source, Point::ORIGIN);
-                        self.status_message = format!("Dragging role: {}", role_name);
+                        self.status_message = format!("Role '{}' selected - click on a Person to assign, Esc to cancel", role_name);
                     }
                     role_palette::RolePaletteMessage::CancelDrag => {
                         self.org_graph.cancel_role_drag();
