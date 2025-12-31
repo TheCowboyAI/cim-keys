@@ -575,16 +575,26 @@
       },
       "sprint_14": {
         "name": "passphrase_dialog.rs Refactor",
-        "status": "pending",
-        "started": null,
-        "completed": null,
+        "status": "completed",
+        "started": "2025-12-31",
+        "completed": "2025-12-31",
         "description": "Refactor passphrase_dialog.rs: 12 .size(), 7 .spacing(), 1 .padding() calls",
+        "retrospective": "retrospectives/sprint_14.md",
         "tasks": [
-          { "id": "14.1", "description": "Add ViewModel parameter to dialog view functions", "status": "pending" },
-          { "id": "14.2", "description": "Replace hardcoded sizes in input fields and buttons", "status": "pending" },
-          { "id": "14.3", "description": "Update callers to pass ViewModel", "status": "pending" },
-          { "id": "14.4", "description": "Verify compilation", "status": "pending" }
-        ]
+          { "id": "14.1", "description": "Add ViewModel import and parameter to view function", "status": "completed" },
+          { "id": "14.2", "description": "Replace hardcoded sizes in input fields and buttons", "status": "completed" },
+          { "id": "14.3", "description": "Use local variable capture for closures", "status": "completed" },
+          { "id": "14.4", "description": "Update gui.rs caller to pass ViewModel", "status": "completed" },
+          { "id": "14.5", "description": "Verify compilation", "status": "completed" }
+        ],
+        "acceptance_criteria": [
+          "All .size() calls use vm.text_* - ACHIEVED (12 calls)",
+          "All .spacing() calls use vm.spacing_* - ACHIEVED (7 calls)",
+          "All .padding() calls use vm.padding_* - ACHIEVED (1 call)",
+          "Closure variable capture used - ACHIEVED",
+          "Compilation successful - ACHIEVED"
+        ],
+        "notes": "Single view function with modal overlay. Used text_small and text_normal local captures for closures. FRP axioms A3, A5, A9 preserved."
       },
       "sprint_15": {
         "name": "context_menu.rs Refactor",
