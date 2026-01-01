@@ -2,16 +2,20 @@
 
 //! Domain Node Coproduct - Categorical type for graph nodes
 //!
-//! This module implements a proper coproduct of domain types following
-//! Applied Category Theory principles. The design uses:
+//! # ⚠️ DEPRECATED
 //!
-//! 1. **Injection functions**: `inject_person()`, `inject_organization()`, etc.
-//! 2. **Universal property**: `FoldDomainNode` trait with `fold()` method
-//! 3. **Type-safe projections**: Each injection preserves identity
+//! **This module is deprecated.** Use the per-context coproducts in `crate::domains::` instead:
 //!
-//! ## Related Modules
+//! | Deprecated Type | Replacement |
+//! |-----------------|-------------|
+//! | `DomainNode` | Per-context entity types (`OrganizationEntity`, `PkiEntity`, etc.) |
+//! | `DomainNodeData` | Per-context data enums (`OrganizationData`, `PkiData`, etc.) |
+//! | `FoldDomainNode` | Per-context fold traits (`FoldOrganizationEntity`, `FoldPkiEntity`, etc.) |
+//! | `Injection` | Per-context injection enums (`OrganizationInjection`, `PkiInjection`, etc.) |
 //!
-//! For new code, consider using the per-context coproducts in `crate::domains::`:
+//! ## Migration Guide
+//!
+//! For new code, use the per-context coproducts in `crate::domains::`:
 //! - `organization` - Organization, Person, Location, Role, Policy entities
 //! - `pki` - Certificates and Keys
 //! - `nats` - Operators, Accounts, Users
@@ -21,7 +25,7 @@
 //! The `LiftableDomain` trait in `crate::lifting` provides domain → graph
 //! transformations that work with the per-context entities.
 //!
-//! ## Categorical Foundation
+//! ## Categorical Foundation (for reference)
 //!
 //! A coproduct A + B + C + ... has:
 //! - Injection morphisms: ι_A: A → Sum, ι_B: B → Sum, ...
@@ -55,6 +59,15 @@ use crate::policy::SeparationClass;
 ///
 /// This is crucial for the categorical structure: injections are morphisms from
 /// individual domain categories into the coproduct category.
+///
+/// # Deprecated
+///
+/// Use per-context injection enums instead:
+/// - `crate::domains::organization::OrganizationInjection`
+/// - `crate::domains::pki::PkiInjection`
+/// - `crate::domains::nats::NatsInjection`
+/// - `crate::domains::yubikey::YubiKeyInjection`
+#[deprecated(since = "0.9.0", note = "Use per-context injection enums in crate::domains:: instead")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Injection {
     // Core Domain Entities
@@ -261,6 +274,15 @@ impl fmt::Display for Injection {
 /// - PKI context: Certificate, CryptographicKey (with phantom-typed IDs)
 /// - YubiKey context: YubiKeyDevice, PivSlotView, YubiKeyStatus
 /// - Visualization context: Manifest, PolicyRole, PolicyClaim, etc.
+///
+/// # Deprecated
+///
+/// Use per-context data enums instead:
+/// - `crate::domains::organization::OrganizationData`
+/// - `crate::domains::pki::PkiData`
+/// - `crate::domains::nats::NatsData`
+/// - `crate::domains::yubikey::YubiKeyData`
+#[deprecated(since = "0.9.0", note = "Use per-context data enums in crate::domains:: instead")]
 #[derive(Debug, Clone)]
 pub enum DomainNodeData {
     // =========================================================================
@@ -389,6 +411,15 @@ pub enum DomainNodeData {
 /// let color = node.fold(&ColorFolder);
 /// let label = node.fold(&LabelFolder);
 /// ```
+///
+/// # Deprecated
+///
+/// Use per-context entity types instead:
+/// - `crate::domains::organization::OrganizationEntity`
+/// - `crate::domains::pki::PkiEntity`
+/// - `crate::domains::nats::NatsEntity`
+/// - `crate::domains::yubikey::YubiKeyEntity`
+#[deprecated(since = "0.9.0", note = "Use per-context entity types in crate::domains:: instead")]
 #[derive(Debug, Clone)]
 pub struct DomainNode {
     /// The injection used to construct this node
@@ -1143,6 +1174,17 @@ impl DomainNode {
 /// ```text
 /// fold(F) ∘ inject_A(a) = F.fold_A(a)
 /// ```
+///
+/// # Deprecation
+///
+/// This trait is deprecated. Use per-context fold traits instead:
+/// - `FoldOrganizationEntity` in `crate::domains::organization`
+/// - `FoldPkiEntity` in `crate::domains::pki`
+/// - `FoldNatsEntity` in `crate::domains::nats`
+/// - `FoldYubiKeyEntity` in `crate::domains::yubikey`
+/// - `FoldVisualizationEntity` in `crate::domains::visualization`
+/// - `FoldAggregateEntity` in `crate::domains::aggregates`
+#[deprecated(since = "0.9.0", note = "Use per-context fold traits in crate::domains:: instead (FoldOrganizationEntity, FoldPkiEntity, etc.)")]
 pub trait FoldDomainNode {
     /// The target type of the fold operation
     type Output;
