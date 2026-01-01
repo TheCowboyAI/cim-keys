@@ -1011,6 +1011,17 @@ impl DomainNode {
         self.person().map(|p| p.name.as_str())
     }
 
+    /// Get Person with their KeyOwnerRole if this is a Person node
+    ///
+    /// This is a partial projection from the DomainNode coproduct,
+    /// returning both the person and their role for graph operations.
+    pub fn person_with_role(&self) -> Option<(&Person, &KeyOwnerRole)> {
+        match &self.data {
+            DomainNodeData::Person { person, role } => Some((person, role)),
+            _ => None,
+        }
+    }
+
     /// Get Organization reference if this is an Organization node
     pub fn organization(&self) -> Option<&Organization> {
         match &self.data {
