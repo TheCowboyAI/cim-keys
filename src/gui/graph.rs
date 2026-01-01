@@ -175,6 +175,21 @@ impl ConceptEntity {
         self.domain_node.fold(&FoldVisualization)
     }
 
+    /// Get themed visualization data using Typography bounded context
+    ///
+    /// This method uses the VerifiedTheme to ensure all icons and colors
+    /// are properly themed and will render without tofu boxes.
+    ///
+    /// This is the preferred method for rendering - use instead of visualization()
+    /// when you have access to a VerifiedTheme.
+    pub fn themed_visualization(
+        &self,
+        theme: &crate::domains::typography::VerifiedTheme,
+    ) -> crate::gui::folds::view::ThemedVisualizationData {
+        use crate::gui::folds::view::ThemedVisualizationFold;
+        self.domain_node.fold(&ThemedVisualizationFold::new(theme))
+    }
+
     /// Get the injection type (what kind of domain entity this is)
     pub fn injection(&self) -> super::domain_node::Injection {
         self.domain_node.injection()
