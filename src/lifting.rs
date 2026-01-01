@@ -54,41 +54,45 @@ use crate::domain::{Organization, OrganizationUnit, Person, Location, Role, Poli
 // ============================================================================
 // DOMAIN-SPECIFIC COLORS
 // ============================================================================
+//
+// NOTE: These constants are retained for compile-time const contexts.
+// For runtime theming, prefer ColorPalette from crate::gui::view_model.
+// ColorPalette fields: node_organization, node_unit, node_person, etc.
 
-/// Color for Organization nodes
+/// Color for Organization nodes (matches ColorPalette::node_organization)
 pub const COLOR_ORGANIZATION: Color = Color::from_rgb(0.2, 0.3, 0.6);
 
-/// Color for OrganizationUnit nodes
+/// Color for OrganizationUnit nodes (matches ColorPalette::node_unit)
 pub const COLOR_UNIT: Color = Color::from_rgb(0.4, 0.5, 0.8);
 
-/// Color for Person nodes
+/// Color for Person nodes (matches ColorPalette::node_person)
 pub const COLOR_PERSON: Color = Color::from_rgb(0.5, 0.7, 0.3);
 
-/// Color for Location nodes
+/// Color for Location nodes (matches ColorPalette::node_location)
 pub const COLOR_LOCATION: Color = Color::from_rgb(0.6, 0.5, 0.4);
 
-/// Color for Role nodes
-pub const COLOR_ROLE: Color = Color::from_rgb(0.4, 0.5, 0.6);
+/// Color for Role nodes (matches ColorPalette::node_role)
+pub const COLOR_ROLE: Color = Color::from_rgb(0.6, 0.3, 0.8);
 
-/// Color for Policy nodes
-pub const COLOR_POLICY: Color = Color::from_rgb(0.5, 0.3, 0.6);
+/// Color for Policy nodes (matches ColorPalette::node_policy)
+pub const COLOR_POLICY: Color = Color::from_rgb(0.8, 0.6, 0.2);
 
-/// Color for NATS Operator nodes
+/// Color for NATS Operator nodes (matches ColorPalette::node_nats_operator)
 pub const COLOR_NATS_OPERATOR: Color = Color::from_rgb(0.6, 0.2, 0.8);
 
-/// Color for NATS Account nodes
+/// Color for NATS Account nodes (matches ColorPalette::node_nats_account)
 pub const COLOR_NATS_ACCOUNT: Color = Color::from_rgb(0.5, 0.3, 0.7);
 
-/// Color for NATS User nodes
+/// Color for NATS User nodes (matches ColorPalette::node_nats_user)
 pub const COLOR_NATS_USER: Color = Color::from_rgb(0.4, 0.4, 0.6);
 
-/// Color for Certificate nodes
+/// Color for Certificate nodes (matches ColorPalette::node_certificate)
 pub const COLOR_CERTIFICATE: Color = Color::from_rgb(0.7, 0.5, 0.2);
 
-/// Color for Key nodes
+/// Color for Key nodes (matches ColorPalette::node_key)
 pub const COLOR_KEY: Color = Color::from_rgb(0.6, 0.6, 0.2);
 
-/// Color for YubiKey nodes
+/// Color for YubiKey nodes (matches ColorPalette::node_yubikey)
 pub const COLOR_YUBIKEY: Color = Color::from_rgb(0.0, 0.6, 0.4);
 
 // ============================================================================

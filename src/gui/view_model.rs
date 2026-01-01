@@ -232,6 +232,18 @@ pub struct ColorPalette {
     pub node_policy: Color,
     pub node_edge_highlight: Color,
 
+    // NATS node colors
+    pub node_nats_operator: Color,
+    pub node_nats_account: Color,
+    pub node_nats_user: Color,
+
+    // PKI node colors
+    pub node_certificate: Color,
+    pub node_key: Color,
+
+    // YubiKey node color
+    pub node_yubikey: Color,
+
     // Aggregate node colors (DDD bounded context visualization)
     pub aggregate_organization: Color,
     pub aggregate_pki_chain: Color,
@@ -435,6 +447,18 @@ impl Default for ColorPalette {
             node_role: Color::from_rgb(0.6, 0.3, 0.8),
             node_policy: Color::from_rgb(0.8, 0.6, 0.2),
             node_edge_highlight: Color::from_rgb(0.3, 0.3, 0.7),
+
+            // NATS node colors
+            node_nats_operator: Color::from_rgb(0.6, 0.2, 0.8),  // Purple - high authority
+            node_nats_account: Color::from_rgb(0.5, 0.3, 0.7),   // Light purple
+            node_nats_user: Color::from_rgb(0.4, 0.4, 0.6),      // Blue-gray
+
+            // PKI node colors
+            node_certificate: Color::from_rgb(0.7, 0.5, 0.2),    // Orange/Gold
+            node_key: Color::from_rgb(0.6, 0.6, 0.2),            // Yellow-green
+
+            // YubiKey node color
+            node_yubikey: Color::from_rgb(0.0, 0.6, 0.4),        // Teal/Green
 
             // Aggregate node colors (DDD bounded context visualization)
             aggregate_organization: Color::from_rgb(0.2, 0.5, 0.8),   // Blue - Organization domain
