@@ -11,7 +11,14 @@
 //! ```text
 //! Model + Query → [Folds] → bool (matches)
 //! ```
+//!
+//! ## Available Folds
+//!
+//! - `FoldSearchableText` - Extracts searchable text for filtering
+//! - `FoldEditFields` - Extracts edit field data for property cards
 
+pub mod edit_fields;
 pub mod searchable;
 
+pub use edit_fields::{EditFieldData, EntityType, FoldEditFields};
 pub use searchable::{FoldSearchableText, SearchableText};
