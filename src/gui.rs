@@ -2222,7 +2222,7 @@ impl CimKeysApp {
                         let root_ca_node = graph::ConceptEntity::from_domain_node(cert_id, domain_node);
 
                         // Create view with custom color and label
-                        let custom_color = iced::Color::from_rgb(0.2, 0.8, 0.2); // Green for Root CA
+                        let custom_color = self.view_model.colors.cert_root_ca;
                         let custom_label = format!("{} Root CA", self.organization_name);
                         let view = view_model::NodeView::new(cert_id, position, custom_color, custom_label);
 
@@ -2268,7 +2268,7 @@ impl CimKeysApp {
                         let leaf_cert_node = graph::ConceptEntity::from_domain_node(cert_id, domain_node);
 
                         // Create view with custom color and label
-                        let custom_color = iced::Color::from_rgb(0.4, 0.6, 0.8); // Blue for Leaf
+                        let custom_color = self.view_model.colors.cert_leaf;
                         let custom_label = "Personal Certificate".to_string();
                         let view = view_model::NodeView::new(cert_id, position, custom_color, custom_label);
 
@@ -3160,7 +3160,7 @@ impl CimKeysApp {
                         let node_id = org.id;
                         let label = org.name.clone();
                         let position = self.node_selector_position;
-                        let color = Color::from_rgb(0.2, 0.3, 0.6); // Dark blue
+                        let color = self.view_model.colors.node_organization;
 
                         self.status_message = "✨ Created Organization - click to edit name".to_string();
 
@@ -3189,7 +3189,7 @@ impl CimKeysApp {
                         let node_id = unit.id;
                         let label = unit.name.clone();
                         let position = self.node_selector_position;
-                        let color = Color::from_rgb(0.4, 0.5, 0.8); // Light blue
+                        let color = self.view_model.colors.node_unit;
 
                         self.status_message = "✨ Created Organizational Unit - click to edit name".to_string();
 
@@ -3226,7 +3226,7 @@ impl CimKeysApp {
                         let label = person.name.clone();
                         let position = self.node_selector_position;
                         let role = KeyOwnerRole::Developer;
-                        let color = Color::from_rgb(0.2, 0.8, 0.3); // Green
+                        let color = self.view_model.colors.node_person;
 
                         self.status_message = "✨ Created Person - click to edit details".to_string();
 
@@ -3260,7 +3260,7 @@ impl CimKeysApp {
 
                         let label = location.name.clone();
                         let position = self.node_selector_position;
-                        let color = Color::from_rgb(0.6, 0.5, 0.4); // Brown/gray
+                        let color = self.view_model.colors.node_location;
 
                         self.status_message = "✨ Created Location - click to edit address".to_string();
 
@@ -3298,7 +3298,7 @@ impl CimKeysApp {
                         let node_id = role_data.id;
                         let label = role_data.name.clone();
                         let position = self.node_selector_position;
-                        let color = Color::from_rgb(0.6, 0.3, 0.8); // Purple
+                        let color = self.view_model.colors.node_role;
 
                         self.status_message = "✨ Created Role - define responsibilities".to_string();
 
@@ -3332,7 +3332,7 @@ impl CimKeysApp {
                         let node_id = policy.id;
                         let label = policy.name.clone();
                         let position = self.node_selector_position;
-                        let color = Color::from_rgb(0.9, 0.7, 0.2); // Gold/yellow
+                        let color = self.view_model.colors.node_policy;
 
                         self.status_message = "✨ Created Policy - define claims and conditions".to_string();
 
@@ -7513,26 +7513,29 @@ impl CimKeysApp {
                 text(format!("Export Readiness: {}%", percentage))
                     .size(self.view_model.text_large)
                     .color(if is_ready {
-                        Color::from_rgb(0.2, 0.8, 0.2)
+                        self.view_model.colors.green_success
                     } else {
-                        Color::from_rgb(0.9, 0.7, 0.2)
+                        self.view_model.colors.yellow_warning
                     }),
             ]
             .spacing(8)
             .align_y(Alignment::Center),
 
-            // Progress bar
-            progress_bar(0.0..=100.0, percentage as f32)
-                .height(8)
-                .style(move |_theme| progress_bar::Style {
-                    background: Background::Color(Color::from_rgba(0.2, 0.2, 0.3, 0.8)),
-                    bar: Background::Color(if is_ready {
-                        Color::from_rgb(0.2, 0.8, 0.2)
-                    } else {
-                        Color::from_rgb(0.9, 0.7, 0.2)
-                    }),
-                    border: Border::default(),
-                }),
+            // Progress bar - capture bar color for closure
+            {
+                let bar_color = if is_ready {
+                    self.view_model.colors.green_success
+                } else {
+                    self.view_model.colors.yellow_warning
+                };
+                progress_bar(0.0..=100.0, percentage as f32)
+                    .height(8)
+                    .style(move |_theme| progress_bar::Style {
+                        background: Background::Color(Color::from_rgba(0.2, 0.2, 0.3, 0.8)),
+                        bar: Background::Color(bar_color),
+                        border: Border::default(),
+                    })
+            },
 
             // Summary stats
             row![
@@ -7585,9 +7588,9 @@ impl CimKeysApp {
                             let mut missing_column = column![].spacing(6);
                             for item in &readiness.missing_items {
                                 let (icon, color) = match item.severity {
-                                    MissingSeverity::Required => ("🔴", Color::from_rgb(0.9, 0.3, 0.3)),
-                                    MissingSeverity::Recommended => ("🟡", Color::from_rgb(0.9, 0.7, 0.2)),
-                                    MissingSeverity::Optional => ("🔵", Color::from_rgb(0.4, 0.6, 0.9)),
+                                    MissingSeverity::Required => ("🔴", self.view_model.colors.red_error),
+                                    MissingSeverity::Recommended => ("🟡", self.view_model.colors.yellow_warning),
+                                    MissingSeverity::Optional => ("🔵", self.view_model.colors.blue_info),
                                 };
                                 let mut item_row = row![
                                     text(icon).font(EMOJI_FONT).size(14),
@@ -7618,7 +7621,7 @@ impl CimKeysApp {
                 container(
                     text("All requirements met - ready for export!")
                         .size(self.view_model.text_normal)
-                        .color(Color::from_rgb(0.2, 0.8, 0.2))
+                        .color(self.view_model.colors.green_success)
                 )
                 .padding(self.view_model.padding_md)
             },
@@ -7634,7 +7637,7 @@ impl CimKeysApp {
                                 warn_column = warn_column.push(
                                     text(format!("• {}", warning))
                                         .size(self.view_model.text_small)
-                                        .color(Color::from_rgb(0.9, 0.7, 0.2))
+                                        .color(self.view_model.colors.yellow_warning)
                                 );
                             }
                             warn_column

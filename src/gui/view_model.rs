@@ -261,11 +261,16 @@ pub struct ColorPalette {
     // Semantic colors
     pub blue_bright: Color,
     pub blue_glow: Color,
+    pub blue_info: Color,       // Info/optional status - (0.4, 0.6, 0.9)
     pub green_success: Color,
     pub red_error: Color,
     pub yellow_warning: Color,
     pub orange_caution: Color,  // Solid orange for "fair" states (H40°, S75%, L50%)
     pub orange_warning: Color,
+
+    // Certificate type colors
+    pub cert_root_ca: Color,    // Root CA - green (same as green_success)
+    pub cert_leaf: Color,       // Leaf certificate - blue
 
     // Overlay/Modal colors
     pub overlay_background: Color,
@@ -442,10 +447,10 @@ impl Default for ColorPalette {
             // Node type colors
             node_organization: Color::from_rgb(0.2, 0.3, 0.6),
             node_unit: Color::from_rgb(0.4, 0.5, 0.8),
-            node_person: Color::from_rgb(0.5, 0.7, 0.3),
+            node_person: Color::from_rgb(0.2, 0.8, 0.3),  // Green - matches gui.rs
             node_location: Color::from_rgb(0.6, 0.5, 0.4),
             node_role: Color::from_rgb(0.6, 0.3, 0.8),
-            node_policy: Color::from_rgb(0.8, 0.6, 0.2),
+            node_policy: Color::from_rgb(0.9, 0.7, 0.2),  // Gold/yellow - matches gui.rs
             node_edge_highlight: Color::from_rgb(0.3, 0.3, 0.7),
 
             // NATS node colors
@@ -477,11 +482,16 @@ impl Default for ColorPalette {
             // Semantic colors
             blue_bright: Color::from_rgba(0.3, 0.6, 1.0, 0.8),
             blue_glow: Color::from_rgba(0.3, 0.6, 1.0, 0.6),
-            green_success: Color::from_rgb(0.2, 0.9, 0.2),
-            red_error: Color::from_rgb(0.9, 0.2, 0.2),
-            yellow_warning: Color::from_rgb(1.0, 0.8, 0.0),
-            orange_caution: Color::from_rgb(0.8, 0.6, 0.2),  // H40°, solid orange for "fair"
+            blue_info: Color::from_rgb(0.4, 0.6, 0.9),        // Info/optional status
+            green_success: Color::from_rgb(0.2, 0.8, 0.2),    // Success status (synced with gui.rs)
+            red_error: Color::from_rgb(0.9, 0.3, 0.3),        // Error/required (synced with gui.rs)
+            yellow_warning: Color::from_rgb(0.9, 0.7, 0.2),   // Warning (synced with gui.rs)
+            orange_caution: Color::from_rgb(0.8, 0.6, 0.2),   // H40°, solid orange for "fair"
             orange_warning: Color::from_rgba(0.8, 0.6, 0.0, 0.15),
+
+            // Certificate type colors
+            cert_root_ca: Color::from_rgb(0.2, 0.8, 0.2),     // Root CA - green
+            cert_leaf: Color::from_rgb(0.4, 0.6, 0.8),        // Leaf certificate - blue
 
             // Overlay/Modal colors
             overlay_background: Color::from_rgba(0.0, 0.0, 0.0, 0.7),

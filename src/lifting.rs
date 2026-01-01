@@ -66,7 +66,7 @@ pub const COLOR_ORGANIZATION: Color = Color::from_rgb(0.2, 0.3, 0.6);
 pub const COLOR_UNIT: Color = Color::from_rgb(0.4, 0.5, 0.8);
 
 /// Color for Person nodes (matches ColorPalette::node_person)
-pub const COLOR_PERSON: Color = Color::from_rgb(0.5, 0.7, 0.3);
+pub const COLOR_PERSON: Color = Color::from_rgb(0.2, 0.8, 0.3);  // Green
 
 /// Color for Location nodes (matches ColorPalette::node_location)
 pub const COLOR_LOCATION: Color = Color::from_rgb(0.6, 0.5, 0.4);
@@ -75,7 +75,7 @@ pub const COLOR_LOCATION: Color = Color::from_rgb(0.6, 0.5, 0.4);
 pub const COLOR_ROLE: Color = Color::from_rgb(0.6, 0.3, 0.8);
 
 /// Color for Policy nodes (matches ColorPalette::node_policy)
-pub const COLOR_POLICY: Color = Color::from_rgb(0.8, 0.6, 0.2);
+pub const COLOR_POLICY: Color = Color::from_rgb(0.9, 0.7, 0.2);  // Gold/yellow
 
 /// Color for NATS Operator nodes (matches ColorPalette::node_nats_operator)
 pub const COLOR_NATS_OPERATOR: Color = Color::from_rgb(0.6, 0.2, 0.8);
