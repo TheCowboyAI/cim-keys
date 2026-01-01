@@ -2870,11 +2870,10 @@ impl OrganizationConcept {
         let mut layers: Vec<Vec<Uuid>> = Vec::new();
         let mut visited: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
 
-        // Find root nodes (nodes with no incoming edges)
+        // Find root nodes (nodes with no incoming edges) - O(1) lookup per node
         let mut root_nodes: Vec<Uuid> = Vec::new();
         for node_id in self.nodes.keys() {
-            let has_incoming = self.edges.iter().any(|e| e.to == *node_id);
-            if !has_incoming {
+            if self.edges_to(*node_id).is_empty() {
                 root_nodes.push(*node_id);
             }
         }
@@ -2884,13 +2883,13 @@ impl OrganizationConcept {
             visited.extend(root_nodes.iter());
         }
 
-        // Build layers using BFS
+        // Build layers using BFS - O(1) lookup for outgoing edges
         while let Some(current_layer) = layers.last().cloned() {
             let mut next_layer = Vec::new();
             for node_id in current_layer {
-                // Find all children (outgoing edges)
-                for edge in &self.edges {
-                    if edge.from == node_id && !visited.contains(&edge.to) {
+                // Find all children (outgoing edges) - O(1) lookup
+                for edge in self.edges_from(node_id) {
+                    if !visited.contains(&edge.to) {
                         next_layer.push(edge.to);
                         visited.insert(edge.to);
                     }

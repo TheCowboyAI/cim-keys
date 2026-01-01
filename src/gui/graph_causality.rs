@@ -181,9 +181,10 @@ pub fn build_pki_from_graph(graph: &OrganizationConcept) -> CausalChain<GraphOpe
         let root_ca_edge_event_id = root_ca_edge_event.id();
         chain = chain.add(root_ca_edge_event).unwrap();
 
-        // Step 2: Find organizational units under this org
-        let unit_nodes: Vec<_> = graph.edges.iter()
-            .filter(|e| e.from == org_node.id && e.edge_type == EdgeType::ParentChild)
+        // Step 2: Find organizational units under this org (O(1) lookup)
+        let unit_nodes: Vec<_> = graph.edges_from(org_node.id)
+            .into_iter()
+            .filter(|e| e.edge_type == EdgeType::ParentChild)
             .filter_map(|e| graph.nodes.get(&e.to))
             .filter(|n| n.domain_node.injection() == Injection::OrganizationUnit)
             .collect();
@@ -231,9 +232,10 @@ pub fn build_pki_from_graph(graph: &OrganizationConcept) -> CausalChain<GraphOpe
             let trust_edge_event_id = trust_edge_event.id();
             chain = chain.add(trust_edge_event).unwrap();
 
-            // Step 3: Find people under this unit
-            let people_nodes: Vec<_> = graph.edges.iter()
-                .filter(|e| e.from == unit_node.id && e.edge_type == EdgeType::ParentChild)
+            // Step 3: Find people under this unit (O(1) lookup)
+            let people_nodes: Vec<_> = graph.edges_from(unit_node.id)
+                .into_iter()
+                .filter(|e| e.edge_type == EdgeType::ParentChild)
                 .filter_map(|e| graph.nodes.get(&e.to))
                 .filter(|n| n.domain_node.injection() == Injection::Person)
                 .collect();
@@ -328,9 +330,10 @@ pub fn build_nats_from_graph(graph: &OrganizationConcept) -> CausalChain<GraphOp
         let operator_edge_event_id = operator_edge_event.id();
         chain = chain.add(operator_edge_event).unwrap();
 
-        // Find organizational units
-        let unit_nodes: Vec<_> = graph.edges.iter()
-            .filter(|e| e.from == org_node.id && e.edge_type == EdgeType::ParentChild)
+        // Find organizational units (O(1) lookup)
+        let unit_nodes: Vec<_> = graph.edges_from(org_node.id)
+            .into_iter()
+            .filter(|e| e.edge_type == EdgeType::ParentChild)
             .filter_map(|e| graph.nodes.get(&e.to))
             .filter(|n| n.domain_node.injection() == Injection::OrganizationUnit)
             .collect();
@@ -378,9 +381,10 @@ pub fn build_nats_from_graph(graph: &OrganizationConcept) -> CausalChain<GraphOp
             let operator_account_edge_id = operator_account_edge.id();
             chain = chain.add(operator_account_edge).unwrap();
 
-            // Find people under this unit
-            let people_nodes: Vec<_> = graph.edges.iter()
-                .filter(|e| e.from == unit_node.id && e.edge_type == EdgeType::ParentChild)
+            // Find people under this unit (O(1) lookup)
+            let people_nodes: Vec<_> = graph.edges_from(unit_node.id)
+                .into_iter()
+                .filter(|e| e.edge_type == EdgeType::ParentChild)
                 .filter_map(|e| graph.nodes.get(&e.to))
                 .filter(|n| n.domain_node.injection() == Injection::Person)
                 .collect();
