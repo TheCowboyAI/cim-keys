@@ -42,7 +42,7 @@ use chrono::Utc;
 
 use crate::domain::{Organization, OrganizationUnit, Person, KeyOwnerRole};
 use crate::gui::graph::{OrganizationConcept, ConceptEntity, ConceptRelation, EdgeType};
-use crate::gui::domain_node::{DomainNode, DomainNodeData};
+use crate::gui::domain_node::DomainNode;
 use iced::{Color, Point};
 
 /// Result of analyzing the organizational graph for PKI generation
@@ -75,12 +75,15 @@ impl PkiHierarchy {
 }
 
 /// Analyze the organizational graph to determine PKI hierarchy
+///
+/// Uses accessor methods (partial projections) instead of pattern matching
+/// on DomainNodeData variants.
 pub fn analyze_graph_for_pki(graph: &OrganizationConcept) -> PkiHierarchy {
     let mut hierarchy = PkiHierarchy::new();
 
-    // Step 1: Find the root organization
+    // Step 1: Find the root organization using accessor
     for (id, node) in &graph.nodes {
-        if let DomainNodeData::Organization(org) = node.domain_node.data() {
+        if let Some(org) = node.domain_node.organization() {
             hierarchy.root_organization = Some((*id, org.clone()));
             break; // Assume single root organization
         }
@@ -89,7 +92,7 @@ pub fn analyze_graph_for_pki(graph: &OrganizationConcept) -> PkiHierarchy {
     // Step 2: Find all organizational units and their parent organization
     if let Some((org_id, _)) = &hierarchy.root_organization {
         for (unit_id, node) in &graph.nodes {
-            if let DomainNodeData::OrganizationUnit(unit) = node.domain_node.data() {
+            if let Some(unit) = node.domain_node.organization_unit() {
                 // Find parent edge (Organization → OrganizationalUnit)
                 let parent_id = graph.edges.iter()
                     .find(|edge| {
@@ -107,7 +110,7 @@ pub fn analyze_graph_for_pki(graph: &OrganizationConcept) -> PkiHierarchy {
 
     // Step 3: Find all people and their parent organizational unit
     for (person_id, node) in &graph.nodes {
-        if let DomainNodeData::Person { person, role } = node.domain_node.data() {
+        if let Some((person, role)) = node.domain_node.person_with_role() {
             // Find parent edge (OrganizationalUnit → Person or Organization → Person)
             let parent_id = graph.edges.iter()
                 .find(|edge| {

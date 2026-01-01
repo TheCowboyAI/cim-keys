@@ -40,7 +40,7 @@ use uuid::Uuid;
 use crate::domain::{Person, KeyOwnerRole};
 use crate::domain::yubikey::PIVSlot as DomainPIVSlot;
 use crate::gui::graph::{OrganizationConcept, ConceptEntity};
-use crate::gui::domain_node::{DomainNode, DomainNodeData};
+use crate::gui::domain_node::DomainNode;
 use iced::{Color, Point};
 
 /// PIV slot assignments based on role (graph visualization)
@@ -156,12 +156,15 @@ pub fn slots_for_role(role: &KeyOwnerRole) -> Vec<PIVSlot> {
 }
 
 /// Analyze the organizational graph to determine YubiKey provisioning needs
+///
+/// Uses accessor methods (partial projections) instead of pattern matching
+/// on DomainNodeData variants.
 pub fn analyze_graph_for_yubikey(graph: &OrganizationConcept) -> YubiKeyProvisionHierarchy {
     let mut hierarchy = YubiKeyProvisionHierarchy::new();
 
     // Find all people in the graph and determine their YubiKey needs
     for (person_id, node) in &graph.nodes {
-        if let DomainNodeData::Person { person, role } = node.domain_node.data() {
+        if let Some((person, role)) = node.domain_node.person_with_role() {
             let slots = slots_for_role(role);
 
             let plan = YubiKeyProvisionPlan {
