@@ -11,6 +11,7 @@ use std::collections::HashSet;
 
 use crate::gui::graph::EdgeType;
 use crate::gui::domain_node::{DomainNode, DomainNodeData, Injection};
+use crate::gui::folds::query::FoldEditFields;
 use crate::gui::view_model::ViewModel;
 use crate::domain::{PolicyClaim, RoleType, LocationType};
 use crate::icons::verified;
@@ -118,6 +119,10 @@ impl PropertyCard {
     }
 
     /// Set the node to edit
+    ///
+    /// Uses the categorical fold pattern (FoldEditFields) to extract edit data
+    /// from the DomainNode coproduct, replacing explicit pattern matching with
+    /// the universal property of coproducts.
     pub fn set_node(&mut self, node_id: Uuid, domain_node: DomainNode) {
         self.edit_target = Some(EditTarget::Node {
             id: node_id,
@@ -125,230 +130,29 @@ impl PropertyCard {
         });
         self.dirty = false;
 
-        // Initialize edit fields from node data using DomainNode accessors
-        match domain_node.data() {
-            DomainNodeData::Organization(org) => {
-                self.edit_name = org.name.clone();
-                self.edit_description = org.description.clone().unwrap_or_default();
-                self.edit_email = String::new();
-                self.edit_enabled = true;
-            }
-            DomainNodeData::OrganizationUnit(unit) => {
-                self.edit_name = unit.name.clone();
-                self.edit_description = String::new();
-                self.edit_email = String::new();
-                self.edit_enabled = true;
-            }
-            DomainNodeData::Person { person, .. } => {
-                self.edit_name = person.name.clone();
-                self.edit_description = String::new();
-                self.edit_email = person.email.clone();
-                self.edit_enabled = person.active;
-                self.edit_roles = person.roles.iter().map(|r| r.role_type.clone()).collect();
-            }
-            DomainNodeData::Location(loc) => {
-                self.edit_name = loc.name.clone();
-                self.edit_description = String::new();
-                self.edit_email = String::new();
-                self.edit_enabled = true;
-                // Location-specific fields
-                self.edit_location_type = loc.location_type.clone();
-                self.edit_address = loc.address.as_ref()
-                    .map(|addr| {
-                        let mut parts = vec![addr.street1.clone()];
-                        if let Some(street2) = &addr.street2 {
-                            parts.push(street2.clone());
-                        }
-                        parts.push(addr.locality.clone());
-                        parts.push(addr.region.clone());
-                        parts.push(addr.country.clone());
-                        parts.push(addr.postal_code.clone());
-                        parts.join(", ")
-                    })
-                    .unwrap_or_default();
-                self.edit_coordinates = loc.coordinates.as_ref()
-                    .map(|coords| format!("{}, {}", coords.latitude, coords.longitude))
-                    .unwrap_or_default();
-                self.edit_virtual_location = loc.virtual_location.as_ref()
-                    .map(|vl| {
-                        if !vl.urls.is_empty() {
-                            vl.urls[0].url.clone()
-                        } else {
-                            vl.primary_identifier.clone()
-                        }
-                    })
-                    .unwrap_or_default();
-            }
-            DomainNodeData::Role(role) => {
-                self.edit_name = role.name.clone();
-                self.edit_description = role.description.clone();
-                self.edit_email = String::new();
-                self.edit_enabled = role.active;
-            }
-            DomainNodeData::Policy(policy) => {
-                self.edit_name = policy.name.clone();
-                self.edit_description = policy.description.clone();
-                self.edit_email = String::new();
-                self.edit_enabled = policy.enabled;
-                self.edit_claims = policy.claims.iter().cloned().collect();
-            }
-            // NATS Infrastructure - read-only, no editing
-            DomainNodeData::NatsOperator(identity) => {
-                self.edit_name = "NATS Operator".to_string();
-                self.edit_description = format!("NKey: {}", identity.nkey.public_key.public_key());
-                self.edit_email = String::new();
-                self.edit_enabled = true;
-            }
-            DomainNodeData::NatsAccount(identity) => {
-                self.edit_name = "NATS Account".to_string();
-                self.edit_description = format!("NKey: {}", identity.nkey.public_key.public_key());
-                self.edit_email = String::new();
-                self.edit_enabled = true;
-            }
-            DomainNodeData::NatsUser(identity) => {
-                self.edit_name = "NATS User".to_string();
-                self.edit_description = format!("NKey: {}", identity.nkey.public_key.public_key());
-                self.edit_email = String::new();
-                self.edit_enabled = true;
-            }
-            DomainNodeData::NatsServiceAccount(identity) => {
-                self.edit_name = "Service Account".to_string();
-                self.edit_description = format!("NKey: {}", identity.nkey.public_key.public_key());
-                self.edit_email = String::new();
-                self.edit_enabled = true;
-            }
-            // NATS Infrastructure - Simple variants (visualization only)
-            DomainNodeData::NatsOperatorSimple { name, organization_id } => {
-                self.edit_name = name.clone();
-                self.edit_description = format!("Org: {}", organization_id.map(|id| id.to_string()).unwrap_or_else(|| "N/A".to_string()));
-                self.edit_email = String::new();
-                self.edit_enabled = true;
-            }
-            DomainNodeData::NatsAccountSimple { name, unit_id, is_system } => {
-                self.edit_name = name.clone();
-                self.edit_description = format!("Unit: {}, System: {}", unit_id.map(|id| id.to_string()).unwrap_or_else(|| "N/A".to_string()), is_system);
-                self.edit_email = String::new();
-                self.edit_enabled = true;
-            }
-            DomainNodeData::NatsUserSimple { name, person_id, account_name } => {
-                self.edit_name = name.clone();
-                self.edit_description = format!("Account: {}, Person: {}", account_name, person_id.map(|id| id.to_string()).unwrap_or_else(|| "N/A".to_string()));
-                self.edit_email = String::new();
-                self.edit_enabled = true;
-            }
-            // PKI Trust Chain - read-only, no editing
-            DomainNodeData::RootCertificate(cert) => {
-                self.edit_name = format!("Root CA: {}", cert.subject);
-                self.edit_description = format!("Issuer: {}", cert.issuer);
-                self.edit_email = String::new();
-                self.edit_enabled = true;
-            }
-            DomainNodeData::IntermediateCertificate(cert) => {
-                self.edit_name = format!("Intermediate CA: {}", cert.subject);
-                self.edit_description = format!("Issuer: {}", cert.issuer);
-                self.edit_email = String::new();
-                self.edit_enabled = true;
-            }
-            DomainNodeData::LeafCertificate(cert) => {
-                self.edit_name = format!("Certificate: {}", cert.subject);
-                self.edit_description = format!("Issuer: {}", cert.issuer);
-                self.edit_email = String::new();
-                self.edit_enabled = true;
-            }
-            // YubiKey Hardware - read-only, no editing
-            DomainNodeData::YubiKey(yk) => {
-                self.edit_name = format!("YubiKey {}", yk.serial);
-                self.edit_description = format!("Version: {}", yk.version);
-                self.edit_email = String::new();
-                self.edit_enabled = true;
-            }
-            DomainNodeData::PivSlot(slot) => {
-                self.edit_name = slot.slot_name.clone();
-                self.edit_description = format!("YubiKey {} - {}", slot.yubikey_serial, if slot.has_key { "In use" } else { "Empty" });
-                self.edit_email = String::new();
-                self.edit_enabled = slot.has_key;
-            }
-            DomainNodeData::YubiKeyStatus(status) => {
-                self.edit_name = "YubiKey Status".to_string();
-                self.edit_description = format!("{}/{} slots - {}",
-                    status.slots_provisioned.len(),
-                    status.slots_needed.len(),
-                    status.yubikey_serial.clone().unwrap_or_else(|| "Not detected".to_string())
-                );
-                self.edit_email = String::new();
-                self.edit_enabled = true;
-            }
-            // Cryptographic Keys - read-only, no editing
-            DomainNodeData::Key(key) => {
-                self.edit_name = format!("Key: {:?}", key.purpose);
-                self.edit_description = format!("Algorithm: {:?}, ID: {}", key.algorithm, key.id.as_uuid());
-                self.edit_email = String::new();
-                self.edit_enabled = true;
-            }
-            // Export and Manifest - read-only, no editing
-            DomainNodeData::Manifest(manifest) => {
-                self.edit_name = format!("Manifest: {}", manifest.name);
-                self.edit_description = format!("ID: {}, Destination: {}",
-                    manifest.id.as_uuid(),
-                    manifest.destination.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "None".to_string())
-                );
-                self.edit_email = String::new();
-                self.edit_enabled = true;
-            }
-            // Policy Roles from policy-bootstrap.json - read-only
-            DomainNodeData::PolicyRole(role) => {
-                self.edit_name = role.name.clone();
-                self.edit_description = format!("L{} {:?} | {} claims | {}", role.level, role.separation_class, role.claim_count, role.purpose);
-                self.edit_email = String::new();
-                self.edit_enabled = true;
-            }
-            // Policy Claims - read-only
-            DomainNodeData::PolicyClaim(claim) => {
-                self.edit_name = claim.name.clone();
-                self.edit_description = format!("Category: {}", claim.category);
-                self.edit_email = String::new();
-                self.edit_enabled = true;
-            }
-            // Policy Categories - clickable to expand/collapse
-            DomainNodeData::PolicyCategory(category) => {
-                self.edit_name = category.name.clone();
-                self.edit_description = format!("{} claims | {}", category.claim_count, if category.expanded { "Expanded" } else { "Collapsed" });
-                self.edit_email = String::new();
-                self.edit_enabled = true;
-            }
-            // Separation Class Groups - clickable to expand/collapse
-            DomainNodeData::PolicyGroup(group) => {
-                self.edit_name = group.name.clone();
-                self.edit_description = format!("{} roles | {}", group.role_count, if group.expanded { "Expanded" } else { "Collapsed" });
-                self.edit_email = String::new();
-                self.edit_enabled = true;
-            }
-            // Aggregate Bounded Contexts - read-only state visualization
-            DomainNodeData::AggregateOrganization { name, version, people_count, units_count } => {
-                self.edit_name = name.clone();
-                self.edit_description = format!("v{} | {} people, {} units", version, people_count, units_count);
-                self.edit_email = String::new();
-                self.edit_enabled = true;
-            }
-            DomainNodeData::AggregatePkiChain { name, version, certificates_count, keys_count } => {
-                self.edit_name = name.clone();
-                self.edit_description = format!("v{} | {} certs, {} keys", version, certificates_count, keys_count);
-                self.edit_email = String::new();
-                self.edit_enabled = true;
-            }
-            DomainNodeData::AggregateNatsSecurity { name, version, operators_count, accounts_count, users_count } => {
-                self.edit_name = name.clone();
-                self.edit_description = format!("v{} | {} ops, {} accts, {} users", version, operators_count, accounts_count, users_count);
-                self.edit_email = String::new();
-                self.edit_enabled = true;
-            }
-            DomainNodeData::AggregateYubiKeyProvisioning { name, version, devices_count, slots_provisioned } => {
-                self.edit_name = name.clone();
-                self.edit_description = format!("v{} | {} devices, {} slots", version, devices_count, slots_provisioned);
-                self.edit_email = String::new();
-                self.edit_enabled = true;
-            }
+        // Use the categorical fold pattern to extract edit fields
+        // This replaces the large pattern match with a single fold invocation
+        let edit_data = domain_node.fold(&FoldEditFields);
+
+        // Apply the extracted data to our edit fields
+        self.edit_name = edit_data.name;
+        self.edit_description = edit_data.description;
+        self.edit_email = edit_data.email;
+        self.edit_enabled = edit_data.enabled;
+
+        // Roles (for Person nodes)
+        self.edit_roles = edit_data.role_types.into_iter().collect();
+
+        // Claims (for Policy nodes)
+        self.edit_claims = edit_data.policy_claims.into_iter().collect();
+
+        // Location-specific fields
+        if let Some(loc_type) = edit_data.location_type {
+            self.edit_location_type = loc_type;
         }
+        self.edit_address = edit_data.address.unwrap_or_default();
+        self.edit_coordinates = edit_data.coordinates.unwrap_or_default();
+        self.edit_virtual_location = edit_data.virtual_location.unwrap_or_default();
     }
 
     /// Set the edge to edit

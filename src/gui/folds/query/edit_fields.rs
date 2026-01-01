@@ -30,7 +30,7 @@ use uuid::Uuid;
 
 use crate::domain::{
     Person, KeyOwnerRole, Organization, OrganizationUnit, Location, Role, Policy,
-    LocationType,
+    LocationType, PolicyClaim, RoleType,
 };
 use crate::domain::pki::{KeyAlgorithm, KeyPurpose};
 use crate::domain::yubikey::PIVSlot;
@@ -47,8 +47,10 @@ pub struct EditFieldData {
     pub email: String,
     pub enabled: bool,
 
-    // Roles (for Person)
+    // Roles (for Person) - string representation for display
     pub roles: Vec<String>,
+    // Actual RoleType values for checkbox binding
+    pub role_types: Vec<RoleType>,
 
     // Location-specific fields
     pub location_type: Option<LocationType>,
@@ -58,6 +60,8 @@ pub struct EditFieldData {
 
     // Policy-specific fields (claim descriptions: "resource:action")
     pub claims: Option<Vec<String>>,
+    // Actual PolicyClaim values for checkbox binding
+    pub policy_claims: Vec<PolicyClaim>,
 
     // Read-only indicator (some types can't be edited)
     pub read_only: bool,
@@ -108,6 +112,7 @@ impl FoldDomainNode for FoldEditFields {
             email: person.email.clone(),
             enabled: person.active,
             roles: person.roles.iter().map(|r| format!("{:?}", r.role_type)).collect(),
+            role_types: person.roles.iter().map(|r| r.role_type.clone()).collect(),
             entity_type: EntityType::Person,
             ..Default::default()
         }
@@ -184,6 +189,7 @@ impl FoldDomainNode for FoldEditFields {
             description: policy.description.clone(),
             enabled: policy.enabled,
             claims: Some(policy.claims.iter().map(|c| format!("{:?}", c)).collect()),
+            policy_claims: policy.claims.clone(),
             entity_type: EntityType::Policy,
             ..Default::default()
         }
