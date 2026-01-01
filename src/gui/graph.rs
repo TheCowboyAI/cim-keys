@@ -3220,7 +3220,7 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                     let indicator_radius = 30.0;
                     let indicator_circle = canvas::Path::circle(node_pos, indicator_radius);
                     let indicator_stroke = canvas::Stroke::default()
-                        .with_color(Color::from_rgba(0.4, 0.7, 0.9, 0.4)) // Light blue, semi-transparent
+                        .with_color(self.colors.drop_target_ring)
                         .with_width(2.0);
                     frame.stroke(&indicator_circle, indicator_stroke);
 
@@ -3228,7 +3228,7 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                     frame.fill_text(canvas::Text {
                         content: "+".to_string(),
                         position: Point::new(node_pos.x + 25.0, node_pos.y - 20.0),
-                        color: Color::from_rgba(0.4, 0.7, 0.9, 0.7),
+                        color: self.colors.drop_target_text,
                         size: iced::Pixels(12.0),
                         font: iced::Font::DEFAULT,
                         horizontal_alignment: iced::alignment::Horizontal::Center,
@@ -3264,7 +3264,7 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                 node_pos.y + 2.0,
             );
             let shadow_circle = canvas::Path::circle(shadow_offset, radius);
-            frame.fill(&shadow_circle, Color::from_rgba(0.0, 0.0, 0.0, 0.3));
+            frame.fill(&shadow_circle, self.colors.shadow_node);
 
             // 2. Base disc with gradient effect (concentric circles)
             // Outer layer (darker edge for depth)
@@ -3297,13 +3297,13 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                 node_pos.y - radius * 0.3,
             );
             let highlight = canvas::Path::circle(highlight_pos, radius * 0.25);
-            frame.fill(&highlight, Color::from_rgba(1.0, 1.0, 1.0, 0.5));
+            frame.fill(&highlight, self.colors.highlight_node);
 
             // 4. Selection ring if selected
             if is_selected {
                 let selection_ring = canvas::Path::circle(node_pos, radius + 3.0);
                 let stroke = canvas::Stroke::default()
-                    .with_color(Color::from_rgb(1.0, 0.84, 0.0)) // Gold color
+                    .with_color(self.colors.gold_indicator)
                     .with_width(3.0);
                 frame.stroke(&selection_ring, stroke);
             }
@@ -3311,7 +3311,7 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
             // 5. Border (defines the disc edge) - bright for visibility on black
             let circle = canvas::Path::circle(node_pos, radius);
             let border_stroke = canvas::Stroke::default()
-                .with_color(Color::from_rgba(0.8, 0.8, 0.9, 0.7))  // Light border for black bg
+                .with_color(self.colors.node_border_light)
                 .with_width(if is_selected { 2.5 } else { 2.0 });  // Slightly thicker
             frame.stroke(&circle, border_stroke);
 
@@ -3333,7 +3333,7 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
             frame.fill_text(canvas::Text {
                 content: primary_text,
                 position: name_position,
-                color: Color::from_rgb(1.0, 1.0, 1.0),  // White for black bg
+                color: self.colors.node_text_primary,
                 size: iced::Pixels(13.0),
                 font: iced::Font::DEFAULT,
                 horizontal_alignment: iced::alignment::Horizontal::Center,
@@ -3350,7 +3350,7 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
             frame.fill_text(canvas::Text {
                 content: secondary_text,
                 position: email_position,
-                color: Color::from_rgb(0.7, 0.7, 0.8),  // Light gray for black bg
+                color: self.colors.node_text_secondary,
                 size: iced::Pixels(10.0),
                 font: iced::Font::DEFAULT,
                 horizontal_alignment: iced::alignment::Horizontal::Center,
@@ -3371,12 +3371,12 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
 
                 // Draw indicator circle (blue background)
                 let indicator_circle = canvas::Path::circle(indicator_center, indicator_radius);
-                frame.fill(&indicator_circle, Color::from_rgb(0.3, 0.5, 0.8));
+                frame.fill(&indicator_circle, self.colors.expand_indicator_fill);
 
                 // Draw border
                 let border = canvas::Path::circle(indicator_center, indicator_radius);
                 frame.stroke(&border, canvas::Stroke::default()
-                    .with_color(Color::from_rgb(0.5, 0.7, 1.0))
+                    .with_color(self.colors.expand_indicator_border)
                     .with_width(1.5));
 
                 // Draw + or - symbol
@@ -3431,7 +3431,7 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                         frame.fill_text(canvas::Text {
                             content: "+".to_string(),
                             position: Point::new(more_x, badge_y),
-                            color: Color::from_rgb(0.6, 0.6, 0.7),
+                            color: self.colors.role_badge_more,
                             size: iced::Pixels(9.0),
                             font: iced::Font::DEFAULT,
                             horizontal_alignment: iced::alignment::Horizontal::Center,
@@ -3475,28 +3475,23 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                 DragSource::RoleFromPalette { role_name, .. } => role_name,
                 DragSource::RoleFromPerson { role_name, .. } => role_name,
             };
-            let role_color = self.get_dragging_role_color().unwrap_or(Color::from_rgb(0.5, 0.5, 0.5));
+            let role_color = self.get_dragging_role_color().unwrap_or(self.colors.drop_neutral);
 
             // Determine ghost node border color based on SoD conflicts and hover state
             let (border_color, border_width) = if drag.hover_person.is_some() {
                 if drag.sod_conflicts.is_empty() {
-                    (Color::from_rgb(0.2, 0.8, 0.3), 3.0) // Green - valid drop
+                    (self.colors.drop_valid, 3.0) // Green - valid drop
                 } else {
-                    (Color::from_rgb(0.9, 0.3, 0.2), 3.0) // Red - conflicts
+                    (self.colors.drop_invalid, 3.0) // Red - conflicts
                 }
             } else {
-                (Color::from_rgb(0.6, 0.6, 0.7), 2.0) // Gray - no target
+                (self.colors.role_badge_more, 2.0) // Gray - no target
             };
 
             // Draw ghost node circle with transparency
             let ghost_radius = 20.0;
             let ghost_circle = canvas::Path::circle(ghost_pos, ghost_radius);
-            frame.fill(&ghost_circle, Color::from_rgba(
-                role_color.r,
-                role_color.g,
-                role_color.b,
-                0.7, // Semi-transparent (≈180/255)
-            ));
+            frame.fill(&ghost_circle, self.colors.with_alpha(role_color, 0.7));
 
             // Draw border
             let border_stroke = canvas::Stroke::default()
@@ -3534,7 +3529,7 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                 frame.fill_text(canvas::Text {
                     content: "✗".to_string(),
                     position: Point::new(ghost_pos.x + ghost_radius - 2.0, ghost_pos.y - ghost_radius + 2.0),
-                    color: Color::from_rgb(0.9, 0.2, 0.2),
+                    color: self.colors.red_error,
                     size: iced::Pixels(14.0),
                     font: iced::Font::DEFAULT,
                     horizontal_alignment: iced::alignment::Horizontal::Center,
@@ -3548,9 +3543,9 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
             if let Some(hover_id) = drag.hover_person {
                 if self.nodes.contains_key(&hover_id) {
                     let highlight_color = if drag.sod_conflicts.is_empty() {
-                        Color::from_rgba(0.2, 0.8, 0.3, 0.3) // Green glow
+                        self.colors.glow_valid
                     } else {
-                        Color::from_rgba(0.9, 0.3, 0.2, 0.3) // Red glow
+                        self.colors.glow_invalid
                     };
                     if let Some(hover_view) = self.node_views.get(&hover_id) {
                         let highlight_circle = canvas::Path::circle(hover_view.position, 35.0);
@@ -3579,9 +3574,9 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                 tooltip_pos,
                 iced::Size::new(tooltip_width, tooltip_height),
             );
-            frame.fill(&tooltip_bg, Color::from_rgba(0.1, 0.1, 0.15, 0.95));
+            frame.fill(&tooltip_bg, self.colors.tooltip_background);
             frame.stroke(&tooltip_bg, canvas::Stroke::default()
-                .with_color(Color::from_rgba(0.5, 0.5, 0.6, 0.8))
+                .with_color(self.colors.tooltip_border)
                 .with_width(1.0));
 
             // Draw role name header
@@ -3603,7 +3598,7 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                 frame.fill_text(canvas::Text {
                     content: "⚠️ SoD Conflicts:".to_string(),
                     position: Point::new(tooltip_pos.x + 8.0, tooltip_pos.y + 26.0),
-                    color: Color::from_rgb(0.9, 0.6, 0.2),
+                    color: self.colors.tooltip_text_warning,
                     size: iced::Pixels(10.0),
                     font: iced::Font::DEFAULT,
                     horizontal_alignment: iced::alignment::Horizontal::Left,
@@ -3620,7 +3615,7 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                             tooltip_pos.x + 12.0,
                             tooltip_pos.y + 40.0 + (idx as f32) * tooltip_line_height,
                         ),
-                        color: Color::from_rgb(0.9, 0.4, 0.3),
+                        color: self.colors.tooltip_text_error,
                         size: iced::Pixels(9.0),
                         font: iced::Font::DEFAULT,
                         horizontal_alignment: iced::alignment::Horizontal::Left,
@@ -3637,7 +3632,7 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                             tooltip_pos.x + 12.0,
                             tooltip_pos.y + 40.0 + 3.0 * tooltip_line_height,
                         ),
-                        color: Color::from_rgb(0.7, 0.5, 0.4),
+                        color: self.colors.text_tertiary,
                         size: iced::Pixels(9.0),
                         font: iced::Font::DEFAULT,
                         horizontal_alignment: iced::alignment::Horizontal::Left,
@@ -3651,7 +3646,7 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                 frame.fill_text(canvas::Text {
                     content: "✓ Drop to assign role".to_string(),
                     position: Point::new(tooltip_pos.x + 8.0, tooltip_pos.y + 26.0),
-                    color: Color::from_rgb(0.3, 0.8, 0.4),
+                    color: self.colors.tooltip_text_success,
                     size: iced::Pixels(10.0),
                     font: iced::Font::DEFAULT,
                     horizontal_alignment: iced::alignment::Horizontal::Left,

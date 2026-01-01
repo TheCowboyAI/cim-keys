@@ -13,6 +13,7 @@ pub struct AnimatedBackground {
     particles: Vec<Particle>,
     cache: Cache,
     last_update: Instant,
+    colors: super::view_model::ColorPalette,
 }
 
 /// A single particle in the animation
@@ -34,6 +35,7 @@ impl AnimatedBackground {
     /// Create a new animated background with particles
     pub fn new() -> Self {
         let mut particles = Vec::new();
+        let colors = super::view_model::ColorPalette::default();
 
         // Create initial particles with random positions and velocities
         for i in 0..50 {
@@ -50,14 +52,11 @@ impl AnimatedBackground {
                 size: 2.0 + (i % 3) as f32,
                 opacity: 0.3 + ((i % 5) as f32 * 0.1),
                 color: if i % 3 == 0 {
-                    // Blue particles
-                    Color::from_rgba(0.4, 0.49, 0.92, 0.6)
+                    colors.particle_blue
                 } else if i % 3 == 1 {
-                    // Purple particles
-                    Color::from_rgba(0.45, 0.29, 0.64, 0.6)
+                    colors.particle_purple
                 } else {
-                    // Cyan particles
-                    Color::from_rgba(0.0, 0.95, 0.99, 0.5)
+                    colors.particle_cyan
                 },
             });
         }
@@ -66,6 +65,7 @@ impl AnimatedBackground {
             particles,
             cache: Cache::new(),
             last_update: Instant::now(),
+            colors,
         }
     }
 
@@ -122,25 +122,14 @@ impl Program<()> for AnimatedBackground {
                     let glow_opacity = particle.opacity * 0.2 / (i + 1) as f32;
 
                     let circle = Path::circle(particle.position, glow_size);
-                    frame.fill(
-                        &circle,
-                        Color::from_rgba(
-                            particle.color.r,
-                            particle.color.g,
-                            particle.color.b,
-                            glow_opacity,
-                        ),
-                    );
+                    let glow_color = self.colors.with_alpha(particle.color, glow_opacity);
+                    frame.fill(&circle, glow_color);
                 }
 
                 // Draw the main particle
                 let circle = Path::circle(particle.position, particle.size);
-                frame.fill(&circle, Color::from_rgba(
-                    particle.color.r,
-                    particle.color.g,
-                    particle.color.b,
-                    particle.opacity,
-                ));
+                let particle_color = self.colors.with_alpha(particle.color, particle.opacity);
+                frame.fill(&circle, particle_color);
             }
 
             // Draw connecting lines between nearby particles
@@ -156,16 +145,12 @@ impl Program<()> for AnimatedBackground {
                     if distance < 150.0 {
                         let opacity = (1.0 - distance / 150.0) * 0.1;
                         let line = Path::line(p1.position, p2.position);
+                        let line_color = self.colors.with_alpha(self.colors.particle_blue, opacity);
                         frame.stroke(
                             &line,
                             Stroke::default()
                                 .with_width(0.5)
-                                .with_color(Color::from_rgba(
-                                    0.4,
-                                    0.49,
-                                    0.92,
-                                    opacity,
-                                )),
+                                .with_color(line_color),
                         );
                     }
                 }

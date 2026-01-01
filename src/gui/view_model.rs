@@ -327,6 +327,56 @@ pub struct ColorPalette {
     pub edge_signed_by_person: Color,
     pub edge_hierarchy: Color,
     pub edge_trust: Color,
+
+    // Visual effect colors
+    pub selection_highlight: Color,
+    pub selection_border: Color,
+    pub shadow_node: Color,
+    pub highlight_node: Color,
+    pub gold_indicator: Color,
+
+    // Drag and drop colors
+    pub drop_valid: Color,
+    pub drop_invalid: Color,
+    pub drop_neutral: Color,
+    pub glow_valid: Color,
+    pub glow_invalid: Color,
+
+    // Tooltip colors
+    pub tooltip_background: Color,
+    pub tooltip_border: Color,
+    pub tooltip_text: Color,
+    pub tooltip_text_warning: Color,
+    pub tooltip_text_error: Color,
+    pub tooltip_text_success: Color,
+
+    // Node-specific colors
+    pub node_border_light: Color,        // Light border for nodes on dark bg
+    pub node_text_primary: Color,        // Primary node text (white for dark bg)
+    pub node_text_secondary: Color,      // Secondary node text (light gray)
+    pub expand_indicator_fill: Color,    // Blue fill for +/- expand indicators
+    pub expand_indicator_border: Color,  // Border for expand indicators
+    pub role_badge_more: Color,          // "+N more" indicator color
+
+    // Drop target colors
+    pub drop_target_ring: Color,         // Ring around valid drop targets
+    pub drop_target_text: Color,         // "+" indicator text
+
+    // Relation category colors (for edge coloring in graph projection)
+    pub relation_organizational: Color,  // Gray - organizational structure
+    pub relation_key_management: Color,  // Cyan - key operations
+    pub relation_policy: Color,          // Purple - policy/governance
+    pub relation_trust: Color,           // Gold - trust relationships
+    pub relation_nats: Color,            // Green - NATS messaging
+    pub relation_pki: Color,             // Red - PKI certificates
+    pub relation_yubikey: Color,         // Blue - hardware keys
+
+    // Ambient/particle colors (for animated backgrounds)
+    pub particle_blue: Color,            // Blue ambient particles
+    pub particle_purple: Color,          // Purple ambient particles
+    pub particle_cyan: Color,            // Cyan ambient particles
+    pub particle_glow: Color,            // Glow effect color
+    pub firefly_connection: Color,       // Firefly connection line color
 }
 
 impl Default for ColorPalette {
@@ -481,6 +531,56 @@ impl Default for ColorPalette {
             edge_signed_by_person: Color::from_rgb(0.7, 0.6, 0.4),
             edge_hierarchy: Color::from_rgb(0.3, 0.3, 0.7),
             edge_trust: Color::from_rgb(0.7, 0.5, 0.3),
+
+            // Visual effect colors
+            selection_highlight: Color::from_rgba(0.3, 0.6, 1.0, 0.3),  // Blue highlight
+            selection_border: Color::from_rgba(0.3, 0.6, 1.0, 0.8),     // Blue border
+            shadow_node: Color::from_rgba(0.0, 0.0, 0.0, 0.3),          // Dark shadow
+            highlight_node: Color::from_rgba(1.0, 1.0, 1.0, 0.2),       // Light highlight
+            gold_indicator: Color::from_rgb(1.0, 0.85, 0.0),            // Gold/Yellow
+
+            // Drag and drop colors
+            drop_valid: Color::from_rgba(0.2, 0.9, 0.2, 0.3),           // Green valid drop
+            drop_invalid: Color::from_rgba(0.9, 0.2, 0.2, 0.3),         // Red invalid drop
+            drop_neutral: Color::from_rgba(0.5, 0.5, 0.5, 0.3),         // Gray neutral
+            glow_valid: Color::from_rgba(0.2, 0.9, 0.2, 0.5),           // Green glow
+            glow_invalid: Color::from_rgba(0.9, 0.2, 0.2, 0.5),         // Red glow
+
+            // Tooltip colors
+            tooltip_background: Color::from_rgba(0.1, 0.1, 0.15, 0.95), // Dark background
+            tooltip_border: Color::from_rgba(0.4, 0.4, 0.5, 0.8),       // Subtle border
+            tooltip_text: Color::from_rgb(0.9, 0.9, 0.9),               // Light text
+            tooltip_text_warning: Color::from_rgb(1.0, 0.8, 0.0),       // Yellow warning
+            tooltip_text_error: Color::from_rgb(0.9, 0.3, 0.3),         // Red error
+            tooltip_text_success: Color::from_rgb(0.3, 0.9, 0.3),       // Green success
+
+            // Node-specific colors
+            node_border_light: Color::from_rgba(0.8, 0.8, 0.9, 0.7),    // Light border on dark bg
+            node_text_primary: Color::from_rgb(1.0, 1.0, 1.0),          // White text
+            node_text_secondary: Color::from_rgb(0.7, 0.7, 0.8),        // Light gray
+            expand_indicator_fill: Color::from_rgb(0.3, 0.5, 0.8),      // Blue indicator fill
+            expand_indicator_border: Color::from_rgb(0.5, 0.7, 1.0),    // Light blue border
+            role_badge_more: Color::from_rgb(0.6, 0.6, 0.7),            // Gray for "+N"
+
+            // Drop target colors
+            drop_target_ring: Color::from_rgba(0.4, 0.7, 0.9, 0.4),     // Light blue ring
+            drop_target_text: Color::from_rgba(0.4, 0.7, 0.9, 0.7),     // Light blue text
+
+            // Relation category colors
+            relation_organizational: Color::from_rgb(0.5, 0.5, 0.6),    // Gray
+            relation_key_management: Color::from_rgb(0.2, 0.6, 0.8),    // Cyan
+            relation_policy: Color::from_rgb(0.6, 0.3, 0.8),            // Purple
+            relation_trust: Color::from_rgb(0.8, 0.6, 0.2),             // Gold
+            relation_nats: Color::from_rgb(0.3, 0.7, 0.4),              // Green
+            relation_pki: Color::from_rgb(0.8, 0.2, 0.2),               // Red
+            relation_yubikey: Color::from_rgb(0.2, 0.4, 0.8),           // Blue
+
+            // Ambient/particle colors
+            particle_blue: Color::from_rgba(0.4, 0.49, 0.92, 0.6),      // Blue particles
+            particle_purple: Color::from_rgba(0.45, 0.29, 0.64, 0.6),   // Purple particles
+            particle_cyan: Color::from_rgba(0.0, 0.95, 0.99, 0.5),      // Cyan particles
+            particle_glow: Color::from_rgba(1.0, 0.9, 0.5, 0.5),        // Warm glow
+            firefly_connection: Color::from_rgb(0.8, 0.8, 0.9),         // Light connection lines
         }
     }
 }
@@ -638,6 +738,26 @@ impl ColorPalette {
             EdgeType::SignedByPerson => self.edge_signed_by_person,
             EdgeType::Hierarchy => self.edge_hierarchy,
             EdgeType::Trust => self.edge_trust,
+        }
+    }
+
+    /// Get color for relation category (graph projection edge coloring)
+    ///
+    /// Maps high-level domain relation categories to UI colors.
+    /// Used by graph_projection.rs for edge visualization.
+    pub fn relation_category_color(
+        &self,
+        category: &crate::domain::graph::RelationCategory,
+    ) -> Color {
+        use crate::domain::graph::RelationCategory;
+        match category {
+            RelationCategory::Organizational => self.relation_organizational,
+            RelationCategory::KeyManagement => self.relation_key_management,
+            RelationCategory::Policy => self.relation_policy,
+            RelationCategory::Trust => self.relation_trust,
+            RelationCategory::Nats => self.relation_nats,
+            RelationCategory::Pki => self.relation_pki,
+            RelationCategory::YubiKey => self.relation_yubikey,
         }
     }
 }

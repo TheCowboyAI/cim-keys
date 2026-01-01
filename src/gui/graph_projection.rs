@@ -266,21 +266,21 @@ impl GraphProjection {
 // VIEW DERIVATION - Convert domain data to UI views
 // ============================================================================
 
-/// Derive edge color from relation category
+/// Derive edge color from relation category using the theme palette.
 ///
 /// This function maps domain relation categories to UI colors.
 /// The mapping is done here in the projection layer to maintain
 /// separation of concerns.
-pub fn derive_edge_color(category: RelationCategory) -> Color {
-    match category {
-        RelationCategory::Organizational => Color::from_rgb(0.5, 0.5, 0.6),  // Gray
-        RelationCategory::KeyManagement => Color::from_rgb(0.2, 0.6, 0.8),   // Cyan
-        RelationCategory::Policy => Color::from_rgb(0.6, 0.3, 0.8),          // Purple
-        RelationCategory::Trust => Color::from_rgb(0.8, 0.6, 0.2),           // Gold
-        RelationCategory::Nats => Color::from_rgb(0.3, 0.7, 0.4),            // Green
-        RelationCategory::Pki => Color::from_rgb(0.8, 0.2, 0.2),             // Red
-        RelationCategory::YubiKey => Color::from_rgb(0.2, 0.4, 0.8),         // Blue
-    }
+pub fn derive_edge_color(category: RelationCategory, colors: &crate::gui::view_model::ColorPalette) -> Color {
+    colors.relation_category_color(&category)
+}
+
+/// Default edge color derivation (for backward compatibility and tests).
+///
+/// Uses default ColorPalette colors.
+pub fn derive_edge_color_default(category: RelationCategory) -> Color {
+    let default_colors = crate::gui::view_model::ColorPalette::default();
+    default_colors.relation_category_color(&category)
 }
 
 /// Derive edge style from relation type
@@ -294,9 +294,9 @@ pub fn derive_edge_style(relation_type: &RelationType) -> EdgeStyle {
     }
 }
 
-/// Create an EdgeView from a DomainRelation
-pub fn create_edge_view(relation: &DomainRelation) -> EdgeView {
-    let color = derive_edge_color(relation.category());
+/// Create an EdgeView from a DomainRelation using the theme palette.
+pub fn create_edge_view(relation: &DomainRelation, colors: &crate::gui::view_model::ColorPalette) -> EdgeView {
+    let color = derive_edge_color(relation.category(), colors);
     let style = derive_edge_style(&relation.relation_type);
     let label = Some(relation.relation_type.label().to_string());
 
@@ -307,6 +307,12 @@ pub fn create_edge_view(relation: &DomainRelation) -> EdgeView {
         style,
         label,
     }
+}
+
+/// Create an EdgeView using default colors (for backward compatibility).
+pub fn create_edge_view_default(relation: &DomainRelation) -> EdgeView {
+    let colors = crate::gui::view_model::ColorPalette::default();
+    create_edge_view(relation, &colors)
 }
 
 #[cfg(test)]
@@ -342,13 +348,14 @@ mod tests {
 
     #[test]
     fn test_edge_color_derivation() {
+        let colors = crate::gui::view_model::ColorPalette::default();
         assert_eq!(
-            derive_edge_color(RelationCategory::Organizational),
-            Color::from_rgb(0.5, 0.5, 0.6)
+            derive_edge_color(RelationCategory::Organizational, &colors),
+            colors.relation_organizational
         );
         assert_eq!(
-            derive_edge_color(RelationCategory::Pki),
-            Color::from_rgb(0.8, 0.2, 0.2)
+            derive_edge_color(RelationCategory::Pki, &colors),
+            colors.relation_pki
         );
     }
 
@@ -369,13 +376,14 @@ mod tests {
 
     #[test]
     fn test_create_edge_view() {
+        let colors = crate::gui::view_model::ColorPalette::default();
         let relation = DomainRelation::new(
             Uuid::now_v7(),
             Uuid::now_v7(),
             RelationType::Signs,
         );
 
-        let view = create_edge_view(&relation);
+        let view = create_edge_view(&relation, &colors);
 
         assert_eq!(view.from_id, relation.from);
         assert_eq!(view.to_id, relation.to);

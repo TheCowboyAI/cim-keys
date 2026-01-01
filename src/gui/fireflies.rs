@@ -17,6 +17,7 @@ pub struct FireflySwarm {
     last_update: Cell<Instant>,
     time: Cell<f32>,
     update_counter: Cell<u64>,
+    colors: super::view_model::ColorPalette,
 }
 
 /// A single firefly with organic movement and blinking
@@ -233,6 +234,7 @@ impl FireflySwarm {
             last_update: Cell::new(Instant::now()),
             time: Cell::new(0.0),
             update_counter: Cell::new(0),
+            colors: super::view_model::ColorPalette::default(),
         }
     }
 
@@ -300,51 +302,25 @@ impl Program<()> for FireflySwarm {
                 // Draw multiple layers for glow effect
                 // Outer glow (largest, most transparent)
                 let outer_glow = Path::circle(animated_position, firefly.size * 8.0);
-                frame.fill(
-                    &outer_glow,
-                    Color::from_rgba(
-                        firefly.base_color.r,
-                        firefly.base_color.g,
-                        firefly.base_color.b,
-                        opacity * 0.05,
-                    ),
-                );
+                let outer_color = self.colors.with_alpha(firefly.base_color, opacity * 0.05);
+                frame.fill(&outer_glow, outer_color);
 
                 // Middle glow
                 let middle_glow = Path::circle(animated_position, firefly.size * 4.0);
-                frame.fill(
-                    &middle_glow,
-                    Color::from_rgba(
-                        firefly.base_color.r,
-                        firefly.base_color.g,
-                        firefly.base_color.b,
-                        opacity * 0.1,
-                    ),
-                );
+                let middle_color = self.colors.with_alpha(firefly.base_color, opacity * 0.1);
+                frame.fill(&middle_glow, middle_color);
 
-                // Inner glow
+                // Inner glow (brightened)
                 let inner_glow = Path::circle(animated_position, firefly.size * 2.0);
-                frame.fill(
-                    &inner_glow,
-                    Color::from_rgba(
-                        firefly.base_color.r * 1.2,
-                        firefly.base_color.g * 1.2,
-                        firefly.base_color.b * 1.2,
-                        opacity * 0.3,
-                    ),
-                );
+                let bright_color = self.colors.lighten(firefly.base_color, 0.2);
+                let inner_color = self.colors.with_alpha(bright_color, opacity * 0.3);
+                frame.fill(&inner_glow, inner_color);
 
                 // Core (brightest)
                 let core = Path::circle(animated_position, firefly.size);
-                frame.fill(
-                    &core,
-                    Color::from_rgba(
-                        (firefly.base_color.r * 1.5).min(1.0),
-                        (firefly.base_color.g * 1.5).min(1.0),
-                        (firefly.base_color.b * 1.5).min(1.0),
-                        opacity * 0.8,
-                    ),
-                );
+                let core_bright = self.colors.lighten(firefly.base_color, 0.4);
+                let core_color = self.colors.with_alpha(core_bright, opacity * 0.8);
+                frame.fill(&core, core_color);
             }
 
             // Draw subtle connections between nearby bright fireflies
@@ -373,16 +349,12 @@ impl Program<()> for FireflySwarm {
                             * 0.05;
 
                         let line = Path::line(pos1, pos2);
+                        let line_color = self.colors.with_alpha(self.colors.firefly_connection, connection_opacity);
                         frame.stroke(
                             &line,
                             Stroke::default()
                                 .with_width(0.5)
-                                .with_color(Color::from_rgba(
-                                    0.8,
-                                    0.8,
-                                    0.9,
-                                    connection_opacity,
-                                )),
+                                .with_color(line_color),
                         );
                     }
                 }
