@@ -71,6 +71,12 @@ pub struct OrganizationConcept {
     /// Separates UI concerns from domain data per DDD principles
     pub node_views: HashMap<Uuid, super::view_model::NodeView>,
     pub edges: Vec<ConceptRelation>,
+    /// Adjacency index: node_id -> indices of edges pointing TO this node
+    /// Enables O(1) lookup of incoming edges instead of O(n) search
+    pub incoming_edges: HashMap<Uuid, Vec<usize>>,
+    /// Adjacency index: node_id -> indices of edges pointing FROM this node
+    /// Enables O(1) lookup of outgoing edges instead of O(n) search
+    pub outgoing_edges: HashMap<Uuid, Vec<usize>>,
     /// Color palette from theme (for edge/node colors)
     pub colors: super::view_model::ColorPalette,
     pub selected_node: Option<Uuid>,
@@ -466,6 +472,8 @@ impl OrganizationConcept {
             nodes: HashMap::new(),
             node_views: HashMap::new(),
             edges: Vec::new(),
+            incoming_edges: HashMap::new(),
+            outgoing_edges: HashMap::new(),
             colors: super::view_model::ColorPalette::default(),
             selected_node: None,
             selected_edge: None,
@@ -1298,12 +1306,51 @@ impl OrganizationConcept {
         // Color is looked up from self.colors at render time via edge_type_color()
         // We store the color here for backward compatibility with event sourcing
         let color = self.colors.edge_type_color(&edge_type);
+        let edge_index = self.edges.len();
         self.edges.push(ConceptRelation {
             from,
             to,
             edge_type,
             color,
         });
+
+        // Maintain adjacency indices for O(1) lookups
+        self.outgoing_edges.entry(from).or_default().push(edge_index);
+        self.incoming_edges.entry(to).or_default().push(edge_index);
+    }
+
+    /// Rebuild adjacency indices from existing edges
+    /// Call this after bulk loading or when indices may be stale
+    pub fn rebuild_adjacency_indices(&mut self) {
+        self.incoming_edges.clear();
+        self.outgoing_edges.clear();
+
+        for (index, edge) in self.edges.iter().enumerate() {
+            self.outgoing_edges.entry(edge.from).or_default().push(index);
+            self.incoming_edges.entry(edge.to).or_default().push(index);
+        }
+    }
+
+    /// Get edges originating from a node (O(1) lookup)
+    pub fn edges_from(&self, node_id: Uuid) -> Vec<&ConceptRelation> {
+        self.outgoing_edges.get(&node_id)
+            .map(|indices| indices.iter().map(|&i| &self.edges[i]).collect())
+            .unwrap_or_default()
+    }
+
+    /// Get edges pointing to a node (O(1) lookup)
+    pub fn edges_to(&self, node_id: Uuid) -> Vec<&ConceptRelation> {
+        self.incoming_edges.get(&node_id)
+            .map(|indices| indices.iter().map(|&i| &self.edges[i]).collect())
+            .unwrap_or_default()
+    }
+
+    /// Get neighbor node IDs (nodes connected by outgoing edges)
+    pub fn neighbors(&self, node_id: Uuid) -> Vec<Uuid> {
+        self.edges_from(node_id)
+            .into_iter()
+            .map(|edge| edge.to)
+            .collect()
     }
 
     pub fn select_node(&mut self, node_id: Uuid) {
@@ -1314,9 +1361,13 @@ impl OrganizationConcept {
     pub fn delete_node(&mut self, node_id: Uuid) {
         // Remove the node
         self.nodes.remove(&node_id);
+        self.node_views.remove(&node_id);
 
         // Remove all edges connected to this node
         self.edges.retain(|edge| edge.from != node_id && edge.to != node_id);
+
+        // Rebuild adjacency indices (retain changes Vec indices)
+        self.rebuild_adjacency_indices();
 
         // Clear selection if this was the selected node
         if self.selected_node == Some(node_id) {
@@ -1365,17 +1416,23 @@ impl OrganizationConcept {
                 }
             }
             GraphEvent::EdgeCreated { from, to, edge_type, color, .. } => {
+                let edge_index = self.edges.len();
                 self.edges.push(ConceptRelation {
                     from: *from,
                     to: *to,
                     edge_type: edge_type.clone(),
                     color: *color,
                 });
+                // Maintain adjacency indices
+                self.outgoing_edges.entry(*from).or_default().push(edge_index);
+                self.incoming_edges.entry(*to).or_default().push(edge_index);
             }
             GraphEvent::EdgeDeleted { from, to, edge_type, .. } => {
                 self.edges.retain(|edge| {
                     !(edge.from == *from && edge.to == *to && edge.edge_type == *edge_type)
                 });
+                // Rebuild indices after retain (indices have changed)
+                self.rebuild_adjacency_indices();
             }
             GraphEvent::EdgeTypeChanged { from, to, new_type, .. } => {
                 for edge in &mut self.edges {

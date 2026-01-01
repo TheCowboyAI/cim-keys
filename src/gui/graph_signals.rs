@@ -138,11 +138,9 @@ pub enum LayoutAlgorithm {
 fn compute_hierarchical_layout(graph: &OrganizationConcept) -> HashMap<Uuid, Point> {
     let mut positions = HashMap::new();
 
-    // Find root nodes (no incoming edges)
+    // Find root nodes (no incoming edges) using O(1) lookup
     let root_nodes: Vec<_> = graph.nodes.keys()
-        .filter(|id| {
-            !graph.edges.iter().any(|edge| &edge.to == *id)
-        })
+        .filter(|id| graph.edges_to(**id).is_empty())
         .collect();
 
     // Layout from roots

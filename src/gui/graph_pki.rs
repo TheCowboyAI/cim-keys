@@ -93,11 +93,11 @@ pub fn analyze_graph_for_pki(graph: &OrganizationConcept) -> PkiHierarchy {
     if let Some((org_id, _)) = &hierarchy.root_organization {
         for (unit_id, node) in &graph.nodes {
             if let Some(unit) = node.domain_node.organization_unit() {
-                // Find parent edge (Organization → OrganizationalUnit)
-                let parent_id = graph.edges.iter()
+                // Find parent edge (Organization → OrganizationalUnit) using O(1) lookup
+                let parent_id = graph.edges_to(*unit_id)
+                    .iter()
                     .find(|edge| {
-                        edge.to == *unit_id &&
-                        (edge.edge_type == EdgeType::ParentChild || edge.edge_type == EdgeType::ManagesUnit)
+                        edge.edge_type == EdgeType::ParentChild || edge.edge_type == EdgeType::ManagesUnit
                     })
                     .map(|edge| edge.from)
                     .unwrap_or(*org_id); // Default to root org if no parent found
@@ -111,11 +111,10 @@ pub fn analyze_graph_for_pki(graph: &OrganizationConcept) -> PkiHierarchy {
     // Step 3: Find all people and their parent organizational unit
     for (person_id, node) in &graph.nodes {
         if let Some((person, role)) = node.domain_node.person_with_role() {
-            // Find parent edge (OrganizationalUnit → Person or Organization → Person)
-            let parent_id = graph.edges.iter()
-                .find(|edge| {
-                    edge.to == *person_id && edge.edge_type == EdgeType::MemberOf
-                })
+            // Find parent edge (OrganizationalUnit → Person or Organization → Person) using O(1) lookup
+            let parent_id = graph.edges_to(*person_id)
+                .iter()
+                .find(|edge| edge.edge_type == EdgeType::MemberOf)
                 .map(|edge| edge.from)
                 .or_else(|| hierarchy.root_organization.as_ref().map(|(id, _)| *id));
 
