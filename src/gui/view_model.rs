@@ -269,6 +269,64 @@ pub struct ColorPalette {
 
     // Strength indicator background
     pub strength_bar_background: Color,
+
+    // Edge type colors - Organizational relationships
+    pub edge_parent_child: Color,
+    pub edge_manages_unit: Color,
+    pub edge_member_of: Color,
+    pub edge_responsible_for: Color,
+    pub edge_manages: Color,
+    pub edge_manages_resource: Color,
+    pub edge_managed_by: Color,
+
+    // Edge type colors - Key management
+    pub edge_owns_key: Color,
+    pub edge_delegates_key: Color,
+    pub edge_stored_at: Color,
+    pub edge_key_rotation: Color,
+    pub edge_certificate_uses_key: Color,
+    pub edge_stored_in_slot: Color,
+
+    // Edge type colors - Roles and policies
+    pub edge_has_role: Color,
+    pub edge_incompatible_with: Color,
+    pub edge_role_contains_claim: Color,
+    pub edge_category_contains_claim: Color,
+    pub edge_class_contains_role: Color,
+    pub edge_role_requires_policy: Color,
+    pub edge_policy_governs_entity: Color,
+    pub edge_defines_role: Color,
+    pub edge_defines_policy: Color,
+
+    // Edge type colors - Trust and access
+    pub edge_trusts: Color,
+    pub edge_certified_by: Color,
+    pub edge_has_access: Color,
+
+    // Edge type colors - NATS
+    pub edge_signs: Color,
+    pub edge_belongs_to_account: Color,
+    pub edge_maps_to_org_unit: Color,
+    pub edge_maps_to_person: Color,
+
+    // Edge type colors - PKI
+    pub edge_signed_by: Color,
+    pub edge_certifies_key: Color,
+    pub edge_issued_to: Color,
+
+    // Edge type colors - YubiKey
+    pub edge_owns_yubikey: Color,
+    pub edge_assigned_to: Color,
+    pub edge_has_slot: Color,
+    pub edge_stores_key: Color,
+    pub edge_loaded_certificate: Color,
+    pub edge_requires: Color,
+
+    // Edge type colors - Miscellaneous
+    pub edge_exported_to: Color,
+    pub edge_signed_by_person: Color,
+    pub edge_hierarchy: Color,
+    pub edge_trust: Color,
 }
 
 impl Default for ColorPalette {
@@ -365,6 +423,64 @@ impl Default for ColorPalette {
 
             // Strength indicator background
             strength_bar_background: Color::from_rgb(0.2, 0.2, 0.2),
+
+            // Edge type colors - Organizational relationships
+            edge_parent_child: Color::from_rgb(0.2, 0.4, 0.8),
+            edge_manages_unit: Color::from_rgb(0.4, 0.2, 0.8),
+            edge_member_of: Color::from_rgb(0.5, 0.5, 0.5),
+            edge_responsible_for: Color::from_rgb(0.3, 0.5, 0.9),
+            edge_manages: Color::from_rgb(0.4, 0.3, 0.7),
+            edge_manages_resource: Color::from_rgb(0.5, 0.4, 0.8),
+            edge_managed_by: Color::from_rgb(0.4, 0.5, 0.7),
+
+            // Edge type colors - Key management
+            edge_owns_key: Color::from_rgb(0.2, 0.7, 0.2),
+            edge_delegates_key: Color::from_rgb(0.9, 0.6, 0.2),
+            edge_stored_at: Color::from_rgb(0.6, 0.5, 0.4),
+            edge_key_rotation: Color::from_rgb(0.3, 0.8, 0.3),
+            edge_certificate_uses_key: Color::from_rgb(0.4, 0.7, 0.4),
+            edge_stored_in_slot: Color::from_rgb(0.7, 0.4, 0.7),
+
+            // Edge type colors - Roles and policies
+            edge_has_role: Color::from_rgb(0.6, 0.3, 0.8),
+            edge_incompatible_with: Color::from_rgb(0.9, 0.2, 0.2),
+            edge_role_contains_claim: Color::from_rgb(0.5, 0.7, 0.3),
+            edge_category_contains_claim: Color::from_rgb(0.4, 0.6, 0.4),
+            edge_class_contains_role: Color::from_rgb(0.5, 0.5, 0.7),
+            edge_role_requires_policy: Color::from_rgb(0.9, 0.7, 0.2),
+            edge_policy_governs_entity: Color::from_rgb(0.9, 0.7, 0.2),
+            edge_defines_role: Color::from_rgb(0.8, 0.6, 0.2),
+            edge_defines_policy: Color::from_rgb(0.9, 0.6, 0.3),
+
+            // Edge type colors - Trust and access
+            edge_trusts: Color::from_rgb(0.7, 0.5, 0.3),
+            edge_certified_by: Color::from_rgb(0.7, 0.5, 0.3),
+            edge_has_access: Color::from_rgb(0.5, 0.6, 0.7),
+
+            // Edge type colors - NATS
+            edge_signs: Color::from_rgb(1.0, 0.4, 0.0),
+            edge_belongs_to_account: Color::from_rgb(0.8, 0.5, 0.2),
+            edge_maps_to_org_unit: Color::from_rgb(0.6, 0.6, 0.8),
+            edge_maps_to_person: Color::from_rgb(0.5, 0.7, 0.9),
+
+            // Edge type colors - PKI
+            edge_signed_by: Color::from_rgb(0.2, 0.8, 0.6),
+            edge_certifies_key: Color::from_rgb(0.3, 0.9, 0.3),
+            edge_issued_to: Color::from_rgb(0.4, 0.7, 0.9),
+
+            // Edge type colors - YubiKey
+            edge_owns_yubikey: Color::from_rgb(0.8, 0.3, 0.8),
+            edge_assigned_to: Color::from_rgb(0.7, 0.2, 0.7),
+            edge_has_slot: Color::from_rgb(0.9, 0.4, 0.9),
+            edge_stores_key: Color::from_rgb(0.6, 0.2, 0.9),
+            edge_loaded_certificate: Color::from_rgb(0.7, 0.5, 0.9),
+            edge_requires: Color::from_rgb(0.6, 0.4, 0.8),
+
+            // Edge type colors - Miscellaneous
+            edge_exported_to: Color::from_rgb(0.6, 0.5, 0.3),
+            edge_signed_by_person: Color::from_rgb(0.7, 0.6, 0.4),
+            edge_hierarchy: Color::from_rgb(0.3, 0.3, 0.7),
+            edge_trust: Color::from_rgb(0.7, 0.5, 0.3),
         }
     }
 }
@@ -450,6 +566,79 @@ impl ColorPalette {
     /// Adjust alpha/transparency of any color
     pub fn with_alpha(&self, color: Color, alpha: f32) -> Color {
         Color::from_rgba(color.r, color.g, color.b, alpha)
+    }
+
+    /// Get color for edge type (relationship ontology)
+    ///
+    /// Edge colors are grouped by semantic category:
+    /// - Organizational: Blues/Purples (hierarchy, structure)
+    /// - Key Management: Greens (security, ownership)
+    /// - Roles/Policies: Purples/Golds (authority, governance)
+    /// - Trust/Access: Browns/Grays (relationships)
+    /// - NATS: Oranges (messaging)
+    /// - PKI: Teals/Greens (certificates)
+    /// - YubiKey: Magentas (hardware)
+    pub fn edge_type_color(&self, edge_type: &crate::gui::graph::EdgeType) -> Color {
+        use crate::gui::graph::EdgeType;
+        match edge_type {
+            // Organizational relationships
+            EdgeType::ParentChild => self.edge_parent_child,
+            EdgeType::ManagesUnit => self.edge_manages_unit,
+            EdgeType::MemberOf => self.edge_member_of,
+            EdgeType::ResponsibleFor => self.edge_responsible_for,
+            EdgeType::Manages => self.edge_manages,
+            EdgeType::ManagesResource => self.edge_manages_resource,
+            EdgeType::ManagedBy => self.edge_managed_by,
+
+            // Key management
+            EdgeType::OwnsKey => self.edge_owns_key,
+            EdgeType::DelegatesKey(_) => self.edge_delegates_key,
+            EdgeType::StoredAt => self.edge_stored_at,
+            EdgeType::KeyRotation => self.edge_key_rotation,
+            EdgeType::CertificateUsesKey => self.edge_certificate_uses_key,
+            EdgeType::StoredInYubiKeySlot(_) => self.edge_stored_in_slot,
+
+            // Roles and policies
+            EdgeType::HasRole { .. } => self.edge_has_role,
+            EdgeType::IncompatibleWith => self.edge_incompatible_with,
+            EdgeType::RoleContainsClaim => self.edge_role_contains_claim,
+            EdgeType::CategoryContainsClaim => self.edge_category_contains_claim,
+            EdgeType::ClassContainsRole => self.edge_class_contains_role,
+            EdgeType::RoleRequiresPolicy => self.edge_role_requires_policy,
+            EdgeType::PolicyGovernsEntity => self.edge_policy_governs_entity,
+            EdgeType::DefinesRole => self.edge_defines_role,
+            EdgeType::DefinesPolicy => self.edge_defines_policy,
+
+            // Trust and access
+            EdgeType::Trusts => self.edge_trusts,
+            EdgeType::CertifiedBy => self.edge_certified_by,
+            EdgeType::HasAccess => self.edge_has_access,
+
+            // NATS
+            EdgeType::Signs => self.edge_signs,
+            EdgeType::BelongsToAccount => self.edge_belongs_to_account,
+            EdgeType::MapsToOrgUnit => self.edge_maps_to_org_unit,
+            EdgeType::MapsToPerson => self.edge_maps_to_person,
+
+            // PKI
+            EdgeType::SignedBy => self.edge_signed_by,
+            EdgeType::CertifiesKey => self.edge_certifies_key,
+            EdgeType::IssuedTo => self.edge_issued_to,
+
+            // YubiKey
+            EdgeType::OwnsYubiKey => self.edge_owns_yubikey,
+            EdgeType::AssignedTo => self.edge_assigned_to,
+            EdgeType::HasSlot => self.edge_has_slot,
+            EdgeType::StoresKey => self.edge_stores_key,
+            EdgeType::LoadedCertificate => self.edge_loaded_certificate,
+            EdgeType::Requires => self.edge_requires,
+
+            // Miscellaneous
+            EdgeType::ExportedTo => self.edge_exported_to,
+            EdgeType::SignedByPerson => self.edge_signed_by_person,
+            EdgeType::Hierarchy => self.edge_hierarchy,
+            EdgeType::Trust => self.edge_trust,
+        }
     }
 }
 

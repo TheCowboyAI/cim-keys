@@ -35,16 +35,9 @@ pub struct RoleBadge {
 }
 
 impl RoleBadge {
-    /// Get the badge color based on separation class
-    pub fn color(&self) -> Color {
-        match self.separation_class {
-            crate::policy::SeparationClass::Operational => Color::from_rgb(0.3, 0.6, 0.9), // Blue
-            crate::policy::SeparationClass::Administrative => Color::from_rgb(0.6, 0.4, 0.8), // Purple
-            crate::policy::SeparationClass::Audit => Color::from_rgb(0.2, 0.7, 0.5), // Teal
-            crate::policy::SeparationClass::Emergency => Color::from_rgb(0.9, 0.3, 0.2), // Red
-            crate::policy::SeparationClass::Financial => Color::from_rgb(0.9, 0.7, 0.2), // Gold
-            crate::policy::SeparationClass::Personnel => Color::from_rgb(0.8, 0.4, 0.6), // Rose
-        }
+    /// Get the badge color based on separation class from theme palette
+    pub fn color(&self, colors: &super::view_model::ColorPalette) -> Color {
+        colors.separation_class_color(&self.separation_class)
     }
 
     /// Get abbreviated name (max 3 chars)
@@ -78,6 +71,8 @@ pub struct OrganizationConcept {
     /// Separates UI concerns from domain data per DDD principles
     pub node_views: HashMap<Uuid, super::view_model::NodeView>,
     pub edges: Vec<ConceptRelation>,
+    /// Color palette from theme (for edge/node colors)
+    pub colors: super::view_model::ColorPalette,
     pub selected_node: Option<Uuid>,
     pub selected_edge: Option<usize>,  // Index of selected edge in edges Vec
     pub dragging_node: Option<Uuid>,  // Node currently being dragged
@@ -456,6 +451,7 @@ impl OrganizationConcept {
             nodes: HashMap::new(),
             node_views: HashMap::new(),
             edges: Vec::new(),
+            colors: super::view_model::ColorPalette::default(),
             selected_node: None,
             selected_edge: None,
             dragging_node: None,
@@ -602,14 +598,7 @@ impl OrganizationConcept {
                 DragSource::RoleFromPalette { separation_class, .. } => separation_class,
                 DragSource::RoleFromPerson { separation_class, .. } => separation_class,
             };
-            match sep_class {
-                crate::policy::SeparationClass::Operational => Color::from_rgb(0.3, 0.6, 0.9),
-                crate::policy::SeparationClass::Administrative => Color::from_rgb(0.6, 0.4, 0.8),
-                crate::policy::SeparationClass::Audit => Color::from_rgb(0.2, 0.7, 0.5),
-                crate::policy::SeparationClass::Emergency => Color::from_rgb(0.9, 0.3, 0.2),
-                crate::policy::SeparationClass::Financial => Color::from_rgb(0.9, 0.7, 0.2),
-                crate::policy::SeparationClass::Personnel => Color::from_rgb(0.8, 0.4, 0.6),
-            }
+            self.colors.separation_class_color(sep_class)
         })
     }
 
@@ -1291,67 +1280,9 @@ impl OrganizationConcept {
     }
 
     pub fn add_edge(&mut self, from: Uuid, to: Uuid, edge_type: EdgeType) {
-        let color = match &edge_type {
-            // Organizational hierarchy - blues
-            EdgeType::ParentChild => Color::from_rgb(0.2, 0.4, 0.8),
-            EdgeType::ManagesUnit => Color::from_rgb(0.4, 0.2, 0.8),
-            EdgeType::MemberOf => Color::from_rgb(0.5, 0.5, 0.5),
-            EdgeType::ResponsibleFor => Color::from_rgb(0.3, 0.5, 0.9),
-            EdgeType::Manages => Color::from_rgb(0.4, 0.3, 0.7),
-            EdgeType::ManagesResource => Color::from_rgb(0.5, 0.4, 0.8),
-            EdgeType::ManagedBy => Color::from_rgb(0.4, 0.5, 0.7),
-
-            // Key relationships - greens
-            EdgeType::OwnsKey => Color::from_rgb(0.2, 0.7, 0.2),
-            EdgeType::DelegatesKey(_) => Color::from_rgb(0.9, 0.6, 0.2),
-            EdgeType::StoredAt => Color::from_rgb(0.6, 0.5, 0.4),
-            EdgeType::KeyRotation => Color::from_rgb(0.3, 0.8, 0.3),
-            EdgeType::CertificateUsesKey => Color::from_rgb(0.4, 0.7, 0.4),
-            EdgeType::StoredInYubiKeySlot(_) => Color::from_rgb(0.7, 0.4, 0.7),
-
-            // Policy relationships - gold/yellow
-            EdgeType::HasRole { .. } => Color::from_rgb(0.6, 0.3, 0.8),
-            EdgeType::IncompatibleWith => Color::from_rgb(0.9, 0.2, 0.2), // Red for conflicts
-            EdgeType::RoleContainsClaim => Color::from_rgb(0.5, 0.7, 0.3), // Green for role→claim
-            EdgeType::CategoryContainsClaim => Color::from_rgb(0.4, 0.6, 0.4), // Muted green
-            EdgeType::ClassContainsRole => Color::from_rgb(0.5, 0.5, 0.7), // Purple-gray
-            EdgeType::RoleRequiresPolicy => Color::from_rgb(0.9, 0.7, 0.2),
-            EdgeType::PolicyGovernsEntity => Color::from_rgb(0.9, 0.7, 0.2),
-            EdgeType::DefinesRole => Color::from_rgb(0.8, 0.6, 0.2),
-            EdgeType::DefinesPolicy => Color::from_rgb(0.9, 0.6, 0.3),
-
-            // Trust and Access relationships
-            EdgeType::Trusts => Color::from_rgb(0.7, 0.5, 0.3),
-            EdgeType::CertifiedBy => Color::from_rgb(0.7, 0.5, 0.3),
-            EdgeType::HasAccess => Color::from_rgb(0.5, 0.6, 0.7),
-
-            // NATS Infrastructure - orange/red (JWT signing chains)
-            EdgeType::Signs => Color::from_rgb(1.0, 0.4, 0.0), // Bright orange
-            EdgeType::BelongsToAccount => Color::from_rgb(0.8, 0.5, 0.2), // Brown-orange
-            EdgeType::MapsToOrgUnit => Color::from_rgb(0.6, 0.6, 0.8), // Light purple
-            EdgeType::MapsToPerson => Color::from_rgb(0.5, 0.7, 0.9), // Light blue
-
-            // PKI Trust Chain - green/teal (certificate chains)
-            EdgeType::SignedBy => Color::from_rgb(0.2, 0.8, 0.6), // Teal (trust chain)
-            EdgeType::CertifiesKey => Color::from_rgb(0.3, 0.9, 0.3), // Bright green (certification)
-            EdgeType::IssuedTo => Color::from_rgb(0.4, 0.7, 0.9), // Sky blue (issuance)
-
-            // YubiKey Hardware - purple/magenta (physical hardware)
-            EdgeType::OwnsYubiKey => Color::from_rgb(0.8, 0.3, 0.8), // Magenta (ownership)
-            EdgeType::AssignedTo => Color::from_rgb(0.7, 0.2, 0.7), // Dark magenta (assignment)
-            EdgeType::HasSlot => Color::from_rgb(0.9, 0.4, 0.9), // Light magenta (slot)
-            EdgeType::StoresKey => Color::from_rgb(0.6, 0.2, 0.9), // Purple (key storage)
-            EdgeType::LoadedCertificate => Color::from_rgb(0.7, 0.5, 0.9), // Light purple (cert)
-            EdgeType::Requires => Color::from_rgb(0.6, 0.4, 0.8), // Purple (requirement)
-
-            // Export and Manifest - brown/tan
-            EdgeType::ExportedTo => Color::from_rgb(0.6, 0.5, 0.3), // Brown (export)
-            EdgeType::SignedByPerson => Color::from_rgb(0.7, 0.6, 0.4), // Tan (signature)
-
-            // Legacy
-            EdgeType::Hierarchy => Color::from_rgb(0.3, 0.3, 0.7),
-            EdgeType::Trust => Color::from_rgb(0.7, 0.5, 0.3),
-        };
+        // Color is looked up from self.colors at render time via edge_type_color()
+        // We store the color here for backward compatibility with event sourcing
+        let color = self.colors.edge_type_color(&edge_type);
         self.edges.push(ConceptRelation {
             from,
             to,
@@ -3104,11 +3035,14 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
 
                 let edge_path = canvas::Path::line(from_pos, to_pos);
 
+                // Get color from theme palette instead of stored color
+                let edge_color = self.colors.edge_type_color(&edge.edge_type);
+
                 // Use dashed line for IncompatibleWith (SoD) edges
                 let stroke = if matches!(edge.edge_type, EdgeType::IncompatibleWith) {
                     // Create base stroke with color and width
                     let base = canvas::Stroke::default()
-                        .with_color(edge.color)
+                        .with_color(edge_color)
                         .with_width(2.5);
                     // Use struct update syntax to add dashed line pattern
                     canvas::Stroke {
@@ -3120,7 +3054,7 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                     }
                 } else {
                     canvas::Stroke::default()
-                        .with_color(edge.color)
+                        .with_color(edge_color)
                         .with_width(2.0)
                 };
 
@@ -3238,16 +3172,16 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                     Point::new(label_position.x - 40.0, label_position.y - 8.0),
                     iced::Size::new(80.0, 16.0),
                 );
-                frame.fill(&label_bg, Color::from_rgba(0.15, 0.15, 0.15, 0.8));  // Dark semi-transparent for black bg
+                frame.fill(&label_bg, self.colors.panel_background);
                 frame.stroke(&label_bg, canvas::Stroke::default()
-                    .with_color(edge.color)
+                    .with_color(edge_color)
                     .with_width(1.0));
 
                 // Draw label text
                 frame.fill_text(canvas::Text {
                     content: edge_label.to_string(),
                     position: label_position,
-                    color: Color::from_rgb(0.9, 0.9, 0.9),  // Light text for visibility
+                    color: self.colors.text_primary,
                     size: iced::Pixels(10.0),
                     font: iced::Font::DEFAULT,
                     horizontal_alignment: iced::alignment::Horizontal::Center,
@@ -3475,13 +3409,13 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
 
                         // Draw badge circle
                         let badge_circle = canvas::Path::circle(badge_center, 8.0);
-                        frame.fill(&badge_circle, badge.color());
+                        frame.fill(&badge_circle, badge.color(&self.colors));
 
                         // Draw badge abbreviation
                         frame.fill_text(canvas::Text {
                             content: badge.abbrev(),
                             position: badge_center,
-                            color: Color::WHITE,
+                            color: self.colors.text_light,
                             size: iced::Pixels(7.0),
                             font: iced::Font::DEFAULT,
                             horizontal_alignment: iced::alignment::Horizontal::Center,
