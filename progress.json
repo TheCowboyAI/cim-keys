@@ -2,7 +2,7 @@
   "project": "cim-keys-architectural-refactoring",
   "version": "2.0.0",
   "created": "2025-12-28",
-  "last_updated": "2025-12-31",
+  "last_updated": "2026-01-01",
   "backward_compatibility": false,
   "notes": "User confirmed: NO backward compatibility required. Overwrite existing APIs freely.",
 
@@ -556,6 +556,32 @@
         "All 386 tests pass - ACHIEVED"
       ],
       "notes": "Completed Phase 7 of Sprint 22. Icons now use verified fallback chains with theme colors from VerifiedTheme."
+    },
+    "sprint_23": {
+      "name": "Theme Color Migration",
+      "status": "completed",
+      "started": "2026-01-01",
+      "completed": "2026-01-01",
+      "description": "Migrate hardcoded colors to centralized ColorPalette in view_model.rs",
+      "tasks": [
+        { "id": "23.1", "description": "Add EdgeType colors (38 colors) to ColorPalette", "status": "completed", "commit": "f34da17" },
+        { "id": "23.2", "description": "Migrate graph.rs colors (81→0)", "status": "completed", "commit": "f34da17" },
+        { "id": "23.3", "description": "Migrate graph_projection.rs colors (9→0)", "status": "completed", "commit": "f34da17" },
+        { "id": "23.4", "description": "Migrate animation colors (fireflies, background)", "status": "completed", "commit": "f34da17" },
+        { "id": "23.5", "description": "Add NATS/PKI/YubiKey node colors to ColorPalette", "status": "completed", "commit": "e13e982" },
+        { "id": "23.6", "description": "Sync lifting.rs constants with ColorPalette", "status": "completed", "commit": "e13e982" },
+        { "id": "23.7", "description": "Add status/certificate colors to ColorPalette", "status": "completed", "commit": "559c62c" },
+        { "id": "23.8", "description": "Migrate gui.rs node creation colors (6 colors)", "status": "completed", "commit": "559c62c" },
+        { "id": "23.9", "description": "Migrate gui.rs status/severity colors (16 colors)", "status": "completed", "commit": "559c62c" }
+      ],
+      "acceptance_criteria": [
+        "ColorPalette has 50+ semantic color fields - ACHIEVED",
+        "graph.rs uses ColorPalette for all colors - ACHIEVED",
+        "gui.rs uses ColorPalette for semantic colors - ACHIEVED",
+        "Theme definition files (cowboy_theme.rs) unchanged - ACHIEVED",
+        "All 386 tests pass - ACHIEVED"
+      ],
+      "notes": "Centralized visualization colors in ColorPalette. Skipped: cowboy_theme.rs (theme definitions), domain_node.rs (pending deprecation), visualization.rs (pending deprecation), lifting.rs constants (compile-time), fireflies.rs procedural colors (intentional variety)."
     }
   },
 
