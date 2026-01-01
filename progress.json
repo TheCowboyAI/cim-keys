@@ -572,7 +572,9 @@
         { "id": "23.6", "description": "Sync lifting.rs constants with ColorPalette", "status": "completed", "commit": "e13e982" },
         { "id": "23.7", "description": "Add status/certificate colors to ColorPalette", "status": "completed", "commit": "559c62c" },
         { "id": "23.8", "description": "Migrate gui.rs node creation colors (6 colors)", "status": "completed", "commit": "559c62c" },
-        { "id": "23.9", "description": "Migrate gui.rs status/severity colors (16 colors)", "status": "completed", "commit": "559c62c" }
+        { "id": "23.9", "description": "Migrate gui.rs status/severity colors (16 colors)", "status": "completed", "commit": "559c62c" },
+        { "id": "23.10", "description": "Implement FoldDomainNode for ThemedVisualizationFold (Phase 4)", "status": "completed", "commit": "5dbb46b" },
+        { "id": "23.11", "description": "Add themed_visualization() to ConceptEntity using proper fold pattern", "status": "completed", "commit": "5dbb46b" }
       ],
       "acceptance_criteria": [
         "ColorPalette has 50+ semantic color fields - ACHIEVED",
