@@ -2189,7 +2189,7 @@ impl CimKeysApp {
                         graph_pki::add_pki_to_graph(&mut self.org_graph, certificate_nodes);
 
                         let count = self.org_graph.nodes.iter()
-                            .filter(|(_, node)| node.domain_node.injection().is_certificate())
+                            .filter(|(_, node)| node.injection().is_certificate())
                             .count();
 
                         self.status_message = format!("✅ PKI hierarchy generated! {} certificates created from organizational structure", count);
@@ -2316,7 +2316,7 @@ impl CimKeysApp {
                         graph_nats::add_nats_to_graph(&mut self.org_graph, nats_nodes);
 
                         let count = self.org_graph.nodes.iter()
-                            .filter(|(_, node)| node.domain_node.injection().is_nats())
+                            .filter(|(_, node)| node.injection().is_nats())
                             .count();
 
                         self.status_message = format!("✅ NATS infrastructure generated! {} entities created from organizational structure", count);
@@ -3787,9 +3787,9 @@ impl CimKeysApp {
                                 use cim_domain_person::value_objects::PersonName;
                                 use cim_domain::EntityId;
 
-                                // Use DomainNode accessor to get Person from newly created node
+                                // Use lifted_node downcast to get Person from newly created node
                                 if let Some(node) = self.org_graph.nodes.get(&node_id) {
-                                    if let Some(person) = node.domain_node.person() {
+                                    if let Some(person) = node.lifted_node.downcast::<Person>() {
                                         // Create domain event (using new EntityId for demonstration)
                                         // In production, would properly convert person.id to EntityId
                                         let domain_event = PersonEvent::PersonCreated(PersonCreated {
@@ -3960,9 +3960,9 @@ impl CimKeysApp {
                         self.org_graph.apply_event(&event);
 
                         // Mark domain as loaded when first organization is created
-                        // Use DomainNode accessor to get Organization data
+                        // Use lifted_node downcast to get Organization data
                         if let Some(node) = self.org_graph.nodes.get(&node_id) {
-                            if let Some(org) = node.domain_node.organization() {
+                            if let Some(org) = node.lifted_node.downcast::<Organization>() {
                                 if !self.domain_loaded {
                                     self.domain_loaded = true;
                                     self.organization_name = org.display_name.clone();
@@ -4187,12 +4187,12 @@ impl CimKeysApp {
                     PropertyCardMessage::GenerateRootCA => {
                         if let Some(node_id) = self.property_card.node_id() {
                             if let Some(node) = self.org_graph.nodes.get(&node_id) {
-                                // Use DomainNode accessors for data extraction
-                                if let Some(person) = node.domain_node.person() {
+                                // Use lifted_node downcast for data extraction
+                                if let Some(person) = node.lifted_node.downcast::<Person>() {
                                     // Show passphrase dialog for Root CA generation
                                     self.passphrase_dialog.show(passphrase_dialog::PassphrasePurpose::RootCA);
                                     self.status_message = format!("Enter passphrase to generate Root CA for {}", person.name);
-                                } else if let Some(org) = node.domain_node.organization() {
+                                } else if let Some(org) = node.lifted_node.downcast::<Organization>() {
                                     // Organization generates root CA (top-level authority)
                                     self.passphrase_dialog.show(passphrase_dialog::PassphrasePurpose::RootCA);
                                     self.status_message = format!("Enter passphrase to generate Root CA for organization '{}'", org.display_name);
@@ -4205,11 +4205,11 @@ impl CimKeysApp {
                     PropertyCardMessage::GeneratePersonalKeys => {
                         if let Some(node_id) = self.property_card.node_id() {
                             if let Some(node) = self.org_graph.nodes.get(&node_id) {
-                                // Use DomainNode accessor for person name
-                                if let Some(name) = node.domain_node.person_name() {
+                                // Use lifted_node downcast for person name
+                                if let Some(person) = node.lifted_node.downcast::<Person>() {
                                     // Show passphrase dialog for Personal Keys generation
                                     self.passphrase_dialog.show(passphrase_dialog::PassphrasePurpose::PersonalKeys);
-                                    self.status_message = format!("Enter passphrase to generate personal keys for {}", name);
+                                    self.status_message = format!("Enter passphrase to generate personal keys for {}", person.name);
                                 }
                             }
                         }
@@ -4217,8 +4217,8 @@ impl CimKeysApp {
                     PropertyCardMessage::ProvisionYubiKey => {
                         if let Some(node_id) = self.property_card.node_id() {
                             if let Some(node) = self.org_graph.nodes.get(&node_id) {
-                                // Use DomainNode accessor for person name
-                                if let Some(name) = node.domain_node.person_name() {
+                                // Use lifted_node downcast for person name
+                                if let Some(person) = node.lifted_node.downcast::<Person>() {
                                     // For now, show status message about YubiKey provisioning
                                     // In production, this would:
                                     // 1. Detect connected YubiKey
@@ -4226,8 +4226,8 @@ impl CimKeysApp {
                                     // 3. Provision PIV slots with keys
                                     // 4. Create YubiKey node in graph
 
-                                    self.status_message = format!("✅ YubiKey provisioning simulated for {} (hardware integration optional)", name);
-                                    tracing::info!("YubiKey provisioning requested for person: {}", name);
+                                    self.status_message = format!("✅ YubiKey provisioning simulated for {} (hardware integration optional)", person.name);
+                                    tracing::info!("YubiKey provisioning requested for person: {}", person.name);
 
                                     // TODO: Implement full YubiKey provisioning when hardware available:
                                     // - Show passphrase dialog
@@ -4240,14 +4240,15 @@ impl CimKeysApp {
                         }
                     }
                     PropertyCardMessage::GenerateIntermediateCA => {
+                        use crate::domain::OrganizationUnit;
                         if let Some(node_id) = self.property_card.node_id() {
                             if let Some(node) = self.org_graph.nodes.get(&node_id) {
-                                // Use DomainNode accessors for data extraction
-                                if let Some(org) = node.domain_node.organization() {
+                                // Use lifted_node downcast for data extraction
+                                if let Some(org) = node.lifted_node.downcast::<Organization>() {
                                     // Organization can also generate intermediate CAs (not just root)
                                     self.passphrase_dialog.show(passphrase_dialog::PassphrasePurpose::IntermediateCA);
                                     self.status_message = format!("Enter passphrase to generate Intermediate CA for organization '{}'", org.display_name);
-                                } else if let Some(unit) = node.domain_node.organization_unit() {
+                                } else if let Some(unit) = node.lifted_node.downcast::<OrganizationUnit>() {
                                     // OrganizationalUnit generates intermediate CAs
                                     self.passphrase_dialog.show(passphrase_dialog::PassphrasePurpose::IntermediateCA);
                                     self.status_message = format!("Enter passphrase to generate Intermediate CA for unit '{}'", unit.name);
@@ -4315,10 +4316,10 @@ impl CimKeysApp {
                                 passphrase_dialog::PassphrasePurpose::PersonalKeys => {
                                     self.status_message = "Personal keys generation in progress...".to_string();
 
-                                    // Get person info from property card - use DomainNode accessor
+                                    // Get person info from property card - use lifted_node downcast
                                     let person_name = self.property_card.node_id()
                                         .and_then(|id| self.org_graph.nodes.get(&id))
-                                        .and_then(|node| node.domain_node.person_name().map(|s| s.to_string()))
+                                        .and_then(|node| node.lifted_node.downcast::<Person>().map(|p| p.name.clone()))
                                         .unwrap_or_else(|| "Unknown".to_string());
 
                                     // Trigger async Personal Keys generation
@@ -4493,10 +4494,14 @@ impl CimKeysApp {
                     return Task::none();
                 }
 
-                // Search through all nodes using the DomainNode fold pattern
+                // Search through all nodes using visualization data
                 for (node_id, node) in &self.org_graph.nodes {
-                    // Use FoldSearchableText to get searchable fields and keywords
-                    if node.domain_node.searchable_text().matches(&query) {
+                    // Use visualization data for searchable text
+                    let viz = node.visualization();
+                    let query_lower = query.to_lowercase();
+                    let matches = viz.primary_text.to_lowercase().contains(&query_lower) ||
+                        viz.secondary_text.to_lowercase().contains(&query_lower);
+                    if matches {
                         self.search_results.push(*node_id);
                         self.highlight_nodes.push(*node_id);
                     }
@@ -4552,7 +4557,7 @@ impl CimKeysApp {
                             };
                         ConceptEntityExport {
                             id: *id,
-                            node_type: node.domain_node.injection().display_name().to_string(),
+                            node_type: node.injection().display_name().to_string(),
                             position_x: pos_x,
                             position_y: pos_y,
                             label,
