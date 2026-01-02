@@ -4142,8 +4142,6 @@ impl CimKeysApp {
                                 let old_label = node.visualization().primary_text;
 
                                 // Create PropertyUpdate with all changed values
-                                // Use deprecated bridge: DomainNode::with_properties() then convert
-                                // Future: Implement property updates directly on LiftedNode
                                 let update = PropertyUpdate::new()
                                     .with_name(new_name.clone())
                                     .with_description(new_description)
@@ -4151,9 +4149,8 @@ impl CimKeysApp {
                                     .with_enabled(new_enabled)
                                     .with_claims(self.property_card.claims());
 
-                                // Bridge: use deprecated path then convert to LiftedNode
-                                #[allow(deprecated)]
-                                let new_lifted_node = node.domain_node.with_properties(&update).to_lifted_node(node_id);
+                                // Apply property updates directly to LiftedNode (non-deprecated path)
+                                let new_lifted_node = node.lifted_node.apply_properties(&update);
 
                                 // Create and apply NodePropertiesChanged event
                                 let event = GraphEvent::NodePropertiesChanged {

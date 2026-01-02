@@ -54,7 +54,7 @@ use std::sync::Arc;
 use iced::Color;
 use uuid::Uuid;
 
-use crate::gui::domain_node::Injection;
+use crate::gui::domain_node::{Injection, PropertyUpdate};
 use crate::domain::{Organization, OrganizationUnit, Person, Location, Role, Policy};
 use crate::domain::visualization::{PolicyGroup, PolicyCategory, PolicyRole};
 
@@ -182,6 +182,113 @@ impl LiftedNode {
     /// Get the injection type
     pub fn injection(&self) -> Injection {
         self.injection
+    }
+
+    /// Apply property updates to this node, returning a new LiftedNode.
+    ///
+    /// This is the non-deprecated replacement for `DomainNode::with_properties()`.
+    /// It downcasts to the appropriate domain type, applies the updates,
+    /// and re-lifts the modified entity.
+    ///
+    /// For read-only node types, returns a clone of self unchanged.
+    pub fn apply_properties(&self, update: &PropertyUpdate) -> Self {
+        match self.injection {
+            Injection::Organization => {
+                if let Some(org) = self.downcast::<Organization>() {
+                    let mut updated = org.clone();
+                    if let Some(name) = &update.name {
+                        updated.name = name.clone();
+                        updated.display_name = name.clone();
+                    }
+                    if let Some(description) = &update.description {
+                        updated.description = Some(description.clone());
+                    }
+                    return updated.lift();
+                }
+            }
+            Injection::OrganizationUnit => {
+                if let Some(unit) = self.downcast::<OrganizationUnit>() {
+                    let mut updated = unit.clone();
+                    if let Some(name) = &update.name {
+                        updated.name = name.clone();
+                    }
+                    return updated.lift();
+                }
+            }
+            Injection::Person => {
+                if let Some(person) = self.downcast::<Person>() {
+                    let mut updated = person.clone();
+                    if let Some(name) = &update.name {
+                        updated.name = name.clone();
+                    }
+                    if let Some(email) = &update.email {
+                        updated.email = email.clone();
+                    }
+                    if let Some(enabled) = update.enabled {
+                        updated.active = enabled;
+                    }
+                    return updated.lift();
+                }
+            }
+            Injection::Location => {
+                if let Some(loc) = self.downcast::<Location>() {
+                    let mut updated = loc.clone();
+                    if let Some(name) = &update.name {
+                        updated.name = name.clone();
+                    }
+                    return updated.lift();
+                }
+            }
+            Injection::Role => {
+                if let Some(role) = self.downcast::<Role>() {
+                    let mut updated = role.clone();
+                    if let Some(name) = &update.name {
+                        updated.name = name.clone();
+                    }
+                    if let Some(description) = &update.description {
+                        updated.description = description.clone();
+                    }
+                    if let Some(enabled) = update.enabled {
+                        updated.active = enabled;
+                    }
+                    return updated.lift();
+                }
+            }
+            Injection::Policy => {
+                if let Some(policy) = self.downcast::<Policy>() {
+                    let mut updated = policy.clone();
+                    if let Some(name) = &update.name {
+                        updated.name = name.clone();
+                    }
+                    if let Some(description) = &update.description {
+                        updated.description = description.clone();
+                    }
+                    if let Some(enabled) = update.enabled {
+                        updated.enabled = enabled;
+                    }
+                    if let Some(claims) = &update.claims {
+                        updated.claims = claims.clone();
+                    }
+                    return updated.lift();
+                }
+            }
+            // Read-only types - return clone unchanged
+            _ => {}
+        }
+        self.clone()
+    }
+
+    /// Check if this node type is mutable (supports property updates)
+    pub fn is_mutable(&self) -> bool {
+        matches!(
+            self.injection,
+            Injection::Organization |
+            Injection::OrganizationUnit |
+            Injection::Person |
+            Injection::Location |
+            Injection::Role |
+            Injection::Policy
+        )
     }
 }
 
