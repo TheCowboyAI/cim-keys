@@ -2,10 +2,7 @@
 //!
 //! Displays and allows editing of properties for selected graph nodes.
 //!
-//! NOTE: This module uses LiftedNode for the new property card API.
-//! The deprecated DomainNode is only used for detail view pattern matching
-//! until full migration is complete.
-#![allow(deprecated)]
+//! This module uses LiftedNode for property card operations.
 
 use iced::{
     widget::{button, checkbox, column, container, row, text, text_input, scrollable, Column, Row},
