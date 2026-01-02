@@ -3,7 +3,6 @@
 //! This module implements: **The organizational graph drives person-centric views**.
 //!
 //! NOTE: Uses deprecated `DomainNodeData` for pattern matching. Migration pending.
-#![allow(deprecated)]
 //!
 //! ## Flow
 //!

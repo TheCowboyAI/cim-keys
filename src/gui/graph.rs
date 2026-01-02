@@ -6,7 +6,6 @@
 //! - Different colors indicate different roles and trust levels
 //!
 //! NOTE: Uses deprecated `Injection` type. Migration pending.
-#![allow(deprecated)]
 
 use iced::{
     widget::{canvas, container, column, row, text, button, Canvas},

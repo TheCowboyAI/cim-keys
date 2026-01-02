@@ -4,7 +4,6 @@
 //! to ensure consistent scaling and theming across the entire UI.
 //!
 //! NOTE: Uses deprecated `Injection` type. Migration pending.
-#![allow(deprecated)]
 
 use iced::Color;
 

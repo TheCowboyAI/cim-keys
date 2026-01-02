@@ -7,7 +7,6 @@
 //! fold, this version guarantees no tofu boxes by using verified icons.
 //!
 //! NOTE: Uses deprecated `FoldDomainNode` trait. Migration pending.
-#![allow(deprecated)]
 //!
 //! ## FRP Pipeline Role
 //!

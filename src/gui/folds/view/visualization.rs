@@ -6,7 +6,6 @@
 //! It executes in the view() function, producing pure visual output with no side effects.
 //!
 //! NOTE: Uses deprecated `FoldDomainNode` trait. Migration pending.
-#![allow(deprecated)]
 //!
 //! ## FRP Pipeline Role
 //!

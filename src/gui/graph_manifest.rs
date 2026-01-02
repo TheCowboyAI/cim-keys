@@ -5,7 +5,6 @@
 //! NOTE: This module uses the deprecated `DomainNodeData` type internally for
 //! exhaustive pattern matching on node types. Migration to per-context accessor
 //! methods is pending - requires adding many new accessor methods to `DomainNode`.
-#![allow(deprecated)]
 //!
 //! ## Flow
 //!

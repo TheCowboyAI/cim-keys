@@ -6,7 +6,6 @@
 //! for the coproduct. This is intentional - `Injection` provides the full variant set
 //! needed for faithful functor implementation. External code should use the `is_*()`
 //! helper methods on `DomainNode` or per-context types from `crate::domains`.
-#![allow(deprecated)]
 //!
 //! This module implements the `LiftableDomain` trait, enabling any domain type
 //! to be "lifted" into a unified graph representation while preserving all

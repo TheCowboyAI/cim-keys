@@ -3,7 +3,6 @@
 //! This module implements: **The organizational graph drives organization-centric views**.
 //!
 //! NOTE: This module uses deprecated `Injection` types. Migration pending.
-#![allow(deprecated)]
 //!
 //! ## Flow
 //!
