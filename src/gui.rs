@@ -3490,14 +3490,14 @@ impl CimKeysApp {
                             // (expansion is done via the +/- indicator below the node)
                             if let Some(node) = self.policy_graph.nodes.get(id) {
                                 self.policy_graph.selected_node = Some(*id);
-                                self.property_card.set_node(*id, node.domain_node.clone());
+                                self.property_card.set_node(*id, node.lifted_node.clone());
                                 self.status_message = format!("Selected '{}'", node.visualization().primary_text);
                                 return Task::none();
                             }
 
                             // Phase 4: Open property card when node is clicked (org_graph)
                             if let Some(node) = self.org_graph.nodes.get(id) {
-                                self.property_card.set_node(*id, node.domain_node.clone());
+                                self.property_card.set_node(*id, node.lifted_node.clone());
                                 self.status_message = format!("Selected '{}' - property card: {}, selected_node: {:?}",
                                     node.visualization().primary_text,
                                     if self.property_card.is_editing() { "open" } else { "closed" },
@@ -4071,7 +4071,7 @@ impl CimKeysApp {
 
                         // Open property card for the new node
                         if let Some(node) = self.org_graph.nodes.get(&node_id) {
-                            self.property_card.set_node(node_id, node.domain_node.clone());
+                            self.property_card.set_node(node_id, node.lifted_node.clone());
                         }
 
                         self.context_menu.hide();

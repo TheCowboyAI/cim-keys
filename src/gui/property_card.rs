@@ -1,6 +1,11 @@
 //! Property card for editing node properties
 //!
 //! Displays and allows editing of properties for selected graph nodes.
+//!
+//! NOTE: This module uses LiftedNode for the new property card API.
+//! The deprecated DomainNode is only used for detail view pattern matching
+//! until full migration is complete.
+#![allow(deprecated)]
 
 use iced::{
     widget::{button, checkbox, column, container, row, text, text_input, scrollable, Column, Row},
@@ -10,16 +15,16 @@ use uuid::Uuid;
 use std::collections::HashSet;
 
 use crate::gui::graph::EdgeType;
-use crate::gui::domain_node::{DomainNode, DomainNodeData};
-use crate::gui::folds::query::FoldEditFields;
+use crate::gui::folds::query::extract_edit_fields_from_lifted;
 use crate::gui::view_model::ViewModel;
 use crate::domain::{PolicyClaim, RoleType, LocationType};
+use crate::lifting::LiftedNode;
 use crate::icons::verified;
 
 /// What is being edited
 #[derive(Debug, Clone)]
 pub enum EditTarget {
-    Node { id: Uuid, domain_node: DomainNode },
+    Node { id: Uuid, lifted_node: LiftedNode },
     Edge { index: usize, from: Uuid, to: Uuid, edge_type: EdgeType },
 }
 
@@ -120,19 +125,17 @@ impl PropertyCard {
 
     /// Set the node to edit
     ///
-    /// Uses the categorical fold pattern (FoldEditFields) to extract edit data
-    /// from the DomainNode coproduct, replacing explicit pattern matching with
-    /// the universal property of coproducts.
-    pub fn set_node(&mut self, node_id: Uuid, domain_node: DomainNode) {
+    /// Uses the LiftedNode downcast pattern to extract edit data,
+    /// replacing the deprecated DomainNode fold pattern.
+    pub fn set_node(&mut self, node_id: Uuid, lifted_node: LiftedNode) {
         self.edit_target = Some(EditTarget::Node {
             id: node_id,
-            domain_node: domain_node.clone(),
+            lifted_node: lifted_node.clone(),
         });
         self.dirty = false;
 
-        // Use the categorical fold pattern to extract edit fields
-        // This replaces the large pattern match with a single fold invocation
-        let edit_data = domain_node.fold(&FoldEditFields);
+        // Extract edit fields using the new downcast-based extraction
+        let edit_data = extract_edit_fields_from_lifted(&lifted_node);
 
         // Apply the extracted data to our edit fields
         self.edit_name = edit_data.name;
@@ -342,7 +345,7 @@ impl PropertyCard {
         }
 
         match &self.edit_target {
-            Some(EditTarget::Node { domain_node, .. }) => self.view_node(domain_node, vm),
+            Some(EditTarget::Node { lifted_node, .. }) => self.view_node(lifted_node, vm),
             Some(EditTarget::Edge { edge_type, .. }) => self.view_edge(edge_type, vm),
             None => container(text("Select a node or edge to edit").size(vm.text_normal))
                 .padding(vm.padding_xl)
@@ -351,20 +354,20 @@ impl PropertyCard {
     }
 
     /// Render property card for editing a node
-    fn view_node<'a>(&self, domain_node: &'a DomainNode, vm: &ViewModel) -> Element<'a, PropertyCardMessage> {
+    fn view_node<'a>(&self, lifted_node: &'a LiftedNode, vm: &ViewModel) -> Element<'a, PropertyCardMessage> {
         // For read-only infrastructure types, show detailed info panel instead of edit fields
-        let injection = domain_node.injection();
+        let injection = lifted_node.injection();
         if injection.is_nats() {
-            return self.view_nats_details(domain_node, vm);
+            return self.view_nats_details(lifted_node, vm);
         }
         if injection.is_certificate() {
-            return self.view_certificate_details(domain_node, vm);
+            return self.view_certificate_details(lifted_node, vm);
         }
         if injection.is_yubikey_or_slot() {
-            return self.view_yubikey_details(domain_node, vm);
+            return self.view_yubikey_details(lifted_node, vm);
         }
         if injection.is_policy_variant() {
-            return self.view_policy_details(domain_node, vm);
+            return self.view_policy_details(lifted_node, vm);
         }
 
         // Get the display label using injection's display_name()
@@ -908,12 +911,16 @@ impl PropertyCard {
     }
 
     /// Render detailed NATS infrastructure information (read-only)
-    fn view_nats_details<'a>(&self, domain_node: &'a DomainNode, vm: &ViewModel) -> Element<'a, PropertyCardMessage> {
-        let (title, details) = match domain_node.data() {
-            DomainNodeData::NatsOperator(identity) => (
-                "NATS Operator",
+    fn view_nats_details<'a>(&self, lifted_node: &'a LiftedNode, vm: &ViewModel) -> Element<'a, PropertyCardMessage> {
+        use crate::domain_projections::NatsIdentityProjection;
+
+        // Try to downcast to get detailed NATS identity info
+        let (title, details) = if let Some(identity) = lifted_node.downcast::<NatsIdentityProjection>() {
+            let type_label = lifted_node.injection().display_name();
+            (
+                type_label,
                 column![
-                    self.detail_row("Type:", "Root Authority", vm),
+                    self.detail_row("Type:", type_label, vm),
                     self.detail_row("Public Key:", &identity.nkey.public_key.public_key()[..32], vm),
                     self.detail_row("Key Type:", &format!("{:?}", identity.nkey.key_type), vm),
                     text("JWT Token:").size(vm.text_small).color(vm.colors.text_secondary),
@@ -924,53 +931,15 @@ impl PropertyCard {
                     ).height(Length::Fixed(100.0)),
                     self.detail_row("Has Credential:", if identity.credential.is_some() { "Yes" } else { "No" }, vm),
                 ].spacing(vm.spacing_sm)
-            ),
-            DomainNodeData::NatsAccount(identity) => (
-                "NATS Account",
-                column![
-                    self.detail_row("Type:", "Account (Organizational Unit)", vm),
-                    self.detail_row("Public Key:", &identity.nkey.public_key.public_key()[..32], vm),
-                    self.detail_row("Key Type:", &format!("{:?}", identity.nkey.key_type), vm),
-                    text("JWT Token:").size(vm.text_small).color(vm.colors.text_secondary),
-                    scrollable(
-                        text(identity.jwt.token())
-                            .size(vm.text_tiny)
-                            .font(iced::Font::MONOSPACE)
-                    ).height(Length::Fixed(100.0)),
-                    self.detail_row("Has Credential:", if identity.credential.is_some() { "Yes" } else { "No" }, vm),
-                ].spacing(vm.spacing_sm)
-            ),
-            DomainNodeData::NatsUser(identity) => (
-                "NATS User",
-                column![
-                    self.detail_row("Type:", "User (Person)", vm),
-                    self.detail_row("Public Key:", &identity.nkey.public_key.public_key()[..32], vm),
-                    self.detail_row("Key Type:", &format!("{:?}", identity.nkey.key_type), vm),
-                    text("JWT Token:").size(vm.text_small).color(vm.colors.text_secondary),
-                    scrollable(
-                        text(identity.jwt.token())
-                            .size(vm.text_tiny)
-                            .font(iced::Font::MONOSPACE)
-                    ).height(Length::Fixed(100.0)),
-                    self.detail_row("Has Credential:", if identity.credential.is_some() { "Yes" } else { "No" }, vm),
-                ].spacing(vm.spacing_sm)
-            ),
-            DomainNodeData::NatsServiceAccount(identity) => (
-                "NATS Service Account",
-                column![
-                    self.detail_row("Type:", "Service (Automation)", vm),
-                    self.detail_row("Public Key:", &identity.nkey.public_key.public_key()[..32], vm),
-                    self.detail_row("Key Type:", &format!("{:?}", identity.nkey.key_type), vm),
-                    text("JWT Token:").size(vm.text_small).color(vm.colors.text_secondary),
-                    scrollable(
-                        text(identity.jwt.token())
-                            .size(vm.text_tiny)
-                            .font(iced::Font::MONOSPACE)
-                    ).height(Length::Fixed(100.0)),
-                    self.detail_row("Has Credential:", if identity.credential.is_some() { "Yes" } else { "No" }, vm),
-                ].spacing(vm.spacing_sm)
-            ),
-            _ => ("Unknown", column![].spacing(vm.spacing_sm)),
+            )
+        } else {
+            // Fallback: use label and secondary from LiftedNode
+            let title = lifted_node.injection().display_name();
+            let details = column![
+                self.detail_row("Name:", &lifted_node.label, vm),
+                self.detail_row("Info:", lifted_node.secondary.as_deref().unwrap_or("N/A"), vm),
+            ].spacing(vm.spacing_sm);
+            (title, details)
         };
 
         container(
@@ -997,71 +966,102 @@ impl PropertyCard {
     }
 
     /// Render detailed PKI certificate information (read-only)
-    fn view_certificate_details<'a>(&self, domain_node: &'a DomainNode, vm: &ViewModel) -> Element<'a, PropertyCardMessage> {
+    fn view_certificate_details<'a>(&self, lifted_node: &'a LiftedNode, vm: &ViewModel) -> Element<'a, PropertyCardMessage> {
+        use crate::domain::pki::{Certificate, CertificateType};
+
         let text_tiny = vm.text_tiny;
         let spacing_xs = vm.spacing_xs;
-        let (title, details) = match domain_node.data() {
-            DomainNodeData::RootCertificate(cert) => (
-                "Root CA Certificate",
+
+        // Try downcasting to Certificate - all certificate types use the same struct
+        // with cert_type field distinguishing them
+        let (title, details) = if let Some(cert) = lifted_node.downcast::<Certificate>() {
+            match cert.cert_type {
+                CertificateType::Root => (
+                    "Root CA Certificate",
+                    column![
+                        self.detail_row("Certificate Type:", "Root Certificate Authority", vm),
+                        self.detail_row("Subject:", &cert.subject, vm),
+                        self.detail_row("Issuer:", &cert.issuer, vm),
+                        self.detail_row("Valid From:", &cert.not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
+                        self.detail_row("Valid Until:", &cert.not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
+                        self.detail_row("Validity:", &format!("{} days", (cert.not_after.signed_duration_since(cert.not_before).num_days())), vm),
+                        text("Key Usage:").size(vm.text_small).color(vm.colors.text_secondary),
+                        column(cert.key_usage.iter().map(|usage| {
+                            text(format!("  • {}", usage)).size(text_tiny).into()
+                        }).collect::<Vec<_>>()).spacing(spacing_xs),
+                        self.detail_row("Trust Level:", "Root (Highest)", vm),
+                        self.detail_row("Path Length:", "Unlimited", vm),
+                    ].spacing(vm.spacing_sm)
+                ),
+                CertificateType::Intermediate => (
+                    "Intermediate CA Certificate",
+                    column![
+                        self.detail_row("Certificate Type:", "Intermediate Certificate Authority", vm),
+                        self.detail_row("Subject:", &cert.subject, vm),
+                        self.detail_row("Issuer:", &cert.issuer, vm),
+                        self.detail_row("Valid From:", &cert.not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
+                        self.detail_row("Valid Until:", &cert.not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
+                        self.detail_row("Validity:", &format!("{} days", (cert.not_after.signed_duration_since(cert.not_before).num_days())), vm),
+                        text("Key Usage:").size(vm.text_small).color(vm.colors.text_secondary),
+                        column(cert.key_usage.iter().map(|usage| {
+                            text(format!("  • {}", usage)).size(text_tiny).into()
+                        }).collect::<Vec<_>>()).spacing(spacing_xs),
+                        self.detail_row("Trust Level:", "Intermediate", vm),
+                        self.detail_row("Can Sign:", "Leaf Certificates", vm),
+                    ].spacing(vm.spacing_sm)
+                ),
+                CertificateType::Leaf => (
+                    "Leaf Certificate",
+                    column![
+                        self.detail_row("Certificate Type:", "End Entity Certificate", vm),
+                        self.detail_row("Subject:", &cert.subject, vm),
+                        self.detail_row("Issuer:", &cert.issuer, vm),
+                        self.detail_row("Valid From:", &cert.not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
+                        self.detail_row("Valid Until:", &cert.not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
+                        self.detail_row("Validity:", &format!("{} days", (cert.not_after.signed_duration_since(cert.not_before).num_days())), vm),
+                        text("Key Usage:").size(vm.text_small).color(vm.colors.text_secondary),
+                        column(cert.key_usage.iter().map(|usage| {
+                            text(format!("  • {}", usage)).size(text_tiny).into()
+                        }).collect::<Vec<_>>()).spacing(spacing_xs),
+                        if !cert.san.is_empty() {
+                            column![
+                                text("Subject Alternative Names:").size(vm.text_small).color(vm.colors.text_secondary),
+                                column(cert.san.iter().map(|name| {
+                                    text(format!("  • {}", name)).size(text_tiny).into()
+                                }).collect::<Vec<_>>()).spacing(spacing_xs),
+                            ].spacing(vm.spacing_xs)
+                        } else {
+                            column![].into()
+                        },
+                        self.detail_row("Trust Level:", "Leaf (End Entity)", vm),
+                    ].spacing(vm.spacing_sm)
+                ),
+                CertificateType::Policy => (
+                    "Policy Certificate",
+                    column![
+                        self.detail_row("Certificate Type:", "Policy-Specific CA", vm),
+                        self.detail_row("Subject:", &cert.subject, vm),
+                        self.detail_row("Issuer:", &cert.issuer, vm),
+                        self.detail_row("Valid From:", &cert.not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
+                        self.detail_row("Valid Until:", &cert.not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
+                        self.detail_row("Validity:", &format!("{} days", (cert.not_after.signed_duration_since(cert.not_before).num_days())), vm),
+                        text("Key Usage:").size(vm.text_small).color(vm.colors.text_secondary),
+                        column(cert.key_usage.iter().map(|usage| {
+                            text(format!("  • {}", usage)).size(text_tiny).into()
+                        }).collect::<Vec<_>>()).spacing(spacing_xs),
+                        self.detail_row("Trust Level:", "Policy-Specific", vm),
+                    ].spacing(vm.spacing_sm)
+                ),
+            }
+        } else {
+            // Fallback: show basic info from LiftedNode
+            (
+                lifted_node.injection().display_name(),
                 column![
-                    self.detail_row("Certificate Type:", "Root Certificate Authority", vm),
-                    self.detail_row("Subject:", &cert.subject, vm),
-                    self.detail_row("Issuer:", &cert.issuer, vm),
-                    self.detail_row("Valid From:", &cert.not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
-                    self.detail_row("Valid Until:", &cert.not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
-                    self.detail_row("Validity:", &format!("{} days", (cert.not_after.signed_duration_since(cert.not_before).num_days())), vm),
-                    text("Key Usage:").size(vm.text_small).color(vm.colors.text_secondary),
-                    column(cert.key_usage.iter().map(|usage| {
-                        text(format!("  • {}", usage)).size(text_tiny).into()
-                    }).collect::<Vec<_>>()).spacing(spacing_xs),
-                    self.detail_row("Trust Level:", "Root (Highest)", vm),
-                    self.detail_row("Path Length:", "Unlimited", vm),
+                    self.detail_row("Name:", &lifted_node.label, vm),
+                    self.detail_row("Info:", lifted_node.secondary.as_deref().unwrap_or("N/A"), vm),
                 ].spacing(vm.spacing_sm)
-            ),
-            DomainNodeData::IntermediateCertificate(cert) => (
-                "Intermediate CA Certificate",
-                column![
-                    self.detail_row("Certificate Type:", "Intermediate Certificate Authority", vm),
-                    self.detail_row("Subject:", &cert.subject, vm),
-                    self.detail_row("Issuer:", &cert.issuer, vm),
-                    self.detail_row("Valid From:", &cert.not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
-                    self.detail_row("Valid Until:", &cert.not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
-                    self.detail_row("Validity:", &format!("{} days", (cert.not_after.signed_duration_since(cert.not_before).num_days())), vm),
-                    text("Key Usage:").size(vm.text_small).color(vm.colors.text_secondary),
-                    column(cert.key_usage.iter().map(|usage| {
-                        text(format!("  • {}", usage)).size(text_tiny).into()
-                    }).collect::<Vec<_>>()).spacing(spacing_xs),
-                    self.detail_row("Trust Level:", "Intermediate", vm),
-                    self.detail_row("Can Sign:", "Leaf Certificates", vm),
-                ].spacing(vm.spacing_sm)
-            ),
-            DomainNodeData::LeafCertificate(cert) => (
-                "Leaf Certificate",
-                column![
-                    self.detail_row("Certificate Type:", "End Entity Certificate", vm),
-                    self.detail_row("Subject:", &cert.subject, vm),
-                    self.detail_row("Issuer:", &cert.issuer, vm),
-                    self.detail_row("Valid From:", &cert.not_before.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
-                    self.detail_row("Valid Until:", &cert.not_after.format("%Y-%m-%d %H:%M:%S UTC").to_string(), vm),
-                    self.detail_row("Validity:", &format!("{} days", (cert.not_after.signed_duration_since(cert.not_before).num_days())), vm),
-                    text("Key Usage:").size(vm.text_small).color(vm.colors.text_secondary),
-                    column(cert.key_usage.iter().map(|usage| {
-                        text(format!("  • {}", usage)).size(text_tiny).into()
-                    }).collect::<Vec<_>>()).spacing(spacing_xs),
-                    if !cert.san.is_empty() {
-                        column![
-                            text("Subject Alternative Names:").size(vm.text_small).color(vm.colors.text_secondary),
-                            column(cert.san.iter().map(|name| {
-                                text(format!("  • {}", name)).size(text_tiny).into()
-                            }).collect::<Vec<_>>()).spacing(spacing_xs),
-                        ].spacing(vm.spacing_xs)
-                    } else {
-                        column![].into()
-                    },
-                    self.detail_row("Trust Level:", "Leaf (End Entity)", vm),
-                ].spacing(vm.spacing_sm)
-            ),
-            _ => ("Unknown", column![].spacing(vm.spacing_sm)),
+            )
         };
 
         container(
@@ -1088,11 +1088,15 @@ impl PropertyCard {
     }
 
     /// Render detailed YubiKey hardware information (read-only)
-    fn view_yubikey_details<'a>(&self, domain_node: &'a DomainNode, vm: &ViewModel) -> Element<'a, PropertyCardMessage> {
+    fn view_yubikey_details<'a>(&self, lifted_node: &'a LiftedNode, vm: &ViewModel) -> Element<'a, PropertyCardMessage> {
+        use crate::domain::yubikey::{YubiKeyDevice, PivSlotView};
+
         let text_tiny = vm.text_tiny;
         let spacing_xs = vm.spacing_xs;
-        let (title, details) = match domain_node.data() {
-            DomainNodeData::YubiKey(yk) => (
+
+        // Try downcasting to YubiKeyDevice or PivSlotView
+        let (title, details) = if let Some(yk) = lifted_node.downcast::<YubiKeyDevice>() {
+            (
                 "YubiKey Hardware Token",
                 column![
                     self.detail_row("Device Type:", "YubiKey Hardware Security Module", vm),
@@ -1120,8 +1124,9 @@ impl PropertyCard {
                         text("  • 9E - Card Authentication (PIV)").size(text_tiny),
                     ].spacing(spacing_xs),
                 ].spacing(vm.spacing_sm)
-            ),
-            DomainNodeData::PivSlot(slot) => (
+            )
+        } else if let Some(slot) = lifted_node.downcast::<PivSlotView>() {
+            (
                 "PIV Slot",
                 column![
                     self.detail_row("Slot:", &slot.slot_name, vm),
@@ -1150,8 +1155,16 @@ impl PropertyCard {
                     self.detail_row("Touch Policy:", "Not configured", vm),
                     self.detail_row("PIN Policy:", "Default (once per session)", vm),
                 ].spacing(vm.spacing_sm)
-            ),
-            _ => ("Unknown", column![].spacing(vm.spacing_sm)),
+            )
+        } else {
+            // Fallback: show basic info from LiftedNode
+            (
+                lifted_node.injection().display_name(),
+                column![
+                    self.detail_row("Name:", &lifted_node.label, vm),
+                    self.detail_row("Info:", lifted_node.secondary.as_deref().unwrap_or("N/A"), vm),
+                ].spacing(vm.spacing_sm)
+            )
         };
 
         container(
@@ -1178,11 +1191,13 @@ impl PropertyCard {
     }
 
     /// Render detailed policy information (read-only)
-    fn view_policy_details<'a>(&self, domain_node: &'a DomainNode, vm: &ViewModel) -> Element<'a, PropertyCardMessage> {
+    fn view_policy_details<'a>(&self, lifted_node: &'a LiftedNode, vm: &ViewModel) -> Element<'a, PropertyCardMessage> {
         use crate::gui::cowboy_theme::CowboyAppTheme as CowboyCustomTheme;
+        use crate::domain::visualization::{PolicyRole, PolicyCategory, PolicyGroup};
 
-        let (title, details) = match domain_node.data() {
-            DomainNodeData::PolicyRole(role) => (
+        // Try downcasting to each policy type
+        let (title, details) = if let Some(role) = lifted_node.downcast::<PolicyRole>() {
+            (
                 "Role",
                 column![
                     self.detail_row("Name:", &role.name, vm),
@@ -1199,16 +1214,18 @@ impl PropertyCard {
                     self.detail_row("Separation Class:", &format!("{:?}", role.separation_class), vm),
                     self.detail_row("Claims:", &format!("{} permissions", role.claim_count), vm),
                 ].spacing(vm.spacing_sm)
-            ),
-            DomainNodeData::PolicyCategory(category) => (
+            )
+        } else if let Some(category) = lifted_node.downcast::<PolicyCategory>() {
+            (
                 "Claim Category",
                 column![
                     self.detail_row("Category:", &category.name, vm),
                     self.detail_row("Total Claims:", &format!("{}", category.claim_count), vm),
                     text("Claim categories group related permissions.").size(vm.text_tiny).color(vm.colors.text_hint),
                 ].spacing(vm.spacing_sm)
-            ),
-            DomainNodeData::PolicyGroup(group) => (
+            )
+        } else if let Some(group) = lifted_node.downcast::<PolicyGroup>() {
+            (
                 "Separation Class",
                 column![
                     self.detail_row("Class:", &group.name, vm),
@@ -1224,8 +1241,16 @@ impl PropertyCard {
                         crate::policy::SeparationClass::Personnel => "Personnel roles handle HR and staffing.",
                     }).size(vm.text_tiny).color(vm.colors.text_subtle_success),
                 ].spacing(vm.spacing_sm)
-            ),
-            _ => ("Policy", column![].spacing(vm.spacing_sm)),
+            )
+        } else {
+            // Fallback: show basic info from LiftedNode
+            (
+                lifted_node.injection().display_name(),
+                column![
+                    self.detail_row("Name:", &lifted_node.label, vm),
+                    self.detail_row("Info:", lifted_node.secondary.as_deref().unwrap_or("N/A"), vm),
+                ].spacing(vm.spacing_sm)
+            )
         };
 
         container(
@@ -1269,6 +1294,7 @@ impl PropertyCard {
 mod tests {
     use super::*;
     use crate::domain::Organization;
+    use crate::lifting::LiftableDomain;
     use std::collections::HashMap;
 
     #[test]
@@ -1292,8 +1318,9 @@ mod tests {
             metadata: HashMap::new(),
         };
 
-        let domain_node = DomainNode::inject_organization(org.clone());
-        card.set_node(org.id, domain_node);
+        // Use LiftableDomain trait to lift Organization to LiftedNode
+        let lifted_node = org.lift();
+        card.set_node(org.id, lifted_node);
 
         assert!(card.is_editing());
         assert!(!card.is_dirty());
@@ -1315,8 +1342,9 @@ mod tests {
             metadata: HashMap::new(),
         };
 
-        let domain_node = DomainNode::inject_organization(org.clone());
-        card.set_node(org.id, domain_node);
+        // Use LiftableDomain trait to lift Organization to LiftedNode
+        let lifted_node = org.lift();
+        card.set_node(org.id, lifted_node);
         assert!(!card.is_dirty());
 
         card.update(PropertyCardMessage::NameChanged("New Name".to_string()));
@@ -1338,8 +1366,9 @@ mod tests {
             metadata: HashMap::new(),
         };
 
-        let domain_node = DomainNode::inject_organization(org.clone());
-        card.set_node(org.id, domain_node);
+        // Use LiftableDomain trait to lift Organization to LiftedNode
+        let lifted_node = org.lift();
+        card.set_node(org.id, lifted_node);
         card.update(PropertyCardMessage::NameChanged("Modified".to_string()));
 
         assert!(card.is_editing());

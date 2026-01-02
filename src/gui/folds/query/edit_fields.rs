@@ -545,6 +545,159 @@ impl FoldDomainNode for FoldEditFields {
     }
 }
 
+// ============================================================================
+// LIFTED NODE EXTRACTION - Direct extraction without deprecated fold pattern
+// ============================================================================
+
+use crate::lifting::LiftedNode;
+
+/// Extract edit field data from a LiftedNode using downcast.
+///
+/// This function replaces the deprecated `domain_node.fold(&FoldEditFields)` pattern
+/// by using LiftedNode's downcast capability to extract domain data directly.
+pub fn extract_edit_fields_from_lifted(node: &LiftedNode) -> EditFieldData {
+    // Try to downcast to each known type and extract data directly
+    if let Some(person) = node.downcast::<Person>() {
+        return EditFieldData {
+            name: person.name.clone(),
+            email: person.email.clone(),
+            enabled: person.active,
+            roles: person.roles.iter().map(|r| format!("{:?}", r.role_type)).collect(),
+            role_types: person.roles.iter().map(|r| r.role_type.clone()).collect(),
+            entity_type: EntityType::Person,
+            ..Default::default()
+        };
+    }
+
+    if let Some(org) = node.downcast::<Organization>() {
+        return EditFieldData {
+            name: org.name.clone(),
+            description: org.description.clone().unwrap_or_default(),
+            enabled: true,
+            entity_type: EntityType::Organization,
+            ..Default::default()
+        };
+    }
+
+    if let Some(unit) = node.downcast::<OrganizationUnit>() {
+        return EditFieldData {
+            name: unit.name.clone(),
+            enabled: true,
+            entity_type: EntityType::OrganizationUnit,
+            ..Default::default()
+        };
+    }
+
+    if let Some(location) = node.downcast::<Location>() {
+        let address = location.address.as_ref().map(|addr| {
+            let mut parts = vec![addr.street1.clone()];
+            if let Some(street2) = &addr.street2 {
+                parts.push(street2.clone());
+            }
+            parts.push(addr.locality.clone());
+            parts.push(addr.region.clone());
+            parts.push(addr.country.clone());
+            parts.push(addr.postal_code.clone());
+            parts.join(", ")
+        });
+        let coordinates = location.coordinates.as_ref()
+            .map(|coords| format!("{}, {}", coords.latitude, coords.longitude));
+        let virtual_location = location.virtual_location.as_ref().map(|vl| {
+            if !vl.urls.is_empty() {
+                vl.urls[0].url.clone()
+            } else {
+                vl.primary_identifier.clone()
+            }
+        });
+        return EditFieldData {
+            name: location.name.clone(),
+            enabled: true,
+            location_type: Some(location.location_type.clone()),
+            address,
+            coordinates,
+            virtual_location,
+            entity_type: EntityType::Location,
+            ..Default::default()
+        };
+    }
+
+    if let Some(role) = node.downcast::<Role>() {
+        return EditFieldData {
+            name: role.name.clone(),
+            description: role.description.clone(),
+            enabled: role.active,
+            entity_type: EntityType::Role,
+            ..Default::default()
+        };
+    }
+
+    if let Some(policy) = node.downcast::<Policy>() {
+        return EditFieldData {
+            name: policy.name.clone(),
+            description: policy.description.clone(),
+            enabled: policy.enabled,
+            claims: Some(policy.claims.iter().map(|c| format!("{:?}", c)).collect()),
+            policy_claims: policy.claims.clone(),
+            entity_type: EntityType::Policy,
+            ..Default::default()
+        };
+    }
+
+    // For types that don't have dedicated downcast support yet,
+    // use label from the lifted node
+    let read_only = is_read_only_injection(node.injection);
+    EditFieldData {
+        name: node.label.clone(),
+        description: node.secondary.clone().unwrap_or_default(),
+        read_only,
+        entity_type: entity_type_from_injection(node.injection),
+        ..Default::default()
+    }
+}
+
+/// Check if an Injection type represents a read-only entity
+fn is_read_only_injection(injection: crate::gui::domain_node::Injection) -> bool {
+    use crate::gui::domain_node::Injection;
+    matches!(injection,
+        Injection::NatsOperator | Injection::NatsOperatorSimple |
+        Injection::NatsAccount | Injection::NatsAccountSimple |
+        Injection::NatsUser | Injection::NatsUserSimple | Injection::NatsServiceAccount |
+        Injection::RootCertificate | Injection::IntermediateCertificate | Injection::LeafCertificate |
+        Injection::Key | Injection::YubiKey | Injection::YubiKeyStatus | Injection::PivSlot |
+        Injection::Manifest | Injection::PolicyRole | Injection::PolicyClaim |
+        Injection::PolicyCategory | Injection::PolicyGroup |
+        Injection::AggregateOrganization | Injection::AggregatePkiChain |
+        Injection::AggregateNatsSecurity | Injection::AggregateYubiKeyProvisioning
+    )
+}
+
+/// Convert Injection to EntityType
+fn entity_type_from_injection(injection: crate::gui::domain_node::Injection) -> EntityType {
+    use crate::gui::domain_node::Injection;
+    match injection {
+        Injection::Organization => EntityType::Organization,
+        Injection::OrganizationUnit => EntityType::OrganizationUnit,
+        Injection::Person => EntityType::Person,
+        Injection::Location => EntityType::Location,
+        Injection::Role => EntityType::Role,
+        Injection::Policy => EntityType::Policy,
+        Injection::NatsOperator | Injection::NatsOperatorSimple => EntityType::NatsOperator,
+        Injection::NatsAccount | Injection::NatsAccountSimple => EntityType::NatsAccount,
+        Injection::NatsUser | Injection::NatsUserSimple | Injection::NatsServiceAccount => EntityType::NatsUser,
+        Injection::RootCertificate | Injection::IntermediateCertificate | Injection::LeafCertificate => EntityType::Certificate,
+        Injection::Key => EntityType::Key,
+        Injection::YubiKey | Injection::YubiKeyStatus => EntityType::YubiKey,
+        Injection::PivSlot => EntityType::PivSlot,
+        Injection::Manifest => EntityType::Manifest,
+        Injection::PolicyRole => EntityType::PolicyRole,
+        Injection::PolicyClaim => EntityType::PolicyClaim,
+        Injection::PolicyCategory => EntityType::PolicyCategory,
+        Injection::PolicyGroup => EntityType::PolicyGroup,
+        Injection::AggregateOrganization | Injection::AggregatePkiChain |
+        Injection::AggregateNatsSecurity | Injection::AggregateYubiKeyProvisioning => EntityType::Aggregate,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

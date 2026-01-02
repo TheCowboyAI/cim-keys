@@ -20,7 +20,7 @@
 pub mod edit_fields;
 pub mod searchable;
 
-pub use edit_fields::{EditFieldData, EntityType, FoldEditFields};
+pub use edit_fields::{EditFieldData, EntityType, FoldEditFields, extract_edit_fields_from_lifted};
 // Re-export domain types used by EditFieldData for convenience
 pub use crate::domain::{PolicyClaim, RoleType, LocationType};
 pub use searchable::{FoldSearchableText, SearchableText};
