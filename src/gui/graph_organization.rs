@@ -2,6 +2,9 @@
 //!
 //! This module implements: **The organizational graph drives organization-centric views**.
 //!
+//! NOTE: This module uses deprecated `Injection` types. Migration pending.
+#![allow(deprecated)]
+//!
 //! ## Flow
 //!
 //! 1. User selects an organization or organizational unit node in the graph
@@ -48,7 +51,6 @@ use uuid::Uuid;
 
 use crate::domain::{Organization, OrganizationUnit, Person, KeyOwnerRole};
 use crate::gui::graph::{OrganizationConcept, EdgeType};
-use crate::gui::domain_node::Injection;
 
 /// Organization-centric analysis of the organizational graph
 #[derive(Debug, Clone)]
@@ -117,12 +119,7 @@ impl OrganizationAnalysis {
                     EdgeType::ManagesResource => {
                         // Resource managed by this organization
                         if let Some(resource_node) = graph.nodes.get(&edge.to) {
-                            let resource_type = match resource_node.domain_node.injection() {
-                                Injection::Location => "Location",
-                                Injection::Key => "Key",
-                                Injection::YubiKey => "YubiKey",
-                                _ => "Unknown",
-                            };
+                            let resource_type = resource_node.domain_node.injection().display_name();
                             managed_resources.push((edge.to, resource_type.to_string()));
                         }
                     }
@@ -235,11 +232,7 @@ impl OrganizationalUnitAnalysis {
                         // Find parent
                         parent_id = Some(edge.from);
                         if let Some(parent_node) = graph.nodes.get(&edge.from) {
-                            parent_type = Some(match parent_node.domain_node.injection() {
-                                Injection::Organization => "Organization".to_string(),
-                                Injection::OrganizationUnit => "OrganizationalUnit".to_string(),
-                                _ => "Unknown".to_string(),
-                            });
+                            parent_type = Some(parent_node.domain_node.injection().display_name().to_string());
                         }
                     }
                     EdgeType::MemberOf => {
@@ -274,12 +267,7 @@ impl OrganizationalUnitAnalysis {
                     EdgeType::ManagesResource => {
                         // Resource managed by this unit
                         if let Some(resource_node) = graph.nodes.get(&edge.to) {
-                            let resource_type = match resource_node.domain_node.injection() {
-                                Injection::Location => "Location",
-                                Injection::Key => "Key",
-                                Injection::YubiKey => "YubiKey",
-                                _ => "Unknown",
-                            };
+                            let resource_type = resource_node.domain_node.injection().display_name();
                             managed_resources.push((edge.to, resource_type.to_string()));
                         }
                     }

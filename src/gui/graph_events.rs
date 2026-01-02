@@ -3,12 +3,14 @@
 //! This module defines events that represent state changes in the graph.
 //! Events are immutable facts about what happened. Undo is implemented by
 //! creating compensating events, NOT by reversing state mutations.
+//!
+//! Uses `LiftedNode` for type-erased domain data via Kan extension pattern.
 
 use uuid::Uuid;
 use iced::{Point, Color};
 use chrono::{DateTime, Utc};
 use super::graph::EdgeType;
-use super::domain_node::DomainNode;
+use crate::lifting::LiftedNode;
 
 /// Graph events that can be applied to change graph state
 #[derive(Debug, Clone)]
@@ -16,8 +18,8 @@ pub enum GraphEvent {
     /// Node was created
     NodeCreated {
         node_id: Uuid,
-        /// The domain node data (using categorical coproduct pattern)
-        domain_node: DomainNode,
+        /// The lifted domain node (type-erased via Kan extension)
+        lifted_node: LiftedNode,
         position: Point,
         color: Color,
         label: String,
@@ -27,7 +29,7 @@ pub enum GraphEvent {
     NodeDeleted {
         node_id: Uuid,
         // Store snapshot for potential redo
-        domain_node: DomainNode,
+        lifted_node: LiftedNode,
         position: Point,
         color: Color,
         label: String,
@@ -37,10 +39,10 @@ pub enum GraphEvent {
     NodePropertiesChanged {
         node_id: Uuid,
         // Old values for undo (compensating event with these as new values)
-        old_domain_node: DomainNode,
+        old_lifted_node: LiftedNode,
         old_label: String,
         // New values
-        new_domain_node: DomainNode,
+        new_lifted_node: LiftedNode,
         new_label: String,
         timestamp: DateTime<Utc>,
     },
@@ -81,20 +83,20 @@ impl GraphEvent {
     /// Create a compensating event that undoes this event
     pub fn compensate(&self) -> Self {
         match self {
-            GraphEvent::NodeCreated { node_id, domain_node, position, color, label, .. } => {
+            GraphEvent::NodeCreated { node_id, lifted_node, position, color, label, .. } => {
                 GraphEvent::NodeDeleted {
                     node_id: *node_id,
-                    domain_node: domain_node.clone(),
+                    lifted_node: lifted_node.clone(),
                     position: *position,
                     color: *color,
                     label: label.clone(),
                     timestamp: Utc::now(),
                 }
             }
-            GraphEvent::NodeDeleted { node_id, domain_node, position, color, label, .. } => {
+            GraphEvent::NodeDeleted { node_id, lifted_node, position, color, label, .. } => {
                 GraphEvent::NodeCreated {
                     node_id: *node_id,
-                    domain_node: domain_node.clone(),
+                    lifted_node: lifted_node.clone(),
                     position: *position,
                     color: *color,
                     label: label.clone(),
@@ -103,17 +105,17 @@ impl GraphEvent {
             }
             GraphEvent::NodePropertiesChanged {
                 node_id,
-                old_domain_node,
+                old_lifted_node,
                 old_label,
-                new_domain_node,
+                new_lifted_node,
                 new_label,
                 ..
             } => {
                 GraphEvent::NodePropertiesChanged {
                     node_id: *node_id,
-                    old_domain_node: new_domain_node.clone(),
+                    old_lifted_node: new_lifted_node.clone(),
                     old_label: new_label.clone(),
-                    new_domain_node: old_domain_node.clone(),
+                    new_lifted_node: old_lifted_node.clone(),
                     new_label: old_label.clone(),
                     timestamp: Utc::now(),
                 }
@@ -275,7 +277,8 @@ impl Default for EventStack {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{KeyOwnerRole, Person};
+    use crate::domain::Person;
+    use crate::lifting::LiftableDomain;
 
     #[test]
     fn test_event_stack_push() {
@@ -293,11 +296,11 @@ mod tests {
         };
 
         let node_id = person.id;
-        let domain_node = DomainNode::inject_person(person, KeyOwnerRole::Developer);
+        let lifted_node = person.lift();
 
         let event = GraphEvent::NodeCreated {
             node_id,
-            domain_node,
+            lifted_node,
             position: Point::new(100.0, 200.0),
             color: Color::from_rgb(0.5, 0.5, 0.5),
             label: "Test".to_string(),
@@ -324,11 +327,11 @@ mod tests {
         };
 
         let node_id = person.id;
-        let domain_node = DomainNode::inject_person(person, KeyOwnerRole::Developer);
+        let lifted_node = person.lift();
 
         let created = GraphEvent::NodeCreated {
             node_id,
-            domain_node,
+            lifted_node,
             position: Point::new(100.0, 200.0),
             color: Color::from_rgb(0.5, 0.5, 0.5),
             label: "Test".to_string(),
@@ -355,11 +358,11 @@ mod tests {
         };
 
         let node_id = person.id;
-        let domain_node = DomainNode::inject_person(person, KeyOwnerRole::Developer);
+        let lifted_node = person.lift();
 
         let event = GraphEvent::NodeCreated {
             node_id,
-            domain_node,
+            lifted_node,
             position: Point::new(100.0, 200.0),
             color: Color::from_rgb(0.5, 0.5, 0.5),
             label: "Test".to_string(),
@@ -396,10 +399,10 @@ mod tests {
         };
 
         for i in 0..5 {
-            let domain_node = DomainNode::inject_person(person.clone(), KeyOwnerRole::Developer);
+            let lifted_node = person.clone().lift();
             let event = GraphEvent::NodeCreated {
                 node_id: Uuid::now_v7(),
-                domain_node,
+                lifted_node,
                 position: Point::new(i as f32 * 100.0, 200.0),
                 color: Color::from_rgb(0.5, 0.5, 0.5),
                 label: format!("Test {}", i),

@@ -2,6 +2,9 @@
 //!
 //! These tests verify the complete user stories for generating infrastructure
 //! from organizational graphs.
+//!
+//! NOTE: Uses deprecated `DomainNodeData` type. Migration pending.
+#![allow(deprecated)]
 
 #[cfg(test)]
 mod graph_first_integration_tests {

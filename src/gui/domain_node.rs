@@ -255,6 +255,144 @@ impl Injection {
             Self::Policy
         )
     }
+
+    // =========================================================================
+    // Individual Type Checkers (for Kan extension pattern)
+    // =========================================================================
+
+    /// Check if this is a Person injection
+    pub fn is_person(&self) -> bool {
+        matches!(self, Self::Person)
+    }
+
+    /// Check if this is an Organization injection
+    pub fn is_organization(&self) -> bool {
+        matches!(self, Self::Organization)
+    }
+
+    /// Check if this is an OrganizationUnit injection
+    pub fn is_organization_unit(&self) -> bool {
+        matches!(self, Self::OrganizationUnit)
+    }
+
+    /// Check if this is a Location injection
+    pub fn is_location(&self) -> bool {
+        matches!(self, Self::Location)
+    }
+
+    /// Check if this is a Role injection
+    pub fn is_role(&self) -> bool {
+        matches!(self, Self::Role)
+    }
+
+    /// Check if this is a Key injection
+    pub fn is_key(&self) -> bool {
+        matches!(self, Self::Key)
+    }
+
+    /// Check if this is a YubiKey device injection
+    pub fn is_yubikey_device(&self) -> bool {
+        matches!(self, Self::YubiKey)
+    }
+
+    /// Check if this is a PIV slot injection
+    pub fn is_piv_slot(&self) -> bool {
+        matches!(self, Self::PivSlot)
+    }
+
+    /// Check if this is a NATS Operator injection
+    pub fn is_nats_operator(&self) -> bool {
+        matches!(self, Self::NatsOperator | Self::NatsOperatorSimple)
+    }
+
+    /// Check if this is a NATS Account injection
+    pub fn is_nats_account(&self) -> bool {
+        matches!(self, Self::NatsAccount | Self::NatsAccountSimple)
+    }
+
+    /// Check if this is a NATS User injection
+    pub fn is_nats_user(&self) -> bool {
+        matches!(self, Self::NatsUser | Self::NatsUserSimple)
+    }
+
+    /// Check if this is a NATS Service Account injection
+    pub fn is_nats_service_account(&self) -> bool {
+        matches!(self, Self::NatsServiceAccount)
+    }
+
+    /// Check if this is an aggregate Organization injection
+    pub fn is_aggregate_organization(&self) -> bool {
+        matches!(self, Self::AggregateOrganization)
+    }
+
+    /// Check if this is an aggregate PKI Chain injection
+    pub fn is_aggregate_pki_chain(&self) -> bool {
+        matches!(self, Self::AggregatePkiChain)
+    }
+
+    /// Check if this is an aggregate NATS Security injection
+    pub fn is_aggregate_nats_security(&self) -> bool {
+        matches!(self, Self::AggregateNatsSecurity)
+    }
+
+    /// Check if this is an aggregate YubiKey Provisioning injection
+    pub fn is_aggregate_yubikey_provisioning(&self) -> bool {
+        matches!(self, Self::AggregateYubiKeyProvisioning)
+    }
+
+    /// Alias for is_aggregate_yubikey_provisioning
+    pub fn is_aggregate_yubikey(&self) -> bool {
+        self.is_aggregate_yubikey_provisioning()
+    }
+
+    /// Check if this is a policy role injection
+    pub fn is_policy_role(&self) -> bool {
+        matches!(self, Self::PolicyRole)
+    }
+
+    /// Check if this is a policy category injection
+    pub fn is_policy_category(&self) -> bool {
+        matches!(self, Self::PolicyCategory)
+    }
+
+    /// Check if this is a policy group injection
+    pub fn is_policy_group(&self) -> bool {
+        matches!(self, Self::PolicyGroup)
+    }
+
+    /// Check if this is a policy claim injection
+    pub fn is_policy_claim(&self) -> bool {
+        matches!(self, Self::PolicyClaim)
+    }
+
+    // =========================================================================
+    // Composite Type Checkers (for filter predicates)
+    // =========================================================================
+
+    /// Check if this is an org-filterable type (Organization, Unit, Person)
+    pub fn is_org_filterable(&self) -> bool {
+        matches!(self, Self::Organization | Self::OrganizationUnit | Self::Person | Self::Location | Self::Role | Self::Policy)
+    }
+
+    /// Check if this is a YubiKey status node
+    pub fn is_yubikey_status(&self) -> bool {
+        matches!(self, Self::YubiKeyStatus)
+    }
+
+    /// Check if this is a YubiKey or PIV slot
+    pub fn is_yubikey_or_slot(&self) -> bool {
+        matches!(self, Self::YubiKey | Self::PivSlot | Self::YubiKeyStatus)
+    }
+
+    /// Check if this is any policy variant (role, claim, category, group, policy)
+    pub fn is_policy_variant(&self) -> bool {
+        matches!(self, Self::Policy | Self::PolicyRole | Self::PolicyClaim | Self::PolicyCategory | Self::PolicyGroup)
+    }
+
+    /// Check if this is a policy group or category
+    pub fn is_policy_group_or_category(&self) -> bool {
+        matches!(self, Self::PolicyGroup | Self::PolicyCategory)
+    }
 }
 
 impl fmt::Display for Injection {
@@ -1155,6 +1293,127 @@ impl DomainNode {
             DomainNodeData::AggregateYubiKeyProvisioning { name, version, devices_count, slots_provisioned } =>
                 folder.fold_aggregate_yubikey_provisioning(name, *version, *devices_count, *slots_provisioned),
         }
+    }
+
+    // ========================================================================
+    // Bridge Methods for LiftedNode Migration
+    // ========================================================================
+
+    /// Create a minimal DomainNode from just an Injection type.
+    ///
+    /// This is a bridge method for the migration from DomainNode to LiftedNode.
+    /// It creates a placeholder DomainNode that can be used temporarily during
+    /// the migration period.
+    ///
+    /// # Warning
+    ///
+    /// The data field will be an empty placeholder. Use `to_lifted_node` if you
+    /// need access to actual domain data.
+    #[deprecated(note = "Bridge method for migration - will be removed")]
+    pub fn new_minimal(injection: Injection) -> Self {
+        use std::collections::HashMap;
+        // Create a placeholder organization as default data
+        // This is a bridge - the actual data should come from LiftedNode.downcast()
+        let placeholder = Organization {
+            id: uuid::Uuid::nil(),
+            name: String::new(),
+            display_name: String::new(),
+            description: None,
+            parent_id: None,
+            units: Vec::new(),
+            metadata: HashMap::new(),
+        };
+        Self {
+            injection,
+            data: DomainNodeData::Organization(placeholder),
+        }
+    }
+
+    /// Convert this DomainNode to a LiftedNode for the new Kan extension pattern.
+    ///
+    /// This bridge method enables gradual migration from DomainNode to LiftedNode
+    /// by converting the categorical coproduct representation to the type-erased
+    /// functorial representation.
+    ///
+    /// The LiftedNode will contain the same injection tag and appropriate visualization
+    /// properties (color, label, secondary text) derived from the FoldVisualization fold.
+    #[deprecated(note = "Bridge method for migration - will be removed")]
+    pub fn to_lifted_node(&self, id: uuid::Uuid) -> crate::lifting::LiftedNode {
+        use crate::lifting::LiftedNode;
+
+        // Use FoldVisualization to get display properties
+        let viz = self.fold(&FoldVisualization);
+
+        // Create the lifted node with type-erased data
+        // Note: The data is cloned as DomainNodeData for now - this allows
+        // downcast recovery in ConceptEntity
+        LiftedNode::new(
+            id,
+            self.injection,
+            viz.primary_text,
+            viz.color,
+            self.data.clone(),
+        )
+        .with_secondary(viz.secondary_text)
+    }
+}
+
+// ============================================================================
+// Icon Helper Function for Injection Types
+// ============================================================================
+
+/// Get icon and font for an Injection type.
+///
+/// This function derives visualization icons from the Injection type tag,
+/// used by ConceptEntity.visualization() to create VisualizationData
+/// from LiftedNode properties.
+///
+/// Returns (icon_char, font) tuple for rendering.
+/// Uses MATERIAL_ICONS font to match FoldVisualization pattern.
+pub fn icon_for_injection(injection: Injection) -> (char, iced::Font) {
+    use crate::icons::*;
+
+    // Note: Use existing icon constants, falling back to similar icons where needed
+    match injection {
+        // Organization context
+        Injection::Person => (ICON_PERSON, MATERIAL_ICONS),
+        Injection::Organization => (ICON_BUSINESS, MATERIAL_ICONS),
+        Injection::OrganizationUnit => (ICON_GROUP, MATERIAL_ICONS),
+        Injection::Location => (ICON_LOCATION, MATERIAL_ICONS),
+        Injection::Role => (ICON_SETTINGS, MATERIAL_ICONS),  // Use settings for role
+        Injection::Policy => (ICON_VERIFIED, MATERIAL_ICONS),  // Use verified for policy
+
+        // NATS context - use settings/cloud icons
+        Injection::NatsOperator | Injection::NatsOperatorSimple => (ICON_SETTINGS, MATERIAL_ICONS),
+        Injection::NatsAccount | Injection::NatsAccountSimple => (ICON_CLOUD, MATERIAL_ICONS),
+        Injection::NatsUser | Injection::NatsUserSimple => (ICON_PERSON, MATERIAL_ICONS),
+        Injection::NatsServiceAccount => (ICON_SETTINGS, MATERIAL_ICONS),
+
+        // PKI context - use verified/key icons
+        Injection::RootCertificate => (ICON_VERIFIED, MATERIAL_ICONS),
+        Injection::IntermediateCertificate => (ICON_VERIFIED, MATERIAL_ICONS),
+        Injection::LeafCertificate => (ICON_VERIFIED, MATERIAL_ICONS),
+        Injection::Key => (ICON_KEY, MATERIAL_ICONS),
+
+        // YubiKey context
+        Injection::YubiKey => (ICON_SECURITY, MATERIAL_ICONS),
+        Injection::PivSlot => (ICON_USB, MATERIAL_ICONS),  // Use USB for slot
+        Injection::YubiKeyStatus => (ICON_CHECK, MATERIAL_ICONS),  // Use check for status
+
+        // Manifest
+        Injection::Manifest => (ICON_MEMORY, MATERIAL_ICONS),  // Use memory for manifest
+
+        // Policy variants
+        Injection::PolicyRole => (ICON_SETTINGS, MATERIAL_ICONS),
+        Injection::PolicyClaim => (ICON_CHECK, MATERIAL_ICONS),
+        Injection::PolicyCategory => (ICON_FOLDER, MATERIAL_ICONS),
+        Injection::PolicyGroup => (ICON_GROUP, MATERIAL_ICONS),
+
+        // Aggregate state - use business/verified icons
+        Injection::AggregateOrganization => (ICON_BUSINESS, MATERIAL_ICONS),
+        Injection::AggregatePkiChain => (ICON_VERIFIED, MATERIAL_ICONS),
+        Injection::AggregateNatsSecurity => (ICON_CLOUD, MATERIAL_ICONS),
+        Injection::AggregateYubiKeyProvisioning => (ICON_SECURITY, MATERIAL_ICONS),
     }
 }
 

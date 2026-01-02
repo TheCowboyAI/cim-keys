@@ -2,6 +2,9 @@
 //!
 //! This module implements: **The organizational graph drives key-centric views**.
 //!
+//! NOTE: Uses deprecated `DomainNodeData` for pattern matching. Migration pending.
+#![allow(deprecated)]
+//!
 //! ## Flow
 //!
 //! 1. User selects a key node in the graph
@@ -41,7 +44,7 @@ use uuid::Uuid;
 
 use crate::events::{KeyAlgorithm, KeyPurpose};
 use crate::gui::graph::{OrganizationConcept, EdgeType};
-use crate::gui::domain_node::{DomainNodeData, Injection};
+use crate::gui::domain_node::DomainNodeData;
 
 /// Key-centric analysis of the organizational graph
 #[derive(Debug, Clone)]
@@ -97,11 +100,7 @@ impl KeyAnalysis {
                     EdgeType::OwnsKey => {
                         owner_id = Some(edge.from);
                         if let Some(owner_node) = graph.nodes.get(&edge.from) {
-                            owner_type = Some(match owner_node.domain_node.injection() {
-                                Injection::Person => "Person".to_string(),
-                                Injection::Organization => "Organization".to_string(),
-                                _ => "Unknown".to_string(),
-                            });
+                            owner_type = Some(owner_node.domain_node.injection().display_name().to_string());
                         }
                     }
                     EdgeType::CertificateUsesKey => {

@@ -2,6 +2,9 @@
 //!
 //! This module centralizes all sizing, spacing, layout, and color constants
 //! to ensure consistent scaling and theming across the entire UI.
+//!
+//! NOTE: Uses deprecated `Injection` type. Migration pending.
+#![allow(deprecated)]
 
 use iced::Color;
 
@@ -667,13 +670,16 @@ impl ColorPalette {
     /// - NATS Security: Green (messaging, connectivity)
     /// - YubiKey: Purple (hardware, provisioning)
     pub fn aggregate_color(&self, injection: &super::domain_node::Injection) -> Color {
-        use super::domain_node::Injection;
-        match injection {
-            Injection::AggregateOrganization => self.aggregate_organization,
-            Injection::AggregatePkiChain => self.aggregate_pki_chain,
-            Injection::AggregateNatsSecurity => self.aggregate_nats_security,
-            Injection::AggregateYubiKeyProvisioning => self.aggregate_yubikey,
-            _ => self.node_default,  // Non-aggregate nodes use default
+        if injection.is_aggregate_organization() {
+            self.aggregate_organization
+        } else if injection.is_aggregate_pki_chain() {
+            self.aggregate_pki_chain
+        } else if injection.is_aggregate_nats_security() {
+            self.aggregate_nats_security
+        } else if injection.is_aggregate_yubikey() {
+            self.aggregate_yubikey
+        } else {
+            self.node_default  // Non-aggregate nodes use default
         }
     }
 

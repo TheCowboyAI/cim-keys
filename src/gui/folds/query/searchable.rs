@@ -5,6 +5,9 @@
 //! This fold transforms domain nodes into searchable text for filtering.
 //! It executes during query operations, producing pure selection data.
 //!
+//! NOTE: Uses deprecated `FoldDomainNode` trait. Migration pending.
+#![allow(deprecated)]
+//!
 //! ## FRP Pipeline Role
 //!
 //! ```text

@@ -2,6 +2,12 @@
 
 //! LiftableDomain - Faithful Functor for Domain Composition
 //!
+//! NOTE: This module uses the deprecated `Injection` type internally as the type tag
+//! for the coproduct. This is intentional - `Injection` provides the full variant set
+//! needed for faithful functor implementation. External code should use the `is_*()`
+//! helper methods on `DomainNode` or per-context types from `crate::domains`.
+#![allow(deprecated)]
+//!
 //! This module implements the `LiftableDomain` trait, enabling any domain type
 //! to be "lifted" into a unified graph representation while preserving all
 //! domain semantics.
@@ -149,6 +155,12 @@ impl LiftedNode {
     /// Add secondary text
     pub fn with_secondary(mut self, text: impl Into<String>) -> Self {
         self.secondary = Some(text.into());
+        self
+    }
+
+    /// Update primary text (label)
+    pub fn with_primary(mut self, text: impl Into<String>) -> Self {
+        self.label = text.into();
         self
     }
 

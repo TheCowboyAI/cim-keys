@@ -6,6 +6,9 @@
 //! field data from domain nodes, replacing pattern matching with
 //! the universal property of the coproduct.
 //!
+//! NOTE: Uses deprecated `FoldDomainNode` and `DomainNode` types. Migration pending.
+#![allow(deprecated)]
+//!
 //! ## Categorical Foundation
 //!
 //! This fold is a natural transformation:

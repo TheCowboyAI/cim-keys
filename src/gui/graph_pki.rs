@@ -2,6 +2,9 @@
 //!
 //! This module implements the core principle: **The organizational graph drives PKI creation**.
 //!
+//! NOTE: This module uses deprecated `DomainNode` types. Migration pending.
+#![allow(deprecated)]
+//!
 //! ## Flow
 //!
 //! 1. User builds organizational graph (Organization → Units → People)

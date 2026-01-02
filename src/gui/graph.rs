@@ -4,6 +4,9 @@
 //! - Nodes represent people in the organization
 //! - Edges represent relationships and key delegations
 //! - Different colors indicate different roles and trust levels
+//!
+//! NOTE: Uses deprecated `Injection` type. Migration pending.
+#![allow(deprecated)]
 
 use iced::{
     widget::{canvas, container, column, row, text, button, Canvas},
@@ -23,8 +26,9 @@ use super::edge_indicator::EdgeCreationIndicator;
 use super::graph_events::{EventStack, GraphEvent};
 use super::GraphLayout;
 use super::cowboy_theme::CowboyAppTheme as CowboyCustomTheme;
-use super::domain_node::{DomainNode, DomainNodeData, Injection};
+use super::domain_node::{DomainNode, DomainNodeData, Injection, VisualizationData};
 use super::view_model::ViewModel;
+use crate::lifting::LiftedNode;
 
 /// Role badge for compact display mode (shown on person nodes)
 #[derive(Debug, Clone)]
@@ -145,8 +149,15 @@ pub struct DraggingRole {
 ///
 /// Graph node representing a domain entity with visualization data.
 ///
-/// Uses the categorical coproduct pattern via `DomainNode` for type-safe
-/// node representation. The `visualization()` method provides rendering data.
+/// Uses the Kan extension pattern via `LiftedNode` for type-safe functorial
+/// lifting of domain entities. The lifted node carries type-erased domain data
+/// that can be recovered via `downcast()`.
+///
+/// ## Mathematical Foundation
+///
+/// `ConceptEntity` wraps a `LiftedNode` which implements a faithful functor
+/// F: Domain → Graph where domain entities are lifted to graph nodes while
+/// preserving all domain semantics via type erasure + downcast recovery.
 ///
 /// ## DDD Compliance
 ///
@@ -155,30 +166,67 @@ pub struct DraggingRole {
 #[derive(Debug, Clone)]
 pub struct ConceptEntity {
     pub id: Uuid,
-    /// Domain node using categorical coproduct pattern
-    pub domain_node: super::domain_node::DomainNode,
+    /// Lifted domain node using Kan extension pattern
+    pub lifted_node: LiftedNode,
+    /// Bridge field for compatibility during migration (deprecated)
+    #[deprecated(note = "Use lifted_node directly. This field will be removed.")]
+    pub domain_node: DomainNode,
 }
 
 impl ConceptEntity {
-    /// Create a new ConceptEntity from a DomainNode
+    /// Create a new ConceptEntity from a LiftedNode (preferred method)
     ///
-    /// Uses the categorical coproduct pattern - domain_node carries all type
-    /// information. UI concerns (position, color, label) are stored separately
-    /// in `NodeView` within `OrganizationConcept.node_views`.
-    pub fn from_domain_node(id: Uuid, domain_node: super::domain_node::DomainNode) -> Self {
+    /// Uses the Kan extension pattern - lifted_node carries type-erased domain
+    /// data that can be recovered via `downcast()`. UI concerns are stored
+    /// separately in `NodeView` within `OrganizationConcept.node_views`.
+    pub fn from_lifted_node(lifted_node: LiftedNode) -> Self {
+        let id = lifted_node.id;
+        // Create a minimal DomainNode for bridge compatibility
+        // This will be removed when migration is complete
+        #[allow(deprecated)]
+        let domain_node = DomainNode::new_minimal(lifted_node.injection);
+        #[allow(deprecated)]
         Self {
             id,
+            lifted_node,
             domain_node,
         }
     }
 
-    /// Get visualization data from the domain node
+    /// Create a new ConceptEntity from a DomainNode (bridge method)
+    ///
+    /// Uses the categorical coproduct pattern - domain_node carries all type
+    /// information. UI concerns (position, color, label) are stored separately
+    /// in `NodeView` within `OrganizationConcept.node_views`.
+    #[deprecated(note = "Use from_lifted_node with LiftableDomain::lift() instead")]
+    pub fn from_domain_node(id: Uuid, domain_node: DomainNode) -> Self {
+        // Create LiftedNode from DomainNode for forward compatibility
+        let lifted_node = domain_node.to_lifted_node(id);
+        #[allow(deprecated)]
+        Self {
+            id,
+            lifted_node,
+            domain_node,
+        }
+    }
+
+    /// Get visualization data from the lifted node
     ///
     /// This is the preferred way to get color, label, icon, etc.
-    /// Instead of matching on node_type, use this method.
-    pub fn visualization(&self) -> super::domain_node::VisualizationData {
-        use super::domain_node::FoldVisualization;
-        self.domain_node.fold(&FoldVisualization)
+    /// Derives visualization from the LiftedNode properties.
+    pub fn visualization(&self) -> VisualizationData {
+        // Use lifted_node properties directly for color and labels
+        // For icon, derive from injection type
+        let (icon, icon_font) = super::domain_node::icon_for_injection(self.lifted_node.injection);
+        VisualizationData {
+            color: self.lifted_node.color,
+            primary_text: self.lifted_node.label.clone(),
+            secondary_text: self.lifted_node.secondary.clone().unwrap_or_default(),
+            icon,
+            icon_font,
+            expandable: false,
+            expanded: false,
+        }
     }
 
     /// Get themed visualization data using Typography bounded context
@@ -193,24 +241,32 @@ impl ConceptEntity {
         theme: &crate::domains::typography::VerifiedTheme,
     ) -> crate::gui::folds::view::ThemedVisualizationData {
         use crate::gui::folds::view::ThemedVisualizationFold;
+        #[allow(deprecated)]
         self.domain_node.fold(&ThemedVisualizationFold::new(theme))
     }
 
     /// Get the injection type (what kind of domain entity this is)
-    pub fn injection(&self) -> super::domain_node::Injection {
-        self.domain_node.injection()
+    pub fn injection(&self) -> Injection {
+        self.lifted_node.injection
+    }
+
+    /// Attempt to downcast and recover the original domain entity
+    ///
+    /// This is the inverse of `lift()` - recovers the full domain data
+    /// from the type-erased storage in LiftedNode.
+    pub fn downcast<T: 'static>(&self) -> Option<&T> {
+        self.lifted_node.downcast::<T>()
     }
 
     /// Create a NodeView for this entity at the given position
     ///
-    /// Derives color and label from the domain node's visualization.
+    /// Derives color and label from the lifted node's properties.
     pub fn create_view(&self, position: Point) -> super::view_model::NodeView {
-        let viz = self.visualization();
         super::view_model::NodeView::new(
             self.id,
             position,
-            viz.color,
-            viz.primary_text,
+            self.lifted_node.color,
+            self.lifted_node.label.clone(),
         )
     }
 }
@@ -593,7 +649,7 @@ impl OrganizationConcept {
     /// Find person node at the given position (within node radius)
     pub fn find_person_at_position(&self, position: Point) -> Option<Uuid> {
         for (id, node) in &self.nodes {
-            if node.injection() == super::domain_node::Injection::Person {
+            if node.injection().is_person() {
                 if let Some(view) = self.node_views.get(id) {
                     if view.contains_point(position) {
                         return Some(*id);
@@ -1383,9 +1439,9 @@ impl OrganizationConcept {
     /// This is the ONLY way to change graph state for undo/redo to work correctly
     pub fn apply_event(&mut self, event: &GraphEvent) {
         match event {
-            GraphEvent::NodeCreated { node_id, domain_node, position, color, label, .. } => {
-                // Create domain entity (pure domain data)
-                let node = ConceptEntity::from_domain_node(*node_id, domain_node.clone());
+            GraphEvent::NodeCreated { node_id, lifted_node, position, color, label, .. } => {
+                // Create domain entity from lifted node (Kan extension pattern)
+                let node = ConceptEntity::from_lifted_node(lifted_node.clone());
                 // Create view with UI state from event (for undo/redo consistency)
                 let mut view = super::view_model::NodeView::new(*node_id, *position, *color, label.clone());
                 view.color = *color;  // Override with event color for consistency
@@ -1402,9 +1458,9 @@ impl OrganizationConcept {
                     self.selected_node = None;
                 }
             }
-            GraphEvent::NodePropertiesChanged { node_id, new_domain_node, new_label, .. } => {
+            GraphEvent::NodePropertiesChanged { node_id, new_lifted_node, new_label, .. } => {
                 if let Some(node) = self.nodes.get_mut(node_id) {
-                    node.domain_node = new_domain_node.clone();
+                    node.lifted_node = new_lifted_node.clone();
                 }
                 if let Some(view) = self.node_views.get_mut(node_id) {
                     view.label = new_label.clone();
@@ -2684,11 +2740,11 @@ impl OrganizationConcept {
 
         for (id, node) in &self.nodes {
             let injection = node.injection();
-            if injection == super::domain_node::Injection::YubiKey {
+            if injection.is_yubikey_device() {
                 if let Some(serial) = node.domain_node.yubikey_serial() {
                     yubikeys.push((*id, serial.to_string()));
                 }
-            } else if injection == super::domain_node::Injection::PivSlot {
+            } else if injection.is_piv_slot() {
                 if let Some(serial) = node.domain_node.yubikey_serial() {
                     piv_slots.push((*id, serial.to_string()));
                 }
@@ -2744,39 +2800,31 @@ impl OrganizationConcept {
     pub fn layout_nats_hierarchical(&mut self) {
         // Collect NATS nodes by type using the DomainNode accessor pattern
         // This replaces the match statement with injection() checks and accessor methods
-        use super::domain_node::Injection;
-
         let mut operators: Vec<Uuid> = Vec::new();
         let mut accounts: Vec<(Uuid, String)> = Vec::new(); // (id, name)
         let mut users: Vec<(Uuid, String)> = Vec::new();    // (id, account_name)
 
         for (id, node) in &self.nodes {
             let injection = node.injection();
-            match injection {
-                Injection::NatsOperator | Injection::NatsOperatorSimple => {
-                    operators.push(*id);
-                }
-                Injection::NatsAccount | Injection::NatsAccountSimple => {
-                    // Use the nats_account_name accessor, fall back to label from view
-                    let fallback_label = self.node_views.get(id)
-                        .map(|v| v.label.clone())
-                        .unwrap_or_default();
-                    let name = node.domain_node.nats_account_name()
-                        .map(|s| s.to_string())
-                        .unwrap_or(fallback_label);
-                    accounts.push((*id, name));
-                }
-                Injection::NatsUser | Injection::NatsUserSimple => {
-                    // Use the nats_user_account_name accessor
-                    let account_name = node.domain_node.nats_user_account_name()
-                        .map(|s| s.to_string())
-                        .unwrap_or_default();
-                    users.push((*id, account_name));
-                }
-                Injection::NatsServiceAccount => {
-                    users.push((*id, String::new()));
-                }
-                _ => {}
+            if injection.is_nats_operator() {
+                operators.push(*id);
+            } else if injection.is_nats_account() {
+                // Use the nats_account_name accessor, fall back to label from view
+                let fallback_label = self.node_views.get(id)
+                    .map(|v| v.label.clone())
+                    .unwrap_or_default();
+                let name = node.domain_node.nats_account_name()
+                    .map(|s| s.to_string())
+                    .unwrap_or(fallback_label);
+                accounts.push((*id, name));
+            } else if injection.is_nats_user() {
+                // Use the nats_user_account_name accessor
+                let account_name = node.domain_node.nats_user_account_name()
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+                users.push((*id, account_name));
+            } else if injection.is_nats_service_account() {
+                users.push((*id, String::new()));
             }
         }
 
@@ -2832,18 +2880,18 @@ impl OrganizationConcept {
     /// Check if a node should be visible based on current filter settings
     pub fn should_show_node(&self, node: &ConceptEntity) -> bool {
         let injection = node.domain_node.injection();
-        match injection {
-            Injection::Person => self.filter_show_people,
-            Injection::Organization | Injection::OrganizationUnit |
-            Injection::Location | Injection::Role | Injection::Policy |
-            Injection::PolicyRole | Injection::PolicyClaim |
-            Injection::PolicyCategory | Injection::PolicyGroup |
-            Injection::Manifest => self.filter_show_orgs,
-            _ if injection.is_nats() => self.filter_show_nats,
-            _ if injection.is_certificate() => self.filter_show_pki,
-            _ if injection.is_yubikey() => self.filter_show_yubikey,
-            Injection::Key => self.filter_show_pki,
-            _ => true,
+        if injection.is_person() {
+            self.filter_show_people
+        } else if injection.is_org_filterable() {
+            self.filter_show_orgs
+        } else if injection.is_nats() {
+            self.filter_show_nats
+        } else if injection.is_certificate() || injection.is_key() {
+            self.filter_show_pki
+        } else if injection.is_yubikey() {
+            self.filter_show_yubikey
+        } else {
+            true
         }
     }
 
@@ -2997,19 +3045,18 @@ impl OrganizationConcept {
 
         for (id, node) in &self.nodes {
             let injection = node.domain_node.injection();
-            match injection {
-                Injection::Person => person_nodes.push(*id),
-                Injection::Organization | Injection::OrganizationUnit |
-                Injection::Location | Injection::Role | Injection::Policy |
-                Injection::Manifest | Injection::PolicyRole | Injection::PolicyClaim |
-                Injection::PolicyCategory | Injection::PolicyGroup => {
-                    org_nodes.push(*id);
-                }
-                _ if injection.is_nats() => nats_nodes.push(*id),
-                _ if injection.is_certificate() => pki_nodes.push(*id),
-                _ if injection.is_yubikey() => yubikey_nodes.push(*id),
-                Injection::Key => pki_nodes.push(*id),
-                _ => org_nodes.push(*id),
+            if injection.is_person() {
+                person_nodes.push(*id);
+            } else if injection.is_org_filterable() {
+                org_nodes.push(*id);
+            } else if injection.is_nats() {
+                nats_nodes.push(*id);
+            } else if injection.is_certificate() || injection.is_key() {
+                pki_nodes.push(*id);
+            } else if injection.is_yubikey() {
+                yubikey_nodes.push(*id);
+            } else {
+                org_nodes.push(*id);
             }
         }
 
@@ -3271,7 +3318,7 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                     continue;
                 }
                 // Only highlight Person nodes as valid drop targets
-                if node.injection() == super::domain_node::Injection::Person {
+                if node.injection().is_person() {
                     let is_hovered = self.dragging_role.as_ref()
                         .map(|d| d.hover_person == Some(*node_id))
                         .unwrap_or(false);
@@ -3467,7 +3514,7 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
 
             // Draw role badges for Person nodes (compact mode)
             // Using injection() to check node type
-            if node.injection() == super::domain_node::Injection::Person {
+            if node.injection().is_person() {
                 if let Some(badges) = self.role_badges.get(&node.id) {
                     let badge_y = node_pos.y + radius + 42.0;
                     let badge_spacing = 24.0;
@@ -3771,10 +3818,7 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
 
                     for (node_id, node) in &self.nodes {
                         // Check if this is an expandable node
-                        let is_expandable = matches!(
-                            node.domain_node.injection(),
-                            Injection::PolicyGroup | Injection::PolicyCategory
-                        );
+                        let is_expandable = node.domain_node.injection().is_policy_group_or_category();
 
                         if is_expandable {
                             // Get position from node_views
@@ -4109,7 +4153,7 @@ pub fn view_graph<'a>(graph: &'a OrganizationConcept, vm: &'a ViewModel) -> Elem
             }
 
             // Special handling for Person nodes: show role badges
-            if node.injection() == super::domain_node::Injection::Person {
+            if node.injection().is_person() {
                 if let Some(badges) = graph.role_badges.get(&selected_id) {
                     // Capture ViewModel values for use in loop
                     let text_small = vm.text_small;

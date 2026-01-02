@@ -2,6 +2,11 @@
 //!
 //! This module implements: **The organizational graph drives manifest-centric views**.
 //!
+//! NOTE: This module uses the deprecated `DomainNodeData` type internally for
+//! exhaustive pattern matching on node types. Migration to per-context accessor
+//! methods is pending - requires adding many new accessor methods to `DomainNode`.
+#![allow(deprecated)]
+//!
 //! ## Flow
 //!
 //! 1. User selects a manifest or export node in the graph

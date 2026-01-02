@@ -38,7 +38,7 @@ use uuid::Uuid;
 
 use crate::domain::Location;
 use crate::gui::graph::{OrganizationConcept, EdgeType};
-use crate::gui::domain_node::{DomainNodeData, Injection};
+use crate::gui::domain_node::DomainNodeData;
 
 /// Location-centric analysis of the organizational graph
 #[derive(Debug, Clone)]
@@ -93,7 +93,7 @@ impl LocationAnalysis {
                                 _ if source_node.domain_node.injection().is_certificate() => {
                                     stored_certificates.push(edge.from);
                                 }
-                                _ if source_node.domain_node.injection() == Injection::YubiKey => {
+                                _ if source_node.domain_node.injection().is_yubikey_device() => {
                                     stored_yubikeys.push(edge.from);
                                 }
                                 _ => {}

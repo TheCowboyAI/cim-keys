@@ -10,7 +10,7 @@ use uuid::Uuid;
 use std::collections::HashSet;
 
 use crate::gui::graph::EdgeType;
-use crate::gui::domain_node::{DomainNode, DomainNodeData, Injection};
+use crate::gui::domain_node::{DomainNode, DomainNodeData};
 use crate::gui::folds::query::FoldEditFields;
 use crate::gui::view_model::ViewModel;
 use crate::domain::{PolicyClaim, RoleType, LocationType};
@@ -360,10 +360,10 @@ impl PropertyCard {
         if injection.is_certificate() {
             return self.view_certificate_details(domain_node, vm);
         }
-        if matches!(injection, Injection::YubiKey | Injection::PivSlot) {
+        if injection.is_yubikey_or_slot() {
             return self.view_yubikey_details(domain_node, vm);
         }
-        if matches!(injection, Injection::PolicyRole | Injection::PolicyCategory | Injection::PolicyGroup) {
+        if injection.is_policy_variant() {
             return self.view_policy_details(domain_node, vm);
         }
 
@@ -402,7 +402,7 @@ impl PropertyCard {
         );
 
         // Location-specific fields
-        if injection == Injection::Location {
+        if injection.is_location() {
             // Location type selector (Physical, Virtual, Logical, Hybrid)
             fields = fields.push(
                 column![
@@ -513,10 +513,7 @@ impl PropertyCard {
         }
 
         // Description field (Organization, Role, Policy)
-        if matches!(
-            injection,
-            Injection::Organization | Injection::Role | Injection::Policy
-        ) {
+        if injection.is_organization() || injection.is_role() || injection.is_policy() {
             fields = fields.push(
                 column![
                     text("Description:").size(12),
@@ -529,7 +526,7 @@ impl PropertyCard {
         }
 
         // Email field (Person only)
-        if injection == Injection::Person {
+        if injection.is_person() {
             fields = fields.push(
                 column![
                     text("Email:").size(12),
@@ -542,7 +539,7 @@ impl PropertyCard {
         }
 
         // Roles checkboxes (Person only)
-        if injection == Injection::Person {
+        if injection.is_person() {
             fields = fields.push(
                 text("Roles:")
                     .size(12)
@@ -620,7 +617,7 @@ impl PropertyCard {
         }
 
         // Key Operations section for Organization nodes (Root CA only)
-        if injection == Injection::Organization {
+        if injection.is_organization() {
             fields = fields.push(
                 column![
                     text("Key Operations:").size(12),
@@ -642,7 +639,7 @@ impl PropertyCard {
         }
 
         // Key Operations section for OrganizationalUnit nodes (Intermediate CA only)
-        if injection == Injection::OrganizationUnit {
+        if injection.is_organization_unit() {
             fields = fields.push(
                 column![
                     text("Key Operations:").size(12),
@@ -664,15 +661,11 @@ impl PropertyCard {
         }
 
         // Enabled checkbox (Person, Role, Policy)
-        if matches!(
-            injection,
-            Injection::Person | Injection::Role | Injection::Policy
-        ) {
-            let label = match injection {
-                Injection::Person => "Active",
-                Injection::Role => "Active",
-                Injection::Policy => "Enabled",
-                _ => "Enabled",
+        if injection.is_person() || injection.is_role() || injection.is_policy() {
+            let label = if injection.is_person() || injection.is_role() {
+                "Active"
+            } else {
+                "Enabled"
             };
 
             fields = fields.push(
@@ -685,7 +678,7 @@ impl PropertyCard {
         }
 
         // Claims checkboxes (Policy only)
-        if injection == Injection::Policy {
+        if injection.is_policy() {
             fields = fields.push(
                 text("Claims (Permissions):")
                     .size(12)

@@ -32,6 +32,8 @@ use crate::{
     },
     // Icons
     icons::{verified, EMOJI_FONT, FONT_BODY},
+    // Kan extension pattern for domain lifting
+    lifting::LiftableDomain,
 };
 
 pub mod graph;
@@ -1739,24 +1741,22 @@ impl CimKeysApp {
                     // FRP: Create event instead of direct mutation
                     if let Some(node) = self.org_graph.nodes.get(&node_id) {
                         use crate::gui::graph_events::GraphEvent;
-                        use crate::gui::domain_node::PropertyUpdate;
                         use chrono::Utc;
 
                         // Clone old state for compensating event (undo)
-                        let old_domain_node = node.domain_node.clone();
-                        let old_label = node.visualization().primary_text;
+                        let old_lifted_node = node.lifted_node.clone();
+                        let old_label = node.visualization().primary_text.clone();
 
-                        // Create PropertyUpdate with new name
-                        // Uses DomainNode::with_properties() - Sprint 13 migration
-                        let update = PropertyUpdate::new().with_name(self.inline_edit_name.clone());
-                        let new_domain_node = node.domain_node.with_properties(&update);
+                        // Create new lifted node with updated primary text
+                        let new_lifted_node = old_lifted_node.clone()
+                            .with_primary(self.inline_edit_name.clone());
 
                         // Create immutable event
                         let event = GraphEvent::NodePropertiesChanged {
                             node_id,
-                            old_domain_node,
+                            old_lifted_node,
                             old_label,
-                            new_domain_node,
+                            new_lifted_node,
                             new_label: self.inline_edit_name.clone(),
                             timestamp: Utc::now(),
                         };
@@ -2352,9 +2352,9 @@ impl CimKeysApp {
                         // Add YubiKey status nodes to graph
                         graph_yubikey::add_yubikey_status_to_graph(&mut self.org_graph, yubikey_nodes);
 
-                        use crate::gui::domain_node::Injection;
+                        // Count nodes by checking injection type
                         let count = self.org_graph.nodes.iter()
-                            .filter(|(_, node)| node.domain_node.injection() == Injection::YubiKeyStatus)
+                            .filter(|(_, node)| node.injection().is_yubikey_status())
                             .count();
 
                         self.status_message = format!("✅ YubiKey provisioning analyzed! {} people require YubiKeys based on roles", count);
@@ -3164,12 +3164,12 @@ impl CimKeysApp {
 
                         self.status_message = "✨ Created Organization - click to edit name".to_string();
 
-                        // Create DomainNode first - the canonical representation
-                        let domain_node = domain_node::DomainNode::inject_organization(org);
+                        // Use Kan extension pattern: lift domain type to graph representation
+                        let lifted_node = org.lift();
 
                         GraphEvent::NodeCreated {
                             node_id,
-                            domain_node,
+                            lifted_node,
                             position,
                             color,
                             label,
@@ -3193,12 +3193,12 @@ impl CimKeysApp {
 
                         self.status_message = "✨ Created Organizational Unit - click to edit name".to_string();
 
-                        // Create DomainNode first - the canonical representation
-                        let domain_node = domain_node::DomainNode::inject_organization_unit(unit);
+                        // Use Kan extension pattern: lift domain type to graph representation
+                        let lifted_node = unit.lift();
 
                         GraphEvent::NodeCreated {
                             node_id,
-                            domain_node,
+                            lifted_node,
                             position,
                             color,
                             label,
@@ -3206,8 +3206,9 @@ impl CimKeysApp {
                         }
                     }
                     Injection::Person => {
+                        // Find org_id from existing Organization nodes
                         let org_id = self.org_graph.nodes.values()
-                            .find_map(|n| n.domain_node.org_id())
+                            .find_map(|n| n.lifted_node.downcast::<Organization>().map(|o| o.id))
                             .unwrap_or_else(Uuid::now_v7);
 
                         let person = Person {
@@ -3225,17 +3226,17 @@ impl CimKeysApp {
                         let node_id = person.id;
                         let label = person.name.clone();
                         let position = self.node_selector_position;
-                        let role = KeyOwnerRole::Developer;
+                        let _role = KeyOwnerRole::Developer;
                         let color = self.view_model.colors.node_person;
 
                         self.status_message = "✨ Created Person - click to edit details".to_string();
 
-                        // Create DomainNode first - the canonical representation
-                        let domain_node = domain_node::DomainNode::inject_person(person, role);
+                        // Use Kan extension pattern: lift domain type to graph representation
+                        let lifted_node = person.lift();
 
                         GraphEvent::NodeCreated {
                             node_id,
-                            domain_node,
+                            lifted_node,
                             position,
                             color,
                             label,
@@ -3264,12 +3265,12 @@ impl CimKeysApp {
 
                         self.status_message = "✨ Created Location - click to edit address".to_string();
 
-                        // Create DomainNode first - the canonical representation
-                        let domain_node = domain_node::DomainNode::inject_location(location);
+                        // Use Kan extension pattern: lift domain type to graph representation
+                        let lifted_node = location.lift();
 
                         GraphEvent::NodeCreated {
                             node_id,
-                            domain_node,
+                            lifted_node,
                             position,
                             color,
                             label,
@@ -3277,8 +3278,9 @@ impl CimKeysApp {
                         }
                     }
                     Injection::Role => {
+                        // Find org_id from existing Organization nodes
                         let org_id = self.org_graph.nodes.values()
-                            .find_map(|n| n.domain_node.org_id())
+                            .find_map(|n| n.lifted_node.downcast::<Organization>().map(|o| o.id))
                             .unwrap_or_else(Uuid::now_v7);
 
                         let creator_id = Uuid::now_v7(); // TODO: Get actual user ID
@@ -3302,12 +3304,12 @@ impl CimKeysApp {
 
                         self.status_message = "✨ Created Role - define responsibilities".to_string();
 
-                        // Create DomainNode first - the canonical representation
-                        let domain_node = domain_node::DomainNode::inject_role(role_data);
+                        // Use Kan extension pattern: lift domain type to graph representation
+                        let lifted_node = role_data.lift();
 
                         GraphEvent::NodeCreated {
                             node_id,
-                            domain_node,
+                            lifted_node,
                             position,
                             color,
                             label,
@@ -3336,12 +3338,12 @@ impl CimKeysApp {
 
                         self.status_message = "✨ Created Policy - define claims and conditions".to_string();
 
-                        // Create DomainNode first - the canonical representation
-                        let domain_node = domain_node::DomainNode::inject_policy(policy);
+                        // Use Kan extension pattern: lift domain type to graph representation
+                        let lifted_node = policy.lift();
 
                         GraphEvent::NodeCreated {
                             node_id,
-                            domain_node,
+                            lifted_node,
                             position,
                             color,
                             label,
@@ -3371,9 +3373,9 @@ impl CimKeysApp {
                     OrganizationIntent::NodeClicked(id) => {
                         // Check if we have a role selected for assignment
                         if let Some(ref drag) = self.org_graph.dragging_role.clone() {
-                            // Check if clicked node is a Person
+                            // Check if clicked node is a Person using downcast
                             let is_person = self.org_graph.nodes.get(id)
-                                .map(|n| n.injection() == Injection::Person)
+                                .map(|n| n.downcast::<Person>().is_some())
                                 .unwrap_or(false);
 
                             if is_person {
@@ -3654,7 +3656,7 @@ impl CimKeysApp {
                                 // Create NodeDeleted event with snapshot for redo
                                 let event = GraphEvent::NodeDeleted {
                                     node_id,
-                                    domain_node: node.domain_node.clone(),
+                                    lifted_node: node.lifted_node.clone(),
                                     position,
                                     color,
                                     label: label.clone(),
@@ -3702,16 +3704,14 @@ impl CimKeysApp {
                         if let Some(ref node_type_str) = self.selected_node_type {
                             use crate::domain::{OrganizationUnit, OrganizationUnitType, Person};
                             use crate::gui::graph_events::GraphEvent;
-                            use crate::gui::domain_node::DomainNode;
                             use chrono::Utc;
 
 
                             let node_id = Uuid::now_v7();
                             let dummy_org_id = self.organization_id.unwrap_or_else(|| Uuid::now_v7());
 
-                            // Create node based on selected type and current graph view
-                            // Now creates DomainNode directly - the canonical representation
-                            let (domain_node, label, color) = match node_type_str.as_str() {
+                            // Create node based on selected type using Kan extension pattern
+                            let (lifted_node, label, color) = match node_type_str.as_str() {
                                 // Organization graph nodes
                                 "Person" => {
                                     let person = Person {
@@ -3725,8 +3725,7 @@ impl CimKeysApp {
                                         active: true,
                                         owner_id: None,
                                     };
-                                    use crate::domain::KeyOwnerRole;
-                                    (DomainNode::inject_person(person, KeyOwnerRole::RootAuthority), "New Person".to_string(), self.view_model.colors.node_person)
+                                    (person.lift(), "New Person".to_string(), self.view_model.colors.node_person)
                                 }
                                 "Unit" => {
                                     let unit = OrganizationUnit {
@@ -3737,7 +3736,7 @@ impl CimKeysApp {
                                         nats_account_name: None,
                                         responsible_person_id: None,
                                     };
-                                    (DomainNode::inject_organization_unit(unit), "New Unit".to_string(), self.view_model.colors.node_unit)
+                                    (unit.lift(), "New Unit".to_string(), self.view_model.colors.node_unit)
                                 }
                                 "Location" => {
                                     use cim_domain::EntityId;
@@ -3755,7 +3754,7 @@ impl CimKeysApp {
                                             "12345".to_string(),
                                         ),
                                     ).expect("Failed to create location");
-                                    (DomainNode::inject_location(location), "New Location".to_string(), self.view_model.colors.node_location)
+                                    (location.lift(), "New Location".to_string(), self.view_model.colors.node_location)
                                 }
                                 // TODO: Role - complex type, implement later
                                 // TODO: Add NATS, PKI, and YubiKey node types
@@ -3766,10 +3765,10 @@ impl CimKeysApp {
                                 }
                             };
 
-                            // Create NodeCreated event
+                            // Create NodeCreated event using lifted node
                             let event = GraphEvent::NodeCreated {
                                 node_id,
-                                domain_node,
+                                lifted_node,
                                 position: *position,
                                 color,
                                 label: label.clone(),
@@ -3839,7 +3838,7 @@ impl CimKeysApp {
                 use crate::mvi::intent::NodeCreationType;
                 use crate::domain::{Organization, OrganizationUnit, OrganizationUnitType, Location, Role, Policy};
                 use crate::gui::graph_events::GraphEvent;
-                use crate::gui::domain_node::DomainNode;
+                use crate::lifting::LiftableDomain;
                 use chrono::Utc;
                 use std::collections::HashMap;
 
@@ -3850,8 +3849,8 @@ impl CimKeysApp {
                         let dummy_org_id = self.organization_id.unwrap_or_else(|| Uuid::now_v7());
 
                         // Create placeholder domain entity and generate event
-                        // Now creates DomainNode directly - the canonical representation
-                        let (domain_node, label, color) = match node_type {
+                        // Uses LiftableDomain::lift() for type-erased Kan extension
+                        let (lifted_node, label, color) = match node_type {
                             NodeCreationType::Organization => {
                                 let org = Organization {
                                     id: node_id,
@@ -3863,7 +3862,7 @@ impl CimKeysApp {
                                     metadata: HashMap::new(),
                                 };
                                 let label = org.name.clone();
-                                (DomainNode::inject_organization(org), label, self.view_model.colors.node_organization)
+                                (org.lift(), label, self.view_model.colors.node_organization)
                             }
                             NodeCreationType::OrganizationalUnit => {
                                 let unit = OrganizationUnit {
@@ -3875,7 +3874,7 @@ impl CimKeysApp {
                                     responsible_person_id: None,
                                 };
                                 let label = unit.name.clone();
-                                (DomainNode::inject_organization_unit(unit), label, self.view_model.colors.node_unit)
+                                (unit.lift(), label, self.view_model.colors.node_unit)
                             }
                             NodeCreationType::Person => {
                                 let person = Person {
@@ -3890,7 +3889,7 @@ impl CimKeysApp {
                                     owner_id: None,
                                 };
                                 let label = person.name.clone();
-                                (DomainNode::inject_person(person, KeyOwnerRole::Developer), label, self.view_model.colors.node_person)
+                                (person.lift(), label, self.view_model.colors.node_person)
                             }
                             NodeCreationType::Location => {
                                 use cim_domain::EntityId;
@@ -3913,7 +3912,7 @@ impl CimKeysApp {
                                 ).expect("Failed to create location");
 
                                 let label = location.name.clone();
-                                (DomainNode::inject_location(location), label, self.view_model.colors.node_location)
+                                (location.lift(), label, self.view_model.colors.node_location)
                             }
                             NodeCreationType::Role => {
                                 let role_data = Role {
@@ -3928,7 +3927,7 @@ impl CimKeysApp {
                                     active: true,
                                 };
                                 let label = role_data.name.clone();
-                                (DomainNode::inject_role(role_data), label, self.view_model.colors.node_role)
+                                (role_data.lift(), label, self.view_model.colors.node_role)
                             }
                             NodeCreationType::Policy => {
                                 let policy = Policy {
@@ -3943,14 +3942,14 @@ impl CimKeysApp {
                                     metadata: HashMap::new(),
                                 };
                                 let label = policy.name.clone();
-                                (DomainNode::inject_policy(policy), label, self.view_model.colors.orange_warning)
+                                (policy.lift(), label, self.view_model.colors.orange_warning)
                             }
                         };
 
                         // Create and apply NodeCreated event
                         let event = GraphEvent::NodeCreated {
                             node_id,
-                            domain_node,
+                            lifted_node,
                             position,
                             color,
                             label,
@@ -3977,9 +3976,9 @@ impl CimKeysApp {
                         #[cfg(feature = "policy")]
                         {
                             use super::gui::graph_events::GraphEvent as GuiGraphEvent;
-                            if let GuiGraphEvent::NodeCreated { domain_node, .. } = &event {
-                                // Use DomainNode accessors to extract data for domain event projection
-                                if let Some(org) = domain_node.organization() {
+                            if let GuiGraphEvent::NodeCreated { lifted_node, .. } = &event {
+                                // Use LiftedNode::downcast to extract data for domain event projection
+                                if let Some(org) = lifted_node.downcast::<Organization>() {
                                     use cim_domain_organization::events::{OrganizationEvent, OrganizationCreated};
                                     use cim_domain_organization::{OrganizationType, Organization as OrgMarker};
                                     use cim_domain::{EntityId, MessageIdentity, CorrelationId, CausationId};
@@ -4024,7 +4023,7 @@ impl CimKeysApp {
                                             tracing::warn!("Failed to project OrganizationCreated event: {:?}", e);
                                         }
                                     }
-                                } else if let Some(person) = domain_node.person() {
+                                } else if let Some(person) = lifted_node.downcast::<Person>() {
                                     use cim_domain_person::events::{PersonEvent, PersonCreated};
                                     use cim_domain_person::value_objects::PersonName;
                                     use cim_domain::EntityId;
@@ -4134,19 +4133,13 @@ impl CimKeysApp {
                                 let new_email = self.property_card.email().to_string();
                                 let new_enabled = self.property_card.enabled();
 
-                                // Capture old state (using DomainNode)
-                                let old_domain_node = node.domain_node.clone();
+                                // Capture old state using lifted_node (Kan extension pattern)
+                                let old_lifted_node = node.lifted_node.clone();
                                 let old_label = node.visualization().primary_text;
 
                                 // Create PropertyUpdate with all changed values
-                                // DomainNode::with_properties() applies only relevant updates per type:
-                                // - Organization: name, description
-                                // - OrganizationUnit: name
-                                // - Person: name, email, enabled (active)
-                                // - Location: name
-                                // - Role: name, description, enabled (active)
-                                // - Policy: name, description, enabled, claims
-                                // - All others: read-only, returns clone unchanged
+                                // Use deprecated bridge: DomainNode::with_properties() then convert
+                                // Future: Implement property updates directly on LiftedNode
                                 let update = PropertyUpdate::new()
                                     .with_name(new_name.clone())
                                     .with_description(new_description)
@@ -4154,14 +4147,16 @@ impl CimKeysApp {
                                     .with_enabled(new_enabled)
                                     .with_claims(self.property_card.claims());
 
-                                let new_domain_node = node.domain_node.with_properties(&update);
+                                // Bridge: use deprecated path then convert to LiftedNode
+                                #[allow(deprecated)]
+                                let new_lifted_node = node.domain_node.with_properties(&update).to_lifted_node(node_id);
 
                                 // Create and apply NodePropertiesChanged event
                                 let event = GraphEvent::NodePropertiesChanged {
                                     node_id,
-                                    old_domain_node,
+                                    old_lifted_node,
                                     old_label,
-                                    new_domain_node,
+                                    new_lifted_node,
                                     new_label: new_name.clone(),
                                     timestamp: Utc::now(),
                                 };
@@ -5450,9 +5445,9 @@ impl CimKeysApp {
     /// Remove role nodes from the graph (collapse to badges)
     fn remove_role_nodes(&mut self) {
         // Remove all PolicyRole nodes and their edges
-        // Use injection() instead of matches! for type checking
+        // Use injection helper for type checking
         self.org_graph.nodes.retain(|_, node| {
-            node.injection() != domain_node::Injection::PolicyRole
+            !node.injection().is_policy_role()
         });
 
         // Remove edges that connect to role nodes (HasRole, IncompatibleWith)
@@ -5809,10 +5804,10 @@ impl CimKeysApp {
         // Organization Aggregate
         let org_id = Uuid::now_v7();
         let people_count = self.org_graph.nodes.values()
-            .filter(|n| n.injection() == super::gui::domain_node::Injection::Person)
+            .filter(|n| n.injection().is_person())
             .count();
         let units_count = self.org_graph.nodes.values()
-            .filter(|n| n.injection() == super::gui::domain_node::Injection::OrganizationUnit)
+            .filter(|n| n.injection().is_organization_unit())
             .count();
         self.aggregates_graph.add_aggregate_organization_node(
             org_id,
@@ -5828,15 +5823,12 @@ impl CimKeysApp {
 
         // PKI Certificate Chain Aggregate
         let pki_id = Uuid::now_v7();
-        // Count PKI nodes from pki_graph
+        // Count PKI nodes from pki_graph using injection helpers
         let certs_count = self.pki_graph.nodes.values()
-            .filter(|n| matches!(n.injection(),
-                super::gui::domain_node::Injection::RootCertificate |
-                super::gui::domain_node::Injection::IntermediateCertificate |
-                super::gui::domain_node::Injection::LeafCertificate))
+            .filter(|n| n.injection().is_certificate())
             .count();
         let keys_count = self.pki_graph.nodes.values()
-            .filter(|n| n.injection() == super::gui::domain_node::Injection::Key)
+            .filter(|n| n.injection().is_key())
             .count();
         self.aggregates_graph.add_aggregate_pki_chain_node(
             pki_id,
@@ -5850,22 +5842,16 @@ impl CimKeysApp {
             view.color = self.view_model.colors.aggregate_pki_chain;
         }
 
-        // NATS Security Aggregate
+        // NATS Security Aggregate - using injection helpers
         let nats_id = Uuid::now_v7();
         let operators_count = self.nats_graph.nodes.values()
-            .filter(|n| matches!(n.injection(),
-                super::gui::domain_node::Injection::NatsOperator |
-                super::gui::domain_node::Injection::NatsOperatorSimple))
+            .filter(|n| n.injection().is_nats_operator())
             .count();
         let accounts_count = self.nats_graph.nodes.values()
-            .filter(|n| matches!(n.injection(),
-                super::gui::domain_node::Injection::NatsAccount |
-                super::gui::domain_node::Injection::NatsAccountSimple))
+            .filter(|n| n.injection().is_nats_account())
             .count();
         let users_count = self.nats_graph.nodes.values()
-            .filter(|n| matches!(n.injection(),
-                super::gui::domain_node::Injection::NatsUser |
-                super::gui::domain_node::Injection::NatsUserSimple))
+            .filter(|n| n.injection().is_nats_user())
             .count();
         self.aggregates_graph.add_aggregate_nats_security_node(
             nats_id,
@@ -5880,13 +5866,13 @@ impl CimKeysApp {
             view.color = self.view_model.colors.aggregate_nats_security;
         }
 
-        // YubiKey Provisioning Aggregate
+        // YubiKey Provisioning Aggregate - using injection helpers
         let yubikey_id = Uuid::now_v7();
         let devices_count = self.yubikey_graph.nodes.values()
-            .filter(|n| n.injection() == super::gui::domain_node::Injection::YubiKey)
+            .filter(|n| n.injection().is_yubikey_device())
             .count();
         let slots_count = self.yubikey_graph.nodes.values()
-            .filter(|n| n.injection() == super::gui::domain_node::Injection::PivSlot)
+            .filter(|n| n.injection().is_piv_slot())
             .count();
         self.aggregates_graph.add_aggregate_yubikey_provisioning_node(
             yubikey_id,
@@ -6564,7 +6550,7 @@ impl CimKeysApp {
                                 .on_press_maybe(
                                     if !self.root_passphrase.is_empty() &&
                                        self.root_passphrase == self.root_passphrase_confirm &&
-                                       self.org_graph.nodes.iter().any(|(_, n)| n.injection() == domain_node::Injection::Organization) {
+                                       self.org_graph.nodes.iter().any(|(_, n)| n.injection().is_organization()) {
                                         Some(Message::GeneratePkiFromGraph)
                                     } else {
                                         None
@@ -6577,7 +6563,7 @@ impl CimKeysApp {
                                 text("⚠️  Enter and confirm root passphrase above")
                                     .size(self.view_model.text_small)
                                     .color(self.view_model.colors.warning)
-                            } else if !self.org_graph.nodes.iter().any(|(_, n)| n.injection() == domain_node::Injection::Organization) {
+                            } else if !self.org_graph.nodes.iter().any(|(_, n)| n.injection().is_organization()) {
                                 text("⚠️  Create an organization in the Organization tab first")
                                     .size(self.view_model.text_small)
                                     .color(self.view_model.colors.warning)
@@ -7148,7 +7134,7 @@ impl CimKeysApp {
                                                     .size(self.view_model.text_large)
                                             )
                                                 .on_press_maybe(
-                                                    if self.org_graph.nodes.iter().any(|(_, n)| n.injection() == domain_node::Injection::Organization) {
+                                                    if self.org_graph.nodes.iter().any(|(_, n)| n.injection().is_organization()) {
                                                         Some(Message::GenerateNatsFromGraph)
                                                     } else {
                                                         None
@@ -7157,7 +7143,7 @@ impl CimKeysApp {
                                                 .padding(self.view_model.padding_xl)
                                                 .width(Length::Fill)
                                                 .style(CowboyCustomTheme::primary_button()),
-                                            if !self.org_graph.nodes.iter().any(|(_, n)| n.injection() == domain_node::Injection::Organization) {
+                                            if !self.org_graph.nodes.iter().any(|(_, n)| n.injection().is_organization()) {
                                                 text("⚠️  Create an organization in the Organization tab first")
                                                     .size(self.view_model.text_small)
                                                     .color(self.view_model.colors.warning)
@@ -7249,7 +7235,7 @@ impl CimKeysApp {
                                                     .size(self.view_model.text_large)
                                             )
                                                 .on_press_maybe(
-                                                    if self.org_graph.nodes.iter().any(|(_, n)| n.injection() == domain_node::Injection::Person) {
+                                                    if self.org_graph.nodes.iter().any(|(_, n)| n.injection().is_person()) {
                                                         Some(Message::ProvisionYubiKeysFromGraph)
                                                     } else {
                                                         None
@@ -7258,7 +7244,7 @@ impl CimKeysApp {
                                                 .padding(self.view_model.padding_xl)
                                                 .width(Length::Fill)
                                                 .style(CowboyCustomTheme::primary_button()),
-                                            if !self.org_graph.nodes.iter().any(|(_, n)| n.injection() == domain_node::Injection::Person) {
+                                            if !self.org_graph.nodes.iter().any(|(_, n)| n.injection().is_person()) {
                                                 text("⚠️  Add people with roles in the Organization tab first")
                                                     .size(self.view_model.text_small)
                                                     .color(self.view_model.colors.warning)
@@ -7429,17 +7415,12 @@ impl CimKeysApp {
             });
         }
 
-        // Count NATS entities from graph using DomainNode injection
-        use crate::gui::domain_node::Injection;
+        // Count NATS entities from graph using injection helpers
         for node in self.org_graph.nodes.values() {
-            match node.domain_node.injection() {
-                Injection::NatsAccount | Injection::NatsAccountSimple => {
-                    readiness.nats_account_count += 1;
-                }
-                Injection::NatsUser | Injection::NatsUserSimple => {
-                    readiness.nats_user_count += 1;
-                }
-                _ => {}
+            if node.injection().is_nats_account() {
+                readiness.nats_account_count += 1;
+            } else if node.injection().is_nats_user() {
+                readiness.nats_user_count += 1;
             }
         }
 

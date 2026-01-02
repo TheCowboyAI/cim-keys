@@ -2,6 +2,9 @@
 //!
 //! This module implements: **The organizational graph drives certificate-centric views**.
 //!
+//! NOTE: Uses deprecated `DomainNodeData` for pattern matching. Migration pending.
+#![allow(deprecated)]
+//!
 //! ## Flow
 //!
 //! 1. User selects a certificate node in the graph
@@ -46,7 +49,7 @@ use chrono::{DateTime, Utc};
 
 use crate::events::KeyAlgorithm;
 use crate::gui::graph::{OrganizationConcept, EdgeType};
-use crate::gui::domain_node::{DomainNodeData, Injection};
+use crate::gui::domain_node::DomainNodeData;
 
 /// Certificate type classification
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -161,12 +164,7 @@ impl CertificateAnalysis {
                         // Entity (person/org) this certificate was issued to
                         subject_entity_id = Some(edge.from);
                         if let Some(entity_node) = graph.nodes.get(&edge.from) {
-                            subject_entity_type = Some(match entity_node.domain_node.injection() {
-                                Injection::Person => "Person".to_string(),
-                                Injection::Organization => "Organization".to_string(),
-                                Injection::OrganizationUnit => "OrganizationalUnit".to_string(),
-                                _ => "Unknown".to_string(),
-                            });
+                            subject_entity_type = Some(entity_node.domain_node.injection().display_name().to_string());
                         }
                     }
                     _ => {}
