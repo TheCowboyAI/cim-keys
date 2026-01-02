@@ -221,7 +221,7 @@ pub fn handle_provision_yubikey_slot(
         yubikey_serial: cmd.yubikey_serial.clone(),
         slot: cmd.slot.hex(),
         purpose: map_auth_purpose_to_key_purpose(&cmd.purpose),
-        person_id: cmd.person.id,
+        person_id: cmd.person.id.as_uuid(),
         planned_at: Utc::now(),
         correlation_id: cmd.correlation_id,
         causation_id: cmd.causation_id,

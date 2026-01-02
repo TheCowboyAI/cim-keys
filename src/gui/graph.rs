@@ -19,18 +19,23 @@ use uuid::Uuid;
 use crate::domain::{
     Person, KeyDelegation, KeyOwnerRole, Organization, OrganizationUnit,
     Location, Policy, Role,
+    ids::{BootstrapRoleId, BootstrapPersonId},
 };
 use crate::domain_projections::NatsIdentityProjection;
 use super::edge_indicator::EdgeCreationIndicator;
 use super::graph_events::{EventStack, GraphEvent};
 use super::GraphLayout;
 use super::cowboy_theme::CowboyAppTheme as CowboyCustomTheme;
-use super::domain_node::{DomainNode, DomainNodeData, Injection, VisualizationData};
 use super::view_model::ViewModel;
 use crate::lifting::{
-    LiftedNode, LiftableDomain,
+    LiftedNode, LiftableDomain, Injection, VisualizationData, icon_for_injection,
     NatsOperatorSimple, NatsAccountSimple, NatsUserSimple,
     AggregateOrganization, AggregatePkiChain, AggregateNatsSecurity, AggregateYubiKeyProvisioning,
+};
+use crate::domain::visualization::{
+    PolicyRole as PolicyRoleView, PolicyCategory as PolicyCategoryView,
+    PolicyGroup as PolicyGroupView, PolicyClaimView,
+    PolicyRoleId, PolicyCategoryId, PolicyGroupId, ClaimId,
 };
 use crate::domain::pki::Certificate;
 use crate::domain::yubikey::{YubiKeyDevice, PivSlotView};
@@ -173,9 +178,6 @@ pub struct ConceptEntity {
     pub id: Uuid,
     /// Lifted domain node using Kan extension pattern
     pub lifted_node: LiftedNode,
-    /// Bridge field for compatibility during migration (deprecated)
-    #[deprecated(note = "Use lifted_node directly. This field will be removed.")]
-    pub domain_node: DomainNode,
 }
 
 impl ConceptEntity {
@@ -186,32 +188,9 @@ impl ConceptEntity {
     /// separately in `NodeView` within `OrganizationConcept.node_views`.
     pub fn from_lifted_node(lifted_node: LiftedNode) -> Self {
         let id = lifted_node.id;
-        // Create a minimal DomainNode for bridge compatibility
-        // This will be removed when migration is complete
-        #[allow(deprecated)]
-        let domain_node = DomainNode::new_minimal(lifted_node.injection);
-        #[allow(deprecated)]
         Self {
             id,
             lifted_node,
-            domain_node,
-        }
-    }
-
-    /// Create a new ConceptEntity from a DomainNode (bridge method)
-    ///
-    /// Uses the categorical coproduct pattern - domain_node carries all type
-    /// information. UI concerns (position, color, label) are stored separately
-    /// in `NodeView` within `OrganizationConcept.node_views`.
-    #[deprecated(note = "Use from_lifted_node with LiftableDomain::lift() instead")]
-    pub fn from_domain_node(id: Uuid, domain_node: DomainNode) -> Self {
-        // Create LiftedNode from DomainNode for forward compatibility
-        let lifted_node = domain_node.to_lifted_node(id);
-        #[allow(deprecated)]
-        Self {
-            id,
-            lifted_node,
-            domain_node,
         }
     }
 
@@ -222,7 +201,7 @@ impl ConceptEntity {
     pub fn visualization(&self) -> VisualizationData {
         // Use lifted_node properties directly for color and labels
         // For icon, derive from injection type
-        let (icon, icon_font) = super::domain_node::icon_for_injection(self.lifted_node.injection);
+        let (icon, icon_font) = icon_for_injection(self.lifted_node.injection);
         VisualizationData {
             color: self.lifted_node.color,
             primary_text: self.lifted_node.label.clone(),
@@ -245,9 +224,7 @@ impl ConceptEntity {
         &self,
         theme: &crate::domains::typography::VerifiedTheme,
     ) -> crate::gui::folds::view::ThemedVisualizationData {
-        use crate::gui::folds::view::ThemedVisualizationFold;
-        #[allow(deprecated)]
-        self.domain_node.fold(&ThemedVisualizationFold::new(theme))
+        self.lifted_node.themed_visualization(theme)
     }
 
     /// Get the injection type (what kind of domain entity this is)
@@ -694,7 +671,7 @@ impl OrganizationConcept {
     /// - HasRole edge (verb) connecting Person → Role
     pub fn add_node(&mut self, person: Person, key_role: KeyOwnerRole) {
         // Create Person node
-        let person_id = person.id;
+        let person_id = person.id.as_uuid();
         let person_lifted = person.lift();
         let person_position = self.calculate_node_position(person_id);
         let person_node = ConceptEntity::from_lifted_node(person_lifted);
@@ -704,18 +681,18 @@ impl OrganizationConcept {
         self.node_views.insert(person_id, person_view);
 
         // Create Role node from KeyOwnerRole
-        let role_id = Uuid::now_v7();
         let role = Role {
-            id: role_id,
+            id: BootstrapRoleId::new(),
             name: format!("{:?}", key_role),
             description: format!("Key owner role: {:?}", key_role),
-            organization_id: person.organization_id,
+            organization_id: person.organization_id.clone(),
             unit_id: None,
             required_policies: vec![],
             responsibilities: vec![],
-            created_by: person_id,
+            created_by: person.id.clone(),
             active: true,
         };
+        let role_id = role.id.as_uuid();
         let role_lifted = role.lift();
         let role_position = self.calculate_node_position(role_id);
         let role_node = ConceptEntity::from_lifted_node(role_lifted);
@@ -738,7 +715,7 @@ impl OrganizationConcept {
 
     /// Add an organization node to the graph
     pub fn add_organization_node(&mut self, org: Organization) {
-        let node_id = org.id;
+        let node_id = org.id.as_uuid();
         let lifted_node = org.lift();
         let position = self.calculate_node_position(node_id);
         let node = ConceptEntity::from_lifted_node(lifted_node);
@@ -750,7 +727,7 @@ impl OrganizationConcept {
 
     /// Add an organizational unit node to the graph
     pub fn add_org_unit_node(&mut self, unit: OrganizationUnit) {
-        let node_id = unit.id;
+        let node_id = unit.id.as_uuid();
         let lifted_node = unit.lift();
         let position = self.calculate_node_position(node_id);
         let node = ConceptEntity::from_lifted_node(lifted_node);
@@ -775,7 +752,7 @@ impl OrganizationConcept {
 
     /// Add a role node to the graph (domain Role type)
     pub fn add_domain_role_node(&mut self, role: Role) {
-        let node_id = role.id;
+        let node_id = role.id.as_uuid();
         let lifted_node = role.lift();
         let position = self.calculate_node_position(node_id);
         let node = ConceptEntity::from_lifted_node(lifted_node);
@@ -799,11 +776,12 @@ impl OrganizationConcept {
         separation_class: crate::policy::SeparationClass,
         claim_count: usize,
     ) {
-        let domain_node = DomainNode::inject_policy_role_uuid(
-            role_id, name, purpose, level, separation_class, claim_count
+        let policy_role = PolicyRoleView::new(
+            PolicyRoleId::from_uuid(role_id),
+            name, purpose, level, separation_class, claim_count
         );
         let position = self.calculate_node_position(role_id);
-        let node = ConceptEntity::from_domain_node(role_id, domain_node);
+        let node = ConceptEntity::from_lifted_node(policy_role.lift());
         let view = node.create_view(position);
 
         self.nodes.insert(role_id, node);
@@ -811,19 +789,16 @@ impl OrganizationConcept {
     }
 
     /// Add a claim node to the graph
-    /// Color is derived from FoldVisualization based on category
-    ///
-    /// NOTE: Uses deprecated pattern - creates inline PolicyClaim data
-    #[allow(deprecated)]
+    /// Color is derived from LiftableDomain lift() based on category
     pub fn add_claim_node(
         &mut self,
         claim_id: Uuid,
         name: String,
         category: String,
     ) {
-        let domain_node = DomainNode::inject_policy_claim_uuid(claim_id, name, category);
+        let policy_claim = PolicyClaimView::new(ClaimId::from_uuid(claim_id), name, category);
         let position = self.calculate_node_position(claim_id);
-        let node = ConceptEntity::from_domain_node(claim_id, domain_node);
+        let node = ConceptEntity::from_lifted_node(policy_claim.lift());
         let view = node.create_view(position);
 
         self.nodes.insert(claim_id, node);
@@ -831,9 +806,6 @@ impl OrganizationConcept {
     }
 
     /// Add a policy category node to the graph (for progressive disclosure)
-    ///
-    /// NOTE: Uses deprecated pattern - creates inline PolicyCategory data
-    #[allow(deprecated)]
     pub fn add_category_node(
         &mut self,
         category_id: Uuid,
@@ -841,9 +813,11 @@ impl OrganizationConcept {
         claim_count: usize,
         expanded: bool,
     ) {
-        let domain_node = DomainNode::inject_policy_category_uuid(category_id, name, claim_count, expanded);
+        let policy_category = PolicyCategoryView::new(
+            PolicyCategoryId::from_uuid(category_id), name, claim_count, expanded
+        );
         let position = self.calculate_node_position(category_id);
-        let node = ConceptEntity::from_domain_node(category_id, domain_node);
+        let node = ConceptEntity::from_lifted_node(policy_category.lift());
         let view = node.create_view(position);
 
         self.nodes.insert(category_id, node);
@@ -851,9 +825,6 @@ impl OrganizationConcept {
     }
 
     /// Add a separation class group node to the graph (for progressive disclosure)
-    ///
-    /// NOTE: Uses deprecated pattern - creates inline PolicyGroup data
-    #[allow(deprecated)]
     pub fn add_separation_class_node(
         &mut self,
         class_id: Uuid,
@@ -862,11 +833,11 @@ impl OrganizationConcept {
         role_count: usize,
         expanded: bool,
     ) {
-        let domain_node = DomainNode::inject_policy_group_uuid(
-            class_id, name, separation_class, role_count, expanded
+        let policy_group = PolicyGroupView::new(
+            PolicyGroupId::from_uuid(class_id), name, separation_class, role_count, expanded
         );
         let position = self.calculate_node_position(class_id);
-        let node = ConceptEntity::from_domain_node(class_id, domain_node);
+        let node = ConceptEntity::from_lifted_node(policy_group.lift());
         let view = node.create_view(position);
 
         self.nodes.insert(class_id, node);
@@ -875,7 +846,7 @@ impl OrganizationConcept {
 
     /// Add a policy node to the graph
     pub fn add_policy_node(&mut self, policy: Policy) {
-        let node_id = policy.id;
+        let node_id = policy.id.as_uuid();
         let lifted_node = policy.lift();
         let position = self.calculate_node_position(node_id);
         let node = ConceptEntity::from_lifted_node(lifted_node);
@@ -990,7 +961,7 @@ impl OrganizationConcept {
         &mut self,
         cert_id: Uuid,
         subject: String,
-        issuer: String,
+        _issuer: String,
         not_before: chrono::DateTime<chrono::Utc>,
         not_after: chrono::DateTime<chrono::Utc>,
         key_usage: Vec<String>,
@@ -1970,19 +1941,24 @@ impl OrganizationConcept {
     fn hierarchical_layout(&mut self) {
         let center = Point { x: 400.0, y: 300.0 };
 
-        // Group nodes by type using DomainNode
+        // Group nodes by type using LiftedNode
         let mut type_groups: HashMap<String, Vec<Uuid>> = HashMap::new();
         for (id, node) in &self.nodes {
-            let type_key = match node.domain_node.data() {
-                DomainNodeData::Person { role, .. } => match role {
-                    KeyOwnerRole::RootAuthority => "Person_RootAuthority",
-                    KeyOwnerRole::SecurityAdmin => "Person_SecurityAdmin",
-                    KeyOwnerRole::BackupHolder => "Person_BackupHolder",
-                    KeyOwnerRole::Auditor => "Person_Auditor",
-                    KeyOwnerRole::Developer => "Person_Developer",
-                    KeyOwnerRole::ServiceAccount => "Person_ServiceAccount",
-                },
-                _ => node.domain_node.injection().display_name(),
+            let type_key = if let Some(person) = node.lifted_node.downcast::<Person>() {
+                // Group people by their primary role type
+                use crate::domain::RoleType;
+                let primary_role = person.roles.first().map(|r| &r.role_type);
+                match primary_role {
+                    Some(RoleType::Executive) => "Person_Executive",
+                    Some(RoleType::Administrator) => "Person_Administrator",
+                    Some(RoleType::Developer) => "Person_Developer",
+                    Some(RoleType::Operator) => "Person_Operator",
+                    Some(RoleType::Auditor) => "Person_Auditor",
+                    Some(RoleType::Service) => "Person_Service",
+                    None => "Person",
+                }
+            } else {
+                node.lifted_node.injection().display_name()
             };
             type_groups.entry(type_key.to_string()).or_insert_with(Vec::new).push(*id);
         }
@@ -2811,11 +2787,11 @@ impl OrganizationConcept {
         for (id, node) in &self.nodes {
             let injection = node.injection();
             if injection.is_yubikey_device() {
-                if let Some(serial) = node.domain_node.yubikey_serial() {
+                if let Some(serial) = node.lifted_node.yubikey_serial() {
                     yubikeys.push((*id, serial.to_string()));
                 }
             } else if injection.is_piv_slot() {
-                if let Some(serial) = node.domain_node.yubikey_serial() {
+                if let Some(serial) = node.lifted_node.yubikey_serial() {
                     piv_slots.push((*id, serial.to_string()));
                 }
             }
@@ -2883,13 +2859,13 @@ impl OrganizationConcept {
                 let fallback_label = self.node_views.get(id)
                     .map(|v| v.label.clone())
                     .unwrap_or_default();
-                let name = node.domain_node.nats_account_name()
+                let name = node.lifted_node.nats_account_name()
                     .map(|s| s.to_string())
                     .unwrap_or(fallback_label);
                 accounts.push((*id, name));
             } else if injection.is_nats_user() {
                 // Use the nats_user_account_name accessor
-                let account_name = node.domain_node.nats_user_account_name()
+                let account_name = node.lifted_node.nats_user_account_name()
                     .map(|s| s.to_string())
                     .unwrap_or_default();
                 users.push((*id, account_name));
@@ -2949,7 +2925,7 @@ impl OrganizationConcept {
 
     /// Check if a node should be visible based on current filter settings
     pub fn should_show_node(&self, node: &ConceptEntity) -> bool {
-        let injection = node.domain_node.injection();
+        let injection = node.lifted_node.injection();
         if injection.is_person() {
             self.filter_show_people
         } else if injection.is_org_filterable() {
@@ -3114,7 +3090,7 @@ impl OrganizationConcept {
         let mut yubikey_nodes = Vec::new();
 
         for (id, node) in &self.nodes {
-            let injection = node.domain_node.injection();
+            let injection = node.lifted_node.injection();
             if injection.is_person() {
                 person_nodes.push(*id);
             } else if injection.is_org_filterable() {
@@ -3888,7 +3864,7 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
 
                     for (node_id, node) in &self.nodes {
                         // Check if this is an expandable node
-                        let is_expandable = node.domain_node.injection().is_policy_group_or_category();
+                        let is_expandable = node.lifted_node.injection().is_policy_group_or_category();
 
                         if is_expandable {
                             // Get position from node_views
@@ -4206,12 +4182,12 @@ pub fn view_graph<'a>(graph: &'a OrganizationConcept, vm: &'a ViewModel) -> Elem
     .height(Length::Fill);
 
 
-    // Show selected node details using the DomainNode fold pattern
+    // Show selected node details using the LiftedNode fold pattern
     // This replaces the 220-line match statement with the FoldDetailPanel catamorphism
     if let Some(selected_id) = graph.selected_node {
         if let Some(node) = graph.nodes.get(&selected_id) {
-            // Get detail panel data from the DomainNode fold
-            let detail_data = node.domain_node.detail_panel();
+            // Get detail panel data from the LiftedNode fold
+            let detail_data = node.lifted_node.detail_panel();
 
             // Build the column from DetailPanelData
             let mut details = column![

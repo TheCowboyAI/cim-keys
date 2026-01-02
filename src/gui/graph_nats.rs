@@ -2,7 +2,7 @@
 //!
 //! This module implements: **The organizational graph drives NATS infrastructure creation**.
 //!
-//! NOTE: This module uses deprecated `DomainNode` types. Migration pending.
+//! Uses `NatsOperatorSimple`, `NatsAccountSimple`, `NatsUserSimple` types with `LiftableDomain::lift()`.
 //!
 //! ## Flow
 //!
@@ -38,16 +38,12 @@
 //!                   └─> NATS User: "carol" (permissions: pub/sub)
 //! ```
 
-#![allow(deprecated)] // Bridge module: Uses deprecated DomainNode for NATS node creation
-
 use std::collections::HashMap;
 use uuid::Uuid;
-use chrono::Utc;
 
 use crate::domain::{Organization, OrganizationUnit, Person, KeyOwnerRole, Role};
 use crate::gui::graph::{OrganizationConcept, ConceptEntity, ConceptRelation, EdgeType};
-use crate::gui::domain_node::DomainNode;
-use crate::lifting::LiftableDomain;
+use crate::lifting::{LiftableDomain, NatsOperatorSimple, NatsAccountSimple, NatsUserSimple};
 use iced::{Color, Point};
 
 /// Result of analyzing the organizational graph for NATS generation
@@ -298,46 +294,15 @@ pub fn generate_nats_from_graph(
 
 /// Create NATS Operator node from Organization
 fn create_nats_operator_node(nats_id: Uuid, org: &Organization) -> Result<(ConceptEntity, Point), String> {
-    // Create a simplified identity projection for visualization
-    // TODO: Generate actual NKeys and JWTs using NatsProjection when NSC integration is complete
-    use crate::value_objects::{NKeyPair, NatsJwt, NKeyType, NKeySeed, NKeyPublic};
-    use crate::domain_projections::NatsIdentityProjection;
-
-    let nkey = NKeyPair {
-        id: Uuid::now_v7(),
-        key_type: NKeyType::Operator,
-        seed: NKeySeed::new(
-            NKeyType::Operator,
-            format!("SO_PLACEHOLDER_{}", nats_id), // Placeholder seed
-            Utc::now(),
-        ),
-        public_key: NKeyPublic::new(
-            NKeyType::Operator,
-            format!("O_PLACEHOLDER_{}", nats_id), // Placeholder public key
-        ),
-        name: Some(org.name.clone()),
-        expires_at: None,
-    };
-
-    let jwt = NatsJwt::new(
-        NKeyType::Operator,
-        format!("OPERATOR_JWT_{}", nats_id), // Placeholder
-        nkey.public_key.clone(),
-        nkey.public_key.clone(), // Self-signed
-        Utc::now(),
-        None,
+    // Use simplified visualization type instead of full NatsIdentityProjection
+    let operator = NatsOperatorSimple::new(
+        nats_id,
+        org.name.clone(),
+        Some(org.id.as_uuid()),
     );
 
-    let identity = NatsIdentityProjection {
-        nkey,
-        jwt,
-        credential: None,
-        events: Vec::new(), // US-021: GUI placeholder (events collected during projection)
-    };
-
-    let domain_node = DomainNode::inject_nats_operator(identity);
     let position = Point::new(400.0, 100.0); // Top center
-    let entity = ConceptEntity::from_domain_node(nats_id, domain_node);
+    let entity = ConceptEntity::from_lifted_node(operator.lift());
     Ok((entity, position))
 }
 
@@ -347,47 +312,16 @@ fn create_nats_account_node(
     unit: &OrganizationUnit,
     _parent_nats_id: &Uuid,
 ) -> Result<(ConceptEntity, Point), String> {
-    use crate::value_objects::{NKeyPair, NatsJwt, NKeyType, NKeySeed, NKeyPublic};
-    use crate::domain_projections::NatsIdentityProjection;
-
-    let nkey = NKeyPair {
-        id: Uuid::now_v7(),
-        key_type: NKeyType::Account,
-        seed: NKeySeed::new(
-            NKeyType::Account,
-            format!("SA_PLACEHOLDER_{}", nats_id),
-            Utc::now(),
-        ),
-        public_key: NKeyPublic::new(
-            NKeyType::Account,
-            format!("A_PLACEHOLDER_{}", nats_id),
-        ),
-        name: Some(unit.name.clone()),
-        expires_at: None,
-    };
-
-    let jwt = NatsJwt::new(
-        NKeyType::Account,
-        format!("ACCOUNT_JWT_{}", nats_id),
-        NKeyPublic::new(
-            NKeyType::Operator,
-            "O_OPERATOR_PLACEHOLDER".to_string(),
-        ),
-        nkey.public_key.clone(),
-        Utc::now(),
-        None,
+    // Use simplified visualization type instead of full NatsIdentityProjection
+    let account = NatsAccountSimple::new(
+        nats_id,
+        unit.name.clone(),
+        Some(unit.id.as_uuid()),
+        false, // Not a system account
     );
 
-    let identity = NatsIdentityProjection {
-        nkey,
-        jwt,
-        credential: None,
-        events: Vec::new(), // US-021: GUI placeholder (events collected during projection)
-    };
-
-    let domain_node = DomainNode::inject_nats_account(identity);
     let position = Point::new(400.0, 250.0); // Middle
-    let entity = ConceptEntity::from_domain_node(nats_id, domain_node);
+    let entity = ConceptEntity::from_lifted_node(account.lift());
     Ok((entity, position))
 }
 
@@ -398,56 +332,18 @@ fn create_nats_user_node(
     _role: &KeyOwnerRole,
     _parent_nats_id: &Uuid,
 ) -> Result<(ConceptEntity, Point), String> {
-    use crate::value_objects::{NKeyPair, NatsJwt, NatsCredential, NKeyType, NKeySeed, NKeyPublic};
-    use crate::domain_projections::NatsIdentityProjection;
-
     let username = person.name.split_whitespace().next().unwrap_or(&person.name).to_lowercase();
 
-    let nkey = NKeyPair {
-        id: Uuid::now_v7(),
-        key_type: NKeyType::User,
-        seed: NKeySeed::new(
-            NKeyType::User,
-            format!("SU_PLACEHOLDER_{}", nats_id),
-            Utc::now(),
-        ),
-        public_key: NKeyPublic::new(
-            NKeyType::User,
-            format!("U_PLACEHOLDER_{}", nats_id),
-        ),
-        name: Some(username.clone()),
-        expires_at: None,
-    };
-
-    let jwt = NatsJwt::new(
-        NKeyType::User,
-        format!("USER_JWT_{}", nats_id),
-        NKeyPublic::new(
-            NKeyType::Account,
-            "A_ACCOUNT_PLACEHOLDER".to_string(),
-        ),
-        nkey.public_key.clone(),
-        Utc::now(),
-        None,
+    // Use simplified visualization type instead of full NatsIdentityProjection
+    let user = NatsUserSimple::new(
+        nats_id,
+        username,
+        Some(person.id.as_uuid()),
+        "default".to_string(), // Account name (simplified)
     );
 
-    let credential = NatsCredential {
-        id: Uuid::now_v7(),
-        jwt: jwt.clone(),
-        seed: nkey.seed.clone(),
-        name: Some(username.clone()),
-    };
-
-    let identity = NatsIdentityProjection {
-        nkey,
-        jwt,
-        credential: Some(credential),
-        events: Vec::new(), // US-021: GUI placeholder (events collected during projection)
-    };
-
-    let domain_node = DomainNode::inject_nats_user(identity);
     let position = Point::new(400.0, 400.0); // Bottom
-    let entity = ConceptEntity::from_domain_node(nats_id, domain_node);
+    let entity = ConceptEntity::from_lifted_node(user.lift());
     Ok((entity, position))
 }
 
@@ -482,8 +378,8 @@ pub fn add_nats_to_graph(
 mod tests {
     use super::*;
     use crate::domain::{Organization, OrganizationUnit};
+    use crate::domain::ids::{BootstrapOrgId, UnitId};
     use std::collections::HashMap;
-    use chrono::Utc;
 
     #[test]
     fn test_analyze_simple_org_for_nats() {
@@ -491,7 +387,7 @@ mod tests {
 
         // Create organization
         let org = Organization {
-            id: Uuid::now_v7(),
+            id: BootstrapOrgId::new(),
             name: "TestOrg".to_string(),
             display_name: "Test Organization".to_string(),
             description: None,
@@ -511,11 +407,13 @@ mod tests {
     fn test_determine_nats_generation_order() {
         let mut hierarchy = NatsHierarchy::new();
 
-        let org_id = Uuid::now_v7();
-        let unit_id = Uuid::now_v7();
-        let _person_id = Uuid::now_v7();
+        let org_id = BootstrapOrgId::new();
+        let unit_id = UnitId::new();
 
-        hierarchy.root_organization = Some((org_id, Organization {
+        let org_uuid = org_id.as_uuid();
+        let unit_uuid = unit_id.as_uuid();
+
+        hierarchy.root_organization = Some((org_uuid, Organization {
             id: org_id,
             name: "TestOrg".to_string(),
             display_name: "Test Organization".to_string(),
@@ -525,7 +423,7 @@ mod tests {
             metadata: HashMap::new(),
         }));
 
-        hierarchy.nats_accounts.insert(unit_id, (
+        hierarchy.nats_accounts.insert(unit_uuid, (
             OrganizationUnit {
                 id: unit_id,
                 name: "Engineering".to_string(),
@@ -534,13 +432,13 @@ mod tests {
                 responsible_person_id: None,
             nats_account_name: None,
             },
-            org_id,
+            org_uuid,
         ));
 
         let order = determine_generation_order(&hierarchy);
 
         assert_eq!(order.len(), 2);
-        assert_eq!(order[0], NatsGenerationOrder::Operator(org_id));
-        assert_eq!(order[1], NatsGenerationOrder::Account(unit_id));
+        assert_eq!(order[0], NatsGenerationOrder::Operator(org_uuid));
+        assert_eq!(order[1], NatsGenerationOrder::Account(unit_uuid));
     }
 }

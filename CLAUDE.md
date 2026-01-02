@@ -55,12 +55,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 9. **A9: Semantic Preservation** - Compositional laws must hold ((f >>> g) >>> h = f >>> (g >>> h))
 10. **A10: Continuous Time Semantics** - Time is continuous in semantics (discrete in implementation)
 
-### Current Compliance: 50% (5/10 axioms)
-
-**Working Well**: A3 (decoupling), A5 (totality), A7 (event logs)
-**Missing**: A1 (signal kinds), A2 (vectors), A6 (routing), A8 (feedback), A10 (continuous time)
-**Partial**: A4 (causality tracked at runtime, not type-level), A9 (no compositional laws)
-
 ### When Developing:
 
 - [ ] Check N_ARY_FRP_AXIOMS.md before adding new event/signal types
@@ -70,11 +64,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - [ ] Test compositional laws with property tests
 - [ ] Document temporal semantics (Event vs Step vs Continuous)
 
-**See N_ARY_FRP_COMPLIANCE_ANALYSIS.md for gap analysis and roadmap.**
-
 ## 🔴 CRITICAL DIRECTIVE: PROGRESS LOGGING
 
-**YOU MUST maintain a progress log at EVERY natural break point:**
+**YOU MUST maintain a progress.json log at EVERY natural break point:**
 - After completing each file modification
 - Before switching between major components
 - When encountering errors or design decisions

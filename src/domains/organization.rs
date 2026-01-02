@@ -167,12 +167,12 @@ impl OrganizationEntity {
     /// Get entity ID
     pub fn id(&self) -> Uuid {
         match &self.data {
-            OrganizationData::Person { person, .. } => person.id,
-            OrganizationData::Organization(o) => o.id,
-            OrganizationData::OrganizationUnit(u) => u.id,
+            OrganizationData::Person { person, .. } => person.id.as_uuid(),
+            OrganizationData::Organization(o) => o.id.as_uuid(),
+            OrganizationData::OrganizationUnit(u) => u.id.as_uuid(),
             OrganizationData::Location(l) => *l.id().as_uuid(),
-            OrganizationData::Role(r) => r.id,
-            OrganizationData::Policy(p) => p.id,
+            OrganizationData::Role(r) => r.id.as_uuid(),
+            OrganizationData::Policy(p) => p.id.as_uuid(),
         }
     }
 
@@ -223,6 +223,7 @@ pub trait FoldOrganizationEntity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::ids::BootstrapOrgId;
 
     /// Test fold that returns injection type
     struct InjectionFolder;
@@ -253,7 +254,7 @@ mod tests {
     #[test]
     fn test_injection_preserves_type() {
         let org = Organization {
-            id: Uuid::now_v7(),
+            id: BootstrapOrgId::new(),
             name: "test-org".to_string(),
             display_name: "Test Org".to_string(),
             description: None,

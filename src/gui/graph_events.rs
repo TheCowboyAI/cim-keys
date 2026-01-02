@@ -278,24 +278,29 @@ impl Default for EventStack {
 mod tests {
     use super::*;
     use crate::domain::Person;
+    use crate::domain::ids::{BootstrapOrgId, BootstrapPersonId};
     use crate::lifting::LiftableDomain;
 
-    #[test]
-    fn test_event_stack_push() {
-        let mut stack = EventStack::new(10);
-        let person = Person {
-            id: Uuid::now_v7(),
+    fn make_test_person() -> Person {
+        Person {
+            id: BootstrapPersonId::new(),
             name: "Test Person".to_string(),
             email: "test@example.com".to_string(),
             roles: vec![],
-            organization_id: Uuid::now_v7(),
+            organization_id: BootstrapOrgId::new(),
             unit_ids: vec![],
             active: true,
             nats_permissions: None,
             owner_id: None,
-        };
+        }
+    }
 
-        let node_id = person.id;
+    #[test]
+    fn test_event_stack_push() {
+        let mut stack = EventStack::new(10);
+        let person = make_test_person();
+
+        let node_id = person.id.as_uuid();
         let lifted_node = person.lift();
 
         let event = GraphEvent::NodeCreated {
@@ -314,19 +319,9 @@ mod tests {
 
     #[test]
     fn test_event_compensation() {
-        let person = Person {
-            id: Uuid::now_v7(),
-            name: "Test Person".to_string(),
-            email: "test@example.com".to_string(),
-            roles: vec![],
-            organization_id: Uuid::now_v7(),
-            unit_ids: vec![],
-            active: true,
-            nats_permissions: None,
-            owner_id: None,
-        };
+        let person = make_test_person();
 
-        let node_id = person.id;
+        let node_id = person.id.as_uuid();
         let lifted_node = person.lift();
 
         let created = GraphEvent::NodeCreated {
@@ -345,19 +340,9 @@ mod tests {
     #[test]
     fn test_undo_redo() {
         let mut stack = EventStack::new(10);
-        let person = Person {
-            id: Uuid::now_v7(),
-            name: "Test Person".to_string(),
-            email: "test@example.com".to_string(),
-            roles: vec![],
-            organization_id: Uuid::now_v7(),
-            unit_ids: vec![],
-            active: true,
-            nats_permissions: None,
-            owner_id: None,
-        };
+        let person = make_test_person();
 
-        let node_id = person.id;
+        let node_id = person.id.as_uuid();
         let lifted_node = person.lift();
 
         let event = GraphEvent::NodeCreated {
@@ -386,17 +371,7 @@ mod tests {
     #[test]
     fn test_max_size() {
         let mut stack = EventStack::new(3);
-        let person = Person {
-            id: Uuid::now_v7(),
-            name: "Test Person".to_string(),
-            email: "test@example.com".to_string(),
-            roles: vec![],
-            organization_id: Uuid::now_v7(),
-            unit_ids: vec![],
-            active: true,
-            nats_permissions: None,
-            owner_id: None,
-        };
+        let person = make_test_person();
 
         for i in 0..5 {
             let lifted_node = person.clone().lift();

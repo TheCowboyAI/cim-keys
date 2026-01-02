@@ -180,9 +180,12 @@ pub mod verified {
     };
 
     /// Get the default verified theme (cached)
+    ///
+    /// Uses `cim_default()` which assumes fonts are loaded via Iced.
+    /// Falls back to emoji icons first, then Material Icons, then text.
     pub fn default_theme() -> &'static VerifiedTheme {
         static THEME: OnceLock<VerifiedTheme> = OnceLock::new();
-        THEME.get_or_init(|| VerifiedTheme::text_only_fallback())
+        THEME.get_or_init(|| VerifiedTheme::cim_default())
     }
 
     /// Get the theme's color palette

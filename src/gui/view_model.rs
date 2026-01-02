@@ -668,7 +668,7 @@ impl ColorPalette {
     /// - PKI Chain: Orange (security, certificates)
     /// - NATS Security: Green (messaging, connectivity)
     /// - YubiKey: Purple (hardware, provisioning)
-    pub fn aggregate_color(&self, injection: &super::domain_node::Injection) -> Color {
+    pub fn aggregate_color(&self, injection: &crate::lifting::Injection) -> Color {
         if injection.is_aggregate_organization() {
             self.aggregate_organization
         } else if injection.is_aggregate_pki_chain() {

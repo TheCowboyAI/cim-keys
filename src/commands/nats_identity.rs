@@ -57,7 +57,7 @@ pub fn handle_create_nats_operator(
         name: cmd.organization.name.clone(),
         public_key: identity.nkey.public_key_string().to_string(),
         created_by: format!("cim-keys-operator-bootstrap"), // System-initiated bootstrap
-        organization_id: Some(cmd.organization.id),
+        organization_id: Some(cmd.organization.id.as_uuid()),
         correlation_id: cmd.correlation_id,
         causation_id: cmd.causation_id,
     }));
@@ -124,7 +124,7 @@ pub fn handle_create_nats_account(
         is_system: matches!(cmd.account, AccountIdentity::Organization(_)),
         created_by: format!("cim-keys-account-bootstrap"),
         organization_unit_id: match &cmd.account {
-            AccountIdentity::OrganizationUnit(unit) => Some(unit.id),
+            AccountIdentity::OrganizationUnit(unit) => Some(unit.id.as_uuid()),
             AccountIdentity::Organization(_) => None,
         },
         correlation_id: cmd.correlation_id,
@@ -294,7 +294,7 @@ pub fn handle_create_nats_user(cmd: CreateNatsUser) -> Result<NatsUserCreated, S
         public_key: identity.nkey.public_key_string().to_string(),
         created_by: format!("cim-keys-user-bootstrap"),
         person_id: match &cmd.user {
-            UserIdentity::Person(p) => Some(p.id),
+            UserIdentity::Person(p) => Some(p.id.as_uuid()),
             _ => None,
         },
         correlation_id: cmd.correlation_id,
@@ -422,12 +422,13 @@ pub fn handle_bootstrap_nats_infrastructure(
 mod tests {
     use super::*;
     use crate::domain::{Organization, OrganizationUnit, OrganizationUnitType, Person};
+    use crate::domain::ids::{BootstrapOrgId, UnitId, BootstrapPersonId};
     use crate::value_objects::NKeyType;
 
     #[test]
     fn test_create_operator_emits_event() {
         let org = Organization {
-            id: Uuid::now_v7(),
+            id: BootstrapOrgId::new(),
             name: "Test Org".to_string(),
             display_name: "Test Organization".to_string(),
             description: None,
@@ -470,7 +471,7 @@ mod tests {
     #[test]
     fn test_create_account_emits_event() {
         let org = Organization {
-            id: Uuid::now_v7(),
+            id: BootstrapOrgId::new(),
             name: "Test Org".to_string(),
             display_name: "Test Organization".to_string(),
             description: None,
@@ -480,7 +481,7 @@ mod tests {
         };
 
         let unit = OrganizationUnit {
-            id: Uuid::now_v7(),
+            id: UnitId::new(),
             name: "Engineering".to_string(),
             unit_type: OrganizationUnitType::Department,
             parent_unit_id: None,
@@ -534,7 +535,7 @@ mod tests {
     #[test]
     fn test_create_user_validates_accountability() {
         let org = Organization {
-            id: Uuid::now_v7(),
+            id: BootstrapOrgId::new(),
             name: "Test Org".to_string(),
             display_name: "Test Organization".to_string(),
             description: None,
@@ -544,11 +545,11 @@ mod tests {
         };
 
         let person = Person {
-            id: Uuid::now_v7(),
+            id: BootstrapPersonId::new(),
             name: "Alice".to_string(),
             email: "alice@example.com".to_string(),
             roles: vec![],
-            organization_id: org.id,
+            organization_id: org.id.clone(),
             unit_ids: vec![],
             active: true,
             nats_permissions: None,
@@ -566,7 +567,7 @@ mod tests {
         .unwrap();
 
         let unit = OrganizationUnit {
-            id: Uuid::now_v7(),
+            id: UnitId::new(),
             name: "Engineering".to_string(),
             unit_type: OrganizationUnitType::Department,
             parent_unit_id: None,

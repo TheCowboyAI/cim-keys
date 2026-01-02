@@ -160,13 +160,13 @@ pub fn handle_generate_root_ca(cmd: GenerateRootCA) -> Result<RootCAGenerated, S
             actor: KeyOwnership {
                 // Root CA is owned by the organization itself
                 // Use the organization ID as the person_id to indicate organizational ownership
-                person_id: cmd.organization.id,
-                organization_id: cmd.organization.id,
+                person_id: cmd.organization.id.as_uuid(),
+                organization_id: cmd.organization.id.as_uuid(),
                 role: crate::domain::KeyOwnerRole::RootAuthority,
                 delegations: vec![],
             },
             org_context: Some(crate::domain::OrganizationalPKI {
-                root_ca_org_id: cmd.organization.id,
+                root_ca_org_id: cmd.organization.id.as_uuid(),
                 intermediate_cas: vec![],
                 policy_cas: vec![],
                 cross_certifications: vec![],
@@ -482,6 +482,7 @@ pub fn handle_generate_certificate(cmd: GenerateCertificate) -> Result<Certifica
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::ids::BootstrapOrgId;
 
     #[test]
     fn test_generate_key_pair_uses_purpose_recommendation() {
@@ -514,7 +515,7 @@ mod tests {
     #[test]
     fn test_generate_root_ca_creates_self_signed() {
         let org = Organization {
-            id: Uuid::now_v7(),
+            id: BootstrapOrgId::new(),
             name: "Test Org".to_string(),
             display_name: "Test Organization".to_string(),
             description: None,

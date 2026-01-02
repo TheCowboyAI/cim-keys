@@ -2,7 +2,7 @@
 //!
 //! This module implements the core principle: **The organizational graph drives YubiKey provisioning**.
 //!
-//! NOTE: This module uses deprecated `DomainNode` types. Migration pending.
+//! Uses `YubiKeyStatus` domain type with `LiftableDomain::lift()` for graph visualization.
 //!
 //! ## Flow
 //!
@@ -36,15 +36,12 @@
 //!       └─> PIV Slot 9D (Key Management) → Key escrow
 //! ```
 
-#![allow(deprecated)] // Bridge module: Uses deprecated DomainNode for YubiKey status creation
-
 use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::domain::{Person, KeyOwnerRole, Role};
-use crate::domain::yubikey::PIVSlot as DomainPIVSlot;
+use crate::domain::yubikey::{PIVSlot as DomainPIVSlot, YubiKeyStatus};
 use crate::gui::graph::{OrganizationConcept, ConceptEntity, EdgeType};
-use crate::gui::domain_node::DomainNode;
 use crate::lifting::LiftableDomain;
 use iced::{Color, Point};
 
@@ -291,14 +288,14 @@ pub fn generate_yubikey_provision_from_graph(
 
         // Convert local PIVSlot to domain PIVSlot
         let slots_as_domain: Vec<DomainPIVSlot> = plan.slots.iter().map(|s| s.to_domain()).collect();
-        let domain_node = DomainNode::inject_yubikey_status(
+        let yubikey_status = YubiKeyStatus::new(
             person_id,
             plan.yubikey_serial.clone(),
             if plan.already_provisioned { slots_as_domain.clone() } else { vec![] },
             slots_as_domain,
         );
         let position = Point::new(400.0, 500.0); // Below person nodes
-        let provision_node = ConceptEntity::from_domain_node(provision_node_id, domain_node);
+        let provision_node = ConceptEntity::from_lifted_node(yubikey_status.lift());
 
         provision_nodes.push((provision_node, position, status_color, status_label, person_id));
 
@@ -346,7 +343,7 @@ pub fn add_yubikey_status_to_graph(
 mod tests {
     use super::*;
     use crate::domain::{Organization, Person};
-    use chrono::Utc;
+    use crate::domain::ids::{BootstrapOrgId, BootstrapPersonId};
     use std::collections::HashMap;
 
     #[test]
@@ -372,9 +369,9 @@ mod tests {
         let mut graph = OrganizationConcept::new();
 
         // Create organization
-        let org_id = Uuid::now_v7();
+        let org_id = BootstrapOrgId::new();
         let org = Organization {
-            id: org_id,
+            id: org_id.clone(),
             name: "TestOrg".to_string(),
             display_name: "Test Organization".to_string(),
             description: None,
@@ -386,7 +383,7 @@ mod tests {
 
         // Add a developer
         let person = Person {
-            id: Uuid::now_v7(),
+            id: BootstrapPersonId::new(),
             name: "Alice Developer".to_string(),
             email: "alice@test.com".to_string(),
             roles: vec![],

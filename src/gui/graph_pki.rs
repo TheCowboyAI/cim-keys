@@ -2,7 +2,7 @@
 //!
 //! This module implements the core principle: **The organizational graph drives PKI creation**.
 //!
-//! NOTE: This module uses deprecated `DomainNode` types. Migration pending.
+//! Uses `Certificate` domain type with `LiftableDomain::lift()` for graph visualization.
 //!
 //! ## Flow
 //!
@@ -38,15 +38,13 @@
 //!                   └─> Leaf Cert: "CN=Carol White, O=CowboyAI, OU=Operations"
 //! ```
 
-#![allow(deprecated)] // Bridge module: Uses deprecated DomainNode for certificate creation
-
 use std::collections::HashMap;
 use uuid::Uuid;
 use chrono::Utc;
 
 use crate::domain::{Organization, OrganizationUnit, Person, KeyOwnerRole, Role};
+use crate::domain::pki::{Certificate, CertificateType, CertificateId};
 use crate::gui::graph::{OrganizationConcept, ConceptEntity, ConceptRelation, EdgeType};
-use crate::gui::domain_node::DomainNode;
 use crate::lifting::LiftableDomain;
 use iced::{Color, Point};
 
@@ -328,19 +326,21 @@ fn create_root_ca_node(cert_id: Uuid, org: &Organization) -> Result<(ConceptEnti
     let subject = format!("CN={} Root CA, O={}", org.name, org.name);
     let issuer = subject.clone(); // Self-signed
 
-    let domain_node = DomainNode::inject_root_certificate_uuid(
-        cert_id,
+    let certificate = Certificate {
+        id: CertificateId::from_uuid(cert_id),
+        cert_type: CertificateType::Root,
         subject,
         issuer,
-        now,
-        valid_until,
-        vec![
+        not_before: now,
+        not_after: valid_until,
+        key_usage: vec![
             "Certificate Sign".to_string(),
             "CRL Sign".to_string(),
         ],
-    );
+        san: vec![],
+    };
     let position = Point::new(400.0, 100.0); // Top center
-    let entity = ConceptEntity::from_domain_node(cert_id, domain_node);
+    let entity = ConceptEntity::from_lifted_node(certificate.lift());
     Ok((entity, position))
 }
 
@@ -356,19 +356,21 @@ fn create_intermediate_ca_node(
     let subject = format!("CN={} CA, OU={}", unit.name, unit.name);
     let issuer = format!("Parent CA {}", parent_cert_id); // Simplified
 
-    let domain_node = DomainNode::inject_intermediate_certificate_uuid(
-        cert_id,
+    let certificate = Certificate {
+        id: CertificateId::from_uuid(cert_id),
+        cert_type: CertificateType::Intermediate,
         subject,
         issuer,
-        now,
-        valid_until,
-        vec![
+        not_before: now,
+        not_after: valid_until,
+        key_usage: vec![
             "Certificate Sign".to_string(),
             "CRL Sign".to_string(),
         ],
-    );
+        san: vec![],
+    };
     let position = Point::new(400.0, 250.0); // Middle
-    let entity = ConceptEntity::from_domain_node(cert_id, domain_node);
+    let entity = ConceptEntity::from_lifted_node(certificate.lift());
     Ok((entity, position))
 }
 
@@ -395,17 +397,18 @@ fn create_leaf_certificate_node(
         KeyOwnerRole::Auditor => vec!["Digital Signature".to_string()],
     };
 
-    let domain_node = DomainNode::inject_leaf_certificate_uuid(
-        cert_id,
+    let certificate = Certificate {
+        id: CertificateId::from_uuid(cert_id),
+        cert_type: CertificateType::Leaf,
         subject,
         issuer,
-        now,
-        valid_until,
+        not_before: now,
+        not_after: valid_until,
         key_usage,
-        vec![person.email.clone()], // Subject Alternative Name
-    );
+        san: vec![person.email.clone()], // Subject Alternative Name
+    };
     let position = Point::new(400.0, 400.0); // Bottom
-    let entity = ConceptEntity::from_domain_node(cert_id, domain_node);
+    let entity = ConceptEntity::from_lifted_node(certificate.lift());
     Ok((entity, position))
 }
 
@@ -440,8 +443,8 @@ pub fn add_pki_to_graph(
 mod tests {
     use super::*;
     use crate::domain::{Organization, OrganizationUnit};
+    use crate::domain::ids::{BootstrapOrgId, UnitId};
     use std::collections::HashMap;
-    use chrono::Utc;
 
     #[test]
     fn test_analyze_simple_org_structure() {
@@ -449,7 +452,7 @@ mod tests {
 
         // Create organization
         let org = Organization {
-            id: Uuid::now_v7(),
+            id: BootstrapOrgId::new(),
             name: "TestOrg".to_string(),
             display_name: "Test Organization".to_string(),
             description: None,
@@ -469,11 +472,13 @@ mod tests {
     fn test_determine_generation_order() {
         let mut hierarchy = PkiHierarchy::new();
 
-        let org_id = Uuid::now_v7();
-        let unit_id = Uuid::now_v7();
-        let _person_id = Uuid::now_v7();
+        let org_id = BootstrapOrgId::new();
+        let unit_id = UnitId::new();
 
-        hierarchy.root_organization = Some((org_id, Organization {
+        let org_uuid = org_id.as_uuid();
+        let unit_uuid = unit_id.as_uuid();
+
+        hierarchy.root_organization = Some((org_uuid, Organization {
             id: org_id,
             name: "TestOrg".to_string(),
             display_name: "Test Organization".to_string(),
@@ -483,7 +488,7 @@ mod tests {
             metadata: HashMap::new(),
         }));
 
-        hierarchy.intermediate_units.insert(unit_id, (
+        hierarchy.intermediate_units.insert(unit_uuid, (
             OrganizationUnit {
                 id: unit_id,
                 name: "Engineering".to_string(),
@@ -492,13 +497,13 @@ mod tests {
                 responsible_person_id: None,
             nats_account_name: None,
             },
-            org_id,
+            org_uuid,
         ));
 
         let order = determine_generation_order(&hierarchy);
 
         assert_eq!(order.len(), 2);
-        assert_eq!(order[0], CertificateOrder::Root(org_id));
-        assert_eq!(order[1], CertificateOrder::Intermediate(unit_id));
+        assert_eq!(order[0], CertificateOrder::Root(org_uuid));
+        assert_eq!(order[1], CertificateOrder::Intermediate(unit_uuid));
     }
 }

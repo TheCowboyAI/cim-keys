@@ -96,32 +96,97 @@ pub use cim_domain_agent::{
 // They provide a "denormalized" view with embedded relationships for convenience.
 // After loading, convert to proper domain types for runtime operations.
 
-/// Bootstrap organization configuration with embedded units
+/// Bootstrap organization - a domain entity that projects to JSON.
 ///
-/// This is for JSON deserialization from domain-bootstrap.json.
-/// Convert to DomainOrganization for runtime operations.
+/// CIM creates these entities; JSON is just the projection format.
+/// EntityId auto-generates UUID v7 on creation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Organization {
-    pub id: Uuid,
+    pub id: super::ids::BootstrapOrgId,
     pub name: String,
     pub display_name: String,
     pub description: Option<String>,
-    pub parent_id: Option<Uuid>,
+    pub parent_id: Option<super::ids::BootstrapOrgId>,
     /// Embedded units for bootstrap convenience (denormalized)
     pub units: Vec<OrganizationUnit>,
     pub metadata: HashMap<String, String>,
 }
 
-/// Bootstrap organizational unit configuration
+impl Organization {
+    /// Create a new Organization with auto-generated ID.
+    pub fn new(name: impl Into<String>, display_name: impl Into<String>) -> Self {
+        Self {
+            id: super::ids::BootstrapOrgId::new(),
+            name: name.into(),
+            display_name: display_name.into(),
+            description: None,
+            parent_id: None,
+            units: Vec::new(),
+            metadata: HashMap::new(),
+        }
+    }
+
+    /// Builder: set description.
+    pub fn with_description(mut self, desc: impl Into<String>) -> Self {
+        self.description = Some(desc.into());
+        self
+    }
+
+    /// Builder: set parent organization.
+    pub fn with_parent(mut self, parent_id: super::ids::BootstrapOrgId) -> Self {
+        self.parent_id = Some(parent_id);
+        self
+    }
+
+    /// Builder: add a unit.
+    pub fn with_unit(mut self, unit: OrganizationUnit) -> Self {
+        self.units.push(unit);
+        self
+    }
+}
+
+/// Bootstrap organizational unit - a domain entity.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrganizationUnit {
-    pub id: Uuid,
+    pub id: super::ids::UnitId,
     pub name: String,
     pub unit_type: OrganizationUnitType,
-    pub parent_unit_id: Option<Uuid>,
-    pub responsible_person_id: Option<Uuid>,
+    pub parent_unit_id: Option<super::ids::UnitId>,
+    pub responsible_person_id: Option<Uuid>,  // PersonId from external crate
     /// NATS account name for NSC export (e.g., "core", "media", "development")
     pub nats_account_name: Option<String>,
+}
+
+impl OrganizationUnit {
+    /// Create a new OrganizationUnit with auto-generated ID.
+    pub fn new(name: impl Into<String>, unit_type: OrganizationUnitType) -> Self {
+        Self {
+            id: super::ids::UnitId::new(),
+            name: name.into(),
+            unit_type,
+            parent_unit_id: None,
+            responsible_person_id: None,
+            nats_account_name: None,
+        }
+    }
+
+    /// Builder: set parent unit.
+    pub fn with_parent(mut self, parent_id: super::ids::UnitId) -> Self {
+        self.parent_unit_id = Some(parent_id);
+        self
+    }
+
+    /// Builder: set responsible person.
+    pub fn with_responsible_person(mut self, person_id: Uuid) -> Self {
+        self.responsible_person_id = Some(person_id);
+        self
+    }
+
+    /// Builder: set NATS account name.
+    pub fn with_nats_account(mut self, account_name: impl Into<String>) -> Self {
+        self.nats_account_name = Some(account_name.into());
+        self
+    }
 }
 
 /// Type of organizational unit (bootstrap version)
@@ -135,28 +200,68 @@ pub enum OrganizationUnitType {
     Infrastructure,
 }
 
-/// Bootstrap person configuration with organization-specific data
+/// Bootstrap person - a domain entity with auto-generated ID.
 ///
-/// This is for JSON deserialization from domain-bootstrap.json.
 /// Contains both person identity AND organizational membership.
-///
-/// For runtime operations, use:
-/// - `DomainPerson` for core person identity (from cim-domain-person)
-/// - `EmploymentRelationship` for org membership (from cim-domain-person::cross_domain)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Person {
-    pub id: Uuid,
+    pub id: super::ids::BootstrapPersonId,
     pub name: String,
     pub email: String,
     pub roles: Vec<PersonRole>,
-    pub organization_id: Uuid,
-    pub unit_ids: Vec<Uuid>,
+    pub organization_id: super::ids::BootstrapOrgId,
+    pub unit_ids: Vec<super::ids::UnitId>,
     pub active: bool,
     /// NATS permissions for NSC export (for Service role persons)
     pub nats_permissions: Option<NatsPermissions>,
     /// Owner/manager of this person or service account
     #[serde(default)]
-    pub owner_id: Option<Uuid>,
+    pub owner_id: Option<super::ids::BootstrapPersonId>,
+}
+
+impl Person {
+    /// Create a new Person with auto-generated ID.
+    pub fn new(
+        name: impl Into<String>,
+        email: impl Into<String>,
+        organization_id: super::ids::BootstrapOrgId,
+    ) -> Self {
+        Self {
+            id: super::ids::BootstrapPersonId::new(),
+            name: name.into(),
+            email: email.into(),
+            roles: Vec::new(),
+            organization_id,
+            unit_ids: Vec::new(),
+            active: true,
+            nats_permissions: None,
+            owner_id: None,
+        }
+    }
+
+    /// Builder: add a role.
+    pub fn with_role(mut self, role: PersonRole) -> Self {
+        self.roles.push(role);
+        self
+    }
+
+    /// Builder: add to a unit.
+    pub fn in_unit(mut self, unit_id: super::ids::UnitId) -> Self {
+        self.unit_ids.push(unit_id);
+        self
+    }
+
+    /// Builder: set owner/manager.
+    pub fn with_owner(mut self, owner_id: super::ids::BootstrapPersonId) -> Self {
+        self.owner_id = Some(owner_id);
+        self
+    }
+
+    /// Builder: set NATS permissions.
+    pub fn with_nats_permissions(mut self, perms: NatsPermissions) -> Self {
+        self.nats_permissions = Some(perms);
+        self
+    }
 }
 
 /// Role a person can have
@@ -230,11 +335,11 @@ impl Organization {
         use cim_domain::EntityId;
         let now = Utc::now();
         DomainOrganization {
-            id: EntityId::from_uuid(self.id),
+            id: EntityId::from_uuid(self.id.as_uuid()),
             name: self.name.clone(),
             display_name: self.display_name.clone(),
             description: self.description.clone(),
-            parent_id: self.parent_id.map(EntityId::from_uuid),
+            parent_id: self.parent_id.map(|p| EntityId::from_uuid(p.as_uuid())),
             organization_type: OrganizationType::Corporation, // Default
             status: OrganizationStatus::Active,
             founded_date: None,
@@ -250,9 +355,9 @@ impl Organization {
         let now = Utc::now();
         self.units.iter().map(|unit| {
             DomainOrganizationUnit {
-                id: EntityId::from_uuid(unit.id),
-                organization_id: EntityId::from_uuid(self.id),
-                parent_id: unit.parent_unit_id.map(EntityId::from_uuid),
+                id: EntityId::from_uuid(unit.id.as_uuid()),
+                organization_id: EntityId::from_uuid(self.id.as_uuid()),
+                parent_id: unit.parent_unit_id.map(|p| EntityId::from_uuid(p.as_uuid())),
                 unit_type: match unit.unit_type {
                     OrganizationUnitType::Division => DomainOrganizationUnitType::Division,
                     OrganizationUnitType::Department => DomainOrganizationUnitType::Branch,
@@ -288,7 +393,7 @@ impl Person {
         };
 
         DomainPerson::new(
-            PersonId::from_uuid(self.id),
+            PersonId::from_uuid(self.id.as_uuid()),
             PersonName::new(first, last),
         )
     }
@@ -300,8 +405,8 @@ impl Person {
             EmploymentType, EmploymentMetadata, RemoteWorkArrangement,
         };
         EmploymentRelationship {
-            person_id: PersonId::from_uuid(self.id),
-            organization_id: self.organization_id,
+            person_id: PersonId::from_uuid(self.id.as_uuid()),
+            organization_id: self.organization_id.as_uuid(),
             role: EmploymentRole {
                 title: self.roles.first()
                     .map(|r| format!("{:?}", r.role_type))
@@ -309,11 +414,11 @@ impl Person {
                 level: None,
                 category: None,
             },
-            department_id: self.unit_ids.first().copied(),
+            department_id: self.unit_ids.first().map(|u| u.as_uuid()),
             start_date: NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(), // Default
             end_date: None,
             employment_type: EmploymentType::FullTime,
-            reporting_to: self.owner_id.map(PersonId::from_uuid),
+            reporting_to: self.owner_id.map(|o| PersonId::from_uuid(o.as_uuid())),
             is_primary: true,
             metadata: EmploymentMetadata {
                 compensation: None,
@@ -575,7 +680,7 @@ impl UserIdentity {
     /// Get the unique ID for this user identity
     pub fn id(&self) -> Uuid {
         match self {
-            UserIdentity::Person(p) => p.id,
+            UserIdentity::Person(p) => p.id.as_uuid(),
             #[cfg(feature = "cim-domain-agent")]
             UserIdentity::Agent(a) => a.id().into(), // Convert AgentId to Uuid
             UserIdentity::ServiceAccount(sa) => sa.id,
@@ -595,7 +700,7 @@ impl UserIdentity {
     /// Get the organization ID for this user identity
     pub fn organization_id(&self) -> Uuid {
         match self {
-            UserIdentity::Person(p) => p.organization_id,
+            UserIdentity::Person(p) => p.organization_id.as_uuid(),
             #[cfg(feature = "cim-domain-agent")]
             UserIdentity::Agent(a) => a.metadata().owner_id(), // Using owner_id as org for now
             UserIdentity::ServiceAccount(sa) => sa.owning_unit_id, // TODO: Get org from unit
@@ -706,8 +811,8 @@ impl AccountIdentity {
     /// Get the unique ID for this account identity
     pub fn id(&self) -> Uuid {
         match self {
-            AccountIdentity::Organization(o) => o.id,
-            AccountIdentity::OrganizationUnit(u) => u.id,
+            AccountIdentity::Organization(o) => o.id.as_uuid(),
+            AccountIdentity::OrganizationUnit(u) => u.id.as_uuid(),
         }
     }
 
@@ -861,22 +966,55 @@ impl std::fmt::Display for KeyOwnerRole {
 // CLAIMS-BASED SECURITY: POLICY SYSTEM
 // ========================================================================
 
-/// Policy entity with claims-based permissions
+/// Policy entity with claims-based permissions - a domain entity.
 ///
 /// Policies define what actions are permitted based on conditions.
 /// Multiple policies can be composed (claims are unioned).
 /// Policies are evaluated in priority order (higher priority wins).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Policy {
-    pub id: Uuid,
+    pub id: super::ids::BootstrapPolicyId,
     pub name: String,
     pub description: String,
     pub claims: Vec<PolicyClaim>,
     pub conditions: Vec<PolicyCondition>,
     pub priority: i32,
     pub enabled: bool,
-    pub created_by: Uuid,
+    pub created_by: super::ids::BootstrapPersonId,
     pub metadata: HashMap<String, String>,
+}
+
+impl Policy {
+    /// Create a new Policy with auto-generated ID.
+    pub fn new(
+        name: impl Into<String>,
+        description: impl Into<String>,
+        created_by: super::ids::BootstrapPersonId,
+    ) -> Self {
+        Self {
+            id: super::ids::BootstrapPolicyId::new(),
+            name: name.into(),
+            description: description.into(),
+            claims: Vec::new(),
+            conditions: Vec::new(),
+            priority: 0,
+            enabled: true,
+            created_by,
+            metadata: HashMap::new(),
+        }
+    }
+
+    /// Builder: add a claim.
+    pub fn with_claim(mut self, claim: PolicyClaim) -> Self {
+        self.claims.push(claim);
+        self
+    }
+
+    /// Builder: set priority.
+    pub fn with_priority(mut self, priority: i32) -> Self {
+        self.priority = priority;
+        self
+    }
 }
 
 /// Individual claim (capability/permission)
@@ -1294,7 +1432,7 @@ pub fn evaluate_policies(
 
     let applicable_policies: Vec<&Policy> = policies
         .iter()
-        .filter(|p| applicable_policy_ids.contains(&p.id))
+        .filter(|p| applicable_policy_ids.contains(&p.id.as_uuid()))
         .collect();
 
     // Sort by priority (higher priority first)
@@ -1308,7 +1446,7 @@ pub fn evaluate_policies(
     for policy in sorted_policies {
         if policy.enabled {
             if policy.evaluate_conditions(context) {
-                active_policies.push(policy.id);
+                active_policies.push(policy.id.as_uuid());
                 all_claims.extend(policy.claims.clone());
             } else {
                 let reasons = policy.conditions
@@ -1316,7 +1454,7 @@ pub fn evaluate_policies(
                     .filter(|c| !c.is_satisfied(context))
                     .map(|c| format!("{:?} not satisfied", c))
                     .collect();
-                inactive_policies.push((policy.id, reasons));
+                inactive_policies.push((policy.id.as_uuid(), reasons));
             }
         }
     }
@@ -1339,34 +1477,101 @@ pub fn evaluate_policies(
 // ROLE SYSTEM
 // ========================================================================
 
-/// Role/Position in the organization
+/// Role/Position in the organization - a domain entity.
 ///
 /// Roles represent positions that people can fill.
 /// Each role has required policies that must be active.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Role {
-    pub id: Uuid,
+    pub id: super::ids::BootstrapRoleId,
     pub name: String,
     pub description: String,
-    pub organization_id: Uuid,
-    pub unit_id: Option<Uuid>, // Optional: role specific to unit
-    pub required_policies: Vec<Uuid>,
+    pub organization_id: super::ids::BootstrapOrgId,
+    pub unit_id: Option<super::ids::UnitId>,
+    pub required_policies: Vec<super::ids::BootstrapPolicyId>,
     pub responsibilities: Vec<String>,
-    pub created_by: Uuid,
+    pub created_by: super::ids::BootstrapPersonId,
     pub active: bool,
 }
 
-/// Assignment of a role to a person
+impl Role {
+    /// Create a new Role with auto-generated ID.
+    pub fn new(
+        name: impl Into<String>,
+        description: impl Into<String>,
+        organization_id: super::ids::BootstrapOrgId,
+        created_by: super::ids::BootstrapPersonId,
+    ) -> Self {
+        Self {
+            id: super::ids::BootstrapRoleId::new(),
+            name: name.into(),
+            description: description.into(),
+            organization_id,
+            unit_id: None,
+            required_policies: Vec::new(),
+            responsibilities: Vec::new(),
+            created_by,
+            active: true,
+        }
+    }
+
+    /// Builder: set unit scope.
+    pub fn in_unit(mut self, unit_id: super::ids::UnitId) -> Self {
+        self.unit_id = Some(unit_id);
+        self
+    }
+
+    /// Builder: add a required policy.
+    pub fn requires_policy(mut self, policy_id: super::ids::BootstrapPolicyId) -> Self {
+        self.required_policies.push(policy_id);
+        self
+    }
+
+    /// Builder: add a responsibility.
+    pub fn with_responsibility(mut self, resp: impl Into<String>) -> Self {
+        self.responsibilities.push(resp.into());
+        self
+    }
+}
+
+/// Assignment of a role to a person - a domain entity.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoleAssignment {
-    pub id: Uuid,
-    pub person_id: Uuid,
-    pub role_id: Uuid,
+    pub id: super::ids::BootstrapRoleId,  // Using role marker for assignment too
+    pub person_id: super::ids::BootstrapPersonId,
+    pub role_id: super::ids::BootstrapRoleId,
     pub assigned_at: DateTime<Utc>,
-    pub assigned_by: Uuid,
+    pub assigned_by: super::ids::BootstrapPersonId,
     pub valid_from: DateTime<Utc>,
     pub valid_until: Option<DateTime<Utc>>,
     pub active: bool,
+}
+
+impl RoleAssignment {
+    /// Create a new RoleAssignment with auto-generated ID.
+    pub fn new(
+        person_id: super::ids::BootstrapPersonId,
+        role_id: super::ids::BootstrapRoleId,
+        assigned_by: super::ids::BootstrapPersonId,
+    ) -> Self {
+        let now = Utc::now();
+        Self {
+            id: super::ids::BootstrapRoleId::new(),
+            person_id,
+            role_id,
+            assigned_at: now,
+            assigned_by,
+            valid_from: now,
+            valid_until: None,
+            active: true,
+        }
+    }
+
+    /// Builder: set validity period.
+    pub fn valid_until(mut self, until: DateTime<Utc>) -> Self {
+        self.valid_until = Some(until);
+        self
+    }
 }
 
 impl Role {

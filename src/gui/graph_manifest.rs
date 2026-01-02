@@ -2,9 +2,7 @@
 //!
 //! This module implements: **The organizational graph drives manifest-centric views**.
 //!
-//! NOTE: This module uses the deprecated `DomainNodeData` type internally for
-//! exhaustive pattern matching on node types. Migration to per-context accessor
-//! methods is pending - requires adding many new accessor methods to `DomainNode`.
+//! Uses `LiftedNode` for type-safe access to domain entities.
 //!
 //! ## Flow
 //!
@@ -55,7 +53,7 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
 use crate::gui::graph::{OrganizationConcept, EdgeType};
-use crate::gui::domain_node::DomainNodeData;
+use crate::lifting::Injection;
 
 /// Export format type
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -141,46 +139,41 @@ impl ManifestAnalysis {
                 // Outgoing edges (things exported BY this manifest)
                 match &edge.edge_type {
                     EdgeType::ExportedTo => {
-                        // Track what was exported
+                        // Track what was exported using lifted_node accessors
                         if let Some(exported_node) = graph.nodes.get(&edge.to) {
-                            match exported_node.domain_node.data() {
-                                DomainNodeData::Key(key) => {
-                                    exported_keys.push((key.id.as_uuid(), exported_node.visualization().primary_text));
+                            // Use lifted_node for type-safe access
+                            if let Some(key) = exported_node.lifted_node.key() {
+                                exported_keys.push((key.id.as_uuid(), exported_node.visualization().primary_text));
+                            } else if let Some(cert) = exported_node.lifted_node.certificate() {
+                                exported_certificates.push((edge.to, cert.subject.clone()));
+                            } else if let Some(yk) = exported_node.lifted_node.yubikey() {
+                                referenced_yubikeys.push((edge.to, yk.serial.clone()));
+                            } else {
+                                // Use injection type for simple identification
+                                match exported_node.lifted_node.injection() {
+                                    Injection::NatsOperator | Injection::NatsOperatorSimple => {
+                                        exported_nats_operators.push(edge.to);
+                                    }
+                                    Injection::NatsAccount | Injection::NatsAccountSimple => {
+                                        exported_nats_accounts.push(edge.to);
+                                    }
+                                    Injection::NatsUser | Injection::NatsUserSimple | Injection::NatsServiceAccount => {
+                                        exported_nats_users.push(edge.to);
+                                    }
+                                    Injection::Organization => {
+                                        exported_organizations.push(edge.to);
+                                    }
+                                    Injection::OrganizationUnit => {
+                                        exported_units.push(edge.to);
+                                    }
+                                    Injection::Person => {
+                                        exported_people.push(edge.to);
+                                    }
+                                    Injection::Location => {
+                                        exported_locations.push(edge.to);
+                                    }
+                                    _ => {}
                                 }
-                                DomainNodeData::RootCertificate(cert) => {
-                                    exported_certificates.push((edge.to, cert.subject.clone()));
-                                }
-                                DomainNodeData::IntermediateCertificate(cert) => {
-                                    exported_certificates.push((edge.to, cert.subject.clone()));
-                                }
-                                DomainNodeData::LeafCertificate(cert) => {
-                                    exported_certificates.push((edge.to, cert.subject.clone()));
-                                }
-                                DomainNodeData::NatsOperator(_) => {
-                                    exported_nats_operators.push(edge.to);
-                                }
-                                DomainNodeData::NatsAccount(_) => {
-                                    exported_nats_accounts.push(edge.to);
-                                }
-                                DomainNodeData::NatsUser(_) | DomainNodeData::NatsServiceAccount(_) => {
-                                    exported_nats_users.push(edge.to);
-                                }
-                                DomainNodeData::Organization(_) => {
-                                    exported_organizations.push(edge.to);
-                                }
-                                DomainNodeData::OrganizationUnit(_) => {
-                                    exported_units.push(edge.to);
-                                }
-                                DomainNodeData::Person { .. } => {
-                                    exported_people.push(edge.to);
-                                }
-                                DomainNodeData::Location(_) => {
-                                    exported_locations.push(edge.to);
-                                }
-                                DomainNodeData::YubiKey(yk) => {
-                                    referenced_yubikeys.push((edge.to, yk.serial.clone()));
-                                }
-                                _ => {}
                             }
                         }
                     }
@@ -195,7 +188,7 @@ impl ManifestAnalysis {
 
         // Extract checksum and signature from manifest node metadata
         if let Some(manifest_node) = graph.nodes.get(&manifest_id) {
-            if let DomainNodeData::Manifest(manifest) = manifest_node.domain_node.data() {
+            if let Some(manifest) = manifest_node.lifted_node.manifest() {
                 checksum = manifest.checksum.clone();
             }
         }

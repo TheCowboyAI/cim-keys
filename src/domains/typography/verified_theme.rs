@@ -214,6 +214,54 @@ impl VerifiedTheme {
         })
     }
 
+    /// Create the CIM default theme with fonts assumed loaded
+    ///
+    /// This is the primary theme constructor for CIM. It assumes fonts
+    /// have been loaded via Iced's `.font(include_bytes!(...))` and
+    /// uses emoji icons with proper fallback chains.
+    pub fn cim_default() -> Self {
+        let fonts = VerifiedFontSet::cim_fonts_loaded();
+        let mut icons = VerifiedIconSet::new();
+
+        // Create verified icons using emoji as primary (since fonts are loaded)
+        for chain in CimIconSetBuilder::default_chains() {
+            // Select the first representation that should work with our loaded fonts
+            let repr = Self::select_best_representation(&chain, &fonts);
+            icons.add(VerifiedIcon::new(chain, repr));
+        }
+
+        let verification = VerificationSummary {
+            text_fallback_count: icons.text_fallback_count(),
+            missing_font_count: 0,
+            degraded: icons.text_fallback_count() > 0,
+        };
+
+        Self {
+            fonts,
+            icons,
+            colors: ColorPalette::default(),
+            metrics: ThemeMetrics::default(),
+            verification,
+        }
+    }
+
+    /// Select best representation from a chain given available fonts
+    fn select_best_representation(chain: &IconChain, fonts: &VerifiedFontSet) -> IconRepresentation {
+        for repr in chain.chain() {
+            if Self::can_render_representation(repr, fonts) {
+                return repr.clone();
+            }
+        }
+        // Fall back to text if nothing else works
+        chain.chain()
+            .iter()
+            .find(|r| r.is_text_fallback())
+            .cloned()
+            .unwrap_or_else(|| IconRepresentation::TextFallback(
+                format!("[{}]", chain.name().to_uppercase())
+            ))
+    }
+
     /// Create a text-only fallback theme
     ///
     /// This theme uses only ASCII text for icons, guaranteeing

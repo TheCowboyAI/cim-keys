@@ -299,7 +299,7 @@ pub fn generate_and_export_credentials(
         account_credentials.push(NscAccountCredentials {
             account_name,
             account_id: Uuid::now_v7(),
-            organizational_unit_id: unit.id,
+            organizational_unit_id: unit.id.as_uuid(),
             nkey: account_nkey,
             jwt: account_jwt,
         });
@@ -314,7 +314,7 @@ pub fn generate_and_export_credentials(
             .ok_or_else(|| format!("Person {} has no organizational unit", person.name))?;
 
         let account = account_credentials.iter()
-            .find(|acc| &acc.organizational_unit_id == unit_id)
+            .find(|acc| acc.organizational_unit_id == unit_id.as_uuid())
             .ok_or_else(|| format!("No account found for unit {:?}", unit_id))?;
 
         let user_nkey = NKeyPair::generate(
@@ -343,7 +343,7 @@ pub fn generate_and_export_credentials(
         user_credentials.push(NscUserCredentials {
             user_name: person.name.clone(),
             user_id: Uuid::now_v7(),
-            person_id: person.id,
+            person_id: person.id.as_uuid(),
             account_name: account.account_name.clone(),
             nkey: user_nkey,
             jwt: user_jwt,

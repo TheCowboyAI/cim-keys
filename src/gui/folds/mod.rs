@@ -11,7 +11,7 @@
 //!
 //! ## Categorical Foundation
 //!
-//! Each fold is a natural transformation from the DomainNode coproduct
+//! Each fold is a natural transformation from the LiftedNode coproduct
 //! to a specific output type. The organization by pipeline role ensures:
 //!
 //! 1. **A3 Compliance**: Decoupling - outputs depend only on inputs
@@ -21,21 +21,17 @@
 //! ## Usage
 //!
 //! ```ignore
-//! use cim_keys::gui::folds::view::{FoldVisualization, VisualizationData};
-//! use cim_keys::gui::folds::query::{FoldSearchableText, SearchableText};
+//! use cim_keys::gui::folds::view::VisualizationData;
+//! use cim_keys::lifting::LiftedNode;
 //!
-//! // In view():
-//! let viz_data = node.fold(&FoldVisualization);
-//!
-//! // For queries:
-//! let searchable = node.fold(&FoldSearchableText);
-//! if searchable.matches("query") { ... }
+//! // In view(), use LiftedNode methods:
+//! let viz_data = lifted_node.themed_visualization(theme);
 //! ```
 
 pub mod view;
 pub mod query;
 
 // Re-export primary types for convenience
-pub use view::{FoldVisualization, VisualizationData};
+pub use view::{VisualizationData, palette};
 pub use view::{ThemedVisualizationFold, ThemedVisualizationData, CertificateType, StatusIndicator};
-pub use query::{FoldSearchableText, SearchableText};
+pub use query::SearchableText;

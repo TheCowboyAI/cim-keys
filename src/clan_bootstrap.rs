@@ -122,15 +122,10 @@ impl ClanBootstrapLoader {
             metadata.insert("domain".to_string(), domain.clone());
         }
 
-        Ok(Organization {
-            id: Uuid::now_v7(),
-            name: config.name.clone(),
-            display_name: config.display_name.clone(),
-            description: config.description.clone(),
-            parent_id: None,
-            units: Vec::new(), // Will be populated separately
-            metadata,
-        })
+        let mut org = Organization::new(&config.name, &config.display_name);
+        org.description = config.description.clone();
+        org.metadata = metadata;
+        Ok(org)
     }
 
     /// Build organizational units from configuration
@@ -143,14 +138,8 @@ impl ClanBootstrapLoader {
         for config in configs {
             let unit_type = Self::parse_unit_type(&config.unit_type)?;
 
-            let unit = OrganizationUnit {
-                id: Uuid::now_v7(),
-                name: config.name.clone(),
-                unit_type,
-                parent_unit_id: None, // TODO: Handle parent relationships
-                responsible_person_id: None,
-                nats_account_name: Some(config.nats_account_name.clone()),
-            };
+            let unit = OrganizationUnit::new(&config.name, unit_type)
+                .with_nats_account(&config.nats_account_name);
 
             units.push(unit);
         }
@@ -189,21 +178,14 @@ impl ClanBootstrapLoader {
                 max_payload: Some(config.nats_permissions.max_payload),
             });
 
-            let person = Person {
-                id: Uuid::now_v7(),
-                name: config.name.clone(),
-                email: config.email.clone(),
-                roles: vec![PersonRole {
+            let person = Person::new(&config.name, &config.email, org.id)
+                .with_role(PersonRole {
                     role_type,
                     scope: RoleScope::Organization,
                     permissions: vec![Permission::CreateKeys, Permission::SignCertificates],
-                }],
-                organization_id: org.id,
-                unit_ids: vec![unit.id],
-                active: true,
-                nats_permissions,
-                owner_id: None,
-            };
+                })
+                .in_unit(unit.id)
+                .with_nats_permissions(nats_permissions.unwrap());
 
             people.push(person);
         }

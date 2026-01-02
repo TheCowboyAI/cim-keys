@@ -220,7 +220,7 @@ impl SecretsLoader {
         metadata.insert("city".to_string(), cowboyai.organization.city.clone());
 
         Ok(Organization {
-            id: org_id,
+            id: crate::domain::ids::BootstrapOrgId::from_uuid(org_id),
             name: org_secrets.login.clone(),
             display_name: org_secrets.name.clone(),
             description: None,
@@ -246,7 +246,7 @@ impl SecretsLoader {
             };
 
             let person = Person {
-                id: person_id,
+                id: crate::domain::ids::BootstrapPersonId::from_uuid(person_id),
                 name: person_secret.name.clone(),
                 email: person_secret.email.clone(),
                 roles: vec![PersonRole {

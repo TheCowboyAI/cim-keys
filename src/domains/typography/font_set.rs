@@ -138,6 +138,69 @@ impl VerifiedFontSet {
         Self { fonts }
     }
 
+    /// Create a font set for CIM with fonts assumed loaded
+    ///
+    /// This is used when we KNOW fonts have been loaded via Iced's
+    /// `.font(include_bytes!(...))` in gui.rs. Since Iced doesn't expose
+    /// font loading state, we assume success.
+    pub fn cim_fonts_loaded() -> Self {
+        use super::verification::GlyphCoverage;
+
+        let mut fonts = HashMap::new();
+
+        // Body font: Rec Mono Linear
+        fonts.insert(
+            FontFamily::Body,
+            VerifiedFontFamily::new(
+                "Rec Mono Linear",
+                FontFamily::Body,
+                GlyphCoverage::basic_latin(),
+            ),
+        );
+
+        // Heading font: Poller One
+        fonts.insert(
+            FontFamily::Heading,
+            VerifiedFontFamily::new(
+                "Poller One",
+                FontFamily::Heading,
+                GlyphCoverage::basic_latin(),
+            ),
+        );
+
+        // Icon font: Material Icons
+        fonts.insert(
+            FontFamily::Icon,
+            VerifiedFontFamily::new(
+                "Material Icons",
+                FontFamily::Icon,
+                GlyphCoverage::material_icons(),
+            ),
+        );
+
+        // Emoji font: Noto Color Emoji
+        fonts.insert(
+            FontFamily::Emoji,
+            VerifiedFontFamily::new(
+                "Noto Color Emoji",
+                FontFamily::Emoji,
+                GlyphCoverage::emoji(),
+            ),
+        );
+
+        // Monospace: same as body
+        fonts.insert(
+            FontFamily::Monospace,
+            VerifiedFontFamily::new(
+                "Rec Mono Linear",
+                FontFamily::Monospace,
+                GlyphCoverage::basic_latin(),
+            ),
+        );
+
+        Self { fonts }
+    }
+
     /// Add a verified font to the set
     pub fn add(&mut self, font: VerifiedFontFamily) {
         self.fonts.insert(font.family(), font);

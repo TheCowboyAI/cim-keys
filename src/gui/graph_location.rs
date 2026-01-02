@@ -2,7 +2,7 @@
 //!
 //! This module implements: **The organizational graph drives location-centric views**.
 //!
-//! NOTE: Uses deprecated `DomainNodeData` for pattern matching. Migration pending.
+//! Uses `LiftedNode` for type-safe access to domain entities.
 //!
 //! ## Flow
 //!
@@ -40,7 +40,6 @@ use uuid::Uuid;
 
 use crate::domain::Location;
 use crate::gui::graph::{OrganizationConcept, EdgeType};
-use crate::gui::domain_node::DomainNodeData;
 
 /// Location-centric analysis of the organizational graph
 #[derive(Debug, Clone)]
@@ -70,10 +69,8 @@ impl LocationAnalysis {
     pub fn analyze(graph: &OrganizationConcept, location_id: Uuid) -> Option<Self> {
         // Find the location node
         let node = graph.nodes.get(&location_id)?;
-        let location = match node.domain_node.data() {
-            DomainNodeData::Location(loc) => loc.clone(),
-            _ => return None,
-        };
+        // Use lifted_node instead of deprecated domain_node
+        let location = node.lifted_node.location()?.clone();
 
         let mut stored_keys = HashMap::new();
         let mut stored_certificates = Vec::new();
@@ -88,17 +85,13 @@ impl LocationAnalysis {
                 match edge.edge_type {
                     EdgeType::StoredAt => {
                         if let Some(source_node) = graph.nodes.get(&edge.from) {
-                            match source_node.domain_node.data() {
-                                DomainNodeData::Key(key) => {
-                                    stored_keys.insert(edge.from, format!("{:?}", key.purpose));
-                                }
-                                _ if source_node.domain_node.injection().is_certificate() => {
-                                    stored_certificates.push(edge.from);
-                                }
-                                _ if source_node.domain_node.injection().is_yubikey_device() => {
-                                    stored_yubikeys.push(edge.from);
-                                }
-                                _ => {}
+                            // Use lifted_node instead of deprecated domain_node
+                            if let Some(key) = source_node.lifted_node.key() {
+                                stored_keys.insert(edge.from, format!("{:?}", key.purpose));
+                            } else if source_node.lifted_node.injection().is_certificate() {
+                                stored_certificates.push(edge.from);
+                            } else if source_node.lifted_node.injection().is_yubikey_device() {
+                                stored_yubikeys.push(edge.from);
                             }
                         }
                     }

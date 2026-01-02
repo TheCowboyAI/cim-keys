@@ -46,16 +46,390 @@
 //! let graph_event: GraphEvent = person.lift_event(event);
 //! ```
 
-use std::fmt::Debug;
+use std::fmt::{self, Debug};
 use std::any::Any;
 use std::sync::Arc;
 
 use iced::Color;
 use uuid::Uuid;
 
-use crate::gui::domain_node::{Injection, PropertyUpdate};
-use crate::domain::{Organization, OrganizationUnit, Person, Location, Role, Policy};
-use crate::domain::visualization::{PolicyGroup, PolicyCategory, PolicyRole};
+use crate::domain::{Organization, OrganizationUnit, Person, Location, Role, Policy, KeyOwnerRole, PolicyClaim};
+use crate::fold::{FoldCapability, Foldable};
+use crate::gui::folds::query::edit_fields::EditFieldData;
+
+// ============================================================================
+// INJECTION TYPE TAG
+// ============================================================================
+
+/// Type tag for `LiftedNode` - identifies the domain type stored within.
+///
+/// `Injection` provides variant discrimination for the type-erased domain data.
+/// Use the helper methods on this enum to check the category of a node
+/// (e.g., `is_organization()`, `is_pki()`, `is_nats()`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Injection {
+    // Core Domain Entities
+    Person,
+    Organization,
+    OrganizationUnit,
+    Location,
+    Role,
+    Policy,
+
+    // NATS Infrastructure (with projections)
+    NatsOperator,
+    NatsAccount,
+    NatsUser,
+    NatsServiceAccount,
+
+    // NATS Infrastructure (simple visualization)
+    NatsOperatorSimple,
+    NatsAccountSimple,
+    NatsUserSimple,
+
+    // PKI Certificates
+    RootCertificate,
+    IntermediateCertificate,
+    LeafCertificate,
+
+    // Cryptographic Keys
+    Key,
+
+    // YubiKey Hardware
+    YubiKey,
+    PivSlot,
+    YubiKeyStatus,
+
+    // Export Manifest
+    Manifest,
+
+    // Policy Roles and Claims
+    PolicyRole,
+    PolicyClaim,
+    PolicyCategory,
+    PolicyGroup,
+
+    // Aggregate Roots (DDD bounded contexts)
+    AggregateOrganization,
+    AggregatePkiChain,
+    AggregateNatsSecurity,
+    AggregateYubiKeyProvisioning,
+}
+
+impl Injection {
+    /// Get the display name for this injection type
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::Person => "Person",
+            Self::Organization => "Organization",
+            Self::OrganizationUnit => "Organizational Unit",
+            Self::Location => "Location",
+            Self::Role => "Role",
+            Self::Policy => "Policy",
+            Self::NatsOperator => "NATS Operator",
+            Self::NatsAccount => "NATS Account",
+            Self::NatsUser => "NATS User",
+            Self::NatsServiceAccount => "NATS Service Account",
+            Self::NatsOperatorSimple => "NATS Operator",
+            Self::NatsAccountSimple => "NATS Account",
+            Self::NatsUserSimple => "NATS User",
+            Self::RootCertificate => "Root Certificate",
+            Self::IntermediateCertificate => "Intermediate Certificate",
+            Self::LeafCertificate => "Leaf Certificate",
+            Self::Key => "Key",
+            Self::YubiKey => "YubiKey",
+            Self::PivSlot => "PIV Slot",
+            Self::YubiKeyStatus => "YubiKey Status",
+            Self::Manifest => "Manifest",
+            Self::PolicyRole => "Policy Role",
+            Self::PolicyClaim => "Policy Claim",
+            Self::PolicyCategory => "Policy Category",
+            Self::PolicyGroup => "Separation Class",
+            Self::AggregateOrganization => "Organization Aggregate",
+            Self::AggregatePkiChain => "PKI Chain Aggregate",
+            Self::AggregateNatsSecurity => "NATS Security Aggregate",
+            Self::AggregateYubiKeyProvisioning => "YubiKey Provisioning Aggregate",
+        }
+    }
+
+    /// Get the layout tier for hierarchical positioning
+    pub fn layout_tier(&self) -> u8 {
+        match self {
+            // Tier 0: Root entities and Aggregates
+            Self::Organization => 0,
+            Self::NatsOperator | Self::NatsOperatorSimple => 0,
+            Self::RootCertificate => 0,
+            Self::YubiKey => 0,
+            Self::YubiKeyStatus => 0,
+            Self::PolicyGroup => 0,
+            Self::AggregateOrganization |
+            Self::AggregatePkiChain |
+            Self::AggregateNatsSecurity |
+            Self::AggregateYubiKeyProvisioning => 0,
+
+            // Tier 1: Intermediate entities
+            Self::OrganizationUnit => 1,
+            Self::Role => 1,
+            Self::Policy => 1,
+            Self::NatsAccount | Self::NatsAccountSimple => 1,
+            Self::IntermediateCertificate => 1,
+            Self::PivSlot => 1,
+            Self::PolicyRole => 1,
+            Self::PolicyCategory => 1,
+
+            // Tier 2: Leaf entities
+            Self::Person => 2,
+            Self::Location => 2,
+            Self::NatsUser | Self::NatsUserSimple | Self::NatsServiceAccount => 2,
+            Self::LeafCertificate => 2,
+            Self::Key => 2,
+            Self::Manifest => 2,
+            Self::PolicyClaim => 2,
+        }
+    }
+
+    /// Check if this injection type is a NATS infrastructure node
+    pub fn is_nats(&self) -> bool {
+        matches!(
+            self,
+            Self::NatsOperator | Self::NatsOperatorSimple |
+            Self::NatsAccount | Self::NatsAccountSimple |
+            Self::NatsUser | Self::NatsUserSimple |
+            Self::NatsServiceAccount
+        )
+    }
+
+    /// Check if this injection type is a PKI certificate node
+    pub fn is_certificate(&self) -> bool {
+        matches!(
+            self,
+            Self::RootCertificate | Self::IntermediateCertificate | Self::LeafCertificate
+        )
+    }
+
+    /// Check if this injection type is a YubiKey-related node
+    pub fn is_yubikey(&self) -> bool {
+        matches!(self, Self::YubiKey | Self::PivSlot | Self::YubiKeyStatus)
+    }
+
+    /// Check if this injection type is a policy-related node
+    pub fn is_policy(&self) -> bool {
+        matches!(
+            self,
+            Self::Policy | Self::PolicyRole | Self::PolicyClaim |
+            Self::PolicyCategory | Self::PolicyGroup
+        )
+    }
+
+    /// Get the list of injection types that can be manually created from the UI.
+    pub fn creatable() -> Vec<Self> {
+        vec![
+            Self::Organization,
+            Self::OrganizationUnit,
+            Self::Person,
+            Self::Location,
+            Self::Role,
+            Self::Policy,
+        ]
+    }
+
+    /// Check if this injection type can be manually created from the UI
+    pub fn is_creatable(&self) -> bool {
+        matches!(
+            self,
+            Self::Organization |
+            Self::OrganizationUnit |
+            Self::Person |
+            Self::Location |
+            Self::Role |
+            Self::Policy
+        )
+    }
+
+    // Individual Type Checkers
+    pub fn is_person(&self) -> bool { matches!(self, Self::Person) }
+    pub fn is_organization(&self) -> bool { matches!(self, Self::Organization) }
+    pub fn is_organization_unit(&self) -> bool { matches!(self, Self::OrganizationUnit) }
+    pub fn is_location(&self) -> bool { matches!(self, Self::Location) }
+    pub fn is_role(&self) -> bool { matches!(self, Self::Role) }
+    pub fn is_key(&self) -> bool { matches!(self, Self::Key) }
+    pub fn is_yubikey_device(&self) -> bool { matches!(self, Self::YubiKey) }
+    pub fn is_piv_slot(&self) -> bool { matches!(self, Self::PivSlot) }
+    pub fn is_nats_operator(&self) -> bool { matches!(self, Self::NatsOperator | Self::NatsOperatorSimple) }
+    pub fn is_nats_account(&self) -> bool { matches!(self, Self::NatsAccount | Self::NatsAccountSimple) }
+    pub fn is_nats_user(&self) -> bool { matches!(self, Self::NatsUser | Self::NatsUserSimple) }
+    pub fn is_nats_service_account(&self) -> bool { matches!(self, Self::NatsServiceAccount) }
+    pub fn is_aggregate_organization(&self) -> bool { matches!(self, Self::AggregateOrganization) }
+    pub fn is_aggregate_pki_chain(&self) -> bool { matches!(self, Self::AggregatePkiChain) }
+    pub fn is_aggregate_nats_security(&self) -> bool { matches!(self, Self::AggregateNatsSecurity) }
+    pub fn is_aggregate_yubikey_provisioning(&self) -> bool { matches!(self, Self::AggregateYubiKeyProvisioning) }
+    pub fn is_aggregate_yubikey(&self) -> bool { self.is_aggregate_yubikey_provisioning() }
+    pub fn is_policy_role(&self) -> bool { matches!(self, Self::PolicyRole) }
+    pub fn is_policy_category(&self) -> bool { matches!(self, Self::PolicyCategory) }
+    pub fn is_policy_group(&self) -> bool { matches!(self, Self::PolicyGroup) }
+    pub fn is_policy_claim(&self) -> bool { matches!(self, Self::PolicyClaim) }
+    pub fn is_org_filterable(&self) -> bool {
+        matches!(self, Self::Organization | Self::OrganizationUnit | Self::Person | Self::Location | Self::Role | Self::Policy)
+    }
+    pub fn is_yubikey_status(&self) -> bool { matches!(self, Self::YubiKeyStatus) }
+    pub fn is_yubikey_or_slot(&self) -> bool { matches!(self, Self::YubiKey | Self::PivSlot | Self::YubiKeyStatus) }
+    pub fn is_policy_variant(&self) -> bool {
+        matches!(self, Self::Policy | Self::PolicyRole | Self::PolicyClaim | Self::PolicyCategory | Self::PolicyGroup)
+    }
+    pub fn is_policy_group_or_category(&self) -> bool { matches!(self, Self::PolicyGroup | Self::PolicyCategory) }
+}
+
+impl fmt::Display for Injection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.display_name())
+    }
+}
+
+// ============================================================================
+// PROPERTY UPDATE
+// ============================================================================
+
+/// Property updates that can be applied to editable domain nodes.
+#[derive(Debug, Clone, Default)]
+pub struct PropertyUpdate {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub email: Option<String>,
+    pub enabled: Option<bool>,
+    pub claims: Option<Vec<PolicyClaim>>,
+}
+
+impl PropertyUpdate {
+    pub fn new() -> Self { Self::default() }
+    pub fn with_name(mut self, name: impl Into<String>) -> Self { self.name = Some(name.into()); self }
+    pub fn with_description(mut self, description: impl Into<String>) -> Self { self.description = Some(description.into()); self }
+    pub fn with_email(mut self, email: impl Into<String>) -> Self { self.email = Some(email.into()); self }
+    pub fn with_enabled(mut self, enabled: bool) -> Self { self.enabled = Some(enabled); self }
+    pub fn with_claims(mut self, claims: Vec<PolicyClaim>) -> Self { self.claims = Some(claims); self }
+
+    pub fn has_changes_for(&self, injection: Injection) -> bool {
+        match injection {
+            Injection::Organization => self.name.is_some() || self.description.is_some(),
+            Injection::OrganizationUnit => self.name.is_some(),
+            Injection::Person => self.name.is_some() || self.email.is_some() || self.enabled.is_some(),
+            Injection::Location => self.name.is_some(),
+            Injection::Role => self.name.is_some() || self.description.is_some() || self.enabled.is_some(),
+            Injection::Policy => {
+                self.name.is_some() || self.description.is_some() ||
+                self.enabled.is_some() || self.claims.is_some()
+            }
+            _ => false,
+        }
+    }
+}
+
+// ============================================================================
+// VISUALIZATION DATA
+// ============================================================================
+
+/// Output of visualization - all data needed to render a node
+#[derive(Debug, Clone)]
+pub struct VisualizationData {
+    /// Node color (fill)
+    pub color: Color,
+    /// Primary display text (e.g., name)
+    pub primary_text: String,
+    /// Secondary display text (e.g., email, description)
+    pub secondary_text: String,
+    /// Icon character (emoji or Material icon)
+    pub icon: char,
+    /// Font for the icon
+    pub icon_font: iced::Font,
+    /// Whether this node is expandable (has +/- indicator)
+    pub expandable: bool,
+    /// If expandable, whether it's currently expanded
+    pub expanded: bool,
+}
+
+impl Default for VisualizationData {
+    fn default() -> Self {
+        Self {
+            color: Color::from_rgb(0.5, 0.5, 0.5),
+            primary_text: String::new(),
+            secondary_text: String::new(),
+            icon: crate::icons::ICON_HELP,
+            icon_font: crate::icons::MATERIAL_ICONS,
+            expandable: false,
+            expanded: false,
+        }
+    }
+}
+
+// ============================================================================
+// DETAIL PANEL DATA
+// ============================================================================
+
+/// Data for rendering a detail panel for a selected node.
+///
+/// This is a simple struct containing the title and key-value fields for display.
+/// It is used by `LiftedNode::detail_panel()` to provide information about selected entities.
+#[derive(Debug, Clone)]
+pub struct DetailPanelData {
+    /// Title for the detail panel (e.g., "Selected Organization:")
+    pub title: String,
+    /// List of (label, value) pairs to display
+    pub fields: Vec<(String, String)>,
+}
+
+impl DetailPanelData {
+    /// Create a new detail panel data
+    pub fn new(title: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            fields: Vec::new(),
+        }
+    }
+
+    /// Add a field to the detail panel
+    pub fn with_field(mut self, label: impl Into<String>, value: impl Into<String>) -> Self {
+        self.fields.push((label.into(), value.into()));
+        self
+    }
+}
+
+// ============================================================================
+// ICON HELPER
+// ============================================================================
+
+/// Get icon for an injection type. Returns (icon_char, font) tuple.
+pub fn icon_for_injection(injection: Injection) -> (char, iced::Font) {
+    use crate::icons::*;
+
+    match injection {
+        Injection::Person => (ICON_PERSON, MATERIAL_ICONS),
+        Injection::Organization => (ICON_BUSINESS, MATERIAL_ICONS),
+        Injection::OrganizationUnit => (ICON_GROUP, MATERIAL_ICONS),
+        Injection::Location => (ICON_LOCATION, MATERIAL_ICONS),
+        Injection::Role => (ICON_SETTINGS, MATERIAL_ICONS),
+        Injection::Policy => (ICON_VERIFIED, MATERIAL_ICONS),
+        Injection::NatsOperator | Injection::NatsOperatorSimple => (ICON_SETTINGS, MATERIAL_ICONS),
+        Injection::NatsAccount | Injection::NatsAccountSimple => (ICON_CLOUD, MATERIAL_ICONS),
+        Injection::NatsUser | Injection::NatsUserSimple => (ICON_PERSON, MATERIAL_ICONS),
+        Injection::NatsServiceAccount => (ICON_SETTINGS, MATERIAL_ICONS),
+        Injection::RootCertificate => (ICON_VERIFIED, MATERIAL_ICONS),
+        Injection::IntermediateCertificate => (ICON_VERIFIED, MATERIAL_ICONS),
+        Injection::LeafCertificate => (ICON_VERIFIED, MATERIAL_ICONS),
+        Injection::Key => (ICON_KEY, MATERIAL_ICONS),
+        Injection::YubiKey => (ICON_SECURITY, MATERIAL_ICONS),
+        Injection::PivSlot => (ICON_USB, MATERIAL_ICONS),
+        Injection::YubiKeyStatus => (ICON_CHECK, MATERIAL_ICONS),
+        Injection::Manifest => (ICON_MEMORY, MATERIAL_ICONS),
+        Injection::PolicyRole => (ICON_SETTINGS, MATERIAL_ICONS),
+        Injection::PolicyClaim => (ICON_CHECK, MATERIAL_ICONS),
+        Injection::PolicyCategory => (ICON_FOLDER, MATERIAL_ICONS),
+        Injection::PolicyGroup => (ICON_GROUP, MATERIAL_ICONS),
+        Injection::AggregateOrganization => (ICON_BUSINESS, MATERIAL_ICONS),
+        Injection::AggregatePkiChain => (ICON_VERIFIED, MATERIAL_ICONS),
+        Injection::AggregateNatsSecurity => (ICON_CLOUD, MATERIAL_ICONS),
+        Injection::AggregateYubiKeyProvisioning => (ICON_SECURITY, MATERIAL_ICONS),
+    }
+}
+use crate::domain::visualization::{PolicyGroup, PolicyCategory, PolicyRole, PolicyClaimView, Manifest};
 use crate::domain::pki::{Certificate, CertificateType, CryptographicKey};
 use crate::domain::yubikey::{YubiKeyDevice, PivSlotView, YubiKeyStatus};
 
@@ -112,6 +486,9 @@ pub const COLOR_POLICY_CATEGORY: Color = Color::from_rgb(0.7, 0.5, 0.3);  // Tan
 /// Color for PolicyRole nodes
 pub const COLOR_POLICY_ROLE: Color = Color::from_rgb(0.6, 0.4, 0.6);  // Purple-gray
 
+/// Color for PolicyClaim nodes
+pub const COLOR_POLICY_CLAIM: Color = Color::from_rgb(0.5, 0.6, 0.4);  // Olive green
+
 // ============================================================================
 // LIFTED NODE - Graph representation of any domain entity
 // ============================================================================
@@ -123,7 +500,8 @@ pub const COLOR_POLICY_ROLE: Color = Color::from_rgb(0.6, 0.4, 0.6);  // Purple-
 /// - An injection tag indicating the domain type
 /// - The original domain data (type-erased for heterogeneous storage)
 /// - Derived metadata for graph visualization
-#[derive(Debug, Clone)]
+/// - FoldCapability for EditFieldData (FRP A5/A6 compliance)
+#[derive(Clone)]
 pub struct LiftedNode {
     /// Entity ID (preserved from domain)
     pub id: Uuid,
@@ -142,6 +520,26 @@ pub struct LiftedNode {
 
     /// Original domain data (type-erased)
     data: Arc<dyn Any + Send + Sync>,
+
+    /// FoldCapability for EditFieldData extraction (FRP A5/A6 compliant)
+    ///
+    /// Captured at lift time - NO pattern matching required at fold time.
+    /// This is the categorical fold eliminator for the coproduct.
+    edit_fields_fold: Option<FoldCapability<EditFieldData>>,
+}
+
+// Custom Debug impl since FoldCapability doesn't have useful Debug
+impl std::fmt::Debug for LiftedNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LiftedNode")
+            .field("id", &self.id)
+            .field("injection", &self.injection)
+            .field("label", &self.label)
+            .field("secondary", &self.secondary)
+            .field("color", &self.color)
+            .field("has_edit_fields_fold", &self.edit_fields_fold.is_some())
+            .finish()
+    }
 }
 
 impl LiftedNode {
@@ -160,6 +558,31 @@ impl LiftedNode {
             secondary: None,
             color,
             data: Arc::new(data),
+            edit_fields_fold: None,
+        }
+    }
+
+    /// Create a new lifted node with a fold capability for EditFieldData.
+    ///
+    /// FRP A5/A6 compliant: The fold is captured at lift time, so fold execution
+    /// requires NO pattern matching or downcasting.
+    pub fn new_with_fold<T: Send + Sync + Clone + 'static>(
+        id: Uuid,
+        injection: Injection,
+        label: impl Into<String>,
+        color: Color,
+        data: T,
+        fold_fn: impl Fn(&T) -> EditFieldData + Send + Sync + 'static,
+    ) -> Self {
+        let fold_cap = FoldCapability::new(data.clone(), fold_fn);
+        Self {
+            id,
+            injection,
+            label: label.into(),
+            secondary: None,
+            color,
+            data: Arc::new(data),
+            edit_fields_fold: Some(fold_cap),
         }
     }
 
@@ -173,6 +596,28 @@ impl LiftedNode {
     pub fn with_primary(mut self, text: impl Into<String>) -> Self {
         self.label = text.into();
         self
+    }
+
+    /// Add a fold capability for EditFieldData extraction (FRP A5/A6 compliance)
+    ///
+    /// The fold is captured at lift time. To extract EditFieldData, call
+    /// `fold_edit_fields()` - NO pattern matching required.
+    pub fn with_edit_fields_fold(mut self, fold: FoldCapability<EditFieldData>) -> Self {
+        self.edit_fields_fold = Some(fold);
+        self
+    }
+
+    /// Execute the EditFieldData fold (FRP A6 compliant - no pattern matching)
+    ///
+    /// Returns the EditFieldData if a fold was captured at lift time.
+    /// If no fold was captured, returns None (caller can fall back to legacy extraction).
+    pub fn fold_edit_fields(&self) -> Option<EditFieldData> {
+        self.edit_fields_fold.as_ref().map(|cap| cap.execute())
+    }
+
+    /// Check if this node has an EditFieldData fold capability
+    pub fn has_edit_fields_fold(&self) -> bool {
+        self.edit_fields_fold.is_some()
     }
 
     /// Attempt to downcast and retrieve the original domain data
@@ -289,6 +734,524 @@ impl LiftedNode {
             Injection::Location |
             Injection::Role |
             Injection::Policy
+        )
+    }
+
+    // ========================================================================
+    // ACCESSOR METHODS (replacing deprecated DomainNode accessors)
+    // ========================================================================
+
+    /// Get YubiKey serial if this is a YubiKey-related node
+    pub fn yubikey_serial(&self) -> Option<&str> {
+        match self.injection {
+            Injection::YubiKey => {
+                self.downcast::<YubiKeyDevice>().map(|d| d.serial.as_str())
+            }
+            Injection::PivSlot => {
+                self.downcast::<PivSlotView>().map(|s| s.yubikey_serial.as_str())
+            }
+            _ => None,
+        }
+    }
+
+    /// Get NATS account name if this is a NATS account node
+    pub fn nats_account_name(&self) -> Option<&str> {
+        if self.injection == Injection::NatsAccountSimple {
+            self.downcast::<NatsAccountSimple>().map(|a| a.name.as_str())
+        } else {
+            None
+        }
+    }
+
+    /// Get parent account name if this is a NATS user node
+    pub fn nats_user_account_name(&self) -> Option<&str> {
+        if self.injection == Injection::NatsUserSimple {
+            self.downcast::<NatsUserSimple>().map(|u| u.account_name.as_str())
+        } else {
+            None
+        }
+    }
+
+    /// Get Person with derived KeyOwnerRole if this is a Person node
+    ///
+    /// The KeyOwnerRole is derived from the person's primary role.
+    /// This replaces `domain_node.person_with_role()`.
+    pub fn person_with_role(&self) -> Option<(&Person, KeyOwnerRole)> {
+        use crate::domain::RoleType;
+
+        if self.injection != Injection::Person {
+            return None;
+        }
+
+        self.downcast::<Person>().map(|person| {
+            // Derive KeyOwnerRole from primary role
+            let role = person.roles.first()
+                .map(|r| match r.role_type {
+                    RoleType::Executive => KeyOwnerRole::RootAuthority,
+                    RoleType::Administrator => KeyOwnerRole::SecurityAdmin,
+                    RoleType::Developer => KeyOwnerRole::Developer,
+                    RoleType::Operator => KeyOwnerRole::ServiceAccount,
+                    RoleType::Auditor => KeyOwnerRole::Auditor,
+                    RoleType::Service => KeyOwnerRole::ServiceAccount,
+                })
+                .unwrap_or(KeyOwnerRole::Developer);
+            (person, role)
+        })
+    }
+
+    /// Get Person reference if this is a Person node
+    pub fn person(&self) -> Option<&Person> {
+        if self.injection == Injection::Person {
+            self.downcast::<Person>()
+        } else {
+            None
+        }
+    }
+
+    /// Get Organization reference if this is an Organization node
+    pub fn organization(&self) -> Option<&Organization> {
+        if self.injection == Injection::Organization {
+            self.downcast::<Organization>()
+        } else {
+            None
+        }
+    }
+
+    /// Get OrganizationUnit reference if this is an OrganizationUnit node
+    pub fn organization_unit(&self) -> Option<&OrganizationUnit> {
+        if self.injection == Injection::OrganizationUnit {
+            self.downcast::<OrganizationUnit>()
+        } else {
+            None
+        }
+    }
+
+    /// Get Location reference if this is a Location node
+    pub fn location(&self) -> Option<&Location> {
+        if self.injection == Injection::Location {
+            self.downcast::<Location>()
+        } else {
+            None
+        }
+    }
+
+    /// Get CryptographicKey reference if this is a Key node
+    pub fn key(&self) -> Option<&CryptographicKey> {
+        if self.injection == Injection::Key {
+            self.downcast::<CryptographicKey>()
+        } else {
+            None
+        }
+    }
+
+    /// Get Certificate reference if this is a Certificate node (any type)
+    pub fn certificate(&self) -> Option<&Certificate> {
+        match self.injection {
+            Injection::RootCertificate
+            | Injection::IntermediateCertificate
+            | Injection::LeafCertificate => {
+                self.downcast::<Certificate>()
+            }
+            _ => None,
+        }
+    }
+
+    /// Get Manifest reference if this is a Manifest node
+    pub fn manifest(&self) -> Option<&Manifest> {
+        if self.injection == Injection::Manifest {
+            self.downcast::<Manifest>()
+        } else {
+            None
+        }
+    }
+
+    /// Get YubiKeyDevice reference if this is a YubiKey node
+    pub fn yubikey(&self) -> Option<&YubiKeyDevice> {
+        if self.injection == Injection::YubiKey {
+            self.downcast::<YubiKeyDevice>()
+        } else {
+            None
+        }
+    }
+
+    /// Get YubiKeyStatus reference if this is a YubiKeyStatus node
+    pub fn yubikey_status(&self) -> Option<&YubiKeyStatus> {
+        if self.injection == Injection::YubiKeyStatus {
+            self.downcast::<YubiKeyStatus>()
+        } else {
+            None
+        }
+    }
+
+    /// Get Role reference if this is a Role node
+    pub fn role(&self) -> Option<&Role> {
+        if self.injection == Injection::Role {
+            self.downcast::<Role>()
+        } else {
+            None
+        }
+    }
+
+    /// Get Policy reference if this is a Policy node
+    pub fn policy(&self) -> Option<&Policy> {
+        if self.injection == Injection::Policy {
+            self.downcast::<Policy>()
+        } else {
+            None
+        }
+    }
+
+    /// Get PolicyGroup reference if this is a PolicyGroup node
+    pub fn policy_group(&self) -> Option<&PolicyGroup> {
+        if self.injection == Injection::PolicyGroup {
+            self.downcast::<PolicyGroup>()
+        } else {
+            None
+        }
+    }
+
+    /// Get PolicyCategory reference if this is a PolicyCategory node
+    pub fn policy_category(&self) -> Option<&PolicyCategory> {
+        if self.injection == Injection::PolicyCategory {
+            self.downcast::<PolicyCategory>()
+        } else {
+            None
+        }
+    }
+
+    /// Get PolicyRole reference if this is a PolicyRole node
+    pub fn policy_role(&self) -> Option<&PolicyRole> {
+        if self.injection == Injection::PolicyRole {
+            self.downcast::<PolicyRole>()
+        } else {
+            None
+        }
+    }
+
+    /// Get PivSlotView reference if this is a PivSlot node
+    pub fn piv_slot(&self) -> Option<&PivSlotView> {
+        if self.injection == Injection::PivSlot {
+            self.downcast::<PivSlotView>()
+        } else {
+            None
+        }
+    }
+
+    // ========================================================================
+    // FOLD METHODS (replacing deprecated DomainNode.detail_panel() etc.)
+    // ========================================================================
+
+    /// Get detail panel data for this node
+    ///
+    /// Returns data suitable for displaying in a detail panel.
+    /// All field generation is inlined - no dependency on FoldDomainNode.
+    pub fn detail_panel(&self) -> DetailPanelData {
+        match self.injection {
+            Injection::Person => {
+                if let Some((person, role)) = self.person_with_role() {
+                    return DetailPanelData::new("Selected Person:")
+                        .with_field("Name", &person.name)
+                        .with_field("Email", &person.email)
+                        .with_field("Active", if person.active { "✓" } else { "✗" })
+                        .with_field("Key Role", format!("{:?}", role));
+                }
+            }
+            Injection::Organization => {
+                if let Some(org) = self.organization() {
+                    return DetailPanelData::new("Selected Organization:")
+                        .with_field("Name", &org.name)
+                        .with_field("Display Name", &org.display_name)
+                        .with_field("Units", org.units.len().to_string());
+                }
+            }
+            Injection::OrganizationUnit => {
+                if let Some(unit) = self.organization_unit() {
+                    return DetailPanelData::new("Selected Unit:")
+                        .with_field("Name", &unit.name)
+                        .with_field("Type", format!("{:?}", unit.unit_type));
+                }
+            }
+            Injection::Location => {
+                if let Some(loc) = self.location() {
+                    return DetailPanelData::new("Selected Location:")
+                        .with_field("Name", &loc.name)
+                        .with_field("Type", format!("{:?}", loc.location_type));
+                }
+            }
+            Injection::Role => {
+                if let Some(role) = self.role() {
+                    return DetailPanelData::new("Selected Role:")
+                        .with_field("Name", &role.name)
+                        .with_field("Description", &role.description)
+                        .with_field("Required Policies", role.required_policies.len().to_string());
+                }
+            }
+            Injection::Policy => {
+                if let Some(policy) = self.policy() {
+                    return DetailPanelData::new("Selected Policy:")
+                        .with_field("Name", &policy.name)
+                        .with_field("Claims", policy.claims.len().to_string())
+                        .with_field("Conditions", policy.conditions.len().to_string())
+                        .with_field("Priority", policy.priority.to_string())
+                        .with_field("Enabled", policy.enabled.to_string());
+                }
+            }
+            Injection::Key => {
+                if let Some(key) = self.key() {
+                    return DetailPanelData::new("Selected Key:")
+                        .with_field("ID", key.id.as_uuid().to_string())
+                        .with_field("Algorithm", format!("{:?}", key.algorithm))
+                        .with_field("Purpose", format!("{:?}", key.purpose))
+                        .with_field("Expires", key.expires_at.map_or("Never".to_string(), |dt| dt.to_string()));
+                }
+            }
+            Injection::RootCertificate | Injection::IntermediateCertificate | Injection::LeafCertificate => {
+                if let Some(cert) = self.certificate() {
+                    let title = match cert.cert_type {
+                        CertificateType::Root => "Selected Root Certificate:",
+                        CertificateType::Intermediate => "Selected Intermediate Certificate:",
+                        CertificateType::Leaf | CertificateType::Policy => "Selected Leaf Certificate:",
+                    };
+                    let mut data = DetailPanelData::new(title)
+                        .with_field("Subject", &cert.subject)
+                        .with_field("Issuer", &cert.issuer)
+                        .with_field("Valid From", cert.not_before.to_string())
+                        .with_field("Valid Until", cert.not_after.to_string())
+                        .with_field("Key Usage", cert.key_usage.join(", "));
+                    if !cert.san.is_empty() {
+                        data = data.with_field("SANs", cert.san.join(", "));
+                    }
+                    return data;
+                }
+            }
+            Injection::YubiKey => {
+                if let Some(yk) = self.yubikey() {
+                    return DetailPanelData::new("Selected YubiKey:")
+                        .with_field("Serial", &yk.serial)
+                        .with_field("Version", &yk.version)
+                        .with_field("Provisioned", yk.provisioned_at.map_or("No".to_string(), |dt| dt.to_string()))
+                        .with_field("Slots Used", yk.slots_used.iter().map(|s| format!("{:?}", s)).collect::<Vec<_>>().join(", "));
+                }
+            }
+            Injection::PivSlot => {
+                if let Some(slot) = self.piv_slot() {
+                    return DetailPanelData::new("Selected PIV Slot:")
+                        .with_field("Slot", &slot.slot_name)
+                        .with_field("YubiKey", &slot.yubikey_serial)
+                        .with_field("Has Key", if slot.has_key { "Yes" } else { "No" })
+                        .with_field("Certificate", slot.certificate_subject.clone().unwrap_or_else(|| "None".to_string()));
+                }
+            }
+            Injection::YubiKeyStatus => {
+                if let Some(status) = self.yubikey_status() {
+                    return DetailPanelData::new("Selected YubiKey Status:")
+                        .with_field("Person ID", status.person_id.to_string())
+                        .with_field("YubiKey", status.yubikey_serial.clone().unwrap_or_else(|| "None".to_string()))
+                        .with_field("Slots Provisioned", status.slots_provisioned.iter().map(|s| format!("{:?}", s)).collect::<Vec<_>>().join(", "))
+                        .with_field("Slots Needed", status.slots_needed.iter().map(|s| format!("{:?}", s)).collect::<Vec<_>>().join(", "));
+                }
+            }
+            Injection::Manifest => {
+                if let Some(manifest) = self.manifest() {
+                    return DetailPanelData::new("Selected Manifest:")
+                        .with_field("Name", &manifest.name)
+                        .with_field("Destination", manifest.destination.as_ref().map_or("None".to_string(), |p| p.display().to_string()))
+                        .with_field("Checksum", manifest.checksum.clone().unwrap_or_else(|| "Not computed".to_string()));
+                }
+            }
+            Injection::PolicyGroup => {
+                if let Some(group) = self.policy_group() {
+                    return DetailPanelData::new("Selected Policy Group:")
+                        .with_field("Name", &group.name)
+                        .with_field("Separation Class", format!("{:?}", group.separation_class))
+                        .with_field("Role Count", group.role_count.to_string())
+                        .with_field("Expanded", group.expanded.to_string());
+                }
+            }
+            Injection::PolicyCategory => {
+                if let Some(cat) = self.policy_category() {
+                    return DetailPanelData::new("Selected Policy Category:")
+                        .with_field("Name", &cat.name)
+                        .with_field("Claim Count", cat.claim_count.to_string())
+                        .with_field("Expanded", cat.expanded.to_string());
+                }
+            }
+            Injection::PolicyRole => {
+                if let Some(role) = self.policy_role() {
+                    return DetailPanelData::new("Selected Policy Role:")
+                        .with_field("Name", &role.name)
+                        .with_field("Purpose", &role.purpose)
+                        .with_field("Level", role.level.to_string())
+                        .with_field("Separation Class", format!("{:?}", role.separation_class))
+                        .with_field("Claim Count", role.claim_count.to_string());
+                }
+            }
+            // NATS types - use label/secondary from LiftedNode
+            Injection::NatsOperator | Injection::NatsOperatorSimple => {
+                return DetailPanelData::new("Selected NATS Operator:")
+                    .with_field("Name", &self.label)
+                    .with_field("Type", "Operator");
+            }
+            Injection::NatsAccount | Injection::NatsAccountSimple => {
+                return DetailPanelData::new("Selected NATS Account:")
+                    .with_field("Name", &self.label)
+                    .with_field("Type", "Account");
+            }
+            Injection::NatsUser | Injection::NatsUserSimple => {
+                return DetailPanelData::new("Selected NATS User:")
+                    .with_field("Name", &self.label)
+                    .with_field("Type", "User");
+            }
+            Injection::NatsServiceAccount => {
+                return DetailPanelData::new("Selected Service Account:")
+                    .with_field("Name", &self.label)
+                    .with_field("Type", "Service Account");
+            }
+            Injection::PolicyClaim => {
+                return DetailPanelData::new("Selected Claim:")
+                    .with_field("Name", &self.label);
+            }
+            // Aggregate types
+            Injection::AggregateOrganization
+            | Injection::AggregatePkiChain
+            | Injection::AggregateNatsSecurity
+            | Injection::AggregateYubiKeyProvisioning => {
+                return DetailPanelData::new("Selected Aggregate:")
+                    .with_field("Type", format!("{:?}", self.injection))
+                    .with_field("Label", &self.label);
+            }
+        }
+
+        // Fallback for any unhandled types
+        DetailPanelData::new(format!("Selected {:?}:", self.injection))
+            .with_field("ID", self.id.to_string())
+            .with_field("Label", &self.label)
+    }
+
+    /// Get themed visualization data for this node
+    ///
+    /// Replaces `domain_node.fold(&ThemedVisualizationFold::new(theme))`.
+    /// Returns visualization data with verified icons.
+    pub fn themed_visualization(
+        &self,
+        theme: &crate::domains::typography::VerifiedTheme,
+    ) -> crate::gui::folds::view::ThemedVisualizationData {
+        use crate::gui::folds::view::{ThemedVisualizationFold, ThemedVisualizationData, CertificateType as FoldCertType};
+        use crate::domains::typography::{LabelledElement, LabelCategory, FontFamily};
+        use iced::Color;
+
+        let fold = ThemedVisualizationFold::new(theme);
+
+        match self.injection {
+            Injection::Person => {
+                if let Some((person, role)) = self.person_with_role() {
+                    let role_name = format!("{:?}", role);
+                    // Use a default role color based on role type
+                    let role_color = match role {
+                        KeyOwnerRole::RootAuthority => Color::from_rgb(0.8, 0.1, 0.1),
+                        KeyOwnerRole::SecurityAdmin => Color::from_rgb(0.6, 0.2, 0.8),
+                        KeyOwnerRole::Developer => Color::from_rgb(0.2, 0.7, 0.3),
+                        KeyOwnerRole::ServiceAccount => Color::from_rgb(0.4, 0.4, 0.6),
+                        KeyOwnerRole::Auditor => Color::from_rgb(0.5, 0.5, 0.5),
+                        KeyOwnerRole::BackupHolder => Color::from_rgb(0.7, 0.5, 0.2),
+                    };
+                    return fold.fold_person(&person.name, &person.email, &role_name, role_color);
+                }
+            }
+            Injection::Organization => {
+                if let Some(org) = self.organization() {
+                    return fold.fold_organization(&org.name, &org.display_name, org.description.as_deref());
+                }
+            }
+            Injection::OrganizationUnit => {
+                if let Some(unit) = self.organization_unit() {
+                    return fold.fold_organization_unit(&unit.name);
+                }
+            }
+            Injection::Location => {
+                if let Some(loc) = self.location() {
+                    return fold.fold_location(&loc.name, &format!("{:?}", loc.location_type));
+                }
+            }
+            Injection::Key => {
+                if let Some(key) = self.key() {
+                    return fold.fold_key(
+                        &format!("{:?}", key.purpose),
+                        &format!("{:?}", key.algorithm),
+                        key.expires_at.map(|dt| dt.format("%Y-%m-%d").to_string()).as_deref(),
+                    );
+                }
+            }
+            Injection::RootCertificate => {
+                if let Some(cert) = self.certificate() {
+                    return fold.fold_certificate(
+                        &cert.subject,
+                        &cert.not_after.format("%Y-%m-%d").to_string(),
+                        FoldCertType::Root,
+                    );
+                }
+            }
+            Injection::IntermediateCertificate => {
+                if let Some(cert) = self.certificate() {
+                    return fold.fold_certificate(
+                        &cert.subject,
+                        &cert.not_after.format("%Y-%m-%d").to_string(),
+                        FoldCertType::Intermediate,
+                    );
+                }
+            }
+            Injection::LeafCertificate => {
+                if let Some(cert) = self.certificate() {
+                    return fold.fold_certificate(
+                        &cert.subject,
+                        &cert.not_after.format("%Y-%m-%d").to_string(),
+                        FoldCertType::Leaf,
+                    );
+                }
+            }
+            Injection::YubiKey => {
+                if let Some(yk) = self.yubikey() {
+                    return fold.fold_yubikey(&yk.serial, &yk.version, yk.slots_used.len());
+                }
+            }
+            Injection::NatsOperator | Injection::NatsOperatorSimple => {
+                return fold.fold_nats_operator(&self.label);
+            }
+            Injection::NatsAccount | Injection::NatsAccountSimple => {
+                return fold.fold_nats_account(&self.label, false);
+            }
+            Injection::NatsUser | Injection::NatsUserSimple => {
+                return fold.fold_nats_user(&self.label, "");
+            }
+            Injection::Role => {
+                if let Some(role) = self.role() {
+                    return fold.fold_role(&role.name, &role.description);
+                }
+            }
+            Injection::Policy => {
+                if let Some(policy) = self.policy() {
+                    return fold.fold_policy(&policy.name, &policy.description);
+                }
+            }
+            // Use default visualization for other types
+            _ => {}
+        }
+
+        // Fallback: create a basic visualization from label
+        let primary = LabelledElement::new(
+            LabelCategory::Entity,
+            None,
+            Some(self.label.clone()),
+            FontFamily::Body,
+            self.color,
+            theme.metrics().base_font_size,
+        );
+
+        ThemedVisualizationData::new(
+            primary,
+            self.secondary.clone(),
+            format!("{} - {:?}", self.label, self.injection),
+            false,
         )
     }
 }
@@ -557,12 +1520,14 @@ pub fn compose_domains<T: LiftableDomain>(entities: &[T]) -> LiftedGraph {
 
 impl LiftableDomain for Organization {
     fn lift(&self) -> LiftedNode {
-        LiftedNode::new(
-            self.id,
+        // Use new_with_fold to capture EditFieldData fold at lift time (FRP A5/A6)
+        LiftedNode::new_with_fold(
+            self.id.as_uuid(),
             Injection::Organization,
             &self.display_name,
             COLOR_ORGANIZATION,
             self.clone(),
+            |org: &Organization| Foldable::<EditFieldData>::fold(org),
         )
         .with_secondary(format!("Org: {}", self.name))
     }
@@ -579,18 +1544,20 @@ impl LiftableDomain for Organization {
     }
 
     fn entity_id(&self) -> Uuid {
-        self.id
+        self.id.as_uuid()
     }
 }
 
 impl LiftableDomain for OrganizationUnit {
     fn lift(&self) -> LiftedNode {
-        LiftedNode::new(
-            self.id,
+        // Use new_with_fold to capture EditFieldData fold at lift time (FRP A5/A6)
+        LiftedNode::new_with_fold(
+            self.id.as_uuid(),
             Injection::OrganizationUnit,
             &self.name,
             COLOR_UNIT,
             self.clone(),
+            |unit: &OrganizationUnit| Foldable::<EditFieldData>::fold(unit),
         )
         .with_secondary(format!("{:?}", self.unit_type))
     }
@@ -607,18 +1574,20 @@ impl LiftableDomain for OrganizationUnit {
     }
 
     fn entity_id(&self) -> Uuid {
-        self.id
+        self.id.as_uuid()
     }
 }
 
 impl LiftableDomain for Person {
     fn lift(&self) -> LiftedNode {
-        LiftedNode::new(
-            self.id,
+        // Use new_with_fold to capture EditFieldData fold at lift time (FRP A5/A6)
+        LiftedNode::new_with_fold(
+            self.id.as_uuid(),
             Injection::Person,
             &self.name,
             COLOR_PERSON,
             self.clone(),
+            |person: &Person| Foldable::<EditFieldData>::fold(person),
         )
         .with_secondary(self.email.clone())
     }
@@ -635,7 +1604,7 @@ impl LiftableDomain for Person {
     }
 
     fn entity_id(&self) -> Uuid {
-        self.id
+        self.id.as_uuid()
     }
 }
 
@@ -644,12 +1613,14 @@ impl LiftableDomain for Location {
         // Location uses EntityId<LocationMarker> via AggregateRoot trait
         use cim_domain::AggregateRoot;
         let id = *self.id().as_uuid();
-        LiftedNode::new(
+        // Use new_with_fold to capture EditFieldData fold at lift time (FRP A5/A6)
+        LiftedNode::new_with_fold(
             id,
             Injection::Location,
             &self.name,
             COLOR_LOCATION,
             self.clone(),
+            |loc: &Location| Foldable::<EditFieldData>::fold(loc),
         )
         .with_secondary(format!("{:?}", self.location_type))
     }
@@ -673,12 +1644,14 @@ impl LiftableDomain for Location {
 
 impl LiftableDomain for Role {
     fn lift(&self) -> LiftedNode {
-        LiftedNode::new(
-            self.id,
+        // Use new_with_fold to capture EditFieldData fold at lift time (FRP A5/A6)
+        LiftedNode::new_with_fold(
+            self.id.as_uuid(),
             Injection::Role,
             &self.name,
             COLOR_ROLE,
             self.clone(),
+            |role: &Role| Foldable::<EditFieldData>::fold(role),
         )
         .with_secondary(self.description.clone())
     }
@@ -695,18 +1668,20 @@ impl LiftableDomain for Role {
     }
 
     fn entity_id(&self) -> Uuid {
-        self.id
+        self.id.as_uuid()
     }
 }
 
 impl LiftableDomain for Policy {
     fn lift(&self) -> LiftedNode {
-        LiftedNode::new(
-            self.id,
+        // Use new_with_fold to capture EditFieldData fold at lift time (FRP A5/A6)
+        LiftedNode::new_with_fold(
+            self.id.as_uuid(),
             Injection::Policy,
             &self.name,
             COLOR_POLICY,
             self.clone(),
+            |policy: &Policy| Foldable::<EditFieldData>::fold(policy),
         )
         .with_secondary(self.description.clone())
     }
@@ -723,7 +1698,7 @@ impl LiftableDomain for Policy {
     }
 
     fn entity_id(&self) -> Uuid {
-        self.id
+        self.id.as_uuid()
     }
 }
 
@@ -804,6 +1779,34 @@ impl LiftableDomain for PolicyRole {
 
     fn injection() -> Injection {
         Injection::PolicyRole
+    }
+
+    fn entity_id(&self) -> Uuid {
+        self.id.as_uuid()
+    }
+}
+
+impl LiftableDomain for PolicyClaimView {
+    fn lift(&self) -> LiftedNode {
+        LiftedNode::new(
+            self.id.as_uuid(),
+            Injection::PolicyClaim,
+            &self.name,
+            COLOR_POLICY_CLAIM,
+            self.clone(),
+        )
+        .with_secondary(format!("Category: {}", self.category))
+    }
+
+    fn unlift(node: &LiftedNode) -> Option<Self> {
+        if node.injection != Injection::PolicyClaim {
+            return None;
+        }
+        node.downcast::<PolicyClaimView>().cloned()
+    }
+
+    fn injection() -> Injection {
+        Injection::PolicyClaim
     }
 
     fn entity_id(&self) -> Uuid {
@@ -1409,8 +2412,8 @@ pub fn lift_organization_graph(
         graph.add(unit);
         // Connect unit to organization
         graph.connect(
-            unit.id,
-            org.id,
+            unit.id.as_uuid(),
+            org.id.as_uuid(),
             "belongs_to",
             COLOR_UNIT,
         );
@@ -1418,8 +2421,8 @@ pub fn lift_organization_graph(
         // Connect to parent unit if exists
         if let Some(parent_id) = unit.parent_unit_id {
             graph.connect(
-                unit.id,
-                parent_id,
+                unit.id.as_uuid(),
+                parent_id.as_uuid(),
                 "reports_to",
                 COLOR_UNIT,
             );
@@ -1433,8 +2436,8 @@ pub fn lift_organization_graph(
         // Connect person to organization
         if person.organization_id == org.id {
             graph.connect(
-                person.id,
-                org.id,
+                person.id.as_uuid(),
+                org.id.as_uuid(),
                 "member_of",
                 COLOR_PERSON,
             );
@@ -1443,8 +2446,8 @@ pub fn lift_organization_graph(
         // Connect person to their units
         for unit_id in &person.unit_ids {
             graph.connect(
-                person.id,
-                *unit_id,
+                person.id.as_uuid(),
+                unit_id.as_uuid(),
                 "works_in",
                 COLOR_PERSON,
             );
@@ -1453,8 +2456,8 @@ pub fn lift_organization_graph(
         // Connect to owner if exists
         if let Some(owner_id) = person.owner_id {
             graph.connect(
-                person.id,
-                owner_id,
+                person.id.as_uuid(),
+                owner_id.as_uuid(),
                 "owned_by",
                 COLOR_PERSON,
             );
@@ -1471,6 +2474,7 @@ pub fn lift_organization_graph(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::ids::{BootstrapOrgId, UnitId, BootstrapPersonId};
 
     // Test domain type
     #[derive(Debug, Clone)]
@@ -1579,7 +2583,7 @@ mod tests {
         use std::collections::HashMap;
 
         let org = Organization {
-            id: Uuid::now_v7(),
+            id: BootstrapOrgId::new(),
             name: "test-org".to_string(),
             display_name: "Test Organization".to_string(),
             description: Some("A test organization".to_string()),
@@ -1591,7 +2595,7 @@ mod tests {
         let lifted = org.lift();
 
         // Verify lifted properties
-        assert_eq!(lifted.id, org.id);
+        assert_eq!(lifted.id, org.id.as_uuid());
         assert_eq!(lifted.injection, Injection::Organization);
         assert_eq!(lifted.label, "Test Organization");
         assert!(lifted.secondary.is_some());
@@ -1600,7 +2604,7 @@ mod tests {
         let recovered = Organization::unlift(&lifted);
         assert!(recovered.is_some());
         let recovered = recovered.unwrap();
-        assert_eq!(recovered.id, org.id);
+        assert_eq!(recovered.id.as_uuid(), org.id.as_uuid());
         assert_eq!(recovered.name, org.name);
     }
 
@@ -1609,7 +2613,7 @@ mod tests {
         use crate::domain::OrganizationUnitType;
 
         let unit = OrganizationUnit {
-            id: Uuid::now_v7(),
+            id: UnitId::new(),
             name: "Engineering".to_string(),
             unit_type: OrganizationUnitType::Department,
             parent_unit_id: None,
@@ -1620,7 +2624,7 @@ mod tests {
         let lifted = unit.lift();
 
         // Verify lifted properties
-        assert_eq!(lifted.id, unit.id);
+        assert_eq!(lifted.id, unit.id.as_uuid());
         assert_eq!(lifted.injection, Injection::OrganizationUnit);
         assert_eq!(lifted.label, "Engineering");
 
@@ -1628,18 +2632,19 @@ mod tests {
         let recovered = OrganizationUnit::unlift(&lifted);
         assert!(recovered.is_some());
         let recovered = recovered.unwrap();
-        assert_eq!(recovered.id, unit.id);
+        assert_eq!(recovered.id.as_uuid(), unit.id.as_uuid());
         assert_eq!(recovered.name, unit.name);
     }
 
     #[test]
     fn test_person_lift_unlift() {
+        let org_id = BootstrapOrgId::new();
         let person = Person {
-            id: Uuid::now_v7(),
+            id: BootstrapPersonId::new(),
             name: "John Doe".to_string(),
             email: "john@example.com".to_string(),
             roles: vec![],
-            organization_id: Uuid::now_v7(),
+            organization_id: org_id,
             unit_ids: vec![],
             active: true,
             nats_permissions: None,
@@ -1649,7 +2654,7 @@ mod tests {
         let lifted = person.lift();
 
         // Verify lifted properties
-        assert_eq!(lifted.id, person.id);
+        assert_eq!(lifted.id, person.id.as_uuid());
         assert_eq!(lifted.injection, Injection::Person);
         assert_eq!(lifted.label, "John Doe");
         assert_eq!(lifted.secondary, Some("john@example.com".to_string()));
@@ -1658,7 +2663,7 @@ mod tests {
         let recovered = Person::unlift(&lifted);
         assert!(recovered.is_some());
         let recovered = recovered.unwrap();
-        assert_eq!(recovered.id, person.id);
+        assert_eq!(recovered.id.as_uuid(), person.id.as_uuid());
         assert_eq!(recovered.name, person.name);
         assert_eq!(recovered.email, person.email);
     }
@@ -1668,18 +2673,18 @@ mod tests {
         use crate::domain::OrganizationUnitType;
         use std::collections::HashMap;
 
-        let org_id = Uuid::now_v7();
-        let unit_id = Uuid::now_v7();
+        let org_id = BootstrapOrgId::new();
+        let unit_id = UnitId::new();
 
         let org = Organization {
-            id: org_id,
+            id: org_id.clone(),
             name: "cowboyai".to_string(),
             display_name: "Cowboy AI".to_string(),
             description: None,
             parent_id: None,
             units: vec![
                 OrganizationUnit {
-                    id: unit_id,
+                    id: unit_id.clone(),
                     name: "Core".to_string(),
                     unit_type: OrganizationUnitType::Team,
                     parent_unit_id: None,
@@ -1692,22 +2697,22 @@ mod tests {
 
         let people = vec![
             Person {
-                id: Uuid::now_v7(),
+                id: BootstrapPersonId::new(),
                 name: "Alice".to_string(),
                 email: "alice@cowboyai.com".to_string(),
                 roles: vec![],
-                organization_id: org_id,
-                unit_ids: vec![unit_id],
+                organization_id: org_id.clone(),
+                unit_ids: vec![unit_id.clone()],
                 active: true,
                 nats_permissions: None,
                 owner_id: None,
             },
             Person {
-                id: Uuid::now_v7(),
+                id: BootstrapPersonId::new(),
                 name: "Bob".to_string(),
                 email: "bob@cowboyai.com".to_string(),
                 roles: vec![],
-                organization_id: org_id,
+                organization_id: org_id.clone(),
                 unit_ids: vec![],
                 active: true,
                 nats_permissions: None,
@@ -1745,7 +2750,7 @@ mod tests {
         use std::collections::HashMap;
 
         let org1 = Organization {
-            id: Uuid::now_v7(),
+            id: BootstrapOrgId::new(),
             name: "org1".to_string(),
             display_name: "Org 1".to_string(),
             description: None,
@@ -1755,7 +2760,7 @@ mod tests {
         };
 
         let org2 = Organization {
-            id: Uuid::now_v7(),
+            id: BootstrapOrgId::new(),
             name: "org2".to_string(),
             display_name: "Org 2".to_string(),
             description: None,
@@ -1779,12 +2784,13 @@ mod tests {
         // then a == b in domain. We test the contrapositive:
         // Different domain entities produce different graph nodes.
 
+        let org_id = BootstrapOrgId::new();
         let person1 = Person {
-            id: Uuid::now_v7(),
+            id: BootstrapPersonId::new(),
             name: "Person 1".to_string(),
             email: "p1@test.com".to_string(),
             roles: vec![],
-            organization_id: Uuid::now_v7(),
+            organization_id: org_id.clone(),
             unit_ids: vec![],
             active: true,
             nats_permissions: None,
@@ -1792,11 +2798,11 @@ mod tests {
         };
 
         let person2 = Person {
-            id: Uuid::now_v7(),
+            id: BootstrapPersonId::new(),
             name: "Person 2".to_string(),
             email: "p2@test.com".to_string(),
             roles: vec![],
-            organization_id: Uuid::now_v7(),
+            organization_id: org_id.clone(),
             unit_ids: vec![],
             active: true,
             nats_permissions: None,

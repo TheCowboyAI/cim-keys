@@ -2,7 +2,7 @@
 //!
 //! This module implements: **The organizational graph drives key-centric views**.
 //!
-//! NOTE: Uses deprecated `DomainNodeData` for pattern matching. Migration pending.
+//! Uses `LiftedNode` for type-safe access to domain entities.
 //!
 //! ## Flow
 //!
@@ -43,7 +43,6 @@ use uuid::Uuid;
 
 use crate::events::{KeyAlgorithm, KeyPurpose};
 use crate::gui::graph::{OrganizationConcept, EdgeType};
-use crate::gui::domain_node::DomainNodeData;
 
 /// Key-centric analysis of the organizational graph
 #[derive(Debug, Clone)]
@@ -78,10 +77,9 @@ impl KeyAnalysis {
     pub fn analyze(graph: &OrganizationConcept, key_id: Uuid) -> Option<Self> {
         // Find the key node
         let node = graph.nodes.get(&key_id)?;
-        let (algorithm, purpose) = match node.domain_node.data() {
-            DomainNodeData::Key(key) => (key.algorithm.clone(), key.purpose),
-            _ => return None,
-        };
+        // Use lifted_node instead of deprecated domain_node
+        let key = node.lifted_node.key()?;
+        let (algorithm, purpose) = (key.algorithm.clone(), key.purpose);
 
         let mut owner_id = None;
         let mut owner_type = None;
@@ -99,7 +97,7 @@ impl KeyAnalysis {
                     EdgeType::OwnsKey => {
                         owner_id = Some(edge.from);
                         if let Some(owner_node) = graph.nodes.get(&edge.from) {
-                            owner_type = Some(owner_node.domain_node.injection().display_name().to_string());
+                            owner_type = Some(owner_node.lifted_node.injection().display_name().to_string());
                         }
                     }
                     EdgeType::CertificateUsesKey => {

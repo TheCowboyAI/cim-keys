@@ -2,8 +2,6 @@
 //!
 //! This module provides a pure Rust GUI that can run both as a native
 //! application and as a WASM application in the browser.
-//!
-//! NOTE: Uses deprecated `Injection` type from domain_node bridge. Migration pending.
 
 use iced::{
     application,
@@ -20,6 +18,7 @@ use uuid::Uuid;
 use crate::{
     aggregate::KeyManagementAggregate,
     domain::{Person, KeyOwnerRole, Organization},
+    domain::ids::{BootstrapOrgId, BootstrapPersonId},
     projections::OfflineKeyProjection,
     // MVI architecture
     mvi::{Intent, Model as MviModel},
@@ -43,7 +42,6 @@ pub mod graph_pki;
 pub mod graph_nats;
 pub mod graph_yubikey;
 pub mod graph_events;
-pub mod domain_node;
 pub mod folds;
 
 // Aggregate-specific graph views for DDD organization
@@ -77,7 +75,7 @@ pub mod graph_projection;
 mod graph_integration_tests;
 
 use graph::{OrganizationConcept, OrganizationIntent};
-use domain_node::Injection;
+use crate::lifting::Injection;
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
 use view_model::ViewModel;
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
@@ -400,8 +398,8 @@ impl ExportReadiness {
     }
 }
 
-// NOTE: OrganizationalNodeType has been removed in favor of domain_node::Injection
-// which provides a proper categorical coproduct with 25 variants.
+// NOTE: OrganizationalNodeType has been removed in favor of lifting::Injection
+// which provides a proper categorical coproduct with 28 variants.
 // Use Injection::creatable() for the subset that can be manually created.
 
 /// Graph layout algorithms
@@ -1286,7 +1284,7 @@ impl CimKeysApp {
                         // Set organization info
                         self.organization_name = org.name.clone();
                         self.organization_domain = org.display_name.clone();
-                        self.organization_id = Some(org.id);
+                        self.organization_id = Some(org.id.as_uuid());
 
                         // Set master passphrase if provided
                         if let Some(passphrase) = master_passphrase {
@@ -1326,16 +1324,16 @@ impl CimKeysApp {
                         // 4a. Organization → OrganizationUnit edges (ParentChild)
                         for unit in &units {
                             self.org_graph.add_edge(
-                                org.id,
-                                unit.id,
+                                org.id.as_uuid(),
+                                unit.id.as_uuid(),
                                 crate::gui::graph::EdgeType::ParentChild,
                             );
 
                             // Unit → Parent Unit edges (if nested units)
                             if let Some(parent_id) = unit.parent_unit_id {
                                 self.org_graph.add_edge(
-                                    parent_id,
-                                    unit.id,
+                                    parent_id.as_uuid(),
+                                    unit.id.as_uuid(),
                                     crate::gui::graph::EdgeType::ParentChild,
                                 );
                             }
@@ -1345,8 +1343,8 @@ impl CimKeysApp {
                         for person in &people {
                             for unit_id in &person.unit_ids {
                                 self.org_graph.add_edge(
-                                    person.id,
-                                    *unit_id,
+                                    person.id.as_uuid(),
+                                    unit_id.as_uuid(),
                                     crate::gui::graph::EdgeType::MemberOf,
                                 );
                             }
@@ -1356,8 +1354,8 @@ impl CimKeysApp {
                         for person in &people {
                             if let Some(owner_id) = person.owner_id {
                                 self.org_graph.add_edge(
-                                    owner_id,
-                                    person.id,
+                                    owner_id.as_uuid(),
+                                    person.id.as_uuid(),
                                     crate::gui::graph::EdgeType::Manages,
                                 );
                             }
@@ -1575,7 +1573,7 @@ impl CimKeysApp {
                                 // Update organization info
                                 self.organization_name = org.name.clone();
                                 self.organization_domain = org.display_name.clone();
-                                self.organization_id = Some(org.id);
+                                self.organization_id = Some(org.id.as_uuid());
 
                                 // 1. Add Organization node
                                 self.org_graph.add_organization_node(org.clone());
@@ -1584,7 +1582,7 @@ impl CimKeysApp {
                                 for unit in &org.units {
                                     self.org_graph.add_org_unit_node(unit.clone());
                                     // Edge: Organization -> Unit
-                                    self.org_graph.add_edge(org.id, unit.id, graph::EdgeType::ManagesUnit);
+                                    self.org_graph.add_edge(org.id.as_uuid(), unit.id.as_uuid(), graph::EdgeType::ManagesUnit);
                                 }
 
                                 // 3. Add Person nodes and edges to their units
@@ -1605,12 +1603,12 @@ impl CimKeysApp {
 
                                     // Edge: Unit -> Person (for each unit they belong to)
                                     for unit_id in &person.unit_ids {
-                                        self.org_graph.add_edge(*unit_id, person.id, graph::EdgeType::MemberOf);
+                                        self.org_graph.add_edge(unit_id.as_uuid(), person.id.as_uuid(), graph::EdgeType::MemberOf);
                                     }
 
                                     // If no unit, connect directly to org
                                     if person.unit_ids.is_empty() {
-                                        self.org_graph.add_edge(org.id, person.id, graph::EdgeType::MemberOf);
+                                        self.org_graph.add_edge(org.id.as_uuid(), person.id.as_uuid(), graph::EdgeType::MemberOf);
                                     }
                                 }
 
@@ -1633,27 +1631,22 @@ impl CimKeysApp {
                                     self.organization_domain = org_info.display_name.clone();
                                 }
 
-                                // Create synthetic Organization node
-                                let org_id = Uuid::now_v7();
-                                self.organization_id = Some(org_id);
-                                let org = Organization {
-                                    id: org_id,
-                                    name: self.organization_name.clone(),
-                                    display_name: self.organization_domain.clone(),
-                                    description: None,
-                                    parent_id: None,
-                                    units: vec![],
-                                    metadata: std::collections::HashMap::new(),
-                                };
-                                self.org_graph.add_organization_node(org);
+                                // Create synthetic Organization node using proper EntityId
+                                let org = Organization::new(
+                                    self.organization_name.clone(),
+                                    self.organization_domain.clone(),
+                                );
+                                let org_uuid = org.id.as_uuid();
+                                self.organization_id = Some(org_uuid);
+                                self.org_graph.add_organization_node(org.clone());
 
                                 // Add people
                                 for person_config in &simple_config.people {
                                     let person = Person {
-                                        id: person_config.person_id,
+                                        id: BootstrapPersonId::from_uuid(person_config.person_id),
                                         name: person_config.name.clone(),
                                         email: person_config.email.clone(),
-                                        organization_id: org_id,
+                                        organization_id: org.id.clone(),
                                         unit_ids: vec![],
                                         roles: vec![],
                                         nats_permissions: None,
@@ -1672,7 +1665,7 @@ impl CimKeysApp {
                                     };
 
                                     self.org_graph.add_node(person.clone(), role);
-                                    self.org_graph.add_edge(org_id, person.id, graph::EdgeType::MemberOf);
+                                    self.org_graph.add_edge(org_uuid, person.id.as_uuid(), graph::EdgeType::MemberOf);
                                 }
 
                                 self.bootstrap_config = Some(BootstrapConfig::Simple(simple_config));
@@ -1811,7 +1804,7 @@ impl CimKeysApp {
                 }
 
                 // Validate domain is created
-                let org_id = match self.organization_id {
+                let org_uuid = match self.organization_id {
                     Some(id) => id,
                     None => {
                         self.error_message = Some("Please create a domain first".to_string());
@@ -1819,12 +1812,11 @@ impl CimKeysApp {
                     }
                 };
 
-                let person_id = Uuid::now_v7();
                 let person = Person {
-                    id: person_id,
+                    id: BootstrapPersonId::new(),
                     name: self.new_person_name.clone(),
                     email: self.new_person_email.clone(),
-                    organization_id: org_id,
+                    organization_id: BootstrapOrgId::from_uuid(org_uuid),
                     unit_ids: vec![],
                     roles: vec![],
                     nats_permissions: None,
@@ -1837,8 +1829,10 @@ impl CimKeysApp {
                 // Add to graph for visualization
                 self.org_graph.add_node(person.clone(), role);
 
-                // Persist to projection
+                // Persist to projection - capture ids as Uuid for projection interface
                 let projection = self.projection.clone();
+                let person_id = person.id.as_uuid();
+                let org_id = person.organization_id.as_uuid();
                 let person_name = person.name.clone();
                 let person_email = person.email.clone();
                 let role_string = format!("{:?}", role);
@@ -2686,7 +2680,7 @@ impl CimKeysApp {
                         self.status_message = format!("[OK] NATS hierarchy generated for {}", self.organization_name);
 
                         // Build OrganizationBootstrap for graph visualization
-                        let org_id = self.organization_id.unwrap_or_else(|| Uuid::now_v7());
+                        let org_uuid = self.organization_id.unwrap_or_else(|| Uuid::now_v7());
                         let org_name = self.organization_name.clone();
                         let org_domain = self.organization_domain.clone();
                         let projection = self.projection.clone();
@@ -2698,17 +2692,20 @@ impl CimKeysApp {
 
                                 // Construct domain Organization for NATS projection
                                 use crate::domain::{Organization, OrganizationUnit, OrganizationUnitType, Person, PersonRole, RoleType, RoleScope, Permission};
+                                use crate::domain::ids::{BootstrapOrgId, BootstrapPersonId, UnitId};
                                 use std::collections::HashMap;
 
+                                let org_entity_id = BootstrapOrgId::from_uuid(org_uuid);
+                                let unit_entity_id = UnitId::from_uuid(org_uuid);
                                 let org = Organization {
-                                    id: org_id,
+                                    id: org_entity_id.clone(),
                                     name: org_name.clone(),
                                     display_name: org_name.clone(),
                                     description: Some(format!("Organization for {}", org_domain)),
                                     parent_id: None,
                                     units: vec![
                                         OrganizationUnit {
-                                            id: org_id,  // Use same ID for default unit
+                                            id: unit_entity_id.clone(),  // Use EntityId for unit
                                             name: format!("{} - Default", org_name),
                                             unit_type: OrganizationUnitType::Infrastructure,
                                             parent_unit_id: None,
@@ -2721,7 +2718,7 @@ impl CimKeysApp {
 
                                 // Convert PersonEntry to domain Person
                                 let people: Vec<Person> = people_info.iter().map(|p| Person {
-                                    id: p.person_id,
+                                    id: BootstrapPersonId::from_uuid(p.person_id),
                                     name: p.name.clone(),
                                     email: p.email.clone(),
                                     roles: vec![PersonRole {
@@ -2729,8 +2726,8 @@ impl CimKeysApp {
                                         scope: RoleScope::Organization,
                                         permissions: vec![Permission::ViewAuditLogs],
                                     }],
-                                    organization_id: org_id,
-                                    unit_ids: vec![org_id],  // Assign to default unit
+                                    organization_id: org_entity_id.clone(),
+                                    unit_ids: vec![unit_entity_id.clone()],  // Assign to default unit
                                     nats_permissions: None,
                                     active: true,
                                     owner_id: None,
@@ -2863,7 +2860,7 @@ impl CimKeysApp {
                         // Store in org_graph for visualization
                         self.organization_name = org.name.clone();
                         self.organization_domain = org.name.clone();
-                        self.organization_id = Some(org.id);
+                        self.organization_id = Some(org.id.as_uuid());
                     }
                     Err(e) => {
                         self.error_message = Some(format!("Failed to load CLAN bootstrap: {}", e));
@@ -3158,17 +3155,17 @@ impl CimKeysApp {
                 // FRP Event-Driven Pattern: Create immutable GraphEvent
                 let event = match node_type {
                     Injection::Organization => {
+                        let org = Organization::new(
+                            "New Organization",
+                            "New Organization",
+                        );
+                        // Add description
                         let org = Organization {
-                            id: Uuid::now_v7(),
-                            name: "New Organization".to_string(),
-                            display_name: "New Organization".to_string(),
                             description: Some("Edit name by clicking node".to_string()),
-                            parent_id: None,
-                            units: Vec::new(),
-                            metadata: std::collections::HashMap::new(),
+                            ..org
                         };
 
-                        let node_id = org.id;
+                        let node_id = org.id.as_uuid();
                         let label = org.name.clone();
                         let position = self.node_selector_position;
                         let color = self.view_model.colors.node_organization;
@@ -3188,16 +3185,12 @@ impl CimKeysApp {
                         }
                     }
                     Injection::OrganizationUnit => {
-                        let unit = OrganizationUnit {
-                            id: Uuid::now_v7(),
-                            name: "New Unit".to_string(),
-                            unit_type: OrganizationUnitType::Department,
-                            parent_unit_id: None,
-                            nats_account_name: None,
-                            responsible_person_id: None,
-                        };
+                        let unit = OrganizationUnit::new(
+                            "New Unit",
+                            OrganizationUnitType::Department,
+                        );
 
-                        let node_id = unit.id;
+                        let node_id = unit.id.as_uuid();
                         let label = unit.name.clone();
                         let position = self.node_selector_position;
                         let color = self.view_model.colors.node_unit;
@@ -3217,13 +3210,15 @@ impl CimKeysApp {
                         }
                     }
                     Injection::Person => {
+                        use crate::domain::ids::{BootstrapOrgId, BootstrapPersonId};
+
                         // Find org_id from existing Organization nodes
                         let org_id = self.org_graph.nodes.values()
-                            .find_map(|n| n.lifted_node.downcast::<Organization>().map(|o| o.id))
-                            .unwrap_or_else(Uuid::now_v7);
+                            .find_map(|n| n.lifted_node.downcast::<Organization>().map(|o| o.id.clone()))
+                            .unwrap_or_else(BootstrapOrgId::new);
 
                         let person = Person {
-                            id: Uuid::now_v7(),
+                            id: BootstrapPersonId::new(),
                             name: "New Person".to_string(),
                             email: "person@example.com".to_string(),
                             roles: Vec::new(),
@@ -3234,7 +3229,7 @@ impl CimKeysApp {
                             owner_id: None,
                         };
 
-                        let node_id = person.id;
+                        let node_id = person.id.as_uuid();
                         let label = person.name.clone();
                         let position = self.node_selector_position;
                         let _role = KeyOwnerRole::Developer;
@@ -3289,15 +3284,17 @@ impl CimKeysApp {
                         }
                     }
                     Injection::Role => {
+                        use crate::domain::ids::{BootstrapOrgId, BootstrapRoleId, BootstrapPersonId};
+
                         // Find org_id from existing Organization nodes
                         let org_id = self.org_graph.nodes.values()
-                            .find_map(|n| n.lifted_node.downcast::<Organization>().map(|o| o.id))
-                            .unwrap_or_else(Uuid::now_v7);
+                            .find_map(|n| n.lifted_node.downcast::<Organization>().map(|o| o.id.clone()))
+                            .unwrap_or_else(BootstrapOrgId::new);
 
-                        let creator_id = Uuid::now_v7(); // TODO: Get actual user ID
+                        let creator_id = BootstrapPersonId::new(); // TODO: Get actual user ID
 
                         let role_data = Role {
-                            id: Uuid::now_v7(),
+                            id: BootstrapRoleId::new(),
                             name: "New Role".to_string(),
                             description: "Define role responsibilities".to_string(),
                             organization_id: org_id,
@@ -3308,7 +3305,7 @@ impl CimKeysApp {
                             active: true,
                         };
 
-                        let node_id = role_data.id;
+                        let node_id = role_data.id.as_uuid();
                         let label = role_data.name.clone();
                         let position = self.node_selector_position;
                         let color = self.view_model.colors.node_role;
@@ -3328,10 +3325,12 @@ impl CimKeysApp {
                         }
                     }
                     Injection::Policy => {
-                        let creator_id = Uuid::now_v7(); // TODO: Get actual user ID
+                        use crate::domain::ids::{BootstrapPolicyId, BootstrapPersonId};
+
+                        let creator_id = BootstrapPersonId::new(); // TODO: Get actual user ID
 
                         let policy = Policy {
-                            id: Uuid::now_v7(),
+                            id: BootstrapPolicyId::new(),
                             name: "New Policy".to_string(),
                             description: "Define policy claims and conditions".to_string(),
                             claims: Vec::new(),
@@ -3342,7 +3341,7 @@ impl CimKeysApp {
                             metadata: std::collections::HashMap::new(),
                         };
 
-                        let node_id = policy.id;
+                        let node_id = policy.id.as_uuid();
                         let label = policy.name.clone();
                         let position = self.node_selector_position;
                         let color = self.view_model.colors.node_policy;
@@ -3719,19 +3718,22 @@ impl CimKeysApp {
                             use chrono::Utc;
 
 
+                            use crate::domain::ids::{BootstrapPersonId, BootstrapOrgId, UnitId};
                             let node_id = Uuid::now_v7();
-                            let dummy_org_id = self.organization_id.unwrap_or_else(|| Uuid::now_v7());
+                            let dummy_org_id = BootstrapOrgId::from_uuid(
+                                self.organization_id.unwrap_or_else(|| Uuid::now_v7())
+                            );
 
                             // Create node based on selected type using Kan extension pattern
                             let (lifted_node, label, color) = match node_type_str.as_str() {
                                 // Organization graph nodes
                                 "Person" => {
                                     let person = Person {
-                                        id: node_id,
+                                        id: BootstrapPersonId::from_uuid(node_id),
                                         name: "New Person".to_string(),
                                         email: format!("person{}@example.com", node_id),
                                         roles: vec![],
-                                        organization_id: dummy_org_id,
+                                        organization_id: dummy_org_id.clone(),
                                         unit_ids: vec![],
                                         nats_permissions: None,
                                         active: true,
@@ -3741,7 +3743,7 @@ impl CimKeysApp {
                                 }
                                 "Unit" => {
                                     let unit = OrganizationUnit {
-                                        id: node_id,
+                                        id: UnitId::from_uuid(node_id),
                                         name: "New Unit".to_string(),
                                         unit_type: OrganizationUnitType::Department,
                                         parent_unit_id: None,
@@ -3856,45 +3858,39 @@ impl CimKeysApp {
 
                 match menu_msg {
                     ContextMenuMessage::CreateNode(node_type) => {
+                        use crate::domain::ids::{BootstrapOrgId, BootstrapPersonId, UnitId, BootstrapRoleId, BootstrapPolicyId};
                         let position = self.context_menu.position();
                         let node_id = Uuid::now_v7();
-                        let dummy_org_id = self.organization_id.unwrap_or_else(|| Uuid::now_v7());
+                        let dummy_org_id = BootstrapOrgId::from_uuid(
+                            self.organization_id.unwrap_or_else(|| Uuid::now_v7())
+                        );
 
                         // Create placeholder domain entity and generate event
                         // Uses LiftableDomain::lift() for type-erased Kan extension
                         let (lifted_node, label, color) = match node_type {
                             NodeCreationType::Organization => {
-                                let org = Organization {
-                                    id: node_id,
-                                    name: "New Organization".to_string(),
-                                    display_name: "New Organization".to_string(),
-                                    description: Some("Edit this organization".to_string()),
-                                    parent_id: None,
-                                    units: vec![],
-                                    metadata: HashMap::new(),
-                                };
+                                let org = Organization::new(
+                                    "New Organization",
+                                    "New Organization",
+                                );
                                 let label = org.name.clone();
                                 (org.lift(), label, self.view_model.colors.node_organization)
                             }
                             NodeCreationType::OrganizationalUnit => {
-                                let unit = OrganizationUnit {
-                                    id: node_id,
-                                    name: "New Unit".to_string(),
-                                    unit_type: OrganizationUnitType::Department,
-                                    parent_unit_id: None,
-                                    nats_account_name: None,
-                                    responsible_person_id: None,
-                                };
+                                let unit = OrganizationUnit::new(
+                                    "New Unit",
+                                    OrganizationUnitType::Department,
+                                );
                                 let label = unit.name.clone();
                                 (unit.lift(), label, self.view_model.colors.node_unit)
                             }
                             NodeCreationType::Person => {
                                 let person = Person {
-                                    id: node_id,
+                                    id: BootstrapPersonId::from_uuid(node_id),
                                     name: "New Person".to_string(),
                                     email: "person@example.com".to_string(),
                                     roles: vec![],
-                                    organization_id: dummy_org_id,
+                                    organization_id: dummy_org_id.clone(),
                                     unit_ids: vec![],
                                     nats_permissions: None,
                                     active: true,
@@ -3928,14 +3924,14 @@ impl CimKeysApp {
                             }
                             NodeCreationType::Role => {
                                 let role_data = Role {
-                                    id: node_id,
+                                    id: BootstrapRoleId::from_uuid(node_id),
                                     name: "New Role".to_string(),
                                     description: "Role description".to_string(),
-                                    organization_id: dummy_org_id,
+                                    organization_id: dummy_org_id.clone(),
                                     unit_id: None,
                                     required_policies: vec![],
                                     responsibilities: vec![],
-                                    created_by: dummy_org_id,
+                                    created_by: BootstrapPersonId::from_uuid(node_id), // TODO: Get actual user
                                     active: true,
                                 };
                                 let label = role_data.name.clone();
@@ -3943,14 +3939,14 @@ impl CimKeysApp {
                             }
                             NodeCreationType::Policy => {
                                 let policy = Policy {
-                                    id: node_id,
+                                    id: BootstrapPolicyId::from_uuid(node_id),
                                     name: "New Policy".to_string(),
                                     description: "Policy description".to_string(),
                                     claims: vec![],
                                     conditions: vec![],
                                     priority: 0,
                                     enabled: true,
-                                    created_by: dummy_org_id,
+                                    created_by: BootstrapPersonId::from_uuid(node_id), // TODO: Get actual user
                                     metadata: HashMap::new(),
                                 };
                                 let label = policy.name.clone();
@@ -3978,7 +3974,7 @@ impl CimKeysApp {
                                 if !self.domain_loaded {
                                     self.domain_loaded = true;
                                     self.organization_name = org.display_name.clone();
-                                    self.organization_id = Some(org.id);
+                                    self.organization_id = Some(org.id.as_uuid());
                                     self.status_message = format!("Created organization: {}", org.display_name);
                                 }
                             }
@@ -4137,7 +4133,7 @@ impl CimKeysApp {
                             // Saving node changes
                             if let Some(node) = self.org_graph.nodes.get(&node_id) {
                                 use crate::gui::graph_events::GraphEvent;
-                                use crate::gui::domain_node::PropertyUpdate;
+                                use crate::lifting::PropertyUpdate;
                                 use chrono::Utc;
 
                                 let new_name = self.property_card.name().to_string();

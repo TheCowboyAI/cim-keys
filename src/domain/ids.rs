@@ -163,6 +163,9 @@ pub struct BootstrapOrgMarker;
 /// Marker type for OrganizationUnit entities
 pub struct UnitMarker;
 
+/// Marker type for Person entities (cim-keys bootstrap)
+pub struct BootstrapPersonMarker;
+
 /// Marker type for Role entities (bootstrap role, not domain role)
 pub struct BootstrapRoleMarker;
 
@@ -224,6 +227,9 @@ pub type BootstrapOrgId = EntityId<BootstrapOrgMarker>;
 
 /// Type-safe OrganizationUnit ID
 pub type UnitId = EntityId<UnitMarker>;
+
+/// Type-safe Person ID (bootstrap)
+pub type BootstrapPersonId = EntityId<BootstrapPersonMarker>;
 
 /// Type-safe Role ID (bootstrap)
 pub type BootstrapRoleId = EntityId<BootstrapRoleMarker>;

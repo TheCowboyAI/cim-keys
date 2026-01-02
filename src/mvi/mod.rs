@@ -22,6 +22,7 @@ pub mod model;
 pub mod update;
 pub mod view;
 pub mod signals_aliases;
+pub mod handlers;
 
 pub use intent::{Intent, NodeCreationType, SignalKindMarker};
 pub use model::Model;

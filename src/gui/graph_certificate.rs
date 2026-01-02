@@ -2,7 +2,7 @@
 //!
 //! This module implements: **The organizational graph drives certificate-centric views**.
 //!
-//! NOTE: Uses deprecated `DomainNodeData` for pattern matching. Migration pending.
+//! Uses `LiftedNode` for type-safe access to domain entities.
 //!
 //! ## Flow
 //!
@@ -48,7 +48,7 @@ use chrono::{DateTime, Utc};
 
 use crate::events::KeyAlgorithm;
 use crate::gui::graph::{OrganizationConcept, EdgeType};
-use crate::gui::domain_node::DomainNodeData;
+use crate::domain::pki::CertificateType as DomainCertType;
 
 /// Certificate type classification
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,6 +56,7 @@ pub enum CertificateType {
     RootCA,
     IntermediateCA,
     Leaf,
+    PolicyCA,
 }
 
 /// Certificate-centric analysis of the organizational graph
@@ -100,37 +101,22 @@ impl CertificateAnalysis {
         // Find the certificate node
         let node = graph.nodes.get(&certificate_id)?;
 
-        // Extract certificate type and details based on node type
-        let (certificate_type, subject, issuer, not_before, not_after, key_usage, san) = match node.domain_node.data() {
-            DomainNodeData::RootCertificate(cert) => (
-                CertificateType::RootCA,
-                cert.subject.clone(),
-                cert.issuer.clone(),
-                cert.not_before,
-                cert.not_after,
-                cert.key_usage.clone(),
-                Vec::new(),
-            ),
-            DomainNodeData::IntermediateCertificate(cert) => (
-                CertificateType::IntermediateCA,
-                cert.subject.clone(),
-                cert.issuer.clone(),
-                cert.not_before,
-                cert.not_after,
-                cert.key_usage.clone(),
-                Vec::new(),
-            ),
-            DomainNodeData::LeafCertificate(cert) => (
-                CertificateType::Leaf,
-                cert.subject.clone(),
-                cert.issuer.clone(),
-                cert.not_before,
-                cert.not_after,
-                cert.key_usage.clone(),
-                cert.san.clone(),
-            ),
-            _ => return None,
+        // Extract certificate type and details using lifted_node accessor
+        let cert = node.lifted_node.certificate()?;
+        let certificate_type = match cert.cert_type {
+            DomainCertType::Root => CertificateType::RootCA,
+            DomainCertType::Intermediate => CertificateType::IntermediateCA,
+            DomainCertType::Leaf => CertificateType::Leaf,
+            DomainCertType::Policy => CertificateType::PolicyCA,
         };
+        let (subject, issuer, not_before, not_after, key_usage, san) = (
+            cert.subject.clone(),
+            cert.issuer.clone(),
+            cert.not_before,
+            cert.not_after,
+            cert.key_usage.clone(),
+            cert.san.clone(),
+        );
 
         let mut signing_key_id = None;
         let mut signing_key_algorithm = None;
@@ -150,7 +136,7 @@ impl CertificateAnalysis {
                         // Key used by this certificate
                         signing_key_id = Some(edge.from);
                         if let Some(key_node) = graph.nodes.get(&edge.from) {
-                            if let DomainNodeData::Key(key) = key_node.domain_node.data() {
+                            if let Some(key) = key_node.lifted_node.key() {
                                 signing_key_algorithm = Some(key.algorithm.clone());
                             }
                         }
@@ -163,7 +149,7 @@ impl CertificateAnalysis {
                         // Entity (person/org) this certificate was issued to
                         subject_entity_id = Some(edge.from);
                         if let Some(entity_node) = graph.nodes.get(&edge.from) {
-                            subject_entity_type = Some(entity_node.domain_node.injection().display_name().to_string());
+                            subject_entity_type = Some(entity_node.lifted_node.injection().display_name().to_string());
                         }
                     }
                     _ => {}

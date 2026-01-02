@@ -428,6 +428,126 @@ pub enum Intent {
 }
 
 impl Intent {
+    /// Convert this intent to a subject string for routing
+    ///
+    /// Subject strings follow NATS subject naming convention:
+    /// `category.entity.action` or `category.entity.subentity.action`
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// Intent::UiTabSelected(_).to_subject()  // "ui.tab.selected"
+    /// Intent::DomainCreated { .. }.to_subject()  // "domain.organization.created"
+    /// Intent::PortX509RootCAGenerated { .. }.to_subject()  // "port.x509.rootca.generated"
+    /// ```
+    pub fn to_subject(&self) -> String {
+        match self {
+            // ===== UI Intents =====
+            Intent::UiTabSelected(_) => "ui.tab.selected".to_string(),
+            Intent::UiCreateDomainClicked => "ui.domain.create".to_string(),
+            Intent::UiLoadDomainClicked { .. } => "ui.domain.load".to_string(),
+            Intent::UiOrganizationNameChanged(_) => "ui.organization.name.changed".to_string(),
+            Intent::UiOrganizationIdChanged(_) => "ui.organization.id.changed".to_string(),
+            Intent::UiAddPersonClicked => "ui.person.add".to_string(),
+            Intent::UiPersonNameChanged { .. } => "ui.person.name.changed".to_string(),
+            Intent::UiPersonEmailChanged { .. } => "ui.person.email.changed".to_string(),
+            Intent::UiRemovePersonClicked { .. } => "ui.person.remove".to_string(),
+            Intent::UiPassphraseChanged(_) => "ui.passphrase.changed".to_string(),
+            Intent::UiPassphraseConfirmChanged(_) => "ui.passphrase.confirm.changed".to_string(),
+            Intent::UiDeriveMasterSeedClicked => "ui.seed.derive".to_string(),
+            Intent::UiGenerateRootCAClicked => "ui.key.rootca.generate".to_string(),
+            Intent::UiGenerateIntermediateCAClicked { .. } => "ui.key.intermediateca.generate".to_string(),
+            Intent::UiGenerateServerCertClicked { .. } => "ui.key.servercert.generate".to_string(),
+            Intent::UiGenerateSSHKeysClicked => "ui.key.ssh.generate".to_string(),
+            Intent::UiGenerateAllKeysClicked => "ui.key.all.generate".to_string(),
+            Intent::UiExportClicked { .. } => "ui.export.start".to_string(),
+            Intent::UiProvisionYubiKeyClicked { .. } => "ui.yubikey.provision".to_string(),
+            // Graph UI intents
+            Intent::UiGraphCreateNode { .. } => "ui.graph.node.create".to_string(),
+            Intent::UiGraphCreateEdgeStarted { .. } => "ui.graph.edge.start".to_string(),
+            Intent::UiGraphCreateEdgeCompleted { .. } => "ui.graph.edge.complete".to_string(),
+            Intent::UiGraphCreateEdgeCancelled => "ui.graph.edge.cancel".to_string(),
+            Intent::UiConceptEntityClicked { .. } => "ui.graph.node.click".to_string(),
+            Intent::UiGraphDeleteNode { .. } => "ui.graph.node.delete".to_string(),
+            Intent::UiGraphDeleteEdge { .. } => "ui.graph.edge.delete".to_string(),
+            Intent::UiGraphEditNodeProperties { .. } => "ui.graph.properties.edit".to_string(),
+            Intent::UiGraphPropertyChanged { .. } => "ui.graph.properties.changed".to_string(),
+            Intent::UiGraphPropertiesSaved { .. } => "ui.graph.properties.save".to_string(),
+            Intent::UiGraphPropertiesCancelled => "ui.graph.properties.cancel".to_string(),
+            Intent::UiGraphAutoLayout => "ui.graph.layout.auto".to_string(),
+
+            // ===== Domain Intents =====
+            Intent::DomainCreated { .. } => "domain.organization.created".to_string(),
+            Intent::PersonAdded { .. } => "domain.person.added".to_string(),
+            Intent::RootCAGenerated { .. } => "domain.key.rootca.generated".to_string(),
+            Intent::SSHKeyGenerated { .. } => "domain.key.ssh.generated".to_string(),
+            Intent::YubiKeyProvisioned { .. } => "domain.yubikey.provisioned".to_string(),
+            Intent::MasterSeedDerived { .. } => "domain.seed.derived".to_string(),
+            Intent::MasterSeedDerivationFailed { .. } => "domain.seed.failed".to_string(),
+            Intent::DomainNodeCreated { .. } => "domain.graph.node.created".to_string(),
+            Intent::DomainEdgeCreated { .. } => "domain.graph.edge.created".to_string(),
+            Intent::DomainNodeDeleted { .. } => "domain.graph.node.deleted".to_string(),
+            Intent::DomainNodeUpdated { .. } => "domain.graph.node.updated".to_string(),
+            Intent::DomainOrganizationCreated { .. } => "domain.organization.created".to_string(),
+            Intent::DomainOrgUnitCreated { .. } => "domain.orgunit.created".to_string(),
+            Intent::DomainLocationCreated { .. } => "domain.location.created".to_string(),
+            Intent::DomainRoleCreated { .. } => "domain.role.created".to_string(),
+            Intent::DomainPolicyCreated { .. } => "domain.policy.created".to_string(),
+            Intent::DomainPolicyBound { .. } => "domain.policy.bound".to_string(),
+
+            // ===== Port Intents =====
+            Intent::PortStorageWriteCompleted { .. } => "port.storage.write.completed".to_string(),
+            Intent::PortStorageWriteFailed { .. } => "port.storage.write.failed".to_string(),
+            Intent::PortX509RootCAGenerated { .. } => "port.x509.rootca.generated".to_string(),
+            Intent::PortX509IntermediateCAGenerated { .. } => "port.x509.intermediateca.generated".to_string(),
+            Intent::PortX509ServerCertGenerated { .. } => "port.x509.servercert.generated".to_string(),
+            Intent::PortX509GenerationFailed { .. } => "port.x509.failed".to_string(),
+            Intent::PortSSHKeypairGenerated { .. } => "port.ssh.generated".to_string(),
+            Intent::PortSSHGenerationFailed { .. } => "port.ssh.failed".to_string(),
+            Intent::PortYubiKeyDevicesListed { .. } => "port.yubikey.listed".to_string(),
+            Intent::PortYubiKeyKeyGenerated { .. } => "port.yubikey.generated".to_string(),
+            Intent::PortYubiKeyOperationFailed { .. } => "port.yubikey.failed".to_string(),
+            Intent::PortDomainLoaded { .. } => "port.domain.loaded".to_string(),
+            Intent::PortSecretsLoaded { .. } => "port.secrets.loaded".to_string(),
+            Intent::PortDomainExported { .. } => "port.domain.exported".to_string(),
+            Intent::PortDomainExportFailed { .. } => "port.domain.export.failed".to_string(),
+            Intent::PortNatsHierarchyGenerated { .. } => "port.nats.hierarchy.generated".to_string(),
+            Intent::PortNatsHierarchyFailed { .. } => "port.nats.hierarchy.failed".to_string(),
+            Intent::PortPolicyLoaded { .. } => "port.policy.loaded".to_string(),
+            Intent::PortPolicyLoadFailed { .. } => "port.policy.failed".to_string(),
+
+            // ===== System Intents =====
+            Intent::SystemFileSelected(_) => "system.file.selected".to_string(),
+            Intent::SystemFilePickerCancelled => "system.file.cancelled".to_string(),
+            Intent::SystemErrorOccurred { .. } => "system.error".to_string(),
+            Intent::SystemClipboardUpdated(_) => "system.clipboard.updated".to_string(),
+
+            // ===== Error Intents =====
+            Intent::ErrorOccurred { .. } => "error.occurred".to_string(),
+            Intent::ErrorDismissed { .. } => "error.dismissed".to_string(),
+
+            // ===== NoOp =====
+            Intent::NoOp => "system.noop".to_string(),
+        }
+    }
+
+    /// Get the intent category for routing
+    pub fn category(&self) -> crate::routing::IntentCategory {
+        use crate::routing::IntentCategory;
+
+        if self.is_ui_originated() {
+            IntentCategory::Ui
+        } else if self.is_domain_originated() {
+            IntentCategory::Domain
+        } else if self.is_port_originated() {
+            IntentCategory::Port
+        } else if self.is_error() {
+            IntentCategory::Error
+        } else {
+            IntentCategory::System
+        }
+    }
+
     /// Check if this intent represents an error state
     pub fn is_error(&self) -> bool {
         matches!(

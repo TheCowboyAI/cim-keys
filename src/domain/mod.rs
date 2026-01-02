@@ -31,6 +31,9 @@
 /// Phantom-typed entity IDs for compile-time type safety
 pub mod ids;
 
+/// Value objects with invariant enforcement at construction
+pub mod value_objects;
+
 /// Bootstrap configuration types for JSON loading
 pub mod bootstrap;
 
@@ -62,12 +65,27 @@ pub mod sagas;
 /// Graph Domain Layer - Pure Domain Relations and Events
 pub mod graph;
 
+/// Foldable implementations for domain types (FRP A5/A6 compliance)
+#[cfg(feature = "gui")]
+pub mod foldable_impls;
+
 // ============================================================================
 // RE-EXPORTS FOR CONVENIENCE
 // ============================================================================
 
 // Re-export all ID types at module level for convenience
 pub use ids::*;
+
+// Re-export value object types for domain-driven design
+pub use value_objects::{
+    ValueObjectError,
+    OperatorName,
+    AccountName,
+    UserName,
+    CertificateSubject,
+    KeyPurpose,
+    Fingerprint,
+};
 
 // Re-export all bootstrap types for backward compatibility
 // This maintains the existing API: cim_keys::domain::Organization, etc.

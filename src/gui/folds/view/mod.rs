@@ -20,7 +20,7 @@
 pub mod visualization;
 pub mod themed_visualization;
 
-pub use visualization::{FoldVisualization, VisualizationData};
+pub use visualization::{VisualizationData, palette};
 pub use themed_visualization::{
     ThemedVisualizationFold, ThemedVisualizationData,
     CertificateType, StatusIndicator,

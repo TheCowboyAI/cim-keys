@@ -3,22 +3,20 @@
 //! These tests verify the complete user stories for generating infrastructure
 //! from organizational graphs.
 //!
-//! NOTE: Uses deprecated `DomainNodeData` type. Migration pending.
+//! Uses `LiftedNode` for type-safe access to domain entities.
 
 #[cfg(test)]
 mod graph_first_integration_tests {
     use crate::domain::{Organization, OrganizationUnit, Person, KeyOwnerRole, OrganizationUnitType};
+    use crate::domain::ids::{BootstrapOrgId, UnitId, BootstrapPersonId};
     use crate::gui::graph::OrganizationConcept;
-    use crate::gui::domain_node::DomainNodeData;
     use crate::gui::{graph_pki, graph_nats, graph_yubikey};
-    use chrono::Utc;
     use std::collections::HashMap;
-    use uuid::Uuid;
 
     /// Helper to create a test organization
     fn create_test_org(name: &str) -> Organization {
         Organization {
-            id: Uuid::now_v7(),
+            id: BootstrapOrgId::new(),
             name: name.to_string(),
             display_name: format!("{} Corp", name),
             description: Some(format!("Test organization {}", name)),
@@ -31,7 +29,7 @@ mod graph_first_integration_tests {
     /// Helper to create a test organizational unit
     fn create_test_unit(name: &str, unit_type: OrganizationUnitType) -> OrganizationUnit {
         OrganizationUnit {
-            id: Uuid::now_v7(),
+            id: UnitId::new(),
             name: name.to_string(),
             unit_type,
             parent_unit_id: None,
@@ -41,9 +39,9 @@ mod graph_first_integration_tests {
     }
 
     /// Helper to create a test person
-    fn create_test_person(name: &str, email: &str, org_id: Uuid) -> Person {
+    fn create_test_person(name: &str, email: &str, org_id: BootstrapOrgId) -> Person {
         Person {
-            id: Uuid::now_v7(),
+            id: BootstrapPersonId::new(),
             name: name.to_string(),
             email: email.to_string(),
             roles: vec![],
@@ -64,7 +62,7 @@ mod graph_first_integration_tests {
         let mut graph = OrganizationConcept::new();
 
         let org = create_test_org("TestCorp");
-        let org_id = org.id;
+        let org_id = org.id.clone();
         graph.add_organization_node(org);
 
         let unit = create_test_unit("Engineering", OrganizationUnitType::Department);
@@ -99,7 +97,7 @@ mod graph_first_integration_tests {
         let mut graph = OrganizationConcept::new();
 
         let org = create_test_org("TestCorp");
-        let org_id = org.id;
+        let org_id = org.id.clone();
         graph.add_organization_node(org);
 
         let unit = create_test_unit("Engineering", OrganizationUnitType::Department);
@@ -134,7 +132,7 @@ mod graph_first_integration_tests {
         let mut graph = OrganizationConcept::new();
 
         let org = create_test_org("TestCorp");
-        let org_id = org.id;
+        let org_id = org.id.clone();
         graph.add_organization_node(org);
 
         // Root authority needs signature slot
@@ -161,7 +159,7 @@ mod graph_first_integration_tests {
 
         // And: Each person should have a YubiKey requirement (5-tuple: node, position, color, label, person_id)
         for (node, _, _, _, _) in &yubikey_nodes {
-            if let DomainNodeData::YubiKeyStatus(status) = node.domain_node.data() {
+            if let Some(status) = node.lifted_node.yubikey_status() {
                 assert!(!status.slots_needed.is_empty(), "Each person should need at least one PIV slot");
             } else {
                 panic!("Expected YubiKeyStatus node");
@@ -178,7 +176,7 @@ mod graph_first_integration_tests {
         let mut graph = OrganizationConcept::new();
 
         let org = create_test_org("GlobalCorp");
-        let org_id = org.id;
+        let org_id = org.id.clone();
         graph.add_organization_node(org);
 
         // Add two organizational units
@@ -189,10 +187,10 @@ mod graph_first_integration_tests {
         graph.add_org_unit_node(ops_unit);
 
         // Add people to different units with different roles
-        let eng_lead = create_test_person("Engineering Lead", "eng-lead@global.com", org_id);
+        let eng_lead = create_test_person("Engineering Lead", "eng-lead@global.com", org_id.clone());
         graph.add_node(eng_lead, KeyOwnerRole::SecurityAdmin);
 
-        let ops_lead = create_test_person("Operations Lead", "ops-lead@global.com", org_id);
+        let ops_lead = create_test_person("Operations Lead", "ops-lead@global.com", org_id.clone());
         graph.add_node(ops_lead, KeyOwnerRole::SecurityAdmin);
 
         let developer = create_test_person("Developer", "dev@global.com", org_id);

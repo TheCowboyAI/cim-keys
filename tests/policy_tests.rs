@@ -8,14 +8,25 @@
 //! - Complex multi-policy scenarios
 
 use cim_keys::domain::*;
+use cim_keys::domain::ids::{BootstrapPolicyId, BootstrapPersonId, BootstrapOrgId, BootstrapRoleId};
 use chrono::Utc;
 use uuid::Uuid;
+
+/// Helper function to create a test person ID
+fn test_person_id() -> BootstrapPersonId {
+    BootstrapPersonId::new()
+}
+
+/// Helper function to create a test policy
+fn make_test_policy(name: &str, description: &str, created_by: BootstrapPersonId) -> Policy {
+    Policy::new(name, description, created_by)
+}
 
 #[test]
 fn test_policy_claim_composition() {
     // Given: Two policies with different claims
     let policy_a = Policy {
-        id: Uuid::now_v7(),
+        id: BootstrapPolicyId::new(),
         name: "Developer Access".to_string(),
         description: "Basic developer permissions".to_string(),
         claims: vec![
@@ -25,12 +36,12 @@ fn test_policy_claim_composition() {
         conditions: vec![],
         priority: 100,
         enabled: true,
-        created_by: Uuid::now_v7(),
+        created_by: BootstrapPersonId::new(),
         metadata: std::collections::HashMap::new(),
     };
 
     let policy_b = Policy {
-        id: Uuid::now_v7(),
+        id: BootstrapPolicyId::new(),
         name: "Production Access".to_string(),
         description: "Production environment access".to_string(),
         claims: vec![
@@ -40,7 +51,7 @@ fn test_policy_claim_composition() {
         conditions: vec![],
         priority: 200,
         enabled: true,
-        created_by: Uuid::now_v7(),
+        created_by: BootstrapPersonId::new(),
         metadata: std::collections::HashMap::new(),
     };
 
@@ -49,7 +60,7 @@ fn test_policy_claim_composition() {
     let bindings = vec![
         PolicyBinding {
             id: Uuid::now_v7(),
-            policy_id: policy_a.id,
+            policy_id: policy_a.id.as_uuid(),
             entity_id: person_id,
             entity_type: PolicyEntityType::Person,
             bound_at: Utc::now(),
@@ -58,7 +69,7 @@ fn test_policy_claim_composition() {
         },
         PolicyBinding {
             id: Uuid::now_v7(),
-            policy_id: policy_b.id,
+            policy_id: policy_b.id.as_uuid(),
             entity_id: person_id,
             entity_type: PolicyEntityType::Person,
             bound_at: Utc::now(),
@@ -102,38 +113,38 @@ fn test_policy_claim_composition() {
 fn test_policy_priority_sorting() {
     // Given: Three policies with different priorities
     let low_priority = Policy {
-        id: Uuid::now_v7(),
+        id: BootstrapPolicyId::new(),
         name: "Low Priority".to_string(),
         description: "Low priority policy".to_string(),
         claims: vec![PolicyClaim::CanAccessDevelopment],
         conditions: vec![],
         priority: 10,
         enabled: true,
-        created_by: Uuid::now_v7(),
+        created_by: BootstrapPersonId::new(),
         metadata: std::collections::HashMap::new(),
     };
 
     let high_priority = Policy {
-        id: Uuid::now_v7(),
+        id: BootstrapPolicyId::new(),
         name: "High Priority".to_string(),
         description: "High priority policy".to_string(),
         claims: vec![PolicyClaim::CanAccessProduction],
         conditions: vec![],
         priority: 1000,
         enabled: true,
-        created_by: Uuid::now_v7(),
+        created_by: BootstrapPersonId::new(),
         metadata: std::collections::HashMap::new(),
     };
 
     let medium_priority = Policy {
-        id: Uuid::now_v7(),
+        id: BootstrapPolicyId::new(),
         name: "Medium Priority".to_string(),
         description: "Medium priority policy".to_string(),
         claims: vec![PolicyClaim::CanAccessStaging],
         conditions: vec![],
         priority: 500,
         enabled: true,
-        created_by: Uuid::now_v7(),
+        created_by: BootstrapPersonId::new(),
         metadata: std::collections::HashMap::new(),
     };
 
@@ -141,7 +152,7 @@ fn test_policy_priority_sorting() {
     let bindings = vec![
         PolicyBinding {
             id: Uuid::now_v7(),
-            policy_id: low_priority.id,
+            policy_id: low_priority.id.as_uuid(),
             entity_id: person_id,
             entity_type: PolicyEntityType::Person,
             bound_at: Utc::now(),
@@ -150,7 +161,7 @@ fn test_policy_priority_sorting() {
         },
         PolicyBinding {
             id: Uuid::now_v7(),
-            policy_id: high_priority.id,
+            policy_id: high_priority.id.as_uuid(),
             entity_id: person_id,
             entity_type: PolicyEntityType::Person,
             bound_at: Utc::now(),
@@ -159,7 +170,7 @@ fn test_policy_priority_sorting() {
         },
         PolicyBinding {
             id: Uuid::now_v7(),
-            policy_id: medium_priority.id,
+            policy_id: medium_priority.id.as_uuid(),
             entity_id: person_id,
             entity_type: PolicyEntityType::Person,
             bound_at: Utc::now(),
@@ -195,30 +206,30 @@ fn test_policy_priority_sorting() {
     // Then: All policies should be active (sorted by priority internally)
     assert_eq!(evaluation.active_policies.len(), 3);
     // Note: active_policies are sorted by priority (high to low)
-    assert_eq!(evaluation.active_policies[0], high_priority.id);
-    assert_eq!(evaluation.active_policies[1], medium_priority.id);
-    assert_eq!(evaluation.active_policies[2], low_priority.id);
+    assert_eq!(evaluation.active_policies[0], high_priority.id.as_uuid());
+    assert_eq!(evaluation.active_policies[1], medium_priority.id.as_uuid());
+    assert_eq!(evaluation.active_policies[2], low_priority.id.as_uuid());
 }
 
 #[test]
 fn test_policy_condition_minimum_clearance() {
     // Given: Policy requiring Secret clearance
     let secret_policy = Policy {
-        id: Uuid::now_v7(),
+        id: BootstrapPolicyId::new(),
         name: "Secret Operations".to_string(),
         description: "Requires Secret clearance".to_string(),
         claims: vec![PolicyClaim::CanAccessProduction],
         conditions: vec![PolicyCondition::MinimumSecurityClearance(SecurityClearance::Secret)],
         priority: 100,
         enabled: true,
-        created_by: Uuid::now_v7(),
+        created_by: BootstrapPersonId::new(),
         metadata: std::collections::HashMap::new(),
     };
 
     let person_id = Uuid::now_v7();
     let binding = PolicyBinding {
         id: Uuid::now_v7(),
-        policy_id: secret_policy.id,
+        policy_id: secret_policy.id.as_uuid(),
         entity_id: person_id,
         entity_type: PolicyEntityType::Person,
         bound_at: Utc::now(),
@@ -280,21 +291,21 @@ fn test_policy_condition_minimum_clearance() {
 fn test_policy_condition_mfa_required() {
     // Given: Policy requiring MFA
     let mfa_policy = Policy {
-        id: Uuid::now_v7(),
+        id: BootstrapPolicyId::new(),
         name: "MFA Required".to_string(),
         description: "Must have MFA verified".to_string(),
         claims: vec![PolicyClaim::CanModifyInfrastructure],
         conditions: vec![PolicyCondition::MFAEnabled(true)],
         priority: 100,
         enabled: true,
-        created_by: Uuid::now_v7(),
+        created_by: BootstrapPersonId::new(),
         metadata: std::collections::HashMap::new(),
     };
 
     let person_id = Uuid::now_v7();
     let binding = PolicyBinding {
         id: Uuid::now_v7(),
-        policy_id: mfa_policy.id,
+        policy_id: mfa_policy.id.as_uuid(),
         entity_id: person_id,
         entity_type: PolicyEntityType::Person,
         bound_at: Utc::now(),
@@ -353,7 +364,7 @@ fn test_policy_condition_mfa_required() {
 fn test_policy_condition_witness_required() {
     // Given: Policy requiring 2 witnesses with Secret clearance
     let witness_policy = Policy {
-        id: Uuid::now_v7(),
+        id: BootstrapPolicyId::new(),
         name: "Dual Control".to_string(),
         description: "Requires 2 witnesses with Secret clearance".to_string(),
         claims: vec![PolicyClaim::CanOverrideSecurityControls],
@@ -363,14 +374,14 @@ fn test_policy_condition_witness_required() {
         }],
         priority: 100,
         enabled: true,
-        created_by: Uuid::now_v7(),
+        created_by: BootstrapPersonId::new(),
         metadata: std::collections::HashMap::new(),
     };
 
     let person_id = Uuid::now_v7();
     let binding = PolicyBinding {
         id: Uuid::now_v7(),
-        policy_id: witness_policy.id,
+        policy_id: witness_policy.id.as_uuid(),
         entity_id: person_id,
         entity_type: PolicyEntityType::Person,
         bound_at: Utc::now(),
@@ -467,7 +478,7 @@ fn test_policy_condition_witness_required() {
 fn test_role_fulfillment() {
     // Given: A role requiring specific policies
     let dev_policy = Policy {
-        id: Uuid::now_v7(),
+        id: BootstrapPolicyId::new(),
         name: "Developer Policy".to_string(),
         description: "Basic developer access".to_string(),
         claims: vec![
@@ -477,26 +488,26 @@ fn test_role_fulfillment() {
         conditions: vec![],
         priority: 100,
         enabled: true,
-        created_by: Uuid::now_v7(),
+        created_by: BootstrapPersonId::new(),
         metadata: std::collections::HashMap::new(),
     };
 
     let senior_dev_role = Role {
-        id: Uuid::now_v7(),
+        id: BootstrapRoleId::new(),
         name: "Senior Developer".to_string(),
         description: "Senior development role".to_string(),
-        organization_id: Uuid::now_v7(),
+        organization_id: BootstrapOrgId::new(),
         unit_id: None,
-        required_policies: vec![dev_policy.id],
+        required_policies: vec![dev_policy.id.clone()],
         responsibilities: vec!["Code review".to_string(), "Mentoring".to_string()],
-        created_by: Uuid::now_v7(),
+        created_by: BootstrapPersonId::new(),
         active: true,
     };
 
     let person_id = Uuid::now_v7();
     let binding = PolicyBinding {
         id: Uuid::now_v7(),
-        policy_id: dev_policy.id,
+        policy_id: dev_policy.id.as_uuid(),
         entity_id: person_id,
         entity_type: PolicyEntityType::Person,
         bound_at: Utc::now(),
@@ -540,7 +551,7 @@ fn test_role_fulfillment() {
 fn test_complex_multi_policy_scenario() {
     // Given: Complex scenario with multiple policies and conditions
     let base_access = Policy {
-        id: Uuid::now_v7(),
+        id: BootstrapPolicyId::new(),
         name: "Base Access".to_string(),
         description: "Basic access for all employees".to_string(),
         claims: vec![
@@ -550,12 +561,12 @@ fn test_complex_multi_policy_scenario() {
         conditions: vec![],
         priority: 10,
         enabled: true,
-        created_by: Uuid::now_v7(),
+        created_by: BootstrapPersonId::new(),
         metadata: std::collections::HashMap::new(),
     };
 
     let staging_access = Policy {
-        id: Uuid::now_v7(),
+        id: BootstrapPolicyId::new(),
         name: "Staging Access".to_string(),
         description: "Access to staging environment".to_string(),
         claims: vec![
@@ -568,12 +579,12 @@ fn test_complex_multi_policy_scenario() {
         ],
         priority: 50,
         enabled: true,
-        created_by: Uuid::now_v7(),
+        created_by: BootstrapPersonId::new(),
         metadata: std::collections::HashMap::new(),
     };
 
     let production_access = Policy {
-        id: Uuid::now_v7(),
+        id: BootstrapPolicyId::new(),
         name: "Production Access".to_string(),
         description: "Access to production environment".to_string(),
         claims: vec![
@@ -588,7 +599,7 @@ fn test_complex_multi_policy_scenario() {
         ],
         priority: 100,
         enabled: true,
-        created_by: Uuid::now_v7(),
+        created_by: BootstrapPersonId::new(),
         metadata: std::collections::HashMap::new(),
     };
 
@@ -596,7 +607,7 @@ fn test_complex_multi_policy_scenario() {
     let bindings = vec![
         PolicyBinding {
             id: Uuid::now_v7(),
-            policy_id: base_access.id,
+            policy_id: base_access.id.as_uuid(),
             entity_id: person_id,
             entity_type: PolicyEntityType::Person,
             bound_at: Utc::now(),
@@ -605,7 +616,7 @@ fn test_complex_multi_policy_scenario() {
         },
         PolicyBinding {
             id: Uuid::now_v7(),
-            policy_id: staging_access.id,
+            policy_id: staging_access.id.as_uuid(),
             entity_id: person_id,
             entity_type: PolicyEntityType::Person,
             bound_at: Utc::now(),
@@ -614,7 +625,7 @@ fn test_complex_multi_policy_scenario() {
         },
         PolicyBinding {
             id: Uuid::now_v7(),
-            policy_id: production_access.id,
+            policy_id: production_access.id.as_uuid(),
             entity_id: person_id,
             entity_type: PolicyEntityType::Person,
             bound_at: Utc::now(),
@@ -649,9 +660,9 @@ fn test_complex_multi_policy_scenario() {
 
     // Then: Should have base + staging access, but NOT production
     assert_eq!(junior_evaluation.active_policies.len(), 2);
-    assert!(junior_evaluation.active_policies.contains(&base_access.id));
-    assert!(junior_evaluation.active_policies.contains(&staging_access.id));
-    assert!(!junior_evaluation.active_policies.contains(&production_access.id));
+    assert!(junior_evaluation.active_policies.contains(&base_access.id.as_uuid()));
+    assert!(junior_evaluation.active_policies.contains(&staging_access.id.as_uuid()));
+    assert!(!junior_evaluation.active_policies.contains(&production_access.id.as_uuid()));
 
     assert!(junior_evaluation.granted_claims.contains(&PolicyClaim::CanAccessDevelopment));
     assert!(junior_evaluation.granted_claims.contains(&PolicyClaim::CanAccessStaging));

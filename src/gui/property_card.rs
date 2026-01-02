@@ -1291,8 +1291,21 @@ impl PropertyCard {
 mod tests {
     use super::*;
     use crate::domain::Organization;
+    use crate::domain::ids::BootstrapOrgId;
     use crate::lifting::LiftableDomain;
     use std::collections::HashMap;
+
+    fn make_test_org() -> Organization {
+        Organization {
+            id: BootstrapOrgId::new(),
+            name: "Test Org".to_string(),
+            display_name: "Test Organization".to_string(),
+            description: Some("A test org".to_string()),
+            parent_id: None,
+            units: vec![],
+            metadata: HashMap::new(),
+        }
+    }
 
     #[test]
     fn test_property_card_creation() {
@@ -1305,19 +1318,11 @@ mod tests {
     fn test_property_card_set_node() {
         let mut card = PropertyCard::new();
 
-        let org = Organization {
-            id: Uuid::new_v4(),
-            name: "Test Org".to_string(),
-            display_name: "Test Organization".to_string(),
-            description: Some("A test org".to_string()),
-            parent_id: None,
-            units: vec![],
-            metadata: HashMap::new(),
-        };
+        let org = make_test_org();
 
         // Use LiftableDomain trait to lift Organization to LiftedNode
         let lifted_node = org.lift();
-        card.set_node(org.id, lifted_node);
+        card.set_node(org.id.as_uuid(), lifted_node);
 
         assert!(card.is_editing());
         assert!(!card.is_dirty());
@@ -1329,19 +1334,11 @@ mod tests {
     fn test_property_card_dirty_state() {
         let mut card = PropertyCard::new();
 
-        let org = Organization {
-            id: Uuid::new_v4(),
-            name: "Test Org".to_string(),
-            display_name: "Test Organization".to_string(),
-            description: Some("A test org".to_string()),
-            parent_id: None,
-            units: vec![],
-            metadata: HashMap::new(),
-        };
+        let org = make_test_org();
 
         // Use LiftableDomain trait to lift Organization to LiftedNode
         let lifted_node = org.lift();
-        card.set_node(org.id, lifted_node);
+        card.set_node(org.id.as_uuid(), lifted_node);
         assert!(!card.is_dirty());
 
         card.update(PropertyCardMessage::NameChanged("New Name".to_string()));
@@ -1353,19 +1350,11 @@ mod tests {
     fn test_property_card_clear() {
         let mut card = PropertyCard::new();
 
-        let org = Organization {
-            id: Uuid::new_v4(),
-            name: "Test Org".to_string(),
-            display_name: "Test Organization".to_string(),
-            description: Some("A test org".to_string()),
-            parent_id: None,
-            units: vec![],
-            metadata: HashMap::new(),
-        };
+        let org = make_test_org();
 
         // Use LiftableDomain trait to lift Organization to LiftedNode
         let lifted_node = org.lift();
-        card.set_node(org.id, lifted_node);
+        card.set_node(org.id.as_uuid(), lifted_node);
         card.update(PropertyCardMessage::NameChanged("Modified".to_string()));
 
         assert!(card.is_editing());

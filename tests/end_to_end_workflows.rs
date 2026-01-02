@@ -25,6 +25,7 @@ use cim_keys::{
         KeyCommand,
     },
     domain::{Organization, OrganizationUnit, OrganizationUnitType, Person, UserIdentity, AccountIdentity},
+    domain::ids::{BootstrapOrgId, BootstrapPersonId, UnitId},
     events::{
         DomainEvent,
         organization::OrganizationEvents,
@@ -856,7 +857,7 @@ mod yubikey_provisioning {
 
     fn create_test_organization() -> Organization {
         Organization {
-            id: Uuid::now_v7(),
+            id: BootstrapOrgId::new(),
             name: "test_org".to_string(),
             display_name: "Test Organization".to_string(),
             description: Some("Test organization for YubiKey provisioning".to_string()),
@@ -866,9 +867,9 @@ mod yubikey_provisioning {
         }
     }
 
-    fn create_test_person(org_id: Uuid) -> Person {
+    fn create_test_person(org_id: BootstrapOrgId) -> Person {
         Person {
-            id: Uuid::now_v7(),
+            id: BootstrapPersonId::new(),
             name: "Security Admin".to_string(),
             email: "admin@test.org".to_string(),
             roles: Vec::new(),
@@ -887,7 +888,7 @@ mod yubikey_provisioning {
 
         // Setup organization and person first
         let org = create_test_organization();
-        let person = create_test_person(org.id);
+        let person = create_test_person(org.id.clone());
 
         // Create the provision command
         let provision_command = KeyCommand::ProvisionYubiKey(ProvisionYubiKeySlot {
@@ -926,7 +927,7 @@ mod yubikey_provisioning {
         let correlation_id = Uuid::now_v7();
 
         let org = create_test_organization();
-        let person = create_test_person(org.id);
+        let person = create_test_person(org.id.clone());
 
         // Provision authentication slot
         let auth_command = KeyCommand::ProvisionYubiKey(ProvisionYubiKeySlot {
@@ -1021,11 +1022,11 @@ mod yubikey_provisioning {
 
         for (name, email) in users {
             let person = Person {
-                id: Uuid::now_v7(),
+                id: BootstrapPersonId::new(),
                 name: name.to_string(),
                 email: email.to_string(),
                 roles: Vec::new(),
-                organization_id: org.id,
+                organization_id: org.id.clone(),
                 unit_ids: Vec::new(),
                 active: true,
                 nats_permissions: None,
@@ -1064,14 +1065,14 @@ mod nats_security_bootstrap {
 
     fn create_test_organization_with_units() -> Organization {
         Organization {
-            id: Uuid::now_v7(),
+            id: BootstrapOrgId::new(),
             name: "cowboyai".to_string(),
             display_name: "CowboyAI".to_string(),
             description: Some("Test organization for NATS bootstrap".to_string()),
             parent_id: None,
             units: vec![
                 OrganizationUnit {
-                    id: Uuid::now_v7(),
+                    id: UnitId::new(),
                     name: "core".to_string(),
                     unit_type: OrganizationUnitType::Department,
                     parent_unit_id: None,
@@ -1079,7 +1080,7 @@ mod nats_security_bootstrap {
                     nats_account_name: Some("core".to_string()),
                 },
                 OrganizationUnit {
-                    id: Uuid::now_v7(),
+                    id: UnitId::new(),
                     name: "media".to_string(),
                     unit_type: OrganizationUnitType::Department,
                     parent_unit_id: None,
@@ -1087,7 +1088,7 @@ mod nats_security_bootstrap {
                     nats_account_name: Some("media".to_string()),
                 },
                 OrganizationUnit {
-                    id: Uuid::now_v7(),
+                    id: UnitId::new(),
                     name: "development".to_string(),
                     unit_type: OrganizationUnitType::Team,
                     parent_unit_id: None,
@@ -1203,12 +1204,12 @@ mod nats_security_bootstrap {
 
         // Create a person
         let person = Person {
-            id: Uuid::now_v7(),
+            id: BootstrapPersonId::new(),
             name: "Alice Developer".to_string(),
             email: "alice@cowboyai.com".to_string(),
             roles: Vec::new(),
-            organization_id: org.id,
-            unit_ids: vec![unit.id],
+            organization_id: org.id.clone(),
+            unit_ids: vec![unit.id.clone()],
             active: true,
             nats_permissions: None,
             owner_id: None,

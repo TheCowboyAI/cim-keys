@@ -101,14 +101,33 @@ impl GlyphCoverage {
         }
     }
 
-    /// Create coverage for emoji
+    /// Create coverage for emoji (Noto Color Emoji actual coverage)
+    ///
+    /// Note: Only includes blocks that Noto Color Emoji actually renders.
+    /// Dingbats and MiscSymbols are NOT included because Noto Color Emoji
+    /// doesn't contain these - they should use the body font instead.
     pub fn emoji() -> Self {
         Self {
             blocks: vec![
-                UnicodeBlock::Emoticons,
-                UnicodeBlock::MiscSymbols,
-                UnicodeBlock::Dingbats,
-                UnicodeBlock::SupplementalSymbols,
+                UnicodeBlock::Emoticons,              // 😀-😿 (actual face emoji)
+                UnicodeBlock::MiscSymbolsPictographs, // 🌀-🗿 (objects)
+                UnicodeBlock::SupplementalSymbols,    // 🤐-🧿 (more emoji)
+                UnicodeBlock::TransportMapSymbols,    // 🚀-🛿 (vehicles)
+            ],
+            verified_codepoints: HashSet::new(),
+        }
+    }
+
+    /// Create coverage for unicode symbols (dingbats, misc symbols)
+    ///
+    /// These are characters that Rec Mono Linear or system fonts support,
+    /// but emoji fonts typically don't.
+    pub fn symbols() -> Self {
+        Self {
+            blocks: vec![
+                UnicodeBlock::MiscSymbols,   // ☀-⛿ (arrows, symbols)
+                UnicodeBlock::Dingbats,      // ✀-➿ (checkmarks, x's)
+                UnicodeBlock::GeneralPunctuation, // Common punctuation
             ],
             verified_codepoints: HashSet::new(),
         }

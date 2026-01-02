@@ -55,6 +55,10 @@ pub mod graph_projection;
 #[cfg(feature = "gui")]
 pub mod lifting;
 
+// Categorical fold infrastructure - N-ary FRP compliant (Sprint 22)
+// Core fold types (FoldCapability, Foldable, arrow combinators)
+pub mod fold;
+
 // Configuration management
 pub mod config;
 
@@ -83,6 +87,10 @@ pub mod combinators;
 
 // Master domain model - cim-keys owns the initial domain creation
 pub mod domain;
+
+// Shared Kernel - Published Language for cross-context communication
+// Contains lightweight reference types for bounded context integration
+pub mod shared_kernel;
 
 // Per-context coproducts (DDD bounded contexts)
 // Each context owns its entity types with injection functions and fold traits

@@ -12,9 +12,9 @@
 //! Model + Query → [Folds] → bool (matches)
 //! ```
 //!
-//! ## Available Folds
+//! ## Available Types
 //!
-//! - `FoldSearchableText` - Extracts searchable text for filtering
+//! - `SearchableText` - Contains searchable text fields and keywords
 //! - `FoldEditFields` - Extracts edit field data for property cards
 
 pub mod edit_fields;
@@ -23,4 +23,4 @@ pub mod searchable;
 pub use edit_fields::{EditFieldData, EntityType, FoldEditFields, extract_edit_fields_from_lifted};
 // Re-export domain types used by EditFieldData for convenience
 pub use crate::domain::{PolicyClaim, RoleType, LocationType};
-pub use searchable::{FoldSearchableText, SearchableText};
+pub use searchable::SearchableText;

@@ -16,6 +16,7 @@ use uuid::Uuid;
 
 use crate::domain::{
     AccountIdentity, Organization, OrganizationUnit, Person, ServiceAccount, UserIdentity,
+    ids::UnitId,
 };
 use crate::events::nats_operator::{NKeyGeneratedEvent, JwtClaimsCreatedEvent, JwtSignedEvent};
 use crate::value_objects::{
@@ -959,7 +960,7 @@ impl NatsProjection {
         } else {
             // Organization as account - create synthetic unit
             let synthetic_unit = OrganizationUnit {
-                id: org.id,
+                id: UnitId::from_uuid(org.id.as_uuid()),
                 name: org.name.clone(),
                 unit_type: crate::domain::OrganizationUnitType::Infrastructure,
                 parent_unit_id: None,
@@ -1061,13 +1062,13 @@ impl NatsProjection {
                 correlation_id,
                 Some(correlation_id), // Caused by operator creation
             );
-            accounts.insert(unit.id, (unit.clone(), account));
+            accounts.insert(unit.id.as_uuid(), (unit.clone(), account));
         }
 
         // Ensure we have at least one account (create default if needed)
         if accounts.is_empty() {
             let default_unit = OrganizationUnit {
-                id: organization.id,
+                id: UnitId::from_uuid(organization.id.as_uuid()),
                 name: format!("{} - Default", organization.name),
                 unit_type: crate::domain::OrganizationUnitType::Infrastructure,
                 parent_unit_id: None,
@@ -1082,7 +1083,7 @@ impl NatsProjection {
                 correlation_id,
                 Some(correlation_id), // Caused by operator creation
             );
-            accounts.insert(default_unit.id, (default_unit, default_account));
+            accounts.insert(default_unit.id.as_uuid(), (default_unit, default_account));
         }
 
         // Step 3: Create User identities for all people
@@ -1097,7 +1098,7 @@ impl NatsProjection {
             // Determine which account this user belongs to based on their unit_ids
             let account_nkey = if let Some(unit_id) = person.unit_ids.first() {
                 // User belongs to a specific unit - use that unit's account
-                if let Some((_, account)) = accounts.get(unit_id) {
+                if let Some((_, account)) = accounts.get(&unit_id.as_uuid()) {
                     &account.nkey
                 } else {
                     // Fallback to first available account
@@ -1118,7 +1119,7 @@ impl NatsProjection {
                 Some(correlation_id), // Caused by operator/account creation
             );
 
-            users.insert(person.id, (person.clone(), user));
+            users.insert(person.id.as_uuid(), (person.clone(), user));
         }
 
         // Step 4: Create Service Account identities (if any)
@@ -1217,11 +1218,12 @@ impl OrganizationBootstrap {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::ids::{BootstrapOrgId, UnitId};
 
     #[test]
     fn test_operator_nkey_projection() {
         let org = Organization {
-            id: Uuid::now_v7(),
+            id: BootstrapOrgId::new(),
             name: "Test Org".to_string(),
             display_name: "Test Organization".to_string(),
             description: None,
@@ -1239,7 +1241,7 @@ mod tests {
     #[test]
     fn test_account_nkey_projection() {
         let org = Organization {
-            id: Uuid::now_v7(),
+            id: BootstrapOrgId::new(),
             name: "Test Org".to_string(),
             display_name: "Test Organization".to_string(),
             description: None,
@@ -1249,7 +1251,7 @@ mod tests {
         };
 
         let unit = OrganizationUnit {
-            id: Uuid::now_v7(),
+            id: UnitId::new(),
             name: "Engineering".to_string(),
             unit_type: crate::domain::OrganizationUnitType::Department,
             parent_unit_id: None,
@@ -1293,7 +1295,7 @@ mod tests {
     #[test]
     fn test_complete_operator_projection() {
         let org = Organization {
-            id: Uuid::now_v7(),
+            id: BootstrapOrgId::new(),
             name: "CowboyAI".to_string(),
             display_name: "The Cowboy AI".to_string(),
             description: Some("Test organization for CIM infrastructure".to_string()),
@@ -1329,7 +1331,7 @@ mod tests {
     #[test]
     fn test_account_jwt_signed_by_operator() {
         let org = Organization {
-            id: Uuid::now_v7(),
+            id: BootstrapOrgId::new(),
             name: "CowboyAI".to_string(),
             display_name: "The Cowboy AI".to_string(),
             description: None,
@@ -1339,7 +1341,7 @@ mod tests {
         };
 
         let unit = OrganizationUnit {
-            id: Uuid::now_v7(),
+            id: UnitId::new(),
             name: "Engineering".to_string(),
             unit_type: crate::domain::OrganizationUnitType::Department,
             parent_unit_id: None,

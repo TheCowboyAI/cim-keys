@@ -2,7 +2,7 @@
 //!
 //! This module implements: **The organizational graph drives person-centric views**.
 //!
-//! NOTE: Uses deprecated `DomainNodeData` for pattern matching. Migration pending.
+//! Uses `LiftedNode` for type-safe access to domain entities.
 //!
 //! ## Flow
 //!
@@ -47,7 +47,6 @@ use uuid::Uuid;
 
 use crate::domain::{Person, KeyOwnerRole, KeyDelegation};
 use crate::gui::graph::{OrganizationConcept, EdgeType};
-use crate::gui::domain_node::DomainNodeData;
 
 /// Person-centric analysis of the organizational graph
 #[derive(Debug, Clone)]
@@ -84,10 +83,9 @@ impl PersonAnalysis {
     pub fn analyze(graph: &OrganizationConcept, person_id: Uuid) -> Option<Self> {
         // Find the person node
         let node = graph.nodes.get(&person_id)?;
-        let (person, role) = match node.domain_node.data() {
-            DomainNodeData::Person { person, role } => (person.clone(), role.clone()),
-            _ => return None,
-        };
+        // Use lifted_node instead of deprecated domain_node
+        let (person, role) = node.lifted_node.person_with_role()
+            .map(|(p, r)| (p.clone(), r))?;
 
         let mut roles = Vec::new();
         let mut owned_keys = HashMap::new();

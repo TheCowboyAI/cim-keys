@@ -181,7 +181,7 @@ pub fn handle_export_to_encrypted_storage(
             crate::events::manifest::ManifestCreatedEvent {
                 manifest_id: Uuid::now_v7(),
                 manifest_path: path.to_string_lossy().to_string(),
-                organization_id: cmd.organization.id,
+                organization_id: cmd.organization.id.as_uuid(),
                 organization_name: cmd.organization.name.clone(),
                 keys_count: cmd.keys.len(),
                 certificates_count: cmd.certificates.len(),
@@ -424,7 +424,7 @@ fn generate_manifest(
 ) -> Result<ExportManifest, String> {
     Ok(ExportManifest {
         manifest_id: Uuid::now_v7(),
-        organization_id: cmd.organization.id,
+        organization_id: cmd.organization.id.as_uuid(),
         organization_name: cmd.organization.name.clone(),
         export_timestamp: Utc::now(),
         keys: cmd
@@ -504,11 +504,12 @@ struct ManifestNatsEntry {
 mod tests {
     use super::*;
     use crate::domain::Organization;
+    use crate::domain::ids::BootstrapOrgId;
 
     #[test]
     fn test_export_emits_events_for_all_artifacts() {
         let org = Organization {
-            id: Uuid::now_v7(),
+            id: BootstrapOrgId::new(),
             name: "Test Org".to_string(),
             display_name: "Test Organization".to_string(),
             description: None,
@@ -550,7 +551,7 @@ mod tests {
     #[test]
     fn test_export_validates_directory() {
         let org = Organization {
-            id: Uuid::now_v7(),
+            id: BootstrapOrgId::new(),
             name: "Test Org".to_string(),
             display_name: "Test Organization".to_string(),
             description: None,

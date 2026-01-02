@@ -27,8 +27,8 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
 use crate::domain::graph::{DomainRelation, RelationType, RelationCategory, GraphDomainEvent};
+use crate::lifting::{LiftedNode, Injection};
 use super::view_model::{EdgeView, EdgeStyle};
-use super::domain_node::{DomainNode, Injection};
 
 /// Graph projection - materializes current state from events
 ///
@@ -38,8 +38,8 @@ use super::domain_node::{DomainNode, Injection};
 /// - Derived indexes for efficient querying
 #[derive(Debug, Clone, Default)]
 pub struct GraphProjection {
-    /// Entities in the graph (node ID → domain node)
-    entities: HashMap<Uuid, DomainNode>,
+    /// Entities in the graph (node ID → lifted node)
+    entities: HashMap<Uuid, LiftedNode>,
 
     /// Relations in the graph (relation ID → domain relation)
     relations: HashMap<Uuid, DomainRelation>,
@@ -73,7 +73,7 @@ impl GraphProjection {
     pub fn apply(&mut self, event: &GraphDomainEvent) {
         match event {
             GraphDomainEvent::EntityAdded { entity_id, entity_type, .. } => {
-                // Note: The actual DomainNode would need to be passed separately
+                // Note: The actual LiftedNode would need to be passed separately
                 // or the event would need to include it. For now, we track the ID.
                 tracing::debug!("Entity added: {} ({})", entity_id, entity_type);
             }
@@ -144,7 +144,7 @@ impl GraphProjection {
     }
 
     /// Add an entity to the projection
-    pub fn add_entity(&mut self, id: Uuid, node: DomainNode) {
+    pub fn add_entity(&mut self, id: Uuid, node: LiftedNode) {
         let injection = node.injection();
         self.entities.insert(id, node);
         self.entities_by_type
@@ -190,7 +190,7 @@ impl GraphProjection {
     }
 
     /// Get all entities
-    pub fn entities(&self) -> impl Iterator<Item = (&Uuid, &DomainNode)> {
+    pub fn entities(&self) -> impl Iterator<Item = (&Uuid, &LiftedNode)> {
         self.entities.iter()
     }
 
@@ -200,7 +200,7 @@ impl GraphProjection {
     }
 
     /// Get entity by ID
-    pub fn get_entity(&self, id: &Uuid) -> Option<&DomainNode> {
+    pub fn get_entity(&self, id: &Uuid) -> Option<&LiftedNode> {
         self.entities.get(id)
     }
 
@@ -226,7 +226,7 @@ impl GraphProjection {
     }
 
     /// Get entities by type
-    pub fn entities_of_type(&self, injection: Injection) -> Vec<&DomainNode> {
+    pub fn entities_of_type(&self, injection: Injection) -> Vec<&LiftedNode> {
         self.entities_by_type
             .get(&injection)
             .map(|ids| ids.iter().filter_map(|id| self.entities.get(id)).collect())
