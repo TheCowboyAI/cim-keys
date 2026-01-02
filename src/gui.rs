@@ -2,6 +2,9 @@
 //!
 //! This module provides a pure Rust GUI that can run both as a native
 //! application and as a WASM application in the browser.
+//!
+//! NOTE: Uses deprecated `Injection` type from domain_node bridge. Migration pending.
+#![allow(deprecated)]
 
 use iced::{
     application,

@@ -2,6 +2,9 @@
 //!
 //! This module implements: **The organizational graph drives location-centric views**.
 //!
+//! NOTE: Uses deprecated `DomainNodeData` for pattern matching. Migration pending.
+#![allow(deprecated)]
+//!
 //! ## Flow
 //!
 //! 1. User selects a location node in the graph
