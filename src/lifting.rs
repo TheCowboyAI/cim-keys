@@ -57,7 +57,8 @@ use uuid::Uuid;
 use crate::gui::domain_node::{Injection, PropertyUpdate};
 use crate::domain::{Organization, OrganizationUnit, Person, Location, Role, Policy};
 use crate::domain::visualization::{PolicyGroup, PolicyCategory, PolicyRole};
-use crate::domain::pki::{Certificate, CertificateType};
+use crate::domain::pki::{Certificate, CertificateType, CryptographicKey};
+use crate::domain::yubikey::{YubiKeyDevice, PivSlotView, YubiKeyStatus};
 
 // ============================================================================
 // DOMAIN-SPECIFIC COLORS
@@ -848,6 +849,153 @@ impl LiftableDomain for Certificate {
 
     fn entity_id(&self) -> Uuid {
         self.id.as_uuid()
+    }
+}
+
+/// Color for PIV slot nodes
+pub const COLOR_PIV_SLOT: Color = Color::from_rgb(0.1, 0.5, 0.5);  // Teal
+
+impl LiftableDomain for CryptographicKey {
+    fn lift(&self) -> LiftedNode {
+        let label = format!("{:?} Key", self.purpose);
+        let secondary = match self.expires_at {
+            Some(exp) => format!("{:?} - Expires {}", self.algorithm, exp.format("%Y-%m-%d")),
+            None => format!("{:?} - No expiration", self.algorithm),
+        };
+        LiftedNode::new(
+            self.id.as_uuid(),
+            Injection::Key,
+            &label,
+            COLOR_KEY,
+            self.clone(),
+        )
+        .with_secondary(secondary)
+    }
+
+    fn unlift(node: &LiftedNode) -> Option<Self> {
+        if node.injection == Injection::Key {
+            node.downcast::<CryptographicKey>().cloned()
+        } else {
+            None
+        }
+    }
+
+    fn injection() -> Injection {
+        Injection::Key
+    }
+
+    fn entity_id(&self) -> Uuid {
+        self.id.as_uuid()
+    }
+}
+
+impl LiftableDomain for YubiKeyDevice {
+    fn lift(&self) -> LiftedNode {
+        let label = format!("YubiKey {}", self.serial);
+        let secondary = match self.provisioned_at {
+            Some(prov) => format!("v{} - Provisioned {} - {} slots", self.version, prov.format("%Y-%m-%d"), self.slots_used.len()),
+            None => format!("v{} - Not provisioned", self.version),
+        };
+        LiftedNode::new(
+            self.id.as_uuid(),
+            Injection::YubiKey,
+            &label,
+            COLOR_YUBIKEY,
+            self.clone(),
+        )
+        .with_secondary(secondary)
+    }
+
+    fn unlift(node: &LiftedNode) -> Option<Self> {
+        if node.injection == Injection::YubiKey {
+            node.downcast::<YubiKeyDevice>().cloned()
+        } else {
+            None
+        }
+    }
+
+    fn injection() -> Injection {
+        Injection::YubiKey
+    }
+
+    fn entity_id(&self) -> Uuid {
+        self.id.as_uuid()
+    }
+}
+
+impl LiftableDomain for PivSlotView {
+    fn lift(&self) -> LiftedNode {
+        let label = self.slot_name.clone();
+        let secondary = if self.has_key {
+            match &self.certificate_subject {
+                Some(subj) => format!("YubiKey {} - {}", self.yubikey_serial, subj),
+                None => format!("YubiKey {} - Key present", self.yubikey_serial),
+            }
+        } else {
+            format!("YubiKey {} - Empty", self.yubikey_serial)
+        };
+        LiftedNode::new(
+            self.id.as_uuid(),
+            Injection::PivSlot,
+            &label,
+            COLOR_PIV_SLOT,
+            self.clone(),
+        )
+        .with_secondary(secondary)
+    }
+
+    fn unlift(node: &LiftedNode) -> Option<Self> {
+        if node.injection == Injection::PivSlot {
+            node.downcast::<PivSlotView>().cloned()
+        } else {
+            None
+        }
+    }
+
+    fn injection() -> Injection {
+        Injection::PivSlot
+    }
+
+    fn entity_id(&self) -> Uuid {
+        self.id.as_uuid()
+    }
+}
+
+impl LiftableDomain for YubiKeyStatus {
+    fn lift(&self) -> LiftedNode {
+        let label = match &self.yubikey_serial {
+            Some(serial) => format!("YubiKey Status: {}", serial),
+            None => "YubiKey Status: Not assigned".to_string(),
+        };
+        let secondary = format!(
+            "{} of {} slots provisioned",
+            self.slots_provisioned.len(),
+            self.slots_needed.len()
+        );
+        LiftedNode::new(
+            self.person_id,
+            Injection::YubiKeyStatus,
+            &label,
+            COLOR_YUBIKEY,
+            self.clone(),
+        )
+        .with_secondary(secondary)
+    }
+
+    fn unlift(node: &LiftedNode) -> Option<Self> {
+        if node.injection == Injection::YubiKeyStatus {
+            node.downcast::<YubiKeyStatus>().cloned()
+        } else {
+            None
+        }
+    }
+
+    fn injection() -> Injection {
+        Injection::YubiKeyStatus
+    }
+
+    fn entity_id(&self) -> Uuid {
+        self.person_id
     }
 }
 
