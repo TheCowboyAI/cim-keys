@@ -56,6 +56,7 @@ use uuid::Uuid;
 
 use crate::gui::domain_node::Injection;
 use crate::domain::{Organization, OrganizationUnit, Person, Location, Role, Policy};
+use crate::domain::visualization::{PolicyGroup, PolicyCategory, PolicyRole};
 
 // ============================================================================
 // DOMAIN-SPECIFIC COLORS
@@ -100,6 +101,15 @@ pub const COLOR_KEY: Color = Color::from_rgb(0.6, 0.6, 0.2);
 
 /// Color for YubiKey nodes (matches ColorPalette::node_yubikey)
 pub const COLOR_YUBIKEY: Color = Color::from_rgb(0.0, 0.6, 0.4);
+
+/// Color for PolicyGroup (SeparationClass) nodes
+pub const COLOR_POLICY_GROUP: Color = Color::from_rgb(0.8, 0.4, 0.2);  // Orange-brown
+
+/// Color for PolicyCategory nodes
+pub const COLOR_POLICY_CATEGORY: Color = Color::from_rgb(0.7, 0.5, 0.3);  // Tan
+
+/// Color for PolicyRole nodes
+pub const COLOR_POLICY_ROLE: Color = Color::from_rgb(0.6, 0.4, 0.6);  // Purple-gray
 
 // ============================================================================
 // LIFTED NODE - Graph representation of any domain entity
@@ -606,6 +616,90 @@ impl LiftableDomain for Policy {
 
     fn entity_id(&self) -> Uuid {
         self.id
+    }
+}
+
+impl LiftableDomain for PolicyGroup {
+    fn lift(&self) -> LiftedNode {
+        LiftedNode::new(
+            self.id.as_uuid(),
+            Injection::PolicyGroup,
+            &self.name,
+            COLOR_POLICY_GROUP,
+            self.clone(),
+        )
+        .with_secondary(format!("{:?} - {} roles", self.separation_class, self.role_count))
+    }
+
+    fn unlift(node: &LiftedNode) -> Option<Self> {
+        if node.injection != Injection::PolicyGroup {
+            return None;
+        }
+        node.downcast::<PolicyGroup>().cloned()
+    }
+
+    fn injection() -> Injection {
+        Injection::PolicyGroup
+    }
+
+    fn entity_id(&self) -> Uuid {
+        self.id.as_uuid()
+    }
+}
+
+impl LiftableDomain for PolicyCategory {
+    fn lift(&self) -> LiftedNode {
+        LiftedNode::new(
+            self.id.as_uuid(),
+            Injection::PolicyCategory,
+            &self.name,
+            COLOR_POLICY_CATEGORY,
+            self.clone(),
+        )
+        .with_secondary(format!("{} claims", self.claim_count))
+    }
+
+    fn unlift(node: &LiftedNode) -> Option<Self> {
+        if node.injection != Injection::PolicyCategory {
+            return None;
+        }
+        node.downcast::<PolicyCategory>().cloned()
+    }
+
+    fn injection() -> Injection {
+        Injection::PolicyCategory
+    }
+
+    fn entity_id(&self) -> Uuid {
+        self.id.as_uuid()
+    }
+}
+
+impl LiftableDomain for PolicyRole {
+    fn lift(&self) -> LiftedNode {
+        LiftedNode::new(
+            self.id.as_uuid(),
+            Injection::PolicyRole,
+            &self.name,
+            COLOR_POLICY_ROLE,
+            self.clone(),
+        )
+        .with_secondary(format!("L{} - {:?}", self.level, self.separation_class))
+    }
+
+    fn unlift(node: &LiftedNode) -> Option<Self> {
+        if node.injection != Injection::PolicyRole {
+            return None;
+        }
+        node.downcast::<PolicyRole>().cloned()
+    }
+
+    fn injection() -> Injection {
+        Injection::PolicyRole
+    }
+
+    fn entity_id(&self) -> Uuid {
+        self.id.as_uuid()
     }
 }
 

@@ -3510,9 +3510,10 @@ impl CimKeysApp {
                     OrganizationIntent::ExpandIndicatorClicked(id) => {
                         // Handle +/- indicator click for expandable nodes
                         if let Some(node) = self.policy_graph.nodes.get(id) {
-                            // PolicyGroup expansion - use DomainNode accessor
-                            if let Some(separation_class) = node.domain_node.separation_class() {
-                                let class = separation_class.clone();
+                            // PolicyGroup expansion - use LiftedNode downcast
+                            use crate::domain::visualization::{PolicyGroup, PolicyCategory};
+                            if let Some(policy_group) = node.lifted_node.downcast::<PolicyGroup>() {
+                                let class = policy_group.separation_class;
                                 let node_label = node.visualization().primary_text;
                                 if self.expanded_separation_classes.contains(&class) {
                                     self.expanded_separation_classes.remove(&class);
@@ -3525,9 +3526,9 @@ impl CimKeysApp {
                                 return Task::none();
                             }
 
-                            // PolicyCategory expansion - use DomainNode accessor
-                            if let Some(cat_name) = node.domain_node.policy_category_name() {
-                                let cat_name = cat_name.to_string();
+                            // PolicyCategory expansion - use LiftedNode downcast
+                            if let Some(policy_category) = node.lifted_node.downcast::<PolicyCategory>() {
+                                let cat_name = policy_category.name.clone();
                                 let node_label = node.visualization().primary_text;
                                 if self.expanded_categories.contains(&cat_name) {
                                     self.expanded_categories.remove(&cat_name);
