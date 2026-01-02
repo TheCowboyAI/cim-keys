@@ -2210,19 +2210,23 @@ impl CimKeysApp {
             Message::RootCAGenerated(result) => {
                 match result {
                     Ok(certificate) => {
-                        // Create Root CA node in graph using DomainNode
-                        let cert_id = Uuid::now_v7();
+                        // Create Root CA node in graph using LiftableDomain
+                        use crate::domain::pki::{Certificate as PkiCertificate, CertificateId};
+                        use crate::lifting::LiftableDomain;
+
+                        let cert_id = CertificateId::new();
                         let subject = format!("CN={} Root CA, O={}", self.organization_name, self.organization_name);
-                        let domain_node = domain_node::DomainNode::inject_root_certificate_uuid(
+                        let cert = PkiCertificate::root(
                             cert_id,
                             subject.clone(),
-                            subject.clone(), // Self-signed (issuer = subject)
                             chrono::Utc::now(),
                             chrono::Utc::now() + chrono::Duration::days(365 * 20), // 20 years
                             vec!["keyCertSign".to_string(), "cRLSign".to_string()],
                         );
+                        let lifted_node = cert.lift();
                         let position = iced::Point::new(400.0, 100.0); // Center top of graph
-                        let root_ca_node = graph::ConceptEntity::from_domain_node(cert_id, domain_node);
+                        let root_ca_node = graph::ConceptEntity::from_lifted_node(lifted_node);
+                        let cert_id = cert_id.as_uuid();
 
                         // Create view with custom color and label
                         let custom_color = self.view_model.colors.cert_root_ca;
@@ -2255,10 +2259,13 @@ impl CimKeysApp {
             Message::PersonalKeysGenerated(result) => {
                 match result {
                     Ok((certificate, nats_keys)) => {
-                        // Create Leaf Certificate node in graph using DomainNode
-                        let cert_id = Uuid::now_v7();
+                        // Create Leaf Certificate node in graph using LiftableDomain
+                        use crate::domain::pki::{Certificate as PkiCertificate, CertificateId};
+                        use crate::lifting::LiftableDomain;
+
+                        let cert_id = CertificateId::new();
                         let subject = certificate.certificate_pem.lines().nth(0).unwrap_or("Personal Cert").to_string();
-                        let domain_node = domain_node::DomainNode::inject_leaf_certificate_uuid(
+                        let cert = PkiCertificate::leaf(
                             cert_id,
                             subject,
                             "Self-Signed (Temporary)".to_string(),
@@ -2267,8 +2274,10 @@ impl CimKeysApp {
                             vec!["digitalSignature".to_string(), "keyEncipherment".to_string()],
                             vec![], // san
                         );
+                        let lifted_node = cert.lift();
                         let position = iced::Point::new(400.0, 300.0); // Below Root CA
-                        let leaf_cert_node = graph::ConceptEntity::from_domain_node(cert_id, domain_node);
+                        let leaf_cert_node = graph::ConceptEntity::from_lifted_node(lifted_node);
+                        let cert_id = cert_id.as_uuid();
 
                         // Create view with custom color and label
                         let custom_color = self.view_model.colors.cert_leaf;

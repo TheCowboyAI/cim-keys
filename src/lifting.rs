@@ -57,6 +57,7 @@ use uuid::Uuid;
 use crate::gui::domain_node::{Injection, PropertyUpdate};
 use crate::domain::{Organization, OrganizationUnit, Person, Location, Role, Policy};
 use crate::domain::visualization::{PolicyGroup, PolicyCategory, PolicyRole};
+use crate::domain::pki::{Certificate, CertificateType};
 
 // ============================================================================
 // DOMAIN-SPECIFIC COLORS
@@ -803,6 +804,46 @@ impl LiftableDomain for PolicyRole {
 
     fn injection() -> Injection {
         Injection::PolicyRole
+    }
+
+    fn entity_id(&self) -> Uuid {
+        self.id.as_uuid()
+    }
+}
+
+impl LiftableDomain for Certificate {
+    fn lift(&self) -> LiftedNode {
+        let (injection, color) = match self.cert_type {
+            CertificateType::Root => (Injection::RootCertificate, COLOR_CERTIFICATE),
+            CertificateType::Intermediate => (Injection::IntermediateCertificate, COLOR_CERTIFICATE),
+            CertificateType::Leaf => (Injection::LeafCertificate, COLOR_CERTIFICATE),
+            CertificateType::Policy => (Injection::LeafCertificate, COLOR_POLICY), // Policy certs render as leaf
+        };
+        LiftedNode::new(
+            self.id.as_uuid(),
+            injection,
+            &self.subject,
+            color,
+            self.clone(),
+        )
+        .with_secondary(format!("{:?} - Valid until {}", self.cert_type, self.not_after.format("%Y-%m-%d")))
+    }
+
+    fn unlift(node: &LiftedNode) -> Option<Self> {
+        // Certificate can be unlifted from any of the certificate injection types
+        match node.injection {
+            Injection::RootCertificate |
+            Injection::IntermediateCertificate |
+            Injection::LeafCertificate => {
+                node.downcast::<Certificate>().cloned()
+            }
+            _ => None,
+        }
+    }
+
+    fn injection() -> Injection {
+        // Default to Leaf; actual injection depends on cert_type
+        Injection::LeafCertificate
     }
 
     fn entity_id(&self) -> Uuid {
