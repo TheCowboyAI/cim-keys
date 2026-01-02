@@ -27,7 +27,13 @@ use super::GraphLayout;
 use super::cowboy_theme::CowboyAppTheme as CowboyCustomTheme;
 use super::domain_node::{DomainNode, DomainNodeData, Injection, VisualizationData};
 use super::view_model::ViewModel;
-use crate::lifting::LiftedNode;
+use crate::lifting::{
+    LiftedNode, LiftableDomain,
+    NatsOperatorSimple, NatsAccountSimple, NatsUserSimple,
+    AggregateOrganization, AggregatePkiChain, AggregateNatsSecurity, AggregateYubiKeyProvisioning,
+};
+use crate::domain::pki::Certificate;
+use crate::domain::yubikey::{YubiKeyDevice, PivSlotView};
 
 /// Role badge for compact display mode (shown on person nodes)
 #[derive(Debug, Clone)]
@@ -680,24 +686,62 @@ impl OrganizationConcept {
         })
     }
 
-    /// Add a person node to the graph
-    pub fn add_node(&mut self, person: Person, role: KeyOwnerRole) {
-        let node_id = person.id;
-        let domain_node = DomainNode::inject_person(person, role);
-        let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node);
-        let view = node.create_view(position);
+    /// Add a person node to the graph with a role relationship.
+    ///
+    /// Creates:
+    /// - Person node (noun)
+    /// - Role node (noun) derived from KeyOwnerRole
+    /// - HasRole edge (verb) connecting Person → Role
+    pub fn add_node(&mut self, person: Person, key_role: KeyOwnerRole) {
+        // Create Person node
+        let person_id = person.id;
+        let person_lifted = person.lift();
+        let person_position = self.calculate_node_position(person_id);
+        let person_node = ConceptEntity::from_lifted_node(person_lifted);
+        let person_view = person_node.create_view(person_position);
 
-        self.nodes.insert(node_id, node);
-        self.node_views.insert(node_id, view);
+        self.nodes.insert(person_id, person_node);
+        self.node_views.insert(person_id, person_view);
+
+        // Create Role node from KeyOwnerRole
+        let role_id = Uuid::now_v7();
+        let role = Role {
+            id: role_id,
+            name: format!("{:?}", key_role),
+            description: format!("Key owner role: {:?}", key_role),
+            organization_id: person.organization_id,
+            unit_id: None,
+            required_policies: vec![],
+            responsibilities: vec![],
+            created_by: person_id,
+            active: true,
+        };
+        let role_lifted = role.lift();
+        let role_position = self.calculate_node_position(role_id);
+        let role_node = ConceptEntity::from_lifted_node(role_lifted);
+        let role_view = role_node.create_view(role_position);
+
+        self.nodes.insert(role_id, role_node);
+        self.node_views.insert(role_id, role_view);
+
+        // Create HasRole edge (Person → Role)
+        self.edges.push(ConceptRelation {
+            from: person_id,
+            to: role_id,
+            edge_type: EdgeType::HasRole {
+                valid_from: chrono::Utc::now(),
+                valid_until: None,
+            },
+            color: iced::Color::from_rgb(0.6, 0.3, 0.8),
+        });
     }
 
     /// Add an organization node to the graph
     pub fn add_organization_node(&mut self, org: Organization) {
         let node_id = org.id;
-        let domain_node = DomainNode::inject_organization(org);
+        let lifted_node = org.lift();
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let node = ConceptEntity::from_lifted_node(lifted_node);
         let view = node.create_view(position);
 
         self.nodes.insert(node_id, node);
@@ -707,9 +751,9 @@ impl OrganizationConcept {
     /// Add an organizational unit node to the graph
     pub fn add_org_unit_node(&mut self, unit: OrganizationUnit) {
         let node_id = unit.id;
-        let domain_node = DomainNode::inject_organization_unit(unit);
+        let lifted_node = unit.lift();
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let node = ConceptEntity::from_lifted_node(lifted_node);
         let view = node.create_view(position);
 
         self.nodes.insert(node_id, node);
@@ -720,9 +764,9 @@ impl OrganizationConcept {
     pub fn add_location_node(&mut self, location: Location) {
         use cim_domain::AggregateRoot;
         let node_id = *location.id().as_uuid();
-        let domain_node = DomainNode::inject_location(location);
+        let lifted_node = location.lift();
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let node = ConceptEntity::from_lifted_node(lifted_node);
         let view = node.create_view(position);
 
         self.nodes.insert(node_id, node);
@@ -732,9 +776,9 @@ impl OrganizationConcept {
     /// Add a role node to the graph (domain Role type)
     pub fn add_domain_role_node(&mut self, role: Role) {
         let node_id = role.id;
-        let domain_node = DomainNode::inject_role(role);
+        let lifted_node = role.lift();
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let node = ConceptEntity::from_lifted_node(lifted_node);
         let view = node.create_view(position);
 
         self.nodes.insert(node_id, node);
@@ -743,6 +787,9 @@ impl OrganizationConcept {
 
     /// Add a policy-based role node to the graph
     /// Color is derived from FoldVisualization based on separation class
+    ///
+    /// NOTE: Uses deprecated pattern - creates inline PolicyRole data
+    #[allow(deprecated)]
     pub fn add_role_node(
         &mut self,
         role_id: Uuid,
@@ -765,6 +812,9 @@ impl OrganizationConcept {
 
     /// Add a claim node to the graph
     /// Color is derived from FoldVisualization based on category
+    ///
+    /// NOTE: Uses deprecated pattern - creates inline PolicyClaim data
+    #[allow(deprecated)]
     pub fn add_claim_node(
         &mut self,
         claim_id: Uuid,
@@ -781,6 +831,9 @@ impl OrganizationConcept {
     }
 
     /// Add a policy category node to the graph (for progressive disclosure)
+    ///
+    /// NOTE: Uses deprecated pattern - creates inline PolicyCategory data
+    #[allow(deprecated)]
     pub fn add_category_node(
         &mut self,
         category_id: Uuid,
@@ -798,6 +851,9 @@ impl OrganizationConcept {
     }
 
     /// Add a separation class group node to the graph (for progressive disclosure)
+    ///
+    /// NOTE: Uses deprecated pattern - creates inline PolicyGroup data
+    #[allow(deprecated)]
     pub fn add_separation_class_node(
         &mut self,
         class_id: Uuid,
@@ -820,9 +876,9 @@ impl OrganizationConcept {
     /// Add a policy node to the graph
     pub fn add_policy_node(&mut self, policy: Policy) {
         let node_id = policy.id;
-        let domain_node = DomainNode::inject_policy(policy);
+        let lifted_node = policy.lift();
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let node = ConceptEntity::from_lifted_node(lifted_node);
         let view = node.create_view(position);
 
         self.nodes.insert(node_id, node);
@@ -830,12 +886,14 @@ impl OrganizationConcept {
     }
 
     // ===== NATS Infrastructure Nodes (Phase 1) =====
+    // NOTE: All NATS methods use deprecated pattern - NatsIdentityProjection needs LiftableDomain
 
     /// Add a NATS operator node to the graph
-    pub fn add_nats_operator_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, _label: String) {
-        let domain_node = DomainNode::inject_nats_operator(nats_identity);
+    pub fn add_nats_operator_node(&mut self, _node_id: Uuid, nats_identity: NatsIdentityProjection, _label: String) {
+        let node_id = nats_identity.entity_id();
+        let lifted_node = nats_identity.lift();
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let node = ConceptEntity::from_lifted_node(lifted_node);
         let view = node.create_view(position);
 
         self.nodes.insert(node_id, node);
@@ -843,10 +901,11 @@ impl OrganizationConcept {
     }
 
     /// Add a NATS account node to the graph
-    pub fn add_nats_account_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, _label: String) {
-        let domain_node = DomainNode::inject_nats_account(nats_identity);
+    pub fn add_nats_account_node(&mut self, _node_id: Uuid, nats_identity: NatsIdentityProjection, _label: String) {
+        let node_id = nats_identity.entity_id();
+        let lifted_node = nats_identity.lift();
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let node = ConceptEntity::from_lifted_node(lifted_node);
         let view = node.create_view(position);
 
         self.nodes.insert(node_id, node);
@@ -854,10 +913,11 @@ impl OrganizationConcept {
     }
 
     /// Add a NATS user node to the graph
-    pub fn add_nats_user_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, _label: String) {
-        let domain_node = DomainNode::inject_nats_user(nats_identity);
+    pub fn add_nats_user_node(&mut self, _node_id: Uuid, nats_identity: NatsIdentityProjection, _label: String) {
+        let node_id = nats_identity.entity_id();
+        let lifted_node = nats_identity.lift();
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let node = ConceptEntity::from_lifted_node(lifted_node);
         let view = node.create_view(position);
 
         self.nodes.insert(node_id, node);
@@ -865,10 +925,11 @@ impl OrganizationConcept {
     }
 
     /// Add a NATS service account node to the graph
-    pub fn add_nats_service_account_node(&mut self, node_id: Uuid, nats_identity: NatsIdentityProjection, _label: String) {
-        let domain_node = DomainNode::inject_nats_service_account(nats_identity);
+    pub fn add_nats_service_account_node(&mut self, _node_id: Uuid, nats_identity: NatsIdentityProjection, _label: String) {
+        let node_id = nats_identity.entity_id();
+        let lifted_node = nats_identity.lift();
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let node = ConceptEntity::from_lifted_node(lifted_node);
         let view = node.create_view(position);
 
         self.nodes.insert(node_id, node);
@@ -879,9 +940,10 @@ impl OrganizationConcept {
 
     /// Add a simple NATS operator node (visualization without crypto)
     pub fn add_nats_operator_simple(&mut self, node_id: Uuid, name: String, organization_id: Option<Uuid>) {
-        let domain_node = DomainNode::inject_nats_operator_simple(name, organization_id);
+        let entity = NatsOperatorSimple::new(node_id, name, organization_id);
+        let lifted_node = entity.lift();
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let node = ConceptEntity::from_lifted_node(lifted_node);
         let view = node.create_view(position);
         self.nodes.insert(node_id, node);
         self.node_views.insert(node_id, view);
@@ -889,9 +951,10 @@ impl OrganizationConcept {
 
     /// Add a simple NATS account node (visualization without crypto)
     pub fn add_nats_account_simple(&mut self, node_id: Uuid, name: String, unit_id: Option<Uuid>, is_system: bool) {
-        let domain_node = DomainNode::inject_nats_account_simple(name, unit_id, is_system);
+        let entity = NatsAccountSimple::new(node_id, name, unit_id, is_system);
+        let lifted_node = entity.lift();
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let node = ConceptEntity::from_lifted_node(lifted_node);
         let view = node.create_view(position);
         self.nodes.insert(node_id, node);
         self.node_views.insert(node_id, view);
@@ -899,9 +962,10 @@ impl OrganizationConcept {
 
     /// Add a simple NATS user node (visualization without crypto)
     pub fn add_nats_user_simple(&mut self, node_id: Uuid, name: String, person_id: Option<Uuid>, account_name: String) {
-        let domain_node = DomainNode::inject_nats_user_simple(name, person_id, account_name);
+        let entity = NatsUserSimple::new(node_id, name, person_id, account_name);
+        let lifted_node = entity.lift();
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let node = ConceptEntity::from_lifted_node(lifted_node);
         let view = node.create_view(position);
         self.nodes.insert(node_id, node);
         self.node_views.insert(node_id, view);
@@ -909,7 +973,19 @@ impl OrganizationConcept {
 
     // ===== PKI Trust Chain Nodes (Phase 2) =====
 
-    /// Add a root CA certificate node to the graph
+    /// Add a certificate node to the graph (uses LiftableDomain)
+    pub fn add_certificate_node(&mut self, cert: Certificate) {
+        let cert_id = cert.entity_id();
+        let lifted_node = cert.lift();
+        let position = self.calculate_node_position(cert_id);
+        let node = ConceptEntity::from_lifted_node(lifted_node);
+        let view = node.create_view(position);
+
+        self.nodes.insert(cert_id, node);
+        self.node_views.insert(cert_id, view);
+    }
+
+    /// Add a root CA certificate node to the graph (convenience method)
     pub fn add_root_certificate_node(
         &mut self,
         cert_id: Uuid,
@@ -919,18 +995,13 @@ impl OrganizationConcept {
         not_after: chrono::DateTime<chrono::Utc>,
         key_usage: Vec<String>,
     ) {
-        let domain_node = DomainNode::inject_root_certificate_uuid(
-            cert_id, subject, issuer, not_before, not_after, key_usage
-        );
-        let position = self.calculate_node_position(cert_id);
-        let node = ConceptEntity::from_domain_node(cert_id, domain_node);
-        let view = node.create_view(position);
-
-        self.nodes.insert(cert_id, node);
-        self.node_views.insert(cert_id, view);
+        use crate::domain::pki::CertificateId;
+        let id = CertificateId::from_uuid(cert_id);
+        let cert = Certificate::root(id, subject, not_before, not_after, key_usage);
+        self.add_certificate_node(cert);
     }
 
-    /// Add an intermediate CA certificate node to the graph
+    /// Add an intermediate CA certificate node to the graph (convenience method)
     pub fn add_intermediate_certificate_node(
         &mut self,
         cert_id: Uuid,
@@ -940,18 +1011,13 @@ impl OrganizationConcept {
         not_after: chrono::DateTime<chrono::Utc>,
         key_usage: Vec<String>,
     ) {
-        let domain_node = DomainNode::inject_intermediate_certificate_uuid(
-            cert_id, subject, issuer, not_before, not_after, key_usage
-        );
-        let position = self.calculate_node_position(cert_id);
-        let node = ConceptEntity::from_domain_node(cert_id, domain_node);
-        let view = node.create_view(position);
-
-        self.nodes.insert(cert_id, node);
-        self.node_views.insert(cert_id, view);
+        use crate::domain::pki::CertificateId;
+        let id = CertificateId::from_uuid(cert_id);
+        let cert = Certificate::intermediate(id, subject, issuer, not_before, not_after, key_usage);
+        self.add_certificate_node(cert);
     }
 
-    /// Add a leaf certificate node to the graph
+    /// Add a leaf certificate node to the graph (convenience method)
     pub fn add_leaf_certificate_node(
         &mut self,
         cert_id: Uuid,
@@ -962,15 +1028,10 @@ impl OrganizationConcept {
         key_usage: Vec<String>,
         san: Vec<String>,
     ) {
-        let domain_node = DomainNode::inject_leaf_certificate_uuid(
-            cert_id, subject, issuer, not_before, not_after, key_usage, san
-        );
-        let position = self.calculate_node_position(cert_id);
-        let node = ConceptEntity::from_domain_node(cert_id, domain_node);
-        let view = node.create_view(position);
-
-        self.nodes.insert(cert_id, node);
-        self.node_views.insert(cert_id, view);
+        use crate::domain::pki::CertificateId;
+        let id = CertificateId::from_uuid(cert_id);
+        let cert = Certificate::leaf(id, subject, issuer, not_before, not_after, key_usage, san);
+        self.add_certificate_node(cert);
     }
 
     // ===== NATS Infrastructure Graph Population (Phase 1) =====
@@ -1054,7 +1115,19 @@ impl OrganizationConcept {
 
     // ===== YubiKey Hardware Nodes (Phase 3) =====
 
-    /// Add a YubiKey hardware token node to the graph
+    /// Add a YubiKey device node to the graph (uses LiftableDomain)
+    pub fn add_yubikey_device_node(&mut self, device: YubiKeyDevice) {
+        let device_id = device.entity_id();
+        let lifted_node = device.lift();
+        let position = self.calculate_node_position(device_id);
+        let node = ConceptEntity::from_lifted_node(lifted_node);
+        let view = node.create_view(position);
+
+        self.nodes.insert(device_id, node);
+        self.node_views.insert(device_id, view);
+    }
+
+    /// Add a YubiKey hardware token node to the graph (convenience method)
     pub fn add_yubikey_node(
         &mut self,
         device_id: Uuid,
@@ -1063,18 +1136,25 @@ impl OrganizationConcept {
         provisioned_at: Option<chrono::DateTime<chrono::Utc>>,
         slots_used: Vec<String>,
     ) {
-        let domain_node = DomainNode::inject_yubikey_uuid(
-            device_id, serial, version, provisioned_at, slots_used
-        );
-        let position = self.calculate_node_position(device_id);
-        let node = ConceptEntity::from_domain_node(device_id, domain_node);
-        let view = node.create_view(position);
-
-        self.nodes.insert(device_id, node);
-        self.node_views.insert(device_id, view);
+        use crate::domain::yubikey::YubiKeyDeviceId;
+        let id = YubiKeyDeviceId::from_uuid(device_id);
+        let device = YubiKeyDevice::new(id, serial, version, provisioned_at, slots_used);
+        self.add_yubikey_device_node(device);
     }
 
-    /// Add a PIV slot node to the graph
+    /// Add a PIV slot view node to the graph (uses LiftableDomain)
+    pub fn add_piv_slot_view_node(&mut self, slot: PivSlotView) {
+        let slot_id = slot.entity_id();
+        let lifted_node = slot.lift();
+        let position = self.calculate_node_position(slot_id);
+        let node = ConceptEntity::from_lifted_node(lifted_node);
+        let view = node.create_view(position);
+
+        self.nodes.insert(slot_id, node);
+        self.node_views.insert(slot_id, view);
+    }
+
+    /// Add a PIV slot node to the graph (convenience method)
     pub fn add_piv_slot_node(
         &mut self,
         slot_id: Uuid,
@@ -1083,15 +1163,10 @@ impl OrganizationConcept {
         has_key: bool,
         certificate_subject: Option<String>,
     ) {
-        let domain_node = DomainNode::inject_piv_slot_uuid(
-            slot_id, slot_name, yubikey_serial, has_key, certificate_subject
-        );
-        let position = self.calculate_node_position(slot_id);
-        let node = ConceptEntity::from_domain_node(slot_id, domain_node);
-        let view = node.create_view(position);
-
-        self.nodes.insert(slot_id, node);
-        self.node_views.insert(slot_id, view);
+        use crate::domain::yubikey::SlotId;
+        let id = SlotId::from_uuid(slot_id);
+        let slot = PivSlotView::new(id, slot_name, yubikey_serial, has_key, certificate_subject);
+        self.add_piv_slot_view_node(slot);
     }
 
     // ===== Aggregate Nodes (DDD Bounded Context State) =====
@@ -1105,11 +1180,10 @@ impl OrganizationConcept {
         people_count: usize,
         units_count: usize,
     ) {
-        let domain_node = DomainNode::inject_aggregate_organization(
-            name, version, people_count, units_count
-        );
+        let aggregate = AggregateOrganization::new(node_id, name, version, people_count, units_count);
+        let lifted_node = aggregate.lift();
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let node = ConceptEntity::from_lifted_node(lifted_node);
         let view = node.create_view(position);
 
         self.nodes.insert(node_id, node);
@@ -1125,11 +1199,10 @@ impl OrganizationConcept {
         certificates_count: usize,
         keys_count: usize,
     ) {
-        let domain_node = DomainNode::inject_aggregate_pki_chain(
-            name, version, certificates_count, keys_count
-        );
+        let aggregate = AggregatePkiChain::new(node_id, name, version, certificates_count, keys_count);
+        let lifted_node = aggregate.lift();
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let node = ConceptEntity::from_lifted_node(lifted_node);
         let view = node.create_view(position);
 
         self.nodes.insert(node_id, node);
@@ -1146,11 +1219,10 @@ impl OrganizationConcept {
         accounts_count: usize,
         users_count: usize,
     ) {
-        let domain_node = DomainNode::inject_aggregate_nats_security(
-            name, version, operators_count, accounts_count, users_count
-        );
+        let aggregate = AggregateNatsSecurity::new(node_id, name, version, operators_count, accounts_count, users_count);
+        let lifted_node = aggregate.lift();
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let node = ConceptEntity::from_lifted_node(lifted_node);
         let view = node.create_view(position);
 
         self.nodes.insert(node_id, node);
@@ -1166,11 +1238,10 @@ impl OrganizationConcept {
         devices_count: usize,
         slots_provisioned: usize,
     ) {
-        let domain_node = DomainNode::inject_aggregate_yubikey_provisioning(
-            name, version, devices_count, slots_provisioned
-        );
+        let aggregate = AggregateYubiKeyProvisioning::new(node_id, name, version, devices_count, slots_provisioned);
+        let lifted_node = aggregate.lift();
         let position = self.calculate_node_position(node_id);
-        let node = ConceptEntity::from_domain_node(node_id, domain_node);
+        let node = ConceptEntity::from_lifted_node(lifted_node);
         let view = node.create_view(position);
 
         self.nodes.insert(node_id, node);

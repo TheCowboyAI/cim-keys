@@ -999,6 +999,395 @@ impl LiftableDomain for YubiKeyStatus {
 }
 
 // ============================================================================
+// NATS IDENTITY PROJECTION - LiftableDomain
+// ============================================================================
+
+use crate::domain_projections::nats::NatsIdentityProjection;
+use crate::value_objects::NKeyType;
+
+impl LiftableDomain for NatsIdentityProjection {
+    fn lift(&self) -> LiftedNode {
+        let (injection, color, label) = match self.nkey.key_type {
+            NKeyType::Operator => (
+                Injection::NatsOperator,
+                COLOR_NATS_OPERATOR,
+                format!("NATS Operator: {}", self.nkey.name.as_deref().unwrap_or("Unnamed")),
+            ),
+            NKeyType::Account => (
+                Injection::NatsAccount,
+                COLOR_NATS_ACCOUNT,
+                format!("NATS Account: {}", self.nkey.name.as_deref().unwrap_or("Unnamed")),
+            ),
+            NKeyType::User => (
+                Injection::NatsUser,
+                COLOR_NATS_USER,
+                format!("NATS User: {}", self.nkey.name.as_deref().unwrap_or("Unnamed")),
+            ),
+            NKeyType::Server | NKeyType::Cluster => (
+                Injection::NatsServiceAccount,
+                COLOR_NATS_USER,
+                format!("NATS Service: {}", self.nkey.name.as_deref().unwrap_or("Unnamed")),
+            ),
+        };
+        let secondary = format!("Public: {}...", &self.nkey.public_key_string()[..12]);
+        LiftedNode::new(
+            self.nkey.id,
+            injection,
+            &label,
+            color,
+            self.clone(),
+        )
+        .with_secondary(secondary)
+    }
+
+    fn unlift(node: &LiftedNode) -> Option<Self> {
+        match node.injection {
+            Injection::NatsOperator |
+            Injection::NatsAccount |
+            Injection::NatsUser |
+            Injection::NatsServiceAccount => {
+                node.downcast::<NatsIdentityProjection>().cloned()
+            }
+            _ => None,
+        }
+    }
+
+    fn injection() -> Injection {
+        // Default to User, actual injection determined by key_type in lift()
+        Injection::NatsUser
+    }
+
+    fn entity_id(&self) -> Uuid {
+        self.nkey.id
+    }
+}
+
+// ============================================================================
+// SIMPLE NATS VISUALIZATION TYPES
+// ============================================================================
+
+/// Simple NATS operator for visualization (no cryptographic data)
+#[derive(Debug, Clone)]
+pub struct NatsOperatorSimple {
+    pub id: Uuid,
+    pub name: String,
+    pub organization_id: Option<Uuid>,
+}
+
+impl NatsOperatorSimple {
+    pub fn new(id: Uuid, name: String, organization_id: Option<Uuid>) -> Self {
+        Self { id, name, organization_id }
+    }
+}
+
+impl LiftableDomain for NatsOperatorSimple {
+    fn lift(&self) -> LiftedNode {
+        LiftedNode::new(
+            self.id,
+            Injection::NatsOperatorSimple,
+            &self.name,
+            COLOR_NATS_OPERATOR,
+            self.clone(),
+        )
+        .with_secondary("NATS Operator")
+    }
+
+    fn unlift(node: &LiftedNode) -> Option<Self> {
+        if node.injection == Injection::NatsOperatorSimple {
+            node.downcast::<NatsOperatorSimple>().cloned()
+        } else {
+            None
+        }
+    }
+
+    fn injection() -> Injection {
+        Injection::NatsOperatorSimple
+    }
+
+    fn entity_id(&self) -> Uuid {
+        self.id
+    }
+}
+
+/// Simple NATS account for visualization (no cryptographic data)
+#[derive(Debug, Clone)]
+pub struct NatsAccountSimple {
+    pub id: Uuid,
+    pub name: String,
+    pub unit_id: Option<Uuid>,
+    pub is_system: bool,
+}
+
+impl NatsAccountSimple {
+    pub fn new(id: Uuid, name: String, unit_id: Option<Uuid>, is_system: bool) -> Self {
+        Self { id, name, unit_id, is_system }
+    }
+}
+
+impl LiftableDomain for NatsAccountSimple {
+    fn lift(&self) -> LiftedNode {
+        let secondary = if self.is_system {
+            "System Account".to_string()
+        } else {
+            "NATS Account".to_string()
+        };
+        LiftedNode::new(
+            self.id,
+            Injection::NatsAccountSimple,
+            &self.name,
+            COLOR_NATS_ACCOUNT,
+            self.clone(),
+        )
+        .with_secondary(secondary)
+    }
+
+    fn unlift(node: &LiftedNode) -> Option<Self> {
+        if node.injection == Injection::NatsAccountSimple {
+            node.downcast::<NatsAccountSimple>().cloned()
+        } else {
+            None
+        }
+    }
+
+    fn injection() -> Injection {
+        Injection::NatsAccountSimple
+    }
+
+    fn entity_id(&self) -> Uuid {
+        self.id
+    }
+}
+
+/// Simple NATS user for visualization (no cryptographic data)
+#[derive(Debug, Clone)]
+pub struct NatsUserSimple {
+    pub id: Uuid,
+    pub name: String,
+    pub person_id: Option<Uuid>,
+    pub account_name: String,
+}
+
+impl NatsUserSimple {
+    pub fn new(id: Uuid, name: String, person_id: Option<Uuid>, account_name: String) -> Self {
+        Self { id, name, person_id, account_name }
+    }
+}
+
+impl LiftableDomain for NatsUserSimple {
+    fn lift(&self) -> LiftedNode {
+        LiftedNode::new(
+            self.id,
+            Injection::NatsUserSimple,
+            &self.name,
+            COLOR_NATS_USER,
+            self.clone(),
+        )
+        .with_secondary(format!("Account: {}", self.account_name))
+    }
+
+    fn unlift(node: &LiftedNode) -> Option<Self> {
+        if node.injection == Injection::NatsUserSimple {
+            node.downcast::<NatsUserSimple>().cloned()
+        } else {
+            None
+        }
+    }
+
+    fn injection() -> Injection {
+        Injection::NatsUserSimple
+    }
+
+    fn entity_id(&self) -> Uuid {
+        self.id
+    }
+}
+
+// ============================================================================
+// AGGREGATE VISUALIZATION TYPES
+// ============================================================================
+
+/// Organization aggregate for graph visualization
+#[derive(Debug, Clone)]
+pub struct AggregateOrganization {
+    pub id: Uuid,
+    pub name: String,
+    pub version: u64,
+    pub people_count: usize,
+    pub units_count: usize,
+}
+
+impl AggregateOrganization {
+    pub fn new(id: Uuid, name: String, version: u64, people_count: usize, units_count: usize) -> Self {
+        Self { id, name, version, people_count, units_count }
+    }
+}
+
+impl LiftableDomain for AggregateOrganization {
+    fn lift(&self) -> LiftedNode {
+        LiftedNode::new(
+            self.id,
+            Injection::AggregateOrganization,
+            &self.name,
+            COLOR_ORGANIZATION,
+            self.clone(),
+        )
+        .with_secondary(format!("v{} | {} people | {} units", self.version, self.people_count, self.units_count))
+    }
+
+    fn unlift(node: &LiftedNode) -> Option<Self> {
+        if node.injection == Injection::AggregateOrganization {
+            node.downcast::<AggregateOrganization>().cloned()
+        } else {
+            None
+        }
+    }
+
+    fn injection() -> Injection {
+        Injection::AggregateOrganization
+    }
+
+    fn entity_id(&self) -> Uuid {
+        self.id
+    }
+}
+
+/// PKI chain aggregate for graph visualization
+#[derive(Debug, Clone)]
+pub struct AggregatePkiChain {
+    pub id: Uuid,
+    pub name: String,
+    pub version: u64,
+    pub certificates_count: usize,
+    pub keys_count: usize,
+}
+
+impl AggregatePkiChain {
+    pub fn new(id: Uuid, name: String, version: u64, certificates_count: usize, keys_count: usize) -> Self {
+        Self { id, name, version, certificates_count, keys_count }
+    }
+}
+
+impl LiftableDomain for AggregatePkiChain {
+    fn lift(&self) -> LiftedNode {
+        LiftedNode::new(
+            self.id,
+            Injection::AggregatePkiChain,
+            &self.name,
+            COLOR_CERTIFICATE,
+            self.clone(),
+        )
+        .with_secondary(format!("v{} | {} certs | {} keys", self.version, self.certificates_count, self.keys_count))
+    }
+
+    fn unlift(node: &LiftedNode) -> Option<Self> {
+        if node.injection == Injection::AggregatePkiChain {
+            node.downcast::<AggregatePkiChain>().cloned()
+        } else {
+            None
+        }
+    }
+
+    fn injection() -> Injection {
+        Injection::AggregatePkiChain
+    }
+
+    fn entity_id(&self) -> Uuid {
+        self.id
+    }
+}
+
+/// NATS security aggregate for graph visualization
+#[derive(Debug, Clone)]
+pub struct AggregateNatsSecurity {
+    pub id: Uuid,
+    pub name: String,
+    pub version: u64,
+    pub operators_count: usize,
+    pub accounts_count: usize,
+    pub users_count: usize,
+}
+
+impl AggregateNatsSecurity {
+    pub fn new(id: Uuid, name: String, version: u64, operators_count: usize, accounts_count: usize, users_count: usize) -> Self {
+        Self { id, name, version, operators_count, accounts_count, users_count }
+    }
+}
+
+impl LiftableDomain for AggregateNatsSecurity {
+    fn lift(&self) -> LiftedNode {
+        LiftedNode::new(
+            self.id,
+            Injection::AggregateNatsSecurity,
+            &self.name,
+            COLOR_NATS_OPERATOR,
+            self.clone(),
+        )
+        .with_secondary(format!("v{} | {} ops | {} accts | {} users", self.version, self.operators_count, self.accounts_count, self.users_count))
+    }
+
+    fn unlift(node: &LiftedNode) -> Option<Self> {
+        if node.injection == Injection::AggregateNatsSecurity {
+            node.downcast::<AggregateNatsSecurity>().cloned()
+        } else {
+            None
+        }
+    }
+
+    fn injection() -> Injection {
+        Injection::AggregateNatsSecurity
+    }
+
+    fn entity_id(&self) -> Uuid {
+        self.id
+    }
+}
+
+/// YubiKey provisioning aggregate for graph visualization
+#[derive(Debug, Clone)]
+pub struct AggregateYubiKeyProvisioning {
+    pub id: Uuid,
+    pub name: String,
+    pub version: u64,
+    pub devices_count: usize,
+    pub slots_provisioned: usize,
+}
+
+impl AggregateYubiKeyProvisioning {
+    pub fn new(id: Uuid, name: String, version: u64, devices_count: usize, slots_provisioned: usize) -> Self {
+        Self { id, name, version, devices_count, slots_provisioned }
+    }
+}
+
+impl LiftableDomain for AggregateYubiKeyProvisioning {
+    fn lift(&self) -> LiftedNode {
+        LiftedNode::new(
+            self.id,
+            Injection::AggregateYubiKeyProvisioning,
+            &self.name,
+            COLOR_YUBIKEY,
+            self.clone(),
+        )
+        .with_secondary(format!("v{} | {} devices | {} slots", self.version, self.devices_count, self.slots_provisioned))
+    }
+
+    fn unlift(node: &LiftedNode) -> Option<Self> {
+        if node.injection == Injection::AggregateYubiKeyProvisioning {
+            node.downcast::<AggregateYubiKeyProvisioning>().cloned()
+        } else {
+            None
+        }
+    }
+
+    fn injection() -> Injection {
+        Injection::AggregateYubiKeyProvisioning
+    }
+
+    fn entity_id(&self) -> Uuid {
+        self.id
+    }
+}
+
+// ============================================================================
 // CONVENIENCE: From bootstrap to LiftedGraph
 // ============================================================================
 

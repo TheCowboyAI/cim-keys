@@ -36,13 +36,16 @@
 //!       └─> PIV Slot 9D (Key Management) → Key escrow
 //! ```
 
+#![allow(deprecated)] // Bridge module: Uses deprecated DomainNode for YubiKey status creation
+
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::domain::{Person, KeyOwnerRole};
+use crate::domain::{Person, KeyOwnerRole, Role};
 use crate::domain::yubikey::PIVSlot as DomainPIVSlot;
-use crate::gui::graph::{OrganizationConcept, ConceptEntity};
+use crate::gui::graph::{OrganizationConcept, ConceptEntity, EdgeType};
 use crate::gui::domain_node::DomainNode;
+use crate::lifting::LiftableDomain;
 use iced::{Color, Point};
 
 /// PIV slot assignments based on role (graph visualization)
@@ -157,22 +160,91 @@ pub fn slots_for_role(role: &KeyOwnerRole) -> Vec<PIVSlot> {
     }
 }
 
+/// Derive KeyOwnerRole from a Role entity by examining its name and claims.
+///
+/// This maps the general Role to the PKI-specific KeyOwnerRole based on naming conventions:
+/// - Names containing "root", "authority" → RootAuthority
+/// - Names containing "security", "admin" → SecurityAdmin
+/// - Names containing "develop", "engineer" → Developer
+/// - Names containing "service", "account" → ServiceAccount
+/// - Names containing "backup", "recovery" → BackupHolder
+/// - Names containing "audit" → Auditor
+/// - Default → Developer
+fn derive_key_owner_role(role: &Role) -> KeyOwnerRole {
+    let name_lower = role.name.to_lowercase();
+
+    if name_lower.contains("root") || name_lower.contains("authority") {
+        KeyOwnerRole::RootAuthority
+    } else if name_lower.contains("security") || name_lower.contains("admin") {
+        KeyOwnerRole::SecurityAdmin
+    } else if name_lower.contains("service") || name_lower.contains("account") {
+        KeyOwnerRole::ServiceAccount
+    } else if name_lower.contains("backup") || name_lower.contains("recovery") {
+        KeyOwnerRole::BackupHolder
+    } else if name_lower.contains("audit") {
+        KeyOwnerRole::Auditor
+    } else {
+        // Default to Developer for developer, engineer, or unknown roles
+        KeyOwnerRole::Developer
+    }
+}
+
+/// Find the primary KeyOwnerRole for a person by traversing HasRole edges.
+///
+/// Follows edges from Person to Role nodes and derives KeyOwnerRole.
+/// Returns the highest-privilege role if multiple roles exist.
+fn find_person_key_role(
+    person_id: Uuid,
+    graph: &OrganizationConcept,
+) -> KeyOwnerRole {
+    // Find outgoing HasRole edges from this person
+    let role_ids: Vec<Uuid> = graph.edges
+        .iter()
+        .filter(|edge| edge.from == person_id && matches!(edge.edge_type, EdgeType::HasRole { .. }))
+        .map(|edge| edge.to)
+        .collect();
+
+    // Get roles and derive KeyOwnerRole, return highest privilege
+    let mut best_role = KeyOwnerRole::Developer;
+
+    for role_id in role_ids {
+        if let Some(node) = graph.nodes.get(&role_id) {
+            if let Some(role) = Role::unlift(&node.lifted_node) {
+                let derived = derive_key_owner_role(&role);
+                // RootAuthority > SecurityAdmin > BackupHolder > Auditor > ServiceAccount > Developer
+                best_role = match (&best_role, &derived) {
+                    (_, KeyOwnerRole::RootAuthority) => KeyOwnerRole::RootAuthority,
+                    (KeyOwnerRole::RootAuthority, _) => KeyOwnerRole::RootAuthority,
+                    (_, KeyOwnerRole::SecurityAdmin) => KeyOwnerRole::SecurityAdmin,
+                    (KeyOwnerRole::SecurityAdmin, _) => KeyOwnerRole::SecurityAdmin,
+                    _ => derived,
+                };
+            }
+        }
+    }
+
+    best_role
+}
+
 /// Analyze the organizational graph to determine YubiKey provisioning needs
 ///
-/// Uses accessor methods (partial projections) instead of pattern matching
-/// on DomainNodeData variants.
+/// Uses LiftableDomain::unlift() to recover Person entities from lifted nodes,
+/// then traverses HasRole edges to determine roles.
 pub fn analyze_graph_for_yubikey(graph: &OrganizationConcept) -> YubiKeyProvisionHierarchy {
     let mut hierarchy = YubiKeyProvisionHierarchy::new();
 
     // Find all people in the graph and determine their YubiKey needs
     for (person_id, node) in &graph.nodes {
-        if let Some((person, role)) = node.domain_node.person_with_role() {
-            let slots = slots_for_role(role);
+        // Try to unlift as Person using LiftableDomain
+        if let Some(person) = Person::unlift(&node.lifted_node) {
+            // Find role via graph traversal (Person → HasRole edge → Role node)
+            let role = find_person_key_role(*person_id, graph);
+            let slots = slots_for_role(&role);
 
             let plan = YubiKeyProvisionPlan {
                 person_id: *person_id,
                 person: person.clone(),
-                role: *role,
+                role,
                 yubikey_serial: None, // Will be filled in during detection
                 slots,
                 already_provisioned: false,

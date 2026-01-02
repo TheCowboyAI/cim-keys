@@ -38,13 +38,16 @@
 //!                   └─> Leaf Cert: "CN=Carol White, O=CowboyAI, OU=Operations"
 //! ```
 
+#![allow(deprecated)] // Bridge module: Uses deprecated DomainNode for certificate creation
+
 use std::collections::HashMap;
 use uuid::Uuid;
 use chrono::Utc;
 
-use crate::domain::{Organization, OrganizationUnit, Person, KeyOwnerRole};
+use crate::domain::{Organization, OrganizationUnit, Person, KeyOwnerRole, Role};
 use crate::gui::graph::{OrganizationConcept, ConceptEntity, ConceptRelation, EdgeType};
 use crate::gui::domain_node::DomainNode;
+use crate::lifting::LiftableDomain;
 use iced::{Color, Point};
 
 /// Result of analyzing the organizational graph for PKI generation
@@ -76,17 +79,83 @@ impl PkiHierarchy {
     }
 }
 
+/// Derive KeyOwnerRole from a Role entity by examining its name and claims.
+///
+/// This maps the general Role to the PKI-specific KeyOwnerRole based on naming conventions:
+/// - Names containing "root", "authority" → RootAuthority
+/// - Names containing "security", "admin" → SecurityAdmin
+/// - Names containing "develop", "engineer" → Developer
+/// - Names containing "service", "account" → ServiceAccount
+/// - Names containing "backup", "recovery" → BackupHolder
+/// - Names containing "audit" → Auditor
+/// - Default → Developer
+fn derive_key_owner_role(role: &Role) -> KeyOwnerRole {
+    let name_lower = role.name.to_lowercase();
+
+    if name_lower.contains("root") || name_lower.contains("authority") {
+        KeyOwnerRole::RootAuthority
+    } else if name_lower.contains("security") || name_lower.contains("admin") {
+        KeyOwnerRole::SecurityAdmin
+    } else if name_lower.contains("service") || name_lower.contains("account") {
+        KeyOwnerRole::ServiceAccount
+    } else if name_lower.contains("backup") || name_lower.contains("recovery") {
+        KeyOwnerRole::BackupHolder
+    } else if name_lower.contains("audit") {
+        KeyOwnerRole::Auditor
+    } else {
+        // Default to Developer for developer, engineer, or unknown roles
+        KeyOwnerRole::Developer
+    }
+}
+
+/// Find the primary KeyOwnerRole for a person by traversing HasRole edges.
+///
+/// Follows edges from Person to Role nodes and derives KeyOwnerRole.
+/// Returns the highest-privilege role if multiple roles exist.
+fn find_person_key_role(
+    person_id: Uuid,
+    graph: &OrganizationConcept,
+) -> KeyOwnerRole {
+    // Find outgoing HasRole edges from this person
+    let role_ids: Vec<Uuid> = graph.edges
+        .iter()
+        .filter(|edge| edge.from == person_id && matches!(edge.edge_type, EdgeType::HasRole { .. }))
+        .map(|edge| edge.to)
+        .collect();
+
+    // Get roles and derive KeyOwnerRole, return highest privilege
+    let mut best_role = KeyOwnerRole::Developer;
+
+    for role_id in role_ids {
+        if let Some(node) = graph.nodes.get(&role_id) {
+            if let Some(role) = Role::unlift(&node.lifted_node) {
+                let derived = derive_key_owner_role(&role);
+                // RootAuthority > SecurityAdmin > BackupHolder > Auditor > ServiceAccount > Developer
+                best_role = match (&best_role, &derived) {
+                    (_, KeyOwnerRole::RootAuthority) => KeyOwnerRole::RootAuthority,
+                    (KeyOwnerRole::RootAuthority, _) => KeyOwnerRole::RootAuthority,
+                    (_, KeyOwnerRole::SecurityAdmin) => KeyOwnerRole::SecurityAdmin,
+                    (KeyOwnerRole::SecurityAdmin, _) => KeyOwnerRole::SecurityAdmin,
+                    _ => derived,
+                };
+            }
+        }
+    }
+
+    best_role
+}
+
 /// Analyze the organizational graph to determine PKI hierarchy
 ///
-/// Uses accessor methods (partial projections) instead of pattern matching
-/// on DomainNodeData variants.
+/// Uses LiftableDomain::unlift() to recover domain types from lifted nodes.
+/// Traverses HasRole edges to determine KeyOwnerRole for each person.
 pub fn analyze_graph_for_pki(graph: &OrganizationConcept) -> PkiHierarchy {
     let mut hierarchy = PkiHierarchy::new();
 
-    // Step 1: Find the root organization using accessor
+    // Step 1: Find the root organization using LiftableDomain::unlift
     for (id, node) in &graph.nodes {
-        if let Some(org) = node.domain_node.organization() {
-            hierarchy.root_organization = Some((*id, org.clone()));
+        if let Some(org) = Organization::unlift(&node.lifted_node) {
+            hierarchy.root_organization = Some((*id, org));
             break; // Assume single root organization
         }
     }
@@ -94,7 +163,7 @@ pub fn analyze_graph_for_pki(graph: &OrganizationConcept) -> PkiHierarchy {
     // Step 2: Find all organizational units and their parent organization
     if let Some((org_id, _)) = &hierarchy.root_organization {
         for (unit_id, node) in &graph.nodes {
-            if let Some(unit) = node.domain_node.organization_unit() {
+            if let Some(unit) = OrganizationUnit::unlift(&node.lifted_node) {
                 // Find parent edge (Organization → OrganizationalUnit) using O(1) lookup
                 let parent_id = graph.edges_to(*unit_id)
                     .iter()
@@ -104,16 +173,17 @@ pub fn analyze_graph_for_pki(graph: &OrganizationConcept) -> PkiHierarchy {
                     .map(|edge| edge.from)
                     .unwrap_or(*org_id); // Default to root org if no parent found
 
-                hierarchy.intermediate_units.insert(*unit_id, (unit.clone(), parent_id));
+                hierarchy.intermediate_units.insert(*unit_id, (unit, parent_id));
                 hierarchy.hierarchy_edges.push((parent_id, *unit_id));
             }
         }
     }
 
     // Step 3: Find all people and their parent organizational unit
+    // Traverse HasRole edges to determine KeyOwnerRole
     for (person_id, node) in &graph.nodes {
-        if let Some((person, role)) = node.domain_node.person_with_role() {
-            // Find parent edge (OrganizationalUnit → Person or Organization → Person) using O(1) lookup
+        if let Some(person) = Person::unlift(&node.lifted_node) {
+            // Find parent edge (OrganizationalUnit → Person or Organization → Person)
             let parent_id = graph.edges_to(*person_id)
                 .iter()
                 .find(|edge| edge.edge_type == EdgeType::MemberOf)
@@ -121,7 +191,9 @@ pub fn analyze_graph_for_pki(graph: &OrganizationConcept) -> PkiHierarchy {
                 .or_else(|| hierarchy.root_organization.as_ref().map(|(id, _)| *id));
 
             if let Some(parent) = parent_id {
-                hierarchy.leaf_people.insert(*person_id, (person.clone(), *role, parent));
+                // Traverse graph to find role via HasRole edges
+                let role = find_person_key_role(*person_id, graph);
+                hierarchy.leaf_people.insert(*person_id, (person, role, parent));
                 hierarchy.hierarchy_edges.push((parent, *person_id));
             }
         }

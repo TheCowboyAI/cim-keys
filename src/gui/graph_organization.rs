@@ -45,6 +45,8 @@
 //!       └─> Access Control Policy
 //! ```
 
+#![allow(deprecated)] // Bridge module: Uses deprecated DomainNode accessors, migration pending
+
 use std::collections::HashMap;
 use uuid::Uuid;
 
