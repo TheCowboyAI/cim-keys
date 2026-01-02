@@ -2,6 +2,8 @@
 
 // This file is the bridge module for deprecated types.
 // It is expected to use the deprecated types internally.
+// Allow deprecated because this module DEFINES the deprecated types.
+#![allow(deprecated)]
 
 //! Domain Node Coproduct - Categorical type for graph nodes
 //!
