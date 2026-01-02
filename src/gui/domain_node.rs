@@ -1,5 +1,9 @@
 // Copyright (c) 2025 - Cowboy AI, LLC.
 
+// This file is the bridge module for deprecated types.
+// It is expected to use the deprecated types internally.
+#![allow(deprecated)]
+
 //! Domain Node Coproduct - Categorical type for graph nodes
 //!
 //! # ⚠️ DEPRECATED
