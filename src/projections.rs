@@ -2188,3 +2188,161 @@ pub enum ProjectionError {
     #[error("Invalid state transition: {0}")]
     InvalidStateTransition(String),
 }
+
+// ============================================================================
+// REBUILDABLE IMPLEMENTATION FOR EVENT REPLAY
+// ============================================================================
+
+use crate::domain::nats::replay::{Rebuildable, RebuildError, StoredEvent};
+
+impl Rebuildable for KeyManifest {
+    fn apply_event(&mut self, stored_event: &StoredEvent) -> Result<(), RebuildError> {
+        use crate::events::{
+            KeyEvents, CertificateEvents, PersonEvents, LocationEvents,
+            NatsOperatorEvents, NatsAccountEvents, NatsUserEvents, YubiKeyEvents,
+        };
+
+        match &stored_event.event {
+            // Key aggregate events
+            DomainEvent::Key(KeyEvents::KeyGenerated(e)) => {
+                self.keys.push(KeyEntry {
+                    key_id: e.key_id,
+                    algorithm: e.algorithm.clone(),
+                    purpose: e.purpose.clone(),
+                    label: e.metadata.label.clone(),
+                    hardware_backed: e.hardware_backed,
+                    yubikey_serial: None,
+                    yubikey_slot: None,
+                    revoked: false,
+                    file_path: format!("keys/{}/metadata.json", e.key_id),
+                    state: None, // State machine state set separately
+                });
+            }
+            DomainEvent::Key(KeyEvents::KeyRevoked(e)) => {
+                if let Some(entry) = self.keys.iter_mut().find(|k| k.key_id == e.key_id) {
+                    entry.revoked = true;
+                    // State machine state updated separately
+                }
+            }
+
+            // Certificate aggregate events
+            DomainEvent::Certificate(CertificateEvents::CertificateGenerated(e)) => {
+                self.certificates.push(CertificateEntry {
+                    cert_id: e.cert_id,
+                    key_id: e.key_id,
+                    subject: e.subject.clone(),
+                    issuer: e.issuer.map(|_| "issuer".to_string()),
+                    serial_number: e.cert_id.to_string(),
+                    not_before: e.not_before,
+                    not_after: e.not_after,
+                    is_ca: e.is_ca,
+                    file_path: format!("certificates/{}/cert.pem", e.cert_id),
+                    state: None, // State machine state set separately
+                });
+            }
+            DomainEvent::Certificate(CertificateEvents::CertificateRevoked(e)) => {
+                if let Some(entry) = self.certificates.iter_mut().find(|c| c.cert_id == e.cert_id) {
+                    // State machine state updated separately
+                    let _ = entry; // Mark as used
+                }
+            }
+
+            // Person aggregate events
+            DomainEvent::Person(PersonEvents::PersonCreated(e)) => {
+                self.people.push(PersonEntry {
+                    person_id: e.person_id,
+                    name: e.name.clone(),
+                    email: e.email.clone().unwrap_or_default(),
+                    role: "member".to_string(),
+                    organization_id: Uuid::nil(), // Default
+                    state: None, // State machine state set separately
+                });
+            }
+
+            // Location aggregate events
+            DomainEvent::Location(LocationEvents::LocationCreated(e)) => {
+                self.locations.push(LocationEntry {
+                    location_id: e.location_id,
+                    name: e.name.clone(),
+                    location_type: format!("{:?}", e.location_type),
+                    organization_id: e.organization_id.unwrap_or(Uuid::nil()),
+                    street: None,
+                    city: None,
+                    region: None,
+                    country: None,
+                    postal_code: None,
+                    state: None, // State machine state set separately
+                });
+            }
+
+            // YubiKey aggregate events
+            DomainEvent::YubiKey(YubiKeyEvents::YubiKeyProvisioned(e)) => {
+                self.yubikeys.push(YubiKeyEntry {
+                    serial: e.yubikey_serial.clone(),
+                    provisioned_at: e.provisioned_at,
+                    slots_used: e.slots_configured.iter().map(|s| format!("{:?}", s)).collect(),
+                    config_path: format!("yubikeys/{}/config.json", e.yubikey_serial),
+                    state: None, // State machine state set separately
+                });
+            }
+
+            // NATS Operator events
+            DomainEvent::NatsOperator(NatsOperatorEvents::NatsOperatorCreated(e)) => {
+                self.nats_operators.push(NatsOperatorEntry {
+                    operator_id: e.operator_id,
+                    name: e.name.clone(),
+                    public_key: e.public_key.clone(),
+                    organization_id: e.organization_id,
+                    created_by: e.created_by.clone(),
+                });
+            }
+
+            // NATS Account events
+            DomainEvent::NatsAccount(NatsAccountEvents::NatsAccountCreated(e)) => {
+                self.nats_accounts.push(NatsAccountEntry {
+                    account_id: e.account_id,
+                    operator_id: e.operator_id,
+                    name: e.name.clone(),
+                    public_key: e.public_key.clone(),
+                    is_system: e.is_system,
+                    organization_unit_id: e.organization_unit_id,
+                    created_by: e.created_by.clone(),
+                });
+            }
+
+            // NATS User events
+            DomainEvent::NatsUser(NatsUserEvents::NatsUserCreated(e)) => {
+                self.nats_users.push(NatsUserEntry {
+                    user_id: e.user_id,
+                    account_id: e.account_id,
+                    name: e.name.clone(),
+                    public_key: e.public_key.clone(),
+                    person_id: e.person_id,
+                    created_by: e.created_by.clone(),
+                });
+            }
+
+            // Other events - ignore for now (can be extended)
+            _ => {}
+        }
+
+        self.event_count += 1;
+        self.updated_at = stored_event.timestamp;
+
+        Ok(())
+    }
+
+    fn finalize(&mut self) -> Result<(), RebuildError> {
+        // Compute checksum using a simple hash (avoid external dep)
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let content = serde_json::to_string(self)
+            .map_err(|e| RebuildError::ApplyError(e.to_string()))?;
+
+        let mut hasher = DefaultHasher::new();
+        content.hash(&mut hasher);
+        self.checksum = format!("{:016x}", hasher.finish());
+        Ok(())
+    }
+}

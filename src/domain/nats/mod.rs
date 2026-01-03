@@ -21,6 +21,7 @@ pub mod entities;
 pub mod headers;
 pub mod jetstream;
 pub mod publisher;
+pub mod replay;
 pub mod subjects;
 
 // Re-export entity types for backward compatibility
@@ -53,6 +54,34 @@ pub use jetstream::{
 
 // Re-export event publisher
 pub use publisher::{EventPublisher, EventPublishError, PublishableEvents};
+
+// Re-export event replay
+pub use replay::{
+    EventReplay,
+    EventReplayError,
+    JetStreamReplay,
+    ReplayOptions,
+    ReplayResult,
+    StoredEvent,
+    StreamStats,
+    Rebuildable,
+    RebuildError,
+    Snapshot,
+    rebuild_projection,
+};
+
+// Re-export event query capabilities
+pub use replay::{
+    EventQuery,
+    QueryResult,
+    AggregateStats,
+    EventTypeStats,
+    TimeSeriesBucket,
+    EventQueryExecutor,
+    execute_query,
+    compute_aggregate_stats,
+    compute_event_type_stats,
+};
 
 // Re-export subject algebra at module level
 pub use subjects::{
