@@ -315,6 +315,7 @@ impl NatsClientAdapter {
             DomainEvent::Location(_) => "location",
             DomainEvent::Relationship(_) => "relationship",
             DomainEvent::Manifest(_) => "manifest",
+            DomainEvent::Saga(_) => "saga",
         }
     }
 

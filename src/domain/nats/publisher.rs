@@ -216,6 +216,7 @@ impl<P: JetStreamPort> EventPublisher<P> {
             DomainEvent::Location(_) => "keys.events.location.updated".to_string(),
             DomainEvent::Relationship(_) => "keys.events.relationship.updated".to_string(),
             DomainEvent::Manifest(_) => "keys.events.manifest.updated".to_string(),
+            DomainEvent::Saga(saga_event) => format!("keys.events.{}", saga_event.event_type()),
         }
     }
 

@@ -546,7 +546,7 @@ impl<P: JetStreamPort> SagaRecovery<P> {
             if let Some(id_str) = key.strip_prefix("saga.") {
                 if let Ok(saga_id) = Uuid::parse_str(id_str) {
                     // Load the saga state to check if it's terminal
-                    if let Some(data) = self.port.kv_get(&self.config.state_bucket, &key).await? {
+                    if let Some(_data) = self.port.kv_get(&self.config.state_bucket, &key).await? {
                         // Parse just enough to check terminal status
                         #[derive(Deserialize)]
                         struct MinimalState {

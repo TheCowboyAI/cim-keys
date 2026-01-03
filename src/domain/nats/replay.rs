@@ -70,6 +70,7 @@ impl DomainEventExt for DomainEvent {
             DomainEvent::YubiKey(e) => e.aggregate_id(),
             DomainEvent::Relationship(e) => e.aggregate_id(),
             DomainEvent::Manifest(e) => e.aggregate_id(),
+            DomainEvent::Saga(e) => e.saga_id(),
         }
     }
 }
@@ -830,6 +831,7 @@ fn get_event_type(event: &DomainEvent) -> String {
         DomainEvent::YubiKey(e) => format!("YubiKey.{}", std::any::type_name_of_val(e).split("::").last().unwrap_or("Unknown")),
         DomainEvent::Relationship(e) => format!("Relationship.{}", std::any::type_name_of_val(e).split("::").last().unwrap_or("Unknown")),
         DomainEvent::Manifest(e) => format!("Manifest.{}", std::any::type_name_of_val(e).split("::").last().unwrap_or("Unknown")),
+        DomainEvent::Saga(e) => format!("Saga.{}", e.event_type()),
     }
 }
 

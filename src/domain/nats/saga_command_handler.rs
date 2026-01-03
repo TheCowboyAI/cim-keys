@@ -38,11 +38,9 @@ use crate::domain::nats::saga_executor::{
     AsyncSagaExecutor, StepExecutionResult, PersistedSagaState,
 };
 use crate::domain::nats::publisher::{EventPublisher, EventPublishError};
-use crate::events::DomainEvent;
 use crate::ports::JetStreamPort;
 
 use uuid::Uuid;
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 
@@ -211,7 +209,7 @@ impl<P: JetStreamPort + Clone> SagaCommandHandler<P> {
         E: AsyncSagaExecutor<S>,
     {
         let mut retry_count = 0;
-        let saga_id = saga.saga_id();
+        let _saga_id = saga.saga_id();
 
         loop {
             if saga.is_terminal() {

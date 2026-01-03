@@ -32,6 +32,7 @@ pub mod nats_user;
 pub mod yubikey;
 pub mod relationship;
 pub mod manifest;
+pub mod saga;
 
 // Re-export all aggregate event enums at module level for convenience
 pub use person::PersonEvents;
@@ -45,6 +46,7 @@ pub use nats_user::NatsUserEvents;
 pub use yubikey::YubiKeyEvents;
 pub use relationship::RelationshipEvents;
 pub use manifest::ManifestEvents;
+pub use saga::SagaEvents;
 
 // Re-export commonly used event structs for convenience
 // This allows using crate::events::CertificateGeneratedEvent instead of
@@ -74,6 +76,7 @@ pub enum DomainEvent {
     YubiKey(YubiKeyEvents),
     Relationship(RelationshipEvents),
     Manifest(ManifestEvents),
+    Saga(SagaEvents),
 }
 
 /// Event envelope that wraps domain events with routing and correlation metadata
@@ -169,6 +172,7 @@ impl EventEnvelope {
             DomainEvent::YubiKey(_) => "cim.yubikey.event".to_string(),
             DomainEvent::Relationship(_) => "cim.relationship.event".to_string(),
             DomainEvent::Manifest(_) => "cim.manifest.event".to_string(),
+            DomainEvent::Saga(e) => format!("cim.{}", e.event_type()),
         }
     }
 
@@ -186,6 +190,7 @@ impl EventEnvelope {
             DomainEvent::YubiKey(_) => "YubiKey",
             DomainEvent::Relationship(_) => "Relationship",
             DomainEvent::Manifest(_) => "Manifest",
+            DomainEvent::Saga(_) => "Saga",
         }
     }
 
