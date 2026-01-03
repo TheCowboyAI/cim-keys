@@ -610,9 +610,9 @@
     },
     "sprint_25": {
       "name": "Complete domain_node.rs Migration + Tofu Fix",
-      "status": "in_progress",
+      "status": "completed",
       "started": "2026-01-01",
-      "completed": null,
+      "completed": "2026-01-03",
       "description": "Actually migrate from domain_node.rs to per-context coproducts and fix tofu problem",
       "tasks": [
         { "id": "25.1", "description": "Fix plan to reflect actual state (was claiming DONE)", "status": "completed" },
@@ -627,16 +627,17 @@
         { "id": "25.10", "description": "graph.rs fold-based usages migrated to LiftedNode methods", "status": "completed", "note": "Added themed_visualization() and detail_panel() to LiftedNode. graph.rs now uses lifted_node.themed_visualization() and lifted_node.detail_panel()" },
         { "id": "25.11", "description": "property_card.rs verified - no FoldDomainNode usages", "status": "completed", "note": "Grep confirmed no domain_node usages" },
         { "id": "25.12", "description": "Fix yubikey_status() accessor for DomainNodeData bridge path", "status": "completed", "note": "Updated accessor to try direct downcast first, then DomainNodeData wrapper extraction" },
-        { "id": "25.13", "description": "Delete domain_node.rs when migration complete", "status": "pending", "note": "Still used via bridge from to_lifted_node() and FoldDomainNode implementations" }
+        { "id": "25.13", "description": "Delete domain_node.rs when migration complete", "status": "completed", "note": "Verified deleted - file no longer exists, FoldDomainNode only in comments" }
       ],
       "acceptance_criteria": [
         "Tofu boxes eliminated - COMPLETE (verification.rs fixed, cim_default() icons)",
-        "domain_node.rs marked deprecated - ACHIEVED (all types deprecated)",
-        "All tests pass - ACHIEVED (388 tests)",
+        "domain_node.rs deleted - COMPLETE (file removed)",
+        "All tests pass - ACHIEVED (591 tests)",
         "Per-context coproducts via lifted_node - ACHIEVED (graph_*.rs + graph.rs migrated)",
-        "No .domain_node. method calls in codebase - ACHIEVED (grep confirmed)"
+        "No .domain_node. method calls in codebase - ACHIEVED (grep confirmed)",
+        "FoldDomainNode removed - COMPLETE (only comments remain)"
       ],
-      "notes": "Sprint 25 completed migration of all GUI files from deprecated domain_node.data() pattern matching to lifted_node accessor methods. Added themed_visualization() and detail_panel() methods to LiftedNode for fold-based operations. All 388 tests pass. domain_node.rs remains for bridge compatibility during gradual deprecation."
+      "notes": "Sprint 25 fully completed. domain_node.rs deleted. FoldDomainNode trait removed. All code migrated to LiftedNode accessor methods. 591 tests pass."
     },
     "sprint_26": {
       "name": "NATS JetStream Integration",
