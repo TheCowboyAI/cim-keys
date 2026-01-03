@@ -19,7 +19,7 @@ use uuid::Uuid;
 use crate::domain::{
     Person, KeyDelegation, KeyOwnerRole, Organization, OrganizationUnit,
     Location, Policy, Role,
-    ids::{BootstrapRoleId, BootstrapPersonId},
+    ids::BootstrapRoleId,
 };
 use crate::domain_projections::NatsIdentityProjection;
 use super::edge_indicator::EdgeCreationIndicator;

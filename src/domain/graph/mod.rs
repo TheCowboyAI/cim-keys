@@ -34,6 +34,8 @@
 
 mod relations;
 mod events;
+mod structure;
 
 pub use relations::*;
 pub use events::*;
+pub use structure::*;

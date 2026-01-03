@@ -15,7 +15,15 @@ pub mod x509;
 pub mod gpg;
 pub mod ssh;
 
-pub use nats::{NatsKeyPort, NatsKeyOperations};
+pub use nats::{
+    // Key management port
+    NatsKeyPort, NatsKeyOperations,
+    // JetStream port
+    JetStreamPort, JetStreamSubscription, JetStreamMessage, JetStreamHeaders,
+    JetStreamError, PublishAck, StreamInfo, ConsumerInfo,
+    JetStreamStreamConfig, JetStreamConsumerConfig,
+    JsRetentionPolicy, JsStorageType, JsAckPolicy, JsDeliverPolicy,
+};
 pub use storage::{StoragePort, StorageConfig, StorageMetadata, StorageError, SyncMode};
 pub use yubikey::{
     YubiKeyPort, YubiKeyDevice, YubiKeyError, PivSlot, KeyAlgorithm,

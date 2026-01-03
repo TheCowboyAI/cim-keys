@@ -109,3 +109,17 @@ pub use sagas::{
     PersonOnboardingSaga,
     CertificateProvisioningSaga,
 };
+
+// Re-export graph types for domain relationships
+pub use graph::{
+    // Core graph structure with adjacency lists
+    DomainGraph,
+    CycleError,
+    // Domain relations (first-class edges)
+    DomainRelation,
+    RelationType,
+    RelationCategory,
+    RelationMetadata,
+    // Graph events for event sourcing
+    GraphDomainEvent,
+};

@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use uuid::Uuid;
 
 use crate::domain::{
     NatsPermissions, Organization, OrganizationUnit, OrganizationUnitType, Person, PersonRole,

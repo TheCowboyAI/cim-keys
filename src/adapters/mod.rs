@@ -17,6 +17,7 @@ pub mod x509_rcgen;
 pub mod gpg_mock;
 pub mod ssh_mock;
 pub mod nats_publisher_stub;
+pub mod nats_client;
 
 pub use nsc::NscAdapter;
 pub use in_memory::InMemoryStorageAdapter;
@@ -28,6 +29,11 @@ pub use x509_rcgen::RcgenX509Adapter;
 pub use gpg_mock::MockGpgAdapter;
 pub use ssh_mock::MockSshKeyAdapter;
 pub use nats_publisher_stub::{EventEnvelope, PublisherConfig, build_subject, extract_event_type};
+pub use nats_client::{NatsClientAdapter, NatsClientError};
+
+// Export JetStreamAdapter when nats-client feature is enabled
+#[cfg(feature = "nats-client")]
+pub use nats_client::{JetStreamAdapter, JetStreamSubscriptionImpl};
 
 // TODO: Implement real adapters for production use
 // - FileSystemStorageAdapter for StoragePort

@@ -18,10 +18,41 @@
 //! ```
 
 pub mod entities;
+pub mod headers;
+pub mod jetstream;
+pub mod publisher;
 pub mod subjects;
 
 // Re-export entity types for backward compatibility
 pub use entities::*;
+
+// Re-export header types for event publishing
+pub use headers::{
+    CimHeaders,
+    CimHeaderBuilder,
+    keys as header_keys,
+    CIM_KEYS_SOURCE,
+    CONTENT_TYPE_JSON,
+    SCHEMA_VERSION,
+};
+
+// Re-export JetStream configuration types
+pub use jetstream::{
+    StreamConfig,
+    ConsumerConfig,
+    RetentionPolicy,
+    StorageType,
+    AckPolicy,
+    DeliverPolicy,
+    KEYS_EVENTS_STREAM,
+    KEYS_COMMANDS_STREAM,
+    KEYS_SUBJECT_PREFIX,
+    events as js_events,
+    commands as js_commands,
+};
+
+// Re-export event publisher
+pub use publisher::{EventPublisher, EventPublishError, PublishableEvents};
 
 // Re-export subject algebra at module level
 pub use subjects::{

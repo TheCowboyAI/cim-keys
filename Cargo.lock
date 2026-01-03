@@ -410,6 +410,40 @@ dependencies = [
 
 [[package]]
 name = "async-nats"
+version = "0.37.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd3bdd6ea595b2ea504500a3566071beb81125fc15d40a6f6bffa43575f64152"
+dependencies = [
+ "base64",
+ "bytes",
+ "futures",
+ "memchr",
+ "nkeys",
+ "nuid",
+ "once_cell",
+ "portable-atomic",
+ "rand 0.8.5",
+ "regex",
+ "ring",
+ "rustls-native-certs 0.7.3",
+ "rustls-pemfile",
+ "rustls-webpki 0.102.8",
+ "serde",
+ "serde_json",
+ "serde_nanos",
+ "serde_repr",
+ "thiserror 1.0.69",
+ "time",
+ "tokio",
+ "tokio-rustls",
+ "tokio-util",
+ "tracing",
+ "tryhard",
+ "url",
+]
+
+[[package]]
+name = "async-nats"
 version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "76433c4de73442daedb3a59e991d94e85c14ebfc33db53dfcd347a21cd6ef4f8"
@@ -1284,6 +1318,7 @@ name = "cim-keys"
 version = "0.8.0"
 dependencies = [
  "argon2",
+ "async-nats 0.37.0",
  "async-trait",
  "base64",
  "bytemuck",
@@ -1303,6 +1338,7 @@ dependencies = [
  "console_error_panic_hook",
  "der",
  "ed25519-dalek",
+ "futures",
  "gloo-file",
  "gpgme",
  "hex",

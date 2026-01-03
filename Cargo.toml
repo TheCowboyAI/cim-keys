@@ -87,6 +87,10 @@ time = { version = "0.3", features = ["formatting", "macros"] }
 # Async runtime
 tokio = { version = "1.42", features = ["full"] }
 
+# NATS messaging (JetStream event streaming)
+async-nats = { version = "0.37", optional = true }
+futures = { version = "0.3", optional = true }
+
 # GUI with Iced 0.13+ (native and WASM with async)
 iced = { version = "0.13", features = ["tokio", "canvas", "wgpu", "image"], optional = true }
 iced_widget = { version = "0.13", optional = true }
@@ -130,6 +134,7 @@ conceptual-spaces = ["cim-domain-spaces"]
 yubikey-support = ["yubikey", "pcsc"]
 gpg-support = ["sequoia-openpgp", "gpgme"]
 ipld = ["dep:cid", "dep:libipld", "dep:multihash"]  # IPLD content-addressed storage support
+nats-client = ["dep:async-nats", "dep:futures"]  # Real NATS JetStream event publishing
 test-utils = []
 
 # Examples are auto-discovered from examples/ directory

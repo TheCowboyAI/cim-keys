@@ -3858,7 +3858,7 @@ impl CimKeysApp {
 
                 match menu_msg {
                     ContextMenuMessage::CreateNode(node_type) => {
-                        use crate::domain::ids::{BootstrapOrgId, BootstrapPersonId, UnitId, BootstrapRoleId, BootstrapPolicyId};
+                        use crate::domain::ids::{BootstrapOrgId, BootstrapPersonId, BootstrapRoleId, BootstrapPolicyId};
                         let position = self.context_menu.position();
                         let node_id = Uuid::now_v7();
                         let dummy_org_id = BootstrapOrgId::from_uuid(

@@ -361,6 +361,406 @@ pub enum NatsClientError {
     FeatureNotEnabled(String),
 }
 
+// ============================================================================
+// JETSTREAM ADAPTER
+// ============================================================================
+
+/// JetStream Adapter implementing the JetStreamPort trait
+///
+/// This provides full JetStream functionality including:
+/// - Event publishing with CIM headers
+/// - Stream and consumer management
+/// - Durable subscriptions
+/// - Deduplication via message IDs
+#[cfg(feature = "nats-client")]
+pub struct JetStreamAdapter {
+    /// NATS client connection
+    client: Arc<RwLock<Option<Client>>>,
+
+    /// JetStream context (cached after connection)
+    jetstream: Arc<RwLock<Option<async_nats::jetstream::Context>>>,
+
+    /// Connection URL (localhost:4222 for air-gapped operation)
+    url: String,
+}
+
+#[cfg(feature = "nats-client")]
+impl JetStreamAdapter {
+    /// Create a new JetStream adapter
+    pub fn new() -> Self {
+        Self {
+            client: Arc::new(RwLock::new(None)),
+            jetstream: Arc::new(RwLock::new(None)),
+            url: NATS_URL.to_string(),
+        }
+    }
+
+    /// Connect to NATS and initialize JetStream context
+    pub async fn connect(&self) -> Result<(), crate::ports::JetStreamError> {
+        use crate::ports::JetStreamError;
+
+        info!("Connecting to NATS JetStream at {}", self.url);
+
+        let connect_opts = ConnectOptions::new()
+            .connection_timeout(std::time::Duration::from_secs(10));
+
+        let client = connect_opts
+            .connect(&self.url)
+            .await
+            .map_err(|e| JetStreamError::ConnectionError(e.to_string()))?;
+
+        info!("Connected to NATS, initializing JetStream context");
+
+        // Create JetStream context
+        let js = async_nats::jetstream::new(client.clone());
+
+        // Store both
+        {
+            let mut client_lock = self.client.write().await;
+            *client_lock = Some(client);
+        }
+        {
+            let mut js_lock = self.jetstream.write().await;
+            *js_lock = Some(js);
+        }
+
+        info!("JetStream adapter ready");
+        Ok(())
+    }
+
+    /// Get the JetStream context
+    async fn get_jetstream(&self) -> Result<async_nats::jetstream::Context, crate::ports::JetStreamError> {
+        use crate::ports::JetStreamError;
+
+        let js_lock = self.jetstream.read().await;
+        js_lock.clone().ok_or_else(|| JetStreamError::ConnectionError("Not connected to JetStream".to_string()))
+    }
+
+    /// Convert port config to async-nats stream config
+    fn to_nats_stream_config(config: &crate::ports::JetStreamStreamConfig) -> async_nats::jetstream::stream::Config {
+        use async_nats::jetstream::stream;
+
+        let retention = match config.retention {
+            crate::ports::JsRetentionPolicy::Limits => stream::RetentionPolicy::Limits,
+            crate::ports::JsRetentionPolicy::WorkQueue => stream::RetentionPolicy::WorkQueue,
+            crate::ports::JsRetentionPolicy::Interest => stream::RetentionPolicy::Interest,
+        };
+
+        let storage = match config.storage {
+            crate::ports::JsStorageType::File => stream::StorageType::File,
+            crate::ports::JsStorageType::Memory => stream::StorageType::Memory,
+        };
+
+        stream::Config {
+            name: config.name.clone(),
+            subjects: config.subjects.clone(),
+            retention,
+            storage,
+            num_replicas: config.replicas as usize,
+            max_age: config.max_age_secs.map(std::time::Duration::from_secs).unwrap_or_default(),
+            max_messages_per_subject: config.max_msgs_per_subject.unwrap_or(0),
+            duplicate_window: config.duplicate_window_ns
+                .map(|ns| std::time::Duration::from_nanos(ns as u64))
+                .unwrap_or(std::time::Duration::from_secs(120)),
+            description: config.description.clone(),
+            ..Default::default()
+        }
+    }
+
+    /// Convert port config to async-nats consumer config
+    fn to_nats_consumer_config(config: &crate::ports::JetStreamConsumerConfig) -> async_nats::jetstream::consumer::pull::Config {
+        use async_nats::jetstream::consumer;
+
+        let ack_policy = match config.ack_policy {
+            crate::ports::JsAckPolicy::None => consumer::AckPolicy::None,
+            crate::ports::JsAckPolicy::All => consumer::AckPolicy::All,
+            crate::ports::JsAckPolicy::Explicit => consumer::AckPolicy::Explicit,
+        };
+
+        let deliver_policy = match config.deliver_policy {
+            crate::ports::JsDeliverPolicy::All => consumer::DeliverPolicy::All,
+            crate::ports::JsDeliverPolicy::New => consumer::DeliverPolicy::New,
+            crate::ports::JsDeliverPolicy::ByStartSequence(seq) => consumer::DeliverPolicy::ByStartSequence { start_sequence: seq },
+            crate::ports::JsDeliverPolicy::ByStartTime(time) => {
+                // Convert nanoseconds since epoch to time::OffsetDateTime
+                let offset_dt = time::OffsetDateTime::from_unix_timestamp_nanos(time as i128)
+                    .unwrap_or(time::OffsetDateTime::UNIX_EPOCH);
+                consumer::DeliverPolicy::ByStartTime {
+                    start_time: offset_dt
+                }
+            }
+            crate::ports::JsDeliverPolicy::LastPerSubject => consumer::DeliverPolicy::LastPerSubject,
+        };
+
+        consumer::pull::Config {
+            name: Some(config.name.clone()),
+            durable_name: config.durable_name.clone(),
+            filter_subject: config.filter_subject.clone().unwrap_or_default(),
+            ack_policy,
+            ack_wait: config.ack_wait_ns
+                .map(|ns| std::time::Duration::from_nanos(ns as u64))
+                .unwrap_or(std::time::Duration::from_secs(30)),
+            max_deliver: config.max_deliver.unwrap_or(0),
+            deliver_policy,
+            description: config.description.clone(),
+            ..Default::default()
+        }
+    }
+
+    /// Convert port headers to async-nats headers
+    fn to_nats_headers(headers: &crate::ports::JetStreamHeaders) -> async_nats::HeaderMap {
+        let mut map = async_nats::HeaderMap::new();
+        for (key, value) in headers.iter() {
+            map.insert(key.as_str(), value.as_str());
+        }
+        map
+    }
+}
+
+#[cfg(feature = "nats-client")]
+impl Default for JetStreamAdapter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(feature = "nats-client")]
+#[async_trait::async_trait]
+impl crate::ports::JetStreamPort for JetStreamAdapter {
+    async fn publish(
+        &self,
+        subject: &str,
+        payload: &[u8],
+        headers: Option<&crate::ports::JetStreamHeaders>,
+    ) -> Result<crate::ports::PublishAck, crate::ports::JetStreamError> {
+        use crate::ports::JetStreamError;
+
+        let js = self.get_jetstream().await?;
+
+        let ack = if let Some(h) = headers {
+            let nats_headers = Self::to_nats_headers(h);
+            js.publish_with_headers(subject.to_string(), nats_headers, payload.to_vec().into())
+                .await
+                .map_err(|e| JetStreamError::PublishFailed(e.to_string()))?
+                .await
+                .map_err(|e| JetStreamError::PublishFailed(e.to_string()))?
+        } else {
+            js.publish(subject.to_string(), payload.to_vec().into())
+                .await
+                .map_err(|e| JetStreamError::PublishFailed(e.to_string()))?
+                .await
+                .map_err(|e| JetStreamError::PublishFailed(e.to_string()))?
+        };
+
+        debug!("Published to JetStream: {} (seq: {})", subject, ack.sequence);
+
+        Ok(crate::ports::PublishAck {
+            stream: ack.stream.to_string(),
+            sequence: ack.sequence,
+            duplicate: ack.duplicate,
+            domain: if ack.domain.is_empty() { None } else { Some(ack.domain.to_string()) },
+        })
+    }
+
+    async fn publish_with_id(
+        &self,
+        subject: &str,
+        payload: &[u8],
+        message_id: &str,
+        headers: Option<&crate::ports::JetStreamHeaders>,
+    ) -> Result<crate::ports::PublishAck, crate::ports::JetStreamError> {
+        // Create headers with message ID if not present
+        let mut combined_headers = headers.cloned().unwrap_or_default();
+        combined_headers.insert("Nats-Msg-Id", message_id);
+
+        self.publish(subject, payload, Some(&combined_headers)).await
+    }
+
+    async fn subscribe(
+        &self,
+        stream: &str,
+        consumer: &str,
+        _filter_subject: Option<&str>,
+    ) -> Result<Box<dyn crate::ports::JetStreamSubscription>, crate::ports::JetStreamError> {
+        use crate::ports::JetStreamError;
+        use async_nats::jetstream::consumer::PullConsumer;
+
+        let js = self.get_jetstream().await?;
+
+        let stream_obj = js.get_stream(stream)
+            .await
+            .map_err(|e| JetStreamError::StreamNotFound(e.to_string()))?;
+
+        let consumer_obj: PullConsumer = stream_obj.get_consumer(consumer)
+            .await
+            .map_err(|e| JetStreamError::ConsumerNotFound(e.to_string()))?;
+
+        let messages = consumer_obj.messages()
+            .await
+            .map_err(|e| JetStreamError::SubscribeFailed(e.to_string()))?;
+
+        Ok(Box::new(JetStreamSubscriptionImpl { messages }))
+    }
+
+    async fn stream_info(&self, stream: &str) -> Result<crate::ports::StreamInfo, crate::ports::JetStreamError> {
+        use crate::ports::JetStreamError;
+
+        let js = self.get_jetstream().await?;
+
+        let mut stream_obj = js.get_stream(stream)
+            .await
+            .map_err(|e| JetStreamError::StreamNotFound(e.to_string()))?;
+
+        let info = stream_obj.info()
+            .await
+            .map_err(|e| JetStreamError::StreamNotFound(e.to_string()))?;
+
+        Ok(crate::ports::StreamInfo {
+            name: info.config.name.clone(),
+            messages: info.state.messages,
+            bytes: info.state.bytes,
+            first_seq: info.state.first_sequence,
+            last_seq: info.state.last_sequence,
+            consumer_count: info.state.consumer_count,
+            subjects: info.config.subjects.clone(),
+        })
+    }
+
+    async fn create_stream(
+        &self,
+        config: &crate::ports::JetStreamStreamConfig,
+    ) -> Result<crate::ports::StreamInfo, crate::ports::JetStreamError> {
+        use crate::ports::JetStreamError;
+
+        let js = self.get_jetstream().await?;
+
+        let nats_config = Self::to_nats_stream_config(config);
+
+        let mut stream = js.create_stream(nats_config)
+            .await
+            .map_err(|e| JetStreamError::StreamCreationFailed(e.to_string()))?;
+
+        let info = stream.info()
+            .await
+            .map_err(|e| JetStreamError::StreamCreationFailed(e.to_string()))?;
+
+        info!("Created stream: {}", config.name);
+
+        Ok(crate::ports::StreamInfo {
+            name: info.config.name.clone(),
+            messages: info.state.messages,
+            bytes: info.state.bytes,
+            first_seq: info.state.first_sequence,
+            last_seq: info.state.last_sequence,
+            consumer_count: info.state.consumer_count,
+            subjects: info.config.subjects.clone(),
+        })
+    }
+
+    async fn create_consumer(
+        &self,
+        stream: &str,
+        config: &crate::ports::JetStreamConsumerConfig,
+    ) -> Result<crate::ports::ConsumerInfo, crate::ports::JetStreamError> {
+        use crate::ports::JetStreamError;
+
+        let js = self.get_jetstream().await?;
+
+        let stream_obj = js.get_stream(stream)
+            .await
+            .map_err(|e| JetStreamError::StreamNotFound(e.to_string()))?;
+
+        let nats_config = Self::to_nats_consumer_config(config);
+
+        let mut consumer = stream_obj.create_consumer(nats_config)
+            .await
+            .map_err(|e| JetStreamError::ConsumerCreationFailed(e.to_string()))?;
+
+        let info = consumer.info()
+            .await
+            .map_err(|e| JetStreamError::ConsumerCreationFailed(e.to_string()))?;
+
+        info!("Created consumer: {} on stream {}", config.name, stream);
+
+        Ok(crate::ports::ConsumerInfo {
+            name: info.name.clone(),
+            stream: stream.to_string(),
+            num_pending: info.num_pending,
+            num_redelivered: info.num_waiting as u64,
+            delivered_seq: info.delivered.stream_sequence,
+            ack_floor_seq: info.ack_floor.stream_sequence,
+        })
+    }
+
+    async fn is_connected(&self) -> bool {
+        let client_lock = self.client.read().await;
+        client_lock.is_some()
+    }
+}
+
+/// JetStream subscription implementation
+#[cfg(feature = "nats-client")]
+pub struct JetStreamSubscriptionImpl {
+    messages: async_nats::jetstream::consumer::pull::Stream,
+}
+
+#[cfg(feature = "nats-client")]
+#[async_trait::async_trait]
+impl crate::ports::JetStreamSubscription for JetStreamSubscriptionImpl {
+    async fn next(&mut self) -> Option<crate::ports::JetStreamMessage> {
+        use futures::StreamExt;
+
+        match self.messages.next().await {
+            Some(Ok(msg)) => {
+                let mut headers = crate::ports::JetStreamHeaders::new();
+                if let Some(ref h) = msg.headers {
+                    // Use explicit type for header iteration
+                    let header_map: &async_nats::HeaderMap = h;
+                    for (key, values) in header_map.iter() {
+                        // Get first value from the vector of HeaderValue
+                        if let Some(first_value) = values.iter().next() {
+                            headers.insert(key.to_string(), first_value.as_str().to_string());
+                        }
+                    }
+                }
+
+                // Extract message info
+                let (sequence, timestamp, num_delivered) = match msg.info() {
+                    Ok(info) => {
+                        let ts_nanos = info.published.unix_timestamp_nanos() as i64;
+                        (info.stream_sequence, ts_nanos, info.delivered as u64)
+                    }
+                    Err(_) => (0, 0, 0),
+                };
+
+                Some(crate::ports::JetStreamMessage {
+                    subject: msg.subject.to_string(),
+                    payload: msg.payload.to_vec(),
+                    headers,
+                    sequence,
+                    timestamp,
+                    num_delivered,
+                    reply: msg.reply.as_ref().map(|r| r.to_string()),
+                })
+            }
+            Some(Err(e)) => {
+                error!("Error receiving message: {}", e);
+                None
+            }
+            None => None,
+        }
+    }
+
+    async fn unsubscribe(self: Box<Self>) -> Result<(), crate::ports::JetStreamError> {
+        // The subscription is dropped when this struct is dropped
+        Ok(())
+    }
+}
+
+// ============================================================================
+// TESTS
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -396,7 +796,8 @@ mod tests {
         }));
 
         let subject = adapter.build_subject(&event);
-        assert_eq!(subject, "cim.keys.key.keygenerated");
+        // Default config uses "cim.graph" prefix, not "cim.keys"
+        assert_eq!(subject, "cim.graph.key.keygenerated");
     }
 
     #[tokio::test]

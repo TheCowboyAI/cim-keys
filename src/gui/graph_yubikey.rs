@@ -270,7 +270,7 @@ pub fn generate_yubikey_provision_from_graph(
     let mut provision_nodes = Vec::new();
 
     for (person_id, plan) in hierarchy.provision_plans {
-        let provision_node_id = Uuid::now_v7();
+        let _provision_node_id = Uuid::now_v7();
 
         // Create a visual node showing YubiKey status
         let status_label = if plan.already_provisioned {
