@@ -17,9 +17,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
+use tracing::{info, warn};
+#[cfg(feature = "nats-client")]
+use tracing::{debug, error};
 
-use crate::config::{NatsConfig, NATS_URL};
+use crate::config::NatsConfig;
+#[cfg(feature = "nats-client")]
+use crate::config::NATS_URL;
 use crate::events::DomainEvent;
 
 #[cfg(feature = "ipld")]
