@@ -307,6 +307,64 @@ pub trait JetStreamPort: Send + Sync {
 
     /// Check if connected to JetStream
     async fn is_connected(&self) -> bool;
+
+    // =========================================================================
+    // Key-Value Store Operations
+    // =========================================================================
+
+    /// Get a value from a KV bucket
+    async fn kv_get(&self, bucket: &str, key: &str) -> Result<Option<Vec<u8>>, JetStreamError>;
+
+    /// Put a value into a KV bucket
+    async fn kv_put(&self, bucket: &str, key: &str, value: &[u8]) -> Result<u64, JetStreamError>;
+
+    /// Delete a key from a KV bucket
+    async fn kv_delete(&self, bucket: &str, key: &str) -> Result<(), JetStreamError>;
+
+    /// List keys matching a prefix in a KV bucket
+    async fn kv_keys(&self, bucket: &str, prefix: &str) -> Result<Vec<String>, JetStreamError>;
+
+    /// Create a KV bucket if it doesn't exist
+    async fn kv_create_bucket(&self, bucket: &str, config: &KvBucketConfig) -> Result<(), JetStreamError>;
+}
+
+/// Configuration for KV bucket
+#[derive(Debug, Clone, Default)]
+pub struct KvBucketConfig {
+    /// Bucket description
+    pub description: Option<String>,
+    /// Maximum bucket size in bytes
+    pub max_bytes: Option<i64>,
+    /// TTL for entries (in seconds)
+    pub ttl_seconds: Option<u64>,
+    /// Number of replicas
+    pub replicas: Option<usize>,
+}
+
+impl KvBucketConfig {
+    /// Create new config with description
+    pub fn with_description(mut self, desc: impl Into<String>) -> Self {
+        self.description = Some(desc.into());
+        self
+    }
+
+    /// Set max size in bytes
+    pub fn with_max_bytes(mut self, bytes: i64) -> Self {
+        self.max_bytes = Some(bytes);
+        self
+    }
+
+    /// Set TTL in seconds
+    pub fn with_ttl(mut self, seconds: u64) -> Self {
+        self.ttl_seconds = Some(seconds);
+        self
+    }
+
+    /// Set replica count
+    pub fn with_replicas(mut self, replicas: usize) -> Self {
+        self.replicas = Some(replicas);
+        self
+    }
 }
 
 /// JetStream message subscription interface
@@ -641,6 +699,9 @@ pub enum JetStreamError {
 
     #[error("Acknowledgement failed: {0}")]
     AckFailed(String),
+
+    #[error("KV operation failed: {0}")]
+    KvError(String),
 }
 
 // ============================================================================

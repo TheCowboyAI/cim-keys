@@ -347,6 +347,26 @@ mod tests {
         async fn is_connected(&self) -> bool {
             true
         }
+
+        async fn kv_get(&self, _bucket: &str, _key: &str) -> Result<Option<Vec<u8>>, JetStreamError> {
+            Ok(None)
+        }
+
+        async fn kv_put(&self, _bucket: &str, _key: &str, _value: &[u8]) -> Result<u64, JetStreamError> {
+            Ok(1)
+        }
+
+        async fn kv_delete(&self, _bucket: &str, _key: &str) -> Result<(), JetStreamError> {
+            Ok(())
+        }
+
+        async fn kv_keys(&self, _bucket: &str, _prefix: &str) -> Result<Vec<String>, JetStreamError> {
+            Ok(vec![])
+        }
+
+        async fn kv_create_bucket(&self, _bucket: &str, _config: &crate::ports::KvBucketConfig) -> Result<(), JetStreamError> {
+            Ok(())
+        }
     }
 
     fn create_test_key_event() -> DomainEvent {

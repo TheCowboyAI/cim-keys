@@ -23,6 +23,8 @@ pub use nats::{
     JetStreamError, PublishAck, StreamInfo, ConsumerInfo,
     JetStreamStreamConfig, JetStreamConsumerConfig,
     JsRetentionPolicy, JsStorageType, JsAckPolicy, JsDeliverPolicy,
+    // KV store
+    KvBucketConfig,
 };
 pub use storage::{StoragePort, StorageConfig, StorageMetadata, StorageError, SyncMode};
 pub use yubikey::{

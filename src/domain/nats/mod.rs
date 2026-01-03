@@ -22,6 +22,7 @@ pub mod headers;
 pub mod jetstream;
 pub mod publisher;
 pub mod replay;
+pub mod saga_executor;
 pub mod subjects;
 
 // Re-export entity types for backward compatibility
@@ -81,6 +82,18 @@ pub use replay::{
     execute_query,
     compute_aggregate_stats,
     compute_event_type_stats,
+};
+
+// Re-export saga executor
+pub use saga_executor::{
+    JetStreamSagaExecutor,
+    SagaExecutorConfig,
+    SagaExecutorError,
+    SagaExecutorResult,
+    PersistedSagaState,
+    AsyncSagaExecutor,
+    StepExecutionResult,
+    SagaRecovery,
 };
 
 // Re-export subject algebra at module level

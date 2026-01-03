@@ -700,6 +700,120 @@ impl crate::ports::JetStreamPort for JetStreamAdapter {
         let client_lock = self.client.read().await;
         client_lock.is_some()
     }
+
+    async fn kv_get(&self, bucket: &str, key: &str) -> Result<Option<Vec<u8>>, crate::ports::JetStreamError> {
+        use crate::ports::JetStreamError;
+
+        let js = self.get_jetstream().await?;
+
+        let kv = js.get_key_value(bucket)
+            .await
+            .map_err(|e| JetStreamError::KvError(format!("Failed to get bucket {}: {}", bucket, e)))?;
+
+        match kv.get(key).await {
+            Ok(Some(entry)) => Ok(Some(entry.to_vec())),
+            Ok(None) => Ok(None),
+            Err(e) => {
+                // Check if it's a "not found" error
+                let err_str = e.to_string();
+                if err_str.contains("not found") || err_str.contains("no message") {
+                    Ok(None)
+                } else {
+                    Err(JetStreamError::KvError(format!("Failed to get key {}: {}", key, e)))
+                }
+            }
+        }
+    }
+
+    async fn kv_put(&self, bucket: &str, key: &str, value: &[u8]) -> Result<u64, crate::ports::JetStreamError> {
+        use crate::ports::JetStreamError;
+
+        let js = self.get_jetstream().await?;
+
+        let kv = js.get_key_value(bucket)
+            .await
+            .map_err(|e| JetStreamError::KvError(format!("Failed to get bucket {}: {}", bucket, e)))?;
+
+        let revision = kv.put(key, value.to_vec().into())
+            .await
+            .map_err(|e| JetStreamError::KvError(format!("Failed to put key {}: {}", key, e)))?;
+
+        debug!("KV put: bucket={}, key={}, revision={}", bucket, key, revision);
+
+        Ok(revision)
+    }
+
+    async fn kv_delete(&self, bucket: &str, key: &str) -> Result<(), crate::ports::JetStreamError> {
+        use crate::ports::JetStreamError;
+
+        let js = self.get_jetstream().await?;
+
+        let kv = js.get_key_value(bucket)
+            .await
+            .map_err(|e| JetStreamError::KvError(format!("Failed to get bucket {}: {}", bucket, e)))?;
+
+        kv.delete(key)
+            .await
+            .map_err(|e| JetStreamError::KvError(format!("Failed to delete key {}: {}", key, e)))?;
+
+        debug!("KV delete: bucket={}, key={}", bucket, key);
+
+        Ok(())
+    }
+
+    async fn kv_keys(&self, bucket: &str, prefix: &str) -> Result<Vec<String>, crate::ports::JetStreamError> {
+        use crate::ports::JetStreamError;
+        use futures::StreamExt;
+
+        let js = self.get_jetstream().await?;
+
+        let kv = js.get_key_value(bucket)
+            .await
+            .map_err(|e| JetStreamError::KvError(format!("Failed to get bucket {}: {}", bucket, e)))?;
+
+        let keys_stream = kv.keys()
+            .await
+            .map_err(|e| JetStreamError::KvError(format!("Failed to list keys: {}", e)))?;
+
+        let all_keys: Vec<String> = keys_stream
+            .filter_map(|k| async { k.ok() })
+            .collect()
+            .await;
+
+        // Filter by prefix
+        let filtered: Vec<String> = all_keys
+            .into_iter()
+            .filter(|k| k.starts_with(prefix))
+            .collect();
+
+        Ok(filtered)
+    }
+
+    async fn kv_create_bucket(&self, bucket: &str, config: &crate::ports::KvBucketConfig) -> Result<(), crate::ports::JetStreamError> {
+        use crate::ports::JetStreamError;
+        use async_nats::jetstream::kv::Config as NatsKvConfig;
+
+        let js = self.get_jetstream().await?;
+
+        let nats_config = NatsKvConfig {
+            bucket: bucket.to_string(),
+            description: config.description.clone().unwrap_or_default(),
+            max_bytes: config.max_bytes.unwrap_or(1024 * 1024 * 100), // 100MB default
+            history: 1, // Single history entry by default
+            max_age: std::time::Duration::from_secs(config.ttl_seconds.unwrap_or(0)),
+            storage: async_nats::jetstream::stream::StorageType::File,
+            num_replicas: config.replicas.unwrap_or(1) as usize,
+            ..Default::default()
+        };
+
+        js.create_key_value(nats_config)
+            .await
+            .map_err(|e| JetStreamError::KvError(format!("Failed to create bucket {}: {}", bucket, e)))?;
+
+        info!("Created KV bucket: {}", bucket);
+
+        Ok(())
+    }
 }
 
 /// JetStream subscription implementation
