@@ -39,7 +39,9 @@
 
 pub mod morphism;
 pub mod visualization;
+pub mod detail_panel;
 
 // Re-export key types for convenience
 pub use morphism::{CompleteMorphismRegistry, LazyMorphism, Morphism, MorphismRegistry};
 pub use visualization::{VisualizationRegistry, VisualizationRegistryBuilder};
+pub use detail_panel::DetailPanelRegistry;
