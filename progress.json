@@ -173,8 +173,8 @@
       "gui_rs_lines": "<500"
     },
     "current": {
-      "date": "2025-12-30",
-      "sprint": "10 completed (FINAL)",
+      "date": "2026-01-03",
+      "sprint": "26 completed (NATS JetStream Integration)",
       "ddd_validation_checks": "4/5",
       "frp_compliance": "40%",
       "note_frp": "A3, A5, A7, A9 proven (4/10). A4 (Causality) requires MessageFactory migration - UUID v7 structure exists but causation_id often None.",
@@ -201,7 +201,7 @@
         "OrganizationalNodeType": "Injection (removed enum, use coproduct)",
         "total_references_updated": 380
       },
-      "test_count": "392 passed",
+      "test_count": "509 passed",
       "test_coverage_gui": "~45%",
       "mvi_tests": 33,
       "proptest_tests": 7,
@@ -637,6 +637,38 @@
         "No .domain_node. method calls in codebase - ACHIEVED (grep confirmed)"
       ],
       "notes": "Sprint 25 completed migration of all GUI files from deprecated domain_node.data() pattern matching to lifted_node accessor methods. Added themed_visualization() and detail_panel() methods to LiftedNode for fold-based operations. All 388 tests pass. domain_node.rs remains for bridge compatibility during gradual deprecation."
+    },
+    "sprint_26": {
+      "name": "NATS JetStream Integration",
+      "status": "completed",
+      "started": "2026-01-03",
+      "completed": "2026-01-03",
+      "retrospective": "retrospectives/sprint_26.md",
+      "description": "Complete NATS JetStream integration for domain event publishing with CIM header specifications",
+      "tasks": [
+        { "id": "26.1", "description": "Add async-nats dependency with nats-client feature flag", "status": "completed" },
+        { "id": "26.2", "description": "Create CIM header specification (src/domain/nats/headers.rs)", "status": "completed" },
+        { "id": "26.3", "description": "Define subject hierarchy constants (src/domain/nats/jetstream.rs)", "status": "completed" },
+        { "id": "26.4", "description": "Implement JetStreamPort trait (src/ports/nats.rs)", "status": "completed" },
+        { "id": "26.5", "description": "Implement JetStreamAdapter (src/adapters/nats_client.rs)", "status": "completed" },
+        { "id": "26.6", "description": "Configure KEYS_EVENTS and KEYS_COMMANDS streams", "status": "completed" },
+        { "id": "26.7", "description": "Create EventPublisher (src/domain/nats/publisher.rs)", "status": "completed" },
+        { "id": "26.8", "description": "Create durable consumer configurations", "status": "completed" }
+      ],
+      "acceptance_criteria": [
+        "JetStreamPort trait with publish/subscribe/stream management - ACHIEVED",
+        "JetStreamAdapter using async-nats library - ACHIEVED",
+        "EventPublisher with CIM headers and batch support - ACHIEVED",
+        "Subject algebra for type-safe routing - ACHIEVED",
+        "All 509 tests pass - ACHIEVED"
+      ],
+      "deliverables": [
+        "src/domain/nats/headers.rs - CIM header specification",
+        "src/domain/nats/jetstream.rs - Stream/consumer configuration",
+        "src/domain/nats/publisher.rs - EventPublisher implementation",
+        "Cargo.toml - async-nats, futures dependencies with nats-client feature"
+      ],
+      "notes": "Complete JetStream infrastructure for durable event streaming. Supports correlation/causation tracking, deduplication, batch publishing. Ready for integration tests with real NATS server."
     }
   },
 

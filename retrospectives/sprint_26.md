@@ -1,6 +1,6 @@
 <!-- Copyright (c) 2025 - Cowboy AI, LLC. -->
 
-# Sprint 23 Retrospective: NATS JetStream Integration
+# Sprint 26 Retrospective: NATS JetStream Integration
 
 **Date**: 2026-01-03
 **Sprint Duration**: Single session (continuation)
