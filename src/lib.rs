@@ -59,6 +59,11 @@ pub mod lifting;
 // Core fold types (FoldCapability, Foldable, arrow combinators)
 pub mod fold;
 
+// Graph module - Categorical operations on domain graph (Sprint 31)
+// MorphismRegistry replaces 29-arm FoldDomainNode pattern matching
+#[cfg(feature = "gui")]
+pub mod graph;
+
 // Configuration management
 pub mod config;
 

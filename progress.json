@@ -1166,8 +1166,8 @@
     },
     "sprint_31": {
       "name": "Morphism Registry Foundation",
-      "status": "pending",
-      "started": null,
+      "status": "in_progress",
+      "started": "2026-01-03",
       "completed": null,
       "description": "Replace 29-arm FoldDomainNode with MorphismRegistry pattern",
       "tasks": [
