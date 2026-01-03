@@ -22,6 +22,7 @@ pub mod headers;
 pub mod jetstream;
 pub mod publisher;
 pub mod replay;
+pub mod saga_command_handler;
 pub mod saga_executor;
 pub mod subjects;
 
@@ -94,6 +95,17 @@ pub use saga_executor::{
     AsyncSagaExecutor,
     StepExecutionResult,
     SagaRecovery,
+};
+
+// Re-export saga command handler
+pub use saga_command_handler::{
+    SagaCommandHandler,
+    SagaHandlerConfig,
+    SagaCommandResult,
+    SagaCommandStatus,
+    SagaCommandHandlerError,
+    CertificateProvisioningResult,
+    CertificateProvisioningExecutor,
 };
 
 // Re-export subject algebra at module level
