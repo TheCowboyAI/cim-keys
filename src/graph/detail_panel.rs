@@ -24,7 +24,7 @@
 //! ```
 
 use crate::graph::morphism::MorphismRegistry;
-use crate::lifting::{DetailPanelData, Injection, LiftedNode, LiftableDomain};
+use crate::lifting::{DetailPanelData, Injection, LiftedNode};
 use crate::domain::{Organization, OrganizationUnit, Person, Location};
 
 /// Registry of detail panel morphisms for all domain types.
@@ -121,6 +121,7 @@ impl Default for DetailPanelRegistry {
 mod tests {
     use super::*;
     use crate::domain::ids::BootstrapOrgId;
+    use crate::lifting::LiftableDomain;
 
     #[test]
     fn test_detail_panel_registry_person() {

@@ -40,8 +40,10 @@
 pub mod morphism;
 pub mod visualization;
 pub mod detail_panel;
+pub mod abstract_ops;
 
 // Re-export key types for convenience
 pub use morphism::{CompleteMorphismRegistry, LazyMorphism, Morphism, MorphismRegistry};
 pub use visualization::{VisualizationRegistry, VisualizationRegistryBuilder};
 pub use detail_panel::DetailPanelRegistry;
+pub use abstract_ops::{AbstractGraphOps, FilteredGraphOps};
