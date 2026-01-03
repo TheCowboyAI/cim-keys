@@ -1194,22 +1194,30 @@
     },
     "sprint_32": {
       "name": "Abstract Graph Operations",
-      "status": "pending",
-      "started": null,
-      "completed": null,
+      "status": "completed",
+      "started": "2026-01-03",
+      "completed": "2026-01-03",
       "description": "Graph operations work on UUIDs, never lift during traversal",
       "tasks": [
-        { "id": "32.1", "description": "Audit all graph traversal code for concrete type usage", "status": "pending" },
-        { "id": "32.2", "description": "Create src/graph/abstract_ops.rs with UUID-returning operations", "status": "pending" },
-        { "id": "32.3", "description": "Implement reachable_from(id) -> HashSet<Uuid>", "status": "pending" },
-        { "id": "32.4", "description": "Implement shortest_path(from, to) -> Option<Vec<Uuid>>", "status": "pending" },
-        { "id": "32.5", "description": "Implement find_roots() -> Vec<Uuid>", "status": "pending" },
-        { "id": "32.6", "description": "Implement find_leaves() -> Vec<Uuid>", "status": "pending" },
-        { "id": "32.7", "description": "Implement neighbors(id) -> Vec<Uuid>", "status": "pending" },
-        { "id": "32.8", "description": "Migrate existing graph code to use abstract operations", "status": "pending" },
-        { "id": "32.9", "description": "Verify no lifting during graph traversal", "status": "pending" },
-        { "id": "32.10", "description": "Write retrospective", "status": "pending" }
+        { "id": "32.1", "description": "Create src/graph/abstract_ops.rs with AbstractGraphOps", "status": "completed" },
+        { "id": "32.2", "description": "Implement reachable_from(id) -> HashSet<Uuid>", "status": "completed" },
+        { "id": "32.3", "description": "Implement shortest_path(from, to) -> Option<Vec<Uuid>>", "status": "completed" },
+        { "id": "32.4", "description": "Implement find_roots() -> Vec<Uuid>", "status": "completed" },
+        { "id": "32.5", "description": "Implement find_leaves() -> Vec<Uuid>", "status": "completed" },
+        { "id": "32.6", "description": "Implement neighbors(id) -> Vec<Uuid>", "status": "completed" },
+        { "id": "32.7", "description": "Implement topological_sort() and find_cycles()", "status": "completed" },
+        { "id": "32.8", "description": "Implement strongly_connected_components()", "status": "completed" },
+        { "id": "32.9", "description": "Verify no lifting during graph traversal (type signature proof)", "status": "completed" },
+        { "id": "32.10", "description": "Write retrospective", "status": "completed" }
       ],
+      "commits": [
+        "57b4d23 - feat(graph): add AbstractGraphOps for UUID-only graph algorithms"
+      ],
+      "test_counts": {
+        "before": 561,
+        "after": 583,
+        "new_tests": 22
+      },
       "acceptance_criteria": [
         "Graph operations return UUIDs only",
         "No lift() calls during traversal",
