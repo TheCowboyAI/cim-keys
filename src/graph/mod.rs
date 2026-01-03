@@ -38,6 +38,8 @@
 //! - `lift`: Explicit lift boundary utilities
 
 pub mod morphism;
+pub mod visualization;
 
 // Re-export key types for convenience
 pub use morphism::{CompleteMorphismRegistry, LazyMorphism, Morphism, MorphismRegistry};
+pub use visualization::{VisualizationRegistry, VisualizationRegistryBuilder};
