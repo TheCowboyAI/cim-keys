@@ -1052,6 +1052,192 @@
         "subject-expert": "90%+",
         "fp-expert": "90%+"
       }
+    },
+    "graph_architecture_consultations": {
+      "date": "2026-01-03",
+      "trigger": "User identified fundamental architectural misunderstanding",
+      "user_insight": "Nodes are anything impl DomainEntity (abstract), edges are triples (node,relation,node), fold should be SINGLE operation with 29 fmaps as DATA not CODE branches, Kan extension from CatGraph to CatDomainElement",
+      "experts_consulted": [
+        {
+          "agent": "Explore",
+          "agent_id": "ab811a1",
+          "focus": "cim-domain core patterns",
+          "findings": [
+            "LiftableDomain trait is faithful functor with lift/unlift/injection",
+            "LiftedNode has type erasure via Arc<dyn Any + Send + Sync>",
+            "FoldCapability pre-computed at lift time - NO pattern matching at execution",
+            "LiftedGraph supports polymorphic add<T>() and unlift_all<T>()"
+          ]
+        },
+        {
+          "agent": "act-expert",
+          "agent_id": "a41076b",
+          "focus": "Kan extensions and categorical fold",
+          "findings": [
+            "29-arm fold violates functoriality - morphisms embedded as CODE",
+            "Correct: MorphismRegistry stores morphisms as DATA",
+            "Kan extension Lan_K F extends domain functors to abstract graph",
+            "Lift is LAZY - triggered only when morphism demands concrete type"
+          ]
+        },
+        {
+          "agent": "cim-expert",
+          "agent_id": "aa04013",
+          "focus": "Correct cim-domain usage",
+          "findings": [
+            "cim-domain already has all patterns needed",
+            "StateMachines drive all state transitions through events",
+            "Aggregates = consistency boundaries, Sagas = aggregates of aggregates",
+            "BoundedContext as Category with objects/morphisms"
+          ]
+        },
+        {
+          "agent": "graph-expert",
+          "agent_id": "a92b38b",
+          "focus": "Abstract graph patterns",
+          "findings": [
+            "Graph is purely structural - doesn't care what's in nodes",
+            "Edges are triples (source_id, relation, target_id)",
+            "Graph ops (path, cycles, SCC, topo sort) return UUIDs only",
+            "Lift ONLY at boundary when domain semantics needed"
+          ]
+        }
+      ],
+      "architectural_correction": {
+        "wrong_pattern": "29-arm FoldDomainNode with morphisms as CODE branches",
+        "correct_pattern": "MorphismRegistry with morphisms as DATA, single fold operation",
+        "graph_layer": "Abstract - nodes are UUIDs + opaque payloads, operations return UUIDs",
+        "domain_layer": "Concrete - lift only when domain semantics needed",
+        "boundary": "Kan extension (Lan_K F) - lazy lifting at boundary"
+      }
+    }
+  },
+
+  "graph_refactoring_sprints": {
+    "sprint_27": {
+      "name": "Event Replay & Query Infrastructure",
+      "status": "completed",
+      "started": "2026-01-03",
+      "completed": "2026-01-03",
+      "retrospective": "retrospectives/sprint_27.md",
+      "tasks": [
+        { "id": "27.1", "description": "Create EventReplayer for aggregate reconstruction", "status": "completed" },
+        { "id": "27.2", "description": "Create ProjectionQuery for state queries", "status": "completed" },
+        { "id": "27.3", "description": "Add replay tests", "status": "completed" }
+      ]
+    },
+    "sprint_28": {
+      "name": "Saga Coordinator with KV Persistence",
+      "status": "completed",
+      "started": "2026-01-03",
+      "completed": "2026-01-03",
+      "retrospective": "retrospectives/sprint_28.md",
+      "tasks": [
+        { "id": "28.1", "description": "Create JetStreamSagaExecutor", "status": "completed" },
+        { "id": "28.2", "description": "Implement KV-based saga state persistence", "status": "completed" },
+        { "id": "28.3", "description": "Add saga executor tests", "status": "completed" }
+      ]
+    },
+    "sprint_29": {
+      "name": "Command Handler Integration",
+      "status": "completed",
+      "started": "2026-01-03",
+      "completed": "2026-01-03",
+      "retrospective": "retrospectives/sprint_29.md",
+      "tasks": [
+        { "id": "29.1", "description": "Create SagaCommandHandler", "status": "completed" },
+        { "id": "29.2", "description": "Bridge commands with saga execution", "status": "completed" },
+        { "id": "29.3", "description": "Add command handler tests", "status": "completed" }
+      ]
+    },
+    "sprint_30": {
+      "name": "Domain Event Publishing for Sagas",
+      "status": "completed",
+      "started": "2026-01-03",
+      "completed": "2026-01-03",
+      "retrospective": "retrospectives/sprint_30.md",
+      "tasks": [
+        { "id": "30.1", "description": "Create SagaEvents with 11 lifecycle events", "status": "completed" },
+        { "id": "30.2", "description": "Add Saga variant to DomainEvent enum", "status": "completed" },
+        { "id": "30.3", "description": "Integrate with EventPublisher routing", "status": "completed" },
+        { "id": "30.4", "description": "Add saga event tests (8 new tests)", "status": "completed" }
+      ],
+      "test_count": "550 tests passing"
+    },
+    "sprint_31": {
+      "name": "Morphism Registry Foundation",
+      "status": "pending",
+      "started": null,
+      "completed": null,
+      "description": "Replace 29-arm FoldDomainNode with MorphismRegistry pattern",
+      "tasks": [
+        { "id": "31.1", "description": "Create src/graph/morphism.rs with MorphismRegistry type", "status": "pending" },
+        { "id": "31.2", "description": "Define Morphism trait for type-safe transformations", "status": "pending" },
+        { "id": "31.3", "description": "Implement registration of morphisms as DATA entries", "status": "pending" },
+        { "id": "31.4", "description": "Create single fold() operation that looks up morphisms by injection tag", "status": "pending" },
+        { "id": "31.5", "description": "Migrate visualization morphisms from FoldDomainNode to registry", "status": "pending" },
+        { "id": "31.6", "description": "Migrate search/query morphisms to registry", "status": "pending" },
+        { "id": "31.7", "description": "Add #[deprecated] to FoldDomainNode trait", "status": "pending" },
+        { "id": "31.8", "description": "Verify compilation and tests pass", "status": "pending" },
+        { "id": "31.9", "description": "Write retrospective", "status": "pending" }
+      ],
+      "acceptance_criteria": [
+        "MorphismRegistry stores morphisms as DATA, not code",
+        "Single fold() operation replaces 29-arm match",
+        "FoldDomainNode marked deprecated",
+        "All tests pass"
+      ]
+    },
+    "sprint_32": {
+      "name": "Abstract Graph Operations",
+      "status": "pending",
+      "started": null,
+      "completed": null,
+      "description": "Graph operations work on UUIDs, never lift during traversal",
+      "tasks": [
+        { "id": "32.1", "description": "Audit all graph traversal code for concrete type usage", "status": "pending" },
+        { "id": "32.2", "description": "Create src/graph/abstract_ops.rs with UUID-returning operations", "status": "pending" },
+        { "id": "32.3", "description": "Implement reachable_from(id) -> HashSet<Uuid>", "status": "pending" },
+        { "id": "32.4", "description": "Implement shortest_path(from, to) -> Option<Vec<Uuid>>", "status": "pending" },
+        { "id": "32.5", "description": "Implement find_roots() -> Vec<Uuid>", "status": "pending" },
+        { "id": "32.6", "description": "Implement find_leaves() -> Vec<Uuid>", "status": "pending" },
+        { "id": "32.7", "description": "Implement neighbors(id) -> Vec<Uuid>", "status": "pending" },
+        { "id": "32.8", "description": "Migrate existing graph code to use abstract operations", "status": "pending" },
+        { "id": "32.9", "description": "Verify no lifting during graph traversal", "status": "pending" },
+        { "id": "32.10", "description": "Write retrospective", "status": "pending" }
+      ],
+      "acceptance_criteria": [
+        "Graph operations return UUIDs only",
+        "No lift() calls during traversal",
+        "Graph algorithms work on abstract structure",
+        "All tests pass"
+      ]
+    },
+    "sprint_33": {
+      "name": "Kan Extension Boundary",
+      "status": "pending",
+      "started": null,
+      "completed": null,
+      "description": "Clear separation between graph layer and domain layer",
+      "tasks": [
+        { "id": "33.1", "description": "Define explicit lift boundary in architecture", "status": "pending" },
+        { "id": "33.2", "description": "Create src/graph/lift.rs with lifting utilities", "status": "pending" },
+        { "id": "33.3", "description": "Implement lazy lifting (lift only when morphism demands)", "status": "pending" },
+        { "id": "33.4", "description": "Audit all lift() calls, move to boundary", "status": "pending" },
+        { "id": "33.5", "description": "Document Kan extension pattern in code comments", "status": "pending" },
+        { "id": "33.6", "description": "Add tests verifying lift happens only at boundary", "status": "pending" },
+        { "id": "33.7", "description": "Remove any remaining FoldDomainNode usages", "status": "pending" },
+        { "id": "33.8", "description": "Delete deprecated FoldDomainNode code", "status": "pending" },
+        { "id": "33.9", "description": "Final verification and cleanup", "status": "pending" },
+        { "id": "33.10", "description": "Write retrospective", "status": "pending" }
+      ],
+      "acceptance_criteria": [
+        "Clear architectural boundary between graph and domain layers",
+        "Lift happens only when domain semantics needed",
+        "FoldDomainNode completely removed",
+        "Kan extension pattern documented",
+        "All tests pass"
+      ]
     }
   }
 }
