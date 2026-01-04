@@ -183,16 +183,63 @@ pub enum SagaExecutorError {
 pub type SagaExecutorResult<T> = Result<T, SagaExecutorError>;
 
 /// Execution result for a single step
+///
+/// Following the Mealy machine pattern (A2, A6), step execution produces
+/// both state transitions AND domain events as output. The domain events
+/// are returned alongside the step result for publication.
+///
+/// ## FRP Axiom Compliance
+///
+/// - A3 (Decoupled): Domain events are produced AFTER step completes
+/// - A6 (Explicit Routing): Events are composed with step results, not pattern matched
+/// - A7 (Change Prefixes): Events form a causal chain via correlation_id
+/// - A9 (Semantic Preservation): `execute_step >>> publish_events` composes correctly
 #[derive(Debug, Clone)]
 pub enum StepExecutionResult<T> {
     /// Step completed, saga continues
-    Continue,
+    /// Contains domain events produced by this step
+    Continue {
+        /// Domain events produced by this step for publication
+        domain_events: Vec<crate::events::DomainEvent>,
+    },
     /// Saga completed with output
-    Completed(T),
+    /// Contains final domain events
+    Completed {
+        /// The saga output
+        output: T,
+        /// Domain events produced by the final step
+        domain_events: Vec<crate::events::DomainEvent>,
+    },
     /// Step failed, retry available
     Retry { reason: String, retry_in_ms: u64 },
     /// Step failed, compensation needed
     Failed(SagaError),
+}
+
+impl<T> StepExecutionResult<T> {
+    /// Create a Continue result with domain events
+    pub fn continue_with_events(events: Vec<crate::events::DomainEvent>) -> Self {
+        Self::Continue { domain_events: events }
+    }
+
+    /// Create a Continue result with no events
+    pub fn continue_empty() -> Self {
+        Self::Continue { domain_events: vec![] }
+    }
+
+    /// Create a Completed result with output and events
+    pub fn completed_with_events(output: T, events: Vec<crate::events::DomainEvent>) -> Self {
+        Self::Completed { output, domain_events: events }
+    }
+
+    /// Get domain events if present
+    pub fn domain_events(&self) -> &[crate::events::DomainEvent] {
+        match self {
+            Self::Continue { domain_events } => domain_events,
+            Self::Completed { domain_events, .. } => domain_events,
+            Self::Retry { .. } | Self::Failed(_) => &[],
+        }
+    }
 }
 
 /// Async saga executor trait
@@ -312,6 +359,15 @@ impl<P: JetStreamPort> JetStreamSagaExecutor<P> {
     }
 
     /// Execute next step with an executor
+    ///
+    /// Returns `StepExecutionResult` which includes domain events produced by the step.
+    /// The caller is responsible for publishing these domain events (following A6: explicit routing).
+    ///
+    /// ## FRP Axiom Compliance
+    ///
+    /// - A3 (Decoupled): Domain events returned AFTER step completes
+    /// - A6 (Explicit Routing): Caller composes `execute_step >>> publish_domain_events`
+    /// - A7 (Change Prefixes): Events preserve causation chain
     pub async fn execute_step<S, E>(&self, saga_id: Uuid, executor: &E) -> SagaExecutorResult<StepExecutionResult<E::Output>>
     where
         S: SagaState + Serialize + for<'de> Deserialize<'de>,
@@ -340,7 +396,7 @@ impl<P: JetStreamPort> JetStreamSagaExecutor<P> {
         let result = executor.execute_next_step(&mut persisted.state).await;
 
         match result {
-            Ok(StepExecutionResult::Continue) => {
+            Ok(StepExecutionResult::Continue { domain_events }) => {
                 // Step completed, save state and continue
                 persisted.increment_version();
                 persisted.reset_retry();
@@ -353,9 +409,10 @@ impl<P: JetStreamPort> JetStreamSagaExecutor<P> {
                 };
                 self.publish_saga_event(saga_id, &step_completed).await?;
 
-                Ok(StepExecutionResult::Continue)
+                // Return domain events to caller for publication
+                Ok(StepExecutionResult::Continue { domain_events })
             }
-            Ok(StepExecutionResult::Completed(output)) => {
+            Ok(StepExecutionResult::Completed { output, domain_events }) => {
                 // Saga completed
                 persisted.increment_version();
                 self.save_saga(&persisted).await?;
@@ -366,7 +423,8 @@ impl<P: JetStreamPort> JetStreamSagaExecutor<P> {
                 };
                 self.publish_saga_event(saga_id, &saga_completed).await?;
 
-                Ok(StepExecutionResult::Completed(output))
+                // Return output and domain events to caller
+                Ok(StepExecutionResult::Completed { output, domain_events })
             }
             Ok(StepExecutionResult::Retry { reason, retry_in_ms }) => {
                 // Retry needed
@@ -413,6 +471,10 @@ impl<P: JetStreamPort> JetStreamSagaExecutor<P> {
     }
 
     /// Run saga to completion (or failure)
+    ///
+    /// Note: This method does NOT publish domain events. Caller should use
+    /// `execute_step` in a loop and publish events after each step for proper
+    /// FRP composition (A6: explicit routing).
     pub async fn run_to_completion<S, E>(&self, saga_id: Uuid, executor: &E) -> SagaExecutorResult<SagaResult<E::Output>>
     where
         S: SagaState + Serialize + for<'de> Deserialize<'de>,
@@ -420,17 +482,26 @@ impl<P: JetStreamPort> JetStreamSagaExecutor<P> {
     {
         loop {
             match self.execute_step::<S, E>(saga_id, executor).await? {
-                StepExecutionResult::Continue => {
+                StepExecutionResult::Continue { domain_events: _ } => {
                     // Continue to next step
+                    // Note: Domain events are dropped here - use execute_step loop for publishing
                     continue;
                 }
-                StepExecutionResult::Completed(output) => {
+                StepExecutionResult::Completed { output, domain_events: _ } => {
+                    // Note: Domain events are dropped here - use execute_step loop for publishing
                     return Ok(SagaResult::Completed(output));
                 }
                 StepExecutionResult::Retry { retry_in_ms, .. } => {
-                    // Simple async sleep for retry (in real impl, use tokio::time::sleep)
+                    // Async sleep for retry delay
                     #[cfg(feature = "nats-client")]
-                    tokio::time::sleep(std::time::Duration::from_millis(retry_in_ms)).await;
+                    {
+                        tokio::time::sleep(std::time::Duration::from_millis(retry_in_ms)).await;
+                    }
+                    #[cfg(not(feature = "nats-client"))]
+                    {
+                        // Without async runtime, log the retry delay intention
+                        let _ = retry_in_ms; // Acknowledged but no-op without runtime
+                    }
                     continue;
                 }
                 StepExecutionResult::Failed(error) => {
@@ -546,20 +617,24 @@ impl<P: JetStreamPort> SagaRecovery<P> {
             if let Some(id_str) = key.strip_prefix("saga.") {
                 if let Ok(saga_id) = Uuid::parse_str(id_str) {
                     // Load the saga state to check if it's terminal
-                    if let Some(_data) = self.port.kv_get(&self.config.state_bucket, &key).await? {
-                        // Parse just enough to check terminal status
+                    if let Some(data) = self.port.kv_get(&self.config.state_bucket, &key).await? {
+                        // Parse minimal persisted state to check terminal status
+                        // This allows checking without deserializing the full saga state
                         #[derive(Deserialize)]
-                        struct MinimalState {
-                            state: MinimalSagaState,
-                        }
-                        #[derive(Deserialize)]
-                        struct MinimalSagaState {
-                            // We check for specific terminal state markers
+                        struct MinimalPersistedState {
+                            #[allow(dead_code)] // Required for JSON parsing but not used directly
+                            saga_type: String,
+                            version: u64,
                         }
 
-                        // For now, add all non-completed sagas to recovery list
-                        // A more sophisticated check would parse the actual state
-                        incomplete.push(saga_id);
+                        if let Ok(minimal) = serde_json::from_slice::<MinimalPersistedState>(&data) {
+                            // Include sagas that have been persisted (version >= 1)
+                            // Terminal state detection requires type-specific parsing
+                            // which happens during actual recovery, not discovery
+                            if minimal.version >= 1 {
+                                incomplete.push(saga_id);
+                            }
+                        }
                     }
                 }
             }

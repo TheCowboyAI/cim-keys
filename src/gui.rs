@@ -70,6 +70,9 @@ pub mod view_model;
 pub mod edge_indicator;
 pub mod role_palette;
 pub mod graph_projection;
+pub mod workflow_view;
+pub mod workflow_graph;
+pub mod state_machine_graph;
 
 #[cfg(test)]
 mod graph_integration_tests;
@@ -282,6 +285,13 @@ pub struct CimKeysApp {
     policy_expansion_level: PolicyExpansionLevel,
     expanded_separation_classes: std::collections::HashSet<crate::policy::SeparationClass>,
     expanded_categories: std::collections::HashSet<String>,
+
+    // Workflow guidance for trust chain gap fulfillment
+    workflow_view: workflow_view::WorkflowView,
+
+    // State Machine visualization
+    selected_state_machine: state_machine_graph::StateMachineType,
+    state_machine_graph: OrganizationConcept,
 }
 
 /// Expansion level for progressive disclosure in policy graph
@@ -419,6 +429,8 @@ pub enum Tab {
     Locations,
     Keys,
     Export,
+    Workflow,
+    StateMachines,
 }
 
 /// Graph visualization mode
@@ -602,6 +614,13 @@ pub enum Message {
     PropertyCardMessage(PropertyCardMessage),
     PassphraseDialogMessage(passphrase_dialog::PassphraseDialogMessage),
 
+    // Workflow Guidance Messages
+    WorkflowMessage(workflow_view::WorkflowMessage),
+
+    // State Machine Visualization Messages
+    StateMachineSelected(state_machine_graph::StateMachineType),
+    StateMachineMessage(state_machine_graph::StateMachineMessage),
+
     // MVI Integration
     MviIntent(Intent),
 
@@ -683,6 +702,8 @@ impl Message {
                     Tab::Keys => crate::mvi::model::Tab::Keys,
                     Tab::Export => crate::mvi::model::Tab::Export,
                     Tab::Locations => return None, // No equivalent in mvi::model::Tab
+                    Tab::Workflow => return None, // No equivalent in mvi::model::Tab
+                    Tab::StateMachines => return None, // No equivalent in mvi::model::Tab
                 };
                 Some(Intent::UiTabSelected(mvi_tab))
             }
@@ -948,7 +969,7 @@ impl CimKeysApp {
         let mvi_model = MviModel::new(PathBuf::from(&output_dir));
 
         // Load existing data from manifest if it exists
-        let load_task = {
+        let manifest_task = {
             let proj = projection.clone();
             Task::perform(
                 async move {
@@ -965,6 +986,56 @@ impl CimKeysApp {
                 }
             )
         };
+
+        // Auto-load secrets on startup (domain-bootstrap.json or legacy format)
+        let secrets_task = Task::perform(
+            async move {
+                use crate::secrets_loader::{SecretsLoader, BootstrapData};
+                use std::path::PathBuf;
+
+                // Try domain-bootstrap.json first (recommended)
+                let bootstrap_path = PathBuf::from("secrets/domain-bootstrap.json");
+                if bootstrap_path.exists() {
+                    match SecretsLoader::load_from_bootstrap_file(&bootstrap_path) {
+                        Ok(data) => return Ok(data),
+                        Err(e) => {
+                            eprintln!("Info: Could not load domain-bootstrap.json: {}", e);
+                        }
+                    }
+                }
+
+                // Try legacy format
+                let secrets_path = PathBuf::from("secrets/secrets.json");
+                let cowboyai_path = PathBuf::from("secrets/cowboyai.json");
+
+                if secrets_path.exists() && cowboyai_path.exists() {
+                    match SecretsLoader::load_from_files(&secrets_path, &cowboyai_path) {
+                        Ok((org, people, yubikey_configs, passphrase)) => {
+                            let units = org.units.clone();
+                            return Ok(BootstrapData {
+                                organization: org,
+                                units,
+                                people,
+                                yubikey_configs,
+                                yubikey_assignments: vec![],
+                                nats_hierarchy: None,
+                                master_passphrase: passphrase,
+                            });
+                        }
+                        Err(e) => {
+                            eprintln!("Info: Could not load legacy secrets: {}", e);
+                        }
+                    }
+                }
+
+                // No secrets found - this is fine, user can create from scratch
+                Err("No bootstrap files found - starting with empty domain".to_string())
+            },
+            Message::SecretsImported
+        );
+
+        // Run both tasks - manifest first, then secrets
+        let load_task = Task::batch([manifest_task, secrets_task]);
 
         (
             Self {
@@ -1110,6 +1181,16 @@ impl CimKeysApp {
                 policy_expansion_level: PolicyExpansionLevel::default(),
                 expanded_separation_classes: std::collections::HashSet::new(),
                 expanded_categories: std::collections::HashSet::new(),
+
+                // Workflow guidance
+                workflow_view: workflow_view::WorkflowView::new(),
+
+                // State Machine visualization
+                selected_state_machine: state_machine_graph::StateMachineType::Key,
+                state_machine_graph: state_machine_graph::state_machine_to_graph(
+                    &state_machine_graph::build_key_state_machine(),
+                    &state_machine_graph::StateMachineLayoutConfig::default(),
+                ),
             },
             load_task,
         )
@@ -1130,6 +1211,18 @@ impl CimKeysApp {
                     Tab::Locations => format!("Manage Locations ({} loaded)", self.loaded_locations.len()),
                     Tab::Keys => "Generate and Manage Cryptographic Keys".to_string(),
                     Tab::Export => "Export Domain Configuration".to_string(),
+                    Tab::Workflow => {
+                        let summary = self.workflow_view.tracker.summary();
+                        format!("Trust Chain Gap Fulfillment ({}/{} complete)",
+                            summary.completed, summary.total_gaps)
+                    }
+                    Tab::StateMachines => {
+                        let def = state_machine_graph::get_state_machine(self.selected_state_machine);
+                        format!("State Machine Visualization - {} ({} states, {} transitions)",
+                            self.selected_state_machine.display_name(),
+                            def.states.len(),
+                            def.transitions.len())
+                    }
                 };
                 Task::none()
             }
@@ -4457,6 +4550,49 @@ impl CimKeysApp {
                 task.map(Message::MviIntent)
             }
 
+            Message::WorkflowMessage(msg) => {
+                self.workflow_view.update(msg);
+                Task::none()
+            }
+
+            Message::StateMachineSelected(sm_type) => {
+                self.selected_state_machine = sm_type;
+                let definition = state_machine_graph::get_state_machine(sm_type);
+                self.state_machine_graph = state_machine_graph::state_machine_to_graph(
+                    &definition,
+                    &state_machine_graph::StateMachineLayoutConfig::default(),
+                );
+                self.status_message = format!("Viewing {} state machine", sm_type.display_name());
+                Task::none()
+            }
+
+            Message::StateMachineMessage(msg) => {
+                match msg {
+                    state_machine_graph::StateMachineMessage::SelectMachine(sm_type) => {
+                        self.selected_state_machine = sm_type;
+                        let definition = state_machine_graph::get_state_machine(sm_type);
+                        self.state_machine_graph = state_machine_graph::state_machine_to_graph(
+                            &definition,
+                            &state_machine_graph::StateMachineLayoutConfig::default(),
+                        );
+                    }
+                    state_machine_graph::StateMachineMessage::StateSelected(state_name) => {
+                        self.status_message = format!("Selected state: {}", state_name);
+                    }
+                    state_machine_graph::StateMachineMessage::TransitionSelected { from, to } => {
+                        self.status_message = format!("Transition: {} → {}", from, to);
+                    }
+                    state_machine_graph::StateMachineMessage::ResetView => {
+                        let definition = state_machine_graph::get_state_machine(self.selected_state_machine);
+                        self.state_machine_graph = state_machine_graph::state_machine_to_graph(
+                            &definition,
+                            &state_machine_graph::StateMachineLayoutConfig::default(),
+                        );
+                    }
+                }
+                Task::none()
+            }
+
             Message::AnimationTick => {
                 // Update animation time
                 self.animation_time += 0.016; // ~60fps
@@ -4999,6 +5135,12 @@ impl CimKeysApp {
             button(text("Export").size(self.view_model.text_normal))
                 .on_press(Message::TabSelected(Tab::Export))
                 .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Export)),
+            button(text("Workflow").size(self.view_model.text_normal))
+                .on_press(Message::TabSelected(Tab::Workflow))
+                .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Workflow)),
+            button(text("State Machines").size(self.view_model.text_normal))
+                .on_press(Message::TabSelected(Tab::StateMachines))
+                .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::StateMachines)),
         ]
         .spacing(self.view_model.spacing_md);
 
@@ -5009,6 +5151,8 @@ impl CimKeysApp {
             Tab::Locations => self.view_locations(),
             Tab::Keys => self.view_keys(),
             Tab::Export => self.view_export(),
+            Tab::Workflow => self.view_workflow(),
+            Tab::StateMachines => self.view_state_machines(),
         };
 
         // Error display
@@ -5933,13 +6077,47 @@ impl CimKeysApp {
     }
 
     fn view_welcome(&self) -> Element<'_, Message> {
-        let content = column![
-            text("Welcome to CIM Keys!").size(self.view_model.text_header),
-            text("Generate and manage cryptographic keys for your CIM infrastructure").size(self.view_model.text_medium),
+        // Show loading status or domain info
+        let status_section = if self.domain_loaded {
             container(
                 column![
                     row![
-                        verified::icon("warning", self.view_model.text_large),
+                        verified::icon("check_circle", self.view_model.text_large),
+                        text(format!(" Domain Loaded: {}", self.organization_name)).size(self.view_model.text_large),
+                    ].spacing(self.view_model.spacing_sm),
+                    text(format!("{} people, {} locations configured",
+                        self.loaded_people.len(),
+                        self.loaded_locations.len()
+                    )).size(self.view_model.text_normal),
+                ]
+                .spacing(self.view_model.spacing_sm)
+            )
+            .style(CowboyCustomTheme::pastel_mint_card())
+            .padding(self.view_model.padding_lg)
+        } else {
+            container(
+                column![
+                    row![
+                        verified::icon("info", self.view_model.text_large),
+                        text(" No Domain Loaded").size(self.view_model.text_large),
+                    ].spacing(self.view_model.spacing_sm),
+                    text("Create a new domain using the Organization tab, or add secrets/domain-bootstrap.json").size(self.view_model.text_normal),
+                ]
+                .spacing(self.view_model.spacing_sm)
+            )
+            .style(CowboyCustomTheme::pastel_teal_card())
+            .padding(self.view_model.padding_lg)
+        };
+
+        let content = column![
+            text("CIM Keys").size(self.view_model.text_header),
+            text("Offline Cryptographic Key Management for CIM Infrastructure").size(self.view_model.text_medium),
+
+            // Security notice
+            container(
+                column![
+                    row![
+                        verified::icon("security", self.view_model.text_large),
                         text(" Security Notice").size(self.view_model.text_large),
                     ].spacing(self.view_model.spacing_sm),
                     text("This application should be run on an air-gapped computer for maximum security.").size(self.view_model.text_normal),
@@ -5948,41 +6126,104 @@ impl CimKeysApp {
                 .spacing(self.view_model.spacing_sm)
             )
             .style(CowboyCustomTheme::pastel_coral_card())
-            .padding(self.view_model.padding_xl),
+            .padding(self.view_model.padding_lg),
 
+            // Status section
+            status_section,
+
+            // Quick Start Documentation
             container(
                 column![
-                    text("Getting Started").size(self.view_model.text_xlarge),
-                    text("Choose how you want to proceed:").size(self.view_model.text_normal),
+                    text("Quick Start Guide").size(self.view_model.text_xlarge),
 
-                    row![
-                        button("Import from Secrets")
-                            .on_press(Message::ImportFromSecrets)
-                            .style(CowboyCustomTheme::security_button()),
-                        text("Load cowboyai.json and secrets.json files")
-                            .size(self.view_model.text_small)
-                            .color(CowboyTheme::text_secondary()),
-                    ]
-                    .spacing(self.view_model.spacing_md)
-                    .align_y(Alignment::Center),
+                    // Step 1
+                    container(
+                        column![
+                            text("1. Organization Tab - Define Your Structure").size(self.view_model.text_large),
+                            text("• Right-click on the canvas to create organizations, units, and people").size(self.view_model.text_normal),
+                            text("• Drag nodes to arrange your organizational hierarchy").size(self.view_model.text_normal),
+                            text("• Connect people to units with relationships").size(self.view_model.text_normal),
+                        ].spacing(self.view_model.spacing_xs)
+                    )
+                    .style(CowboyCustomTheme::glass_container())
+                    .padding(self.view_model.padding_md),
 
-                    row![
-                        button("Go to Organization")
-                            .on_press(Message::TabSelected(Tab::Organization))
-                            .style(CowboyCustomTheme::primary_button()),
-                        text("Manually create your organization")
-                            .size(self.view_model.text_small)
-                            .color(CowboyTheme::text_secondary()),
-                    ]
-                    .spacing(self.view_model.spacing_md)
-                    .align_y(Alignment::Center),
+                    // Step 2
+                    container(
+                        column![
+                            text("2. Locations Tab - Define Storage Locations").size(self.view_model.text_large),
+                            text("• Create physical locations for key storage (encrypted SD cards)").size(self.view_model.text_normal),
+                            text("• Each YubiKey should have an assigned storage location").size(self.view_model.text_normal),
+                        ].spacing(self.view_model.spacing_xs)
+                    )
+                    .style(CowboyCustomTheme::glass_container())
+                    .padding(self.view_model.padding_md),
+
+                    // Step 3
+                    container(
+                        column![
+                            text("3. Keys Tab - Generate Cryptographic Keys").size(self.view_model.text_large),
+                            text("• Generate Root CA, Intermediate CAs, and leaf certificates").size(self.view_model.text_normal),
+                            text("• Provision YubiKeys with generated keys").size(self.view_model.text_normal),
+                            text("• Create NATS operator, account, and user credentials").size(self.view_model.text_normal),
+                        ].spacing(self.view_model.spacing_xs)
+                    )
+                    .style(CowboyCustomTheme::glass_container())
+                    .padding(self.view_model.padding_md),
+
+                    // Step 4
+                    container(
+                        column![
+                            text("4. Export Tab - Save Your Configuration").size(self.view_model.text_large),
+                            text("• Export domain configuration to encrypted storage").size(self.view_model.text_normal),
+                            text("• Generate deployment packages for CIM leaf nodes").size(self.view_model.text_normal),
+                        ].spacing(self.view_model.spacing_xs)
+                    )
+                    .style(CowboyCustomTheme::glass_container())
+                    .padding(self.view_model.padding_md),
+
+                    // Step 5
+                    container(
+                        column![
+                            text("5. Workflow Tab - Track Progress").size(self.view_model.text_large),
+                            text("• View trust chain gaps and recommended next steps").size(self.view_model.text_normal),
+                            text("• Semantic positioning shows related tasks").size(self.view_model.text_normal),
+                            text("• Markov chain predictions guide your workflow").size(self.view_model.text_normal),
+                        ].spacing(self.view_model.spacing_xs)
+                    )
+                    .style(CowboyCustomTheme::glass_container())
+                    .padding(self.view_model.padding_md),
                 ]
-                .spacing(self.view_model.spacing_lg)
+                .spacing(self.view_model.spacing_md)
             )
-            .padding(self.view_model.padding_xl)
+            .padding(self.view_model.padding_lg)
+            .style(CowboyCustomTheme::glass_container()),
+
+            // Action button
+            container(
+                button("Go to Organization")
+                    .on_press(Message::TabSelected(Tab::Organization))
+                    .style(CowboyCustomTheme::primary_button())
+                    .padding(self.view_model.padding_md)
+            )
+            .width(Length::Fill)
+            .align_x(Alignment::Center),
+
+            // Bootstrap file info
+            container(
+                column![
+                    text("Bootstrap Files").size(self.view_model.text_large),
+                    text("Place your configuration in one of these locations:").size(self.view_model.text_normal),
+                    text("• secrets/domain-bootstrap.json (recommended)").size(self.view_model.text_small).color(CowboyTheme::text_secondary()),
+                    text("• secrets/secrets.json + secrets/cowboyai.json (legacy)").size(self.view_model.text_small).color(CowboyTheme::text_secondary()),
+                    text("Files are auto-loaded on startup.").size(self.view_model.text_small).color(CowboyTheme::text_secondary()),
+                ]
+                .spacing(self.view_model.spacing_xs)
+            )
+            .padding(self.view_model.padding_md)
             .style(CowboyCustomTheme::glass_container()),
         ]
-        .spacing(self.view_model.spacing_xl)
+        .spacing(self.view_model.spacing_lg)
         .padding(self.view_model.padding_md);
 
         scrollable(content).into()
@@ -7712,6 +7953,224 @@ impl CimKeysApp {
         ]
         .spacing(self.view_model.spacing_xl)
         .padding(self.view_model.padding_md);
+
+        scrollable(content).into()
+    }
+
+    fn view_workflow(&self) -> Element<'_, Message> {
+        self.workflow_view.view().map(Message::WorkflowMessage)
+    }
+
+    fn view_state_machines(&self) -> Element<'_, Message> {
+        use state_machine_graph::StateMachineType;
+
+        // Create state machine type selector
+        let machine_types = vec![
+            StateMachineType::Key,
+            StateMachineType::Certificate,
+            StateMachineType::Person,
+            StateMachineType::Organization,
+            StateMachineType::YubiKey,
+            StateMachineType::PkiBootstrap,
+            StateMachineType::CertificateProvisioning,
+        ];
+
+        let machine_buttons: Vec<Element<'_, Message>> = machine_types
+            .into_iter()
+            .map(|sm_type| {
+                let is_selected = self.selected_state_machine == sm_type;
+                let btn_style = CowboyCustomTheme::glass_menu_button(is_selected);
+
+                button(text(sm_type.display_name()).size(self.view_model.text_small))
+                    .on_press(Message::StateMachineSelected(sm_type))
+                    .style(btn_style)
+                    .into()
+            })
+            .collect();
+
+        let machine_selector = row(machine_buttons)
+            .spacing(self.view_model.spacing_sm)
+            .padding(self.view_model.padding_md);
+
+        // Current state machine info
+        let current_def = state_machine_graph::get_state_machine(self.selected_state_machine);
+        let state_count = current_def.states.len();
+        let transition_count = current_def.transitions.len();
+        let terminal_count = current_def.states.iter().filter(|s| s.is_terminal).count();
+
+        let info_text = text(format!(
+            "{} | {} states | {} transitions | {} terminal states",
+            self.selected_state_machine.display_name(),
+            state_count,
+            transition_count,
+            terminal_count
+        ))
+        .size(self.view_model.text_small)
+        .color(CowboyTheme::text_secondary());
+
+        // Category badge
+        let category_text = text(format!("Category: {}", self.selected_state_machine.category()))
+            .size(self.view_model.text_small)
+            .color(self.view_model.colors.accent);
+
+        // State list
+        let state_items: Vec<Element<'_, Message>> = current_def.states.iter().map(|state| {
+            let state_color = if state.is_terminal {
+                Color::from_rgb(0.8, 0.2, 0.2)
+            } else if state.is_initial {
+                Color::from_rgb(0.2, 0.8, 0.2)
+            } else {
+                state.color
+            };
+
+            let suffix = if state.is_terminal {
+                " [TERMINAL]"
+            } else if state.is_initial {
+                " [INITIAL]"
+            } else {
+                ""
+            };
+
+            container(
+                row![
+                    container(text("●").color(state_color))
+                        .width(Length::Fixed(20.0)),
+                    column![
+                        text(format!("{}{}", state.name, suffix))
+                            .size(self.view_model.text_normal)
+                            .color(CowboyTheme::text_primary()),
+                        text(state.description.clone())
+                            .size(self.view_model.text_small)
+                            .color(CowboyTheme::text_secondary()),
+                    ]
+                    .spacing(2),
+                ]
+                .spacing(self.view_model.spacing_sm)
+                .align_y(Alignment::Center)
+            )
+            .padding(self.view_model.padding_sm)
+            .into()
+        }).collect();
+
+        // Transition list
+        let transition_items: Vec<Element<'_, Message>> = current_def.transitions.iter().map(|trans| {
+            container(
+                row![
+                    text(trans.from.clone())
+                        .size(self.view_model.text_small)
+                        .color(self.view_model.colors.accent),
+                    text(" → ")
+                        .size(self.view_model.text_small)
+                        .color(CowboyTheme::text_secondary()),
+                    text(trans.to.clone())
+                        .size(self.view_model.text_small)
+                        .color(self.view_model.colors.primary),
+                    horizontal_space(),
+                    text(format!("[{}]", trans.label))
+                        .size(self.view_model.text_tiny)
+                        .color(CowboyTheme::text_muted()),
+                ]
+                .spacing(self.view_model.spacing_sm)
+                .align_y(Alignment::Center)
+            )
+            .padding(2)
+            .into()
+        }).collect();
+
+        let content = column![
+            // Header
+            container(
+                column![
+                    text("State Machine Visualization")
+                        .size(self.view_model.text_large)
+                        .color(CowboyTheme::text_primary()),
+                    text("Each state machine is a category: states are objects, transitions are morphisms")
+                        .size(self.view_model.text_small)
+                        .color(CowboyTheme::text_secondary()),
+                ]
+                .spacing(4)
+            )
+            .padding(self.view_model.padding_md),
+
+            // Machine selector
+            container(machine_selector)
+                .style(CowboyCustomTheme::pastel_teal_card()),
+
+            // Info bar
+            container(
+                row![info_text, horizontal_space(), category_text]
+                    .align_y(Alignment::Center)
+            )
+            .padding(self.view_model.padding_md),
+
+            // Main content in two columns
+            row![
+                // States column
+                container(
+                    column![
+                        text("States")
+                            .size(self.view_model.text_medium)
+                            .color(CowboyTheme::text_primary()),
+                        vertical_space().height(Length::Fixed(8.0)),
+                        scrollable(
+                            column(state_items)
+                                .spacing(2)
+                        )
+                        .height(Length::Fixed(400.0))
+                    ]
+                    .spacing(self.view_model.spacing_sm)
+                )
+                .padding(self.view_model.padding_md)
+                .style(CowboyCustomTheme::card_container())
+                .width(Length::FillPortion(1)),
+
+                // Transitions column
+                container(
+                    column![
+                        text("Valid Transitions")
+                            .size(self.view_model.text_medium)
+                            .color(CowboyTheme::text_primary()),
+                        vertical_space().height(Length::Fixed(8.0)),
+                        scrollable(
+                            column(transition_items)
+                                .spacing(2)
+                        )
+                        .height(Length::Fixed(400.0))
+                    ]
+                    .spacing(self.view_model.spacing_sm)
+                )
+                .padding(self.view_model.padding_md)
+                .style(CowboyCustomTheme::card_container())
+                .width(Length::FillPortion(1)),
+            ]
+            .spacing(self.view_model.spacing_md),
+
+            // Legend
+            container(
+                row![
+                    container(text("●").color(Color::from_rgb(0.2, 0.8, 0.2)))
+                        .width(Length::Fixed(20.0)),
+                    text("Initial State")
+                        .size(self.view_model.text_small),
+                    horizontal_space().width(Length::Fixed(20.0)),
+                    container(text("●").color(Color::from_rgb(0.8, 0.2, 0.2)))
+                        .width(Length::Fixed(20.0)),
+                    text("Terminal State")
+                        .size(self.view_model.text_small),
+                    horizontal_space().width(Length::Fixed(20.0)),
+                    container(text("●").color(Color::from_rgb(0.6, 0.6, 0.6)))
+                        .width(Length::Fixed(20.0)),
+                    text("Intermediate State")
+                        .size(self.view_model.text_small),
+                ]
+                .spacing(self.view_model.spacing_sm)
+                .align_y(Alignment::Center)
+            )
+            .padding(self.view_model.padding_md)
+            .style(CowboyCustomTheme::pastel_mint_card()),
+        ]
+        .spacing(self.view_model.spacing_md)
+        .padding(self.view_model.padding_lg);
 
         scrollable(content).into()
     }

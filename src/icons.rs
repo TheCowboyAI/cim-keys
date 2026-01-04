@@ -127,6 +127,10 @@ pub const ICON_MEMORY: char = '💾';
 pub const ICON_DOWNLOAD: char = '📥';
 /// Help icon - use `verified::icon("help", size)` for fallback support
 pub const ICON_HELP: char = '❓';
+/// Arrow icon for transitions in state machine graphs
+pub const ICON_ARROW: char = '→';
+/// State/Circle icon for state machine state nodes
+pub const ICON_STATE: char = '⬤';
 /// Check circle icon - use `verified::icon("check_circle", size)` for fallback support
 pub const ICON_CHECK_CIRCLE: char = '✅';
 

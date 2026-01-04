@@ -114,6 +114,13 @@ pub enum Injection {
     AggregatePkiChain,
     AggregateNatsSecurity,
     AggregateYubiKeyProvisioning,
+
+    // Workflow Gaps (Trust Chain Fulfillment)
+    WorkflowGap,
+
+    // State Machine Visualization (Kan extension from graph → domain)
+    StateMachineState,
+    StateMachineTransition,
 }
 
 impl Injection {
@@ -149,6 +156,9 @@ impl Injection {
             Self::AggregatePkiChain => "PKI Chain Aggregate",
             Self::AggregateNatsSecurity => "NATS Security Aggregate",
             Self::AggregateYubiKeyProvisioning => "YubiKey Provisioning Aggregate",
+            Self::WorkflowGap => "Workflow Gap",
+            Self::StateMachineState => "State",
+            Self::StateMachineTransition => "Transition",
         }
     }
 
@@ -185,6 +195,13 @@ impl Injection {
             Self::Key => 2,
             Self::Manifest => 2,
             Self::PolicyClaim => 2,
+
+            // Workflow gaps use semantic positioning (tier based on dependencies)
+            Self::WorkflowGap => 1,
+
+            // State machine visualization (graph → domain Kan extension)
+            Self::StateMachineState => 1,
+            Self::StateMachineTransition => 2,
         }
     }
 
@@ -219,6 +236,11 @@ impl Injection {
             Self::Policy | Self::PolicyRole | Self::PolicyClaim |
             Self::PolicyCategory | Self::PolicyGroup
         )
+    }
+
+    /// Check if this injection type is a state machine visualization node
+    pub fn is_state_machine(&self) -> bool {
+        matches!(self, Self::StateMachineState | Self::StateMachineTransition)
     }
 
     /// Get the list of injection types that can be manually created from the UI.
@@ -277,6 +299,7 @@ impl Injection {
         matches!(self, Self::Policy | Self::PolicyRole | Self::PolicyClaim | Self::PolicyCategory | Self::PolicyGroup)
     }
     pub fn is_policy_group_or_category(&self) -> bool { matches!(self, Self::PolicyGroup | Self::PolicyCategory) }
+    pub fn is_workflow_gap(&self) -> bool { matches!(self, Self::WorkflowGap) }
 }
 
 impl fmt::Display for Injection {
@@ -427,6 +450,9 @@ pub fn icon_for_injection(injection: Injection) -> (char, iced::Font) {
         Injection::AggregatePkiChain => (ICON_VERIFIED, MATERIAL_ICONS),
         Injection::AggregateNatsSecurity => (ICON_CLOUD, MATERIAL_ICONS),
         Injection::AggregateYubiKeyProvisioning => (ICON_SECURITY, MATERIAL_ICONS),
+        Injection::WorkflowGap => (ICON_CHECK, MATERIAL_ICONS),
+        Injection::StateMachineState => (ICON_SETTINGS, MATERIAL_ICONS),
+        Injection::StateMachineTransition => (ICON_ARROW, MATERIAL_ICONS),
     }
 }
 use crate::domain::visualization::{PolicyGroup, PolicyCategory, PolicyRole, PolicyClaimView, Manifest};
@@ -488,6 +514,13 @@ pub const COLOR_POLICY_ROLE: Color = Color::from_rgb(0.6, 0.4, 0.6);  // Purple-
 
 /// Color for PolicyClaim nodes
 pub const COLOR_POLICY_CLAIM: Color = Color::from_rgb(0.5, 0.6, 0.4);  // Olive green
+
+/// Color for Workflow Gap nodes - varies by status
+pub const COLOR_WORKFLOW_GAP_NOT_STARTED: Color = Color::from_rgb(0.5, 0.5, 0.5);  // Gray
+pub const COLOR_WORKFLOW_GAP_IN_PROGRESS: Color = Color::from_rgb(0.2, 0.6, 0.9);  // Blue
+pub const COLOR_WORKFLOW_GAP_IMPLEMENTED: Color = Color::from_rgb(0.8, 0.6, 0.2);  // Orange
+pub const COLOR_WORKFLOW_GAP_TESTED: Color = Color::from_rgb(0.6, 0.8, 0.2);       // Yellow-green
+pub const COLOR_WORKFLOW_GAP_VERIFIED: Color = Color::from_rgb(0.2, 0.8, 0.4);     // Green
 
 // ============================================================================
 // LIFTED NODE - Graph representation of any domain entity
@@ -941,188 +974,28 @@ impl LiftedNode {
     // FOLD METHODS (replacing deprecated DomainNode.detail_panel() etc.)
     // ========================================================================
 
-    /// Get detail panel data for this node
+    /// Get detail panel data for this node.
     ///
-    /// Returns data suitable for displaying in a detail panel.
-    /// All field generation is inlined - no dependency on FoldDomainNode.
+    /// Uses `DetailPanelRegistry` for morphism-based detail extraction (DATA pattern).
+    /// Falls back to basic label panel for unregistered types.
+    ///
+    /// # Architecture
+    ///
+    /// This method implements the Kan extension boundary crossing:
+    /// - DetailPanelRegistry stores morphisms as DATA (HashMap)
+    /// - registry.fold() looks up and applies the morphism
+    /// - No match arms needed here - dispatched by injection tag
     pub fn detail_panel(&self) -> DetailPanelData {
-        match self.injection {
-            Injection::Person => {
-                if let Some((person, role)) = self.person_with_role() {
-                    return DetailPanelData::new("Selected Person:")
-                        .with_field("Name", &person.name)
-                        .with_field("Email", &person.email)
-                        .with_field("Active", if person.active { "✓" } else { "✗" })
-                        .with_field("Key Role", format!("{:?}", role));
-                }
-            }
-            Injection::Organization => {
-                if let Some(org) = self.organization() {
-                    return DetailPanelData::new("Selected Organization:")
-                        .with_field("Name", &org.name)
-                        .with_field("Display Name", &org.display_name)
-                        .with_field("Units", org.units.len().to_string());
-                }
-            }
-            Injection::OrganizationUnit => {
-                if let Some(unit) = self.organization_unit() {
-                    return DetailPanelData::new("Selected Unit:")
-                        .with_field("Name", &unit.name)
-                        .with_field("Type", format!("{:?}", unit.unit_type));
-                }
-            }
-            Injection::Location => {
-                if let Some(loc) = self.location() {
-                    return DetailPanelData::new("Selected Location:")
-                        .with_field("Name", &loc.name)
-                        .with_field("Type", format!("{:?}", loc.location_type));
-                }
-            }
-            Injection::Role => {
-                if let Some(role) = self.role() {
-                    return DetailPanelData::new("Selected Role:")
-                        .with_field("Name", &role.name)
-                        .with_field("Description", &role.description)
-                        .with_field("Required Policies", role.required_policies.len().to_string());
-                }
-            }
-            Injection::Policy => {
-                if let Some(policy) = self.policy() {
-                    return DetailPanelData::new("Selected Policy:")
-                        .with_field("Name", &policy.name)
-                        .with_field("Claims", policy.claims.len().to_string())
-                        .with_field("Conditions", policy.conditions.len().to_string())
-                        .with_field("Priority", policy.priority.to_string())
-                        .with_field("Enabled", policy.enabled.to_string());
-                }
-            }
-            Injection::Key => {
-                if let Some(key) = self.key() {
-                    return DetailPanelData::new("Selected Key:")
-                        .with_field("ID", key.id.as_uuid().to_string())
-                        .with_field("Algorithm", format!("{:?}", key.algorithm))
-                        .with_field("Purpose", format!("{:?}", key.purpose))
-                        .with_field("Expires", key.expires_at.map_or("Never".to_string(), |dt| dt.to_string()));
-                }
-            }
-            Injection::RootCertificate | Injection::IntermediateCertificate | Injection::LeafCertificate => {
-                if let Some(cert) = self.certificate() {
-                    let title = match cert.cert_type {
-                        CertificateType::Root => "Selected Root Certificate:",
-                        CertificateType::Intermediate => "Selected Intermediate Certificate:",
-                        CertificateType::Leaf | CertificateType::Policy => "Selected Leaf Certificate:",
-                    };
-                    let mut data = DetailPanelData::new(title)
-                        .with_field("Subject", &cert.subject)
-                        .with_field("Issuer", &cert.issuer)
-                        .with_field("Valid From", cert.not_before.to_string())
-                        .with_field("Valid Until", cert.not_after.to_string())
-                        .with_field("Key Usage", cert.key_usage.join(", "));
-                    if !cert.san.is_empty() {
-                        data = data.with_field("SANs", cert.san.join(", "));
-                    }
-                    return data;
-                }
-            }
-            Injection::YubiKey => {
-                if let Some(yk) = self.yubikey() {
-                    return DetailPanelData::new("Selected YubiKey:")
-                        .with_field("Serial", &yk.serial)
-                        .with_field("Version", &yk.version)
-                        .with_field("Provisioned", yk.provisioned_at.map_or("No".to_string(), |dt| dt.to_string()))
-                        .with_field("Slots Used", yk.slots_used.iter().map(|s| format!("{:?}", s)).collect::<Vec<_>>().join(", "));
-                }
-            }
-            Injection::PivSlot => {
-                if let Some(slot) = self.piv_slot() {
-                    return DetailPanelData::new("Selected PIV Slot:")
-                        .with_field("Slot", &slot.slot_name)
-                        .with_field("YubiKey", &slot.yubikey_serial)
-                        .with_field("Has Key", if slot.has_key { "Yes" } else { "No" })
-                        .with_field("Certificate", slot.certificate_subject.clone().unwrap_or_else(|| "None".to_string()));
-                }
-            }
-            Injection::YubiKeyStatus => {
-                if let Some(status) = self.yubikey_status() {
-                    return DetailPanelData::new("Selected YubiKey Status:")
-                        .with_field("Person ID", status.person_id.to_string())
-                        .with_field("YubiKey", status.yubikey_serial.clone().unwrap_or_else(|| "None".to_string()))
-                        .with_field("Slots Provisioned", status.slots_provisioned.iter().map(|s| format!("{:?}", s)).collect::<Vec<_>>().join(", "))
-                        .with_field("Slots Needed", status.slots_needed.iter().map(|s| format!("{:?}", s)).collect::<Vec<_>>().join(", "));
-                }
-            }
-            Injection::Manifest => {
-                if let Some(manifest) = self.manifest() {
-                    return DetailPanelData::new("Selected Manifest:")
-                        .with_field("Name", &manifest.name)
-                        .with_field("Destination", manifest.destination.as_ref().map_or("None".to_string(), |p| p.display().to_string()))
-                        .with_field("Checksum", manifest.checksum.clone().unwrap_or_else(|| "Not computed".to_string()));
-                }
-            }
-            Injection::PolicyGroup => {
-                if let Some(group) = self.policy_group() {
-                    return DetailPanelData::new("Selected Policy Group:")
-                        .with_field("Name", &group.name)
-                        .with_field("Separation Class", format!("{:?}", group.separation_class))
-                        .with_field("Role Count", group.role_count.to_string())
-                        .with_field("Expanded", group.expanded.to_string());
-                }
-            }
-            Injection::PolicyCategory => {
-                if let Some(cat) = self.policy_category() {
-                    return DetailPanelData::new("Selected Policy Category:")
-                        .with_field("Name", &cat.name)
-                        .with_field("Claim Count", cat.claim_count.to_string())
-                        .with_field("Expanded", cat.expanded.to_string());
-                }
-            }
-            Injection::PolicyRole => {
-                if let Some(role) = self.policy_role() {
-                    return DetailPanelData::new("Selected Policy Role:")
-                        .with_field("Name", &role.name)
-                        .with_field("Purpose", &role.purpose)
-                        .with_field("Level", role.level.to_string())
-                        .with_field("Separation Class", format!("{:?}", role.separation_class))
-                        .with_field("Claim Count", role.claim_count.to_string());
-                }
-            }
-            // NATS types - use label/secondary from LiftedNode
-            Injection::NatsOperator | Injection::NatsOperatorSimple => {
-                return DetailPanelData::new("Selected NATS Operator:")
-                    .with_field("Name", &self.label)
-                    .with_field("Type", "Operator");
-            }
-            Injection::NatsAccount | Injection::NatsAccountSimple => {
-                return DetailPanelData::new("Selected NATS Account:")
-                    .with_field("Name", &self.label)
-                    .with_field("Type", "Account");
-            }
-            Injection::NatsUser | Injection::NatsUserSimple => {
-                return DetailPanelData::new("Selected NATS User:")
-                    .with_field("Name", &self.label)
-                    .with_field("Type", "User");
-            }
-            Injection::NatsServiceAccount => {
-                return DetailPanelData::new("Selected Service Account:")
-                    .with_field("Name", &self.label)
-                    .with_field("Type", "Service Account");
-            }
-            Injection::PolicyClaim => {
-                return DetailPanelData::new("Selected Claim:")
-                    .with_field("Name", &self.label);
-            }
-            // Aggregate types
-            Injection::AggregateOrganization
-            | Injection::AggregatePkiChain
-            | Injection::AggregateNatsSecurity
-            | Injection::AggregateYubiKeyProvisioning => {
-                return DetailPanelData::new("Selected Aggregate:")
-                    .with_field("Type", format!("{:?}", self.injection))
-                    .with_field("Label", &self.label);
-            }
+        use crate::graph::DetailPanelRegistry;
+
+        // Create registry and try to fold this node
+        let registry = DetailPanelRegistry::new();
+
+        if let Some(panel_data) = registry.fold(self) {
+            return panel_data;
         }
 
-        // Fallback for any unhandled types
+        // Fallback for any unregistered types (e.g., Manifest, NatsServiceAccount)
         DetailPanelData::new(format!("Selected {:?}:", self.injection))
             .with_field("ID", self.id.to_string())
             .with_field("Label", &self.label)
@@ -1130,114 +1003,31 @@ impl LiftedNode {
 
     /// Get themed visualization data for this node
     ///
-    /// Replaces `domain_node.fold(&ThemedVisualizationFold::new(theme))`.
-    /// Returns visualization data with verified icons.
+    /// Uses `VisualizationRegistry` for morphism-based visualization (DATA pattern).
+    /// Falls back to basic label visualization for unregistered types.
+    ///
+    /// # Architecture
+    ///
+    /// This method implements the Kan extension boundary crossing:
+    /// - VisualizationRegistry stores morphisms as DATA (HashMap)
+    /// - registry.fold() looks up and applies the morphism
+    /// - No match arms needed here - dispatched by injection tag
     pub fn themed_visualization(
         &self,
         theme: &crate::domains::typography::VerifiedTheme,
     ) -> crate::gui::folds::view::ThemedVisualizationData {
-        use crate::gui::folds::view::{ThemedVisualizationFold, ThemedVisualizationData, CertificateType as FoldCertType};
+        use crate::graph::VisualizationRegistry;
+        use crate::gui::folds::view::ThemedVisualizationData;
         use crate::domains::typography::{LabelledElement, LabelCategory, FontFamily};
-        use iced::Color;
 
-        let fold = ThemedVisualizationFold::new(theme);
+        // Create registry and try to fold this node
+        let registry = VisualizationRegistry::new(theme);
 
-        match self.injection {
-            Injection::Person => {
-                if let Some((person, role)) = self.person_with_role() {
-                    let role_name = format!("{:?}", role);
-                    // Use a default role color based on role type
-                    let role_color = match role {
-                        KeyOwnerRole::RootAuthority => Color::from_rgb(0.8, 0.1, 0.1),
-                        KeyOwnerRole::SecurityAdmin => Color::from_rgb(0.6, 0.2, 0.8),
-                        KeyOwnerRole::Developer => Color::from_rgb(0.2, 0.7, 0.3),
-                        KeyOwnerRole::ServiceAccount => Color::from_rgb(0.4, 0.4, 0.6),
-                        KeyOwnerRole::Auditor => Color::from_rgb(0.5, 0.5, 0.5),
-                        KeyOwnerRole::BackupHolder => Color::from_rgb(0.7, 0.5, 0.2),
-                    };
-                    return fold.fold_person(&person.name, &person.email, &role_name, role_color);
-                }
-            }
-            Injection::Organization => {
-                if let Some(org) = self.organization() {
-                    return fold.fold_organization(&org.name, &org.display_name, org.description.as_deref());
-                }
-            }
-            Injection::OrganizationUnit => {
-                if let Some(unit) = self.organization_unit() {
-                    return fold.fold_organization_unit(&unit.name);
-                }
-            }
-            Injection::Location => {
-                if let Some(loc) = self.location() {
-                    return fold.fold_location(&loc.name, &format!("{:?}", loc.location_type));
-                }
-            }
-            Injection::Key => {
-                if let Some(key) = self.key() {
-                    return fold.fold_key(
-                        &format!("{:?}", key.purpose),
-                        &format!("{:?}", key.algorithm),
-                        key.expires_at.map(|dt| dt.format("%Y-%m-%d").to_string()).as_deref(),
-                    );
-                }
-            }
-            Injection::RootCertificate => {
-                if let Some(cert) = self.certificate() {
-                    return fold.fold_certificate(
-                        &cert.subject,
-                        &cert.not_after.format("%Y-%m-%d").to_string(),
-                        FoldCertType::Root,
-                    );
-                }
-            }
-            Injection::IntermediateCertificate => {
-                if let Some(cert) = self.certificate() {
-                    return fold.fold_certificate(
-                        &cert.subject,
-                        &cert.not_after.format("%Y-%m-%d").to_string(),
-                        FoldCertType::Intermediate,
-                    );
-                }
-            }
-            Injection::LeafCertificate => {
-                if let Some(cert) = self.certificate() {
-                    return fold.fold_certificate(
-                        &cert.subject,
-                        &cert.not_after.format("%Y-%m-%d").to_string(),
-                        FoldCertType::Leaf,
-                    );
-                }
-            }
-            Injection::YubiKey => {
-                if let Some(yk) = self.yubikey() {
-                    return fold.fold_yubikey(&yk.serial, &yk.version, yk.slots_used.len());
-                }
-            }
-            Injection::NatsOperator | Injection::NatsOperatorSimple => {
-                return fold.fold_nats_operator(&self.label);
-            }
-            Injection::NatsAccount | Injection::NatsAccountSimple => {
-                return fold.fold_nats_account(&self.label, false);
-            }
-            Injection::NatsUser | Injection::NatsUserSimple => {
-                return fold.fold_nats_user(&self.label, "");
-            }
-            Injection::Role => {
-                if let Some(role) = self.role() {
-                    return fold.fold_role(&role.name, &role.description);
-                }
-            }
-            Injection::Policy => {
-                if let Some(policy) = self.policy() {
-                    return fold.fold_policy(&policy.name, &policy.description);
-                }
-            }
-            // Use default visualization for other types
-            _ => {}
+        if let Some(vis_data) = registry.fold(self) {
+            return vis_data;
         }
 
-        // Fallback: create a basic visualization from label
+        // Fallback: create a basic visualization from label for unregistered types
         let primary = LabelledElement::new(
             LabelCategory::Entity,
             None,
@@ -2388,6 +2178,104 @@ impl LiftableDomain for AggregateYubiKeyProvisioning {
     fn entity_id(&self) -> Uuid {
         self.id
     }
+}
+
+// ============================================================================
+// WORKFLOW GAP LIFTING
+// ============================================================================
+
+use crate::workflow::{TrustChainGap, GapId, GapStatus};
+
+/// Get color for a workflow gap based on its status
+pub fn color_for_gap_status(status: GapStatus) -> Color {
+    match status {
+        GapStatus::NotStarted => COLOR_WORKFLOW_GAP_NOT_STARTED,
+        GapStatus::InProgress => COLOR_WORKFLOW_GAP_IN_PROGRESS,
+        GapStatus::Implemented => COLOR_WORKFLOW_GAP_IMPLEMENTED,
+        GapStatus::Tested => COLOR_WORKFLOW_GAP_TESTED,
+        GapStatus::Verified => COLOR_WORKFLOW_GAP_VERIFIED,
+    }
+}
+
+/// Wrapper that pairs a TrustChainGap with its current status for lifting
+#[derive(Debug, Clone)]
+pub struct LiftableGap {
+    pub gap: TrustChainGap,
+    pub status: GapStatus,
+}
+
+impl LiftableGap {
+    pub fn new(gap: TrustChainGap, status: GapStatus) -> Self {
+        Self { gap, status }
+    }
+
+    /// Create from gap with default NotStarted status
+    pub fn from_gap(gap: TrustChainGap) -> Self {
+        Self { gap, status: GapStatus::NotStarted }
+    }
+}
+
+impl LiftableDomain for LiftableGap {
+    fn lift(&self) -> LiftedNode {
+        let color = color_for_gap_status(self.status);
+        let progress = self.status.progress_percentage();
+        let category = format!("{:?}", self.gap.category);
+
+        LiftedNode::new(
+            self.gap.id.as_uuid(),
+            Injection::WorkflowGap,
+            &self.gap.name,
+            color,
+            self.clone(),
+        )
+        .with_secondary(format!("[{}] {}% - {:?}", category, progress, self.status))
+    }
+
+    fn unlift(node: &LiftedNode) -> Option<Self> {
+        if node.injection == Injection::WorkflowGap {
+            node.downcast::<LiftableGap>().cloned()
+        } else {
+            None
+        }
+    }
+
+    fn injection() -> Injection {
+        Injection::WorkflowGap
+    }
+
+    fn entity_id(&self) -> Uuid {
+        self.gap.id.as_uuid()
+    }
+}
+
+/// Build a LiftedGraph from workflow gaps
+pub fn lift_workflow_graph(
+    gaps: &[TrustChainGap],
+    statuses: &std::collections::HashMap<GapId, GapStatus>,
+) -> LiftedGraph {
+    let mut graph = LiftedGraph::new();
+
+    // Lift all gaps as nodes
+    for gap in gaps {
+        let status = statuses.get(&gap.id).copied().unwrap_or(GapStatus::NotStarted);
+        let liftable = LiftableGap::new(gap.clone(), status);
+        graph.add(&liftable);
+    }
+
+    // Create edges for dependencies
+    for gap in gaps {
+        for dep_id in &gap.dependencies {
+            // Edge from dependency to this gap (dependency must be done first)
+            graph.connect(
+                dep_id.as_uuid(),
+                gap.id.as_uuid(),
+                "enables",
+                COLOR_WORKFLOW_GAP_IN_PROGRESS,
+            );
+        }
+    }
+
+    graph
 }
 
 // ============================================================================

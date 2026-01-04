@@ -94,6 +94,7 @@ pub enum EntityType {
     PolicyCategory,
     PolicyGroup,
     Aggregate,
+    WorkflowGap,
     Unknown,
 }
 
@@ -276,6 +277,9 @@ fn entity_type_from_injection(injection: crate::lifting::Injection) -> EntityTyp
         Injection::PolicyGroup => EntityType::PolicyGroup,
         Injection::AggregateOrganization | Injection::AggregatePkiChain |
         Injection::AggregateNatsSecurity | Injection::AggregateYubiKeyProvisioning => EntityType::Aggregate,
+        Injection::WorkflowGap => EntityType::WorkflowGap,
+        // State machine visualization nodes - treat similarly to WorkflowGap
+        Injection::StateMachineState | Injection::StateMachineTransition => EntityType::WorkflowGap,
     }
 }
 

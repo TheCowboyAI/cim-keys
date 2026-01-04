@@ -216,15 +216,15 @@ impl AsyncSagaExecutor<TestSaga> for TestSagaExecutor {
         match state.state {
             TestSagaState::Initial => {
                 state.state = TestSagaState::Step1Complete;
-                Ok(StepExecutionResult::Continue)
+                Ok(StepExecutionResult::continue_empty())
             }
             TestSagaState::Step1Complete => {
                 state.state = TestSagaState::Step2Complete;
-                Ok(StepExecutionResult::Continue)
+                Ok(StepExecutionResult::continue_empty())
             }
             TestSagaState::Step2Complete => {
                 state.state = TestSagaState::Completed;
-                Ok(StepExecutionResult::Completed("Success!".to_string()))
+                Ok(StepExecutionResult::completed_with_events("Success!".to_string(), vec![]))
             }
             _ => Ok(StepExecutionResult::Failed(SagaError::new("Unexpected state", "execute"))),
         }
@@ -392,7 +392,7 @@ async fn test_execute_step() {
 
     // Execute first step
     let result = executor.execute_step::<TestSaga, _>(saga_id, &saga_executor).await;
-    assert!(matches!(result, Ok(StepExecutionResult::Continue)));
+    assert!(matches!(result, Ok(StepExecutionResult::Continue { .. })));
 
     // Verify state changed
     let loaded = executor.load_saga::<TestSaga>(saga_id).await.unwrap();
@@ -415,15 +415,15 @@ async fn test_execute_to_completion() {
     // Execute step by step
     // Step 1: Initial -> Step1Complete
     let result = executor.execute_step::<TestSaga, _>(saga_id, &saga_executor).await;
-    assert!(matches!(result, Ok(StepExecutionResult::Continue)));
+    assert!(matches!(result, Ok(StepExecutionResult::Continue { .. })));
 
     // Step 2: Step1Complete -> Step2Complete
     let result = executor.execute_step::<TestSaga, _>(saga_id, &saga_executor).await;
-    assert!(matches!(result, Ok(StepExecutionResult::Continue)));
+    assert!(matches!(result, Ok(StepExecutionResult::Continue { .. })));
 
     // Step 3: Step2Complete -> Completed
     let result = executor.execute_step::<TestSaga, _>(saga_id, &saga_executor).await;
-    assert!(matches!(result, Ok(StepExecutionResult::Completed(s)) if s == "Success!"));
+    assert!(matches!(result, Ok(StepExecutionResult::Completed { output, .. }) if output == "Success!"));
 
     // Verify final state
     let loaded = executor.load_saga::<TestSaga>(saga_id).await.unwrap();
