@@ -31,7 +31,7 @@
 
 use crate::domain::sagas::{
     CertificateProvisioningSaga, ProvisioningRequest, ProvisioningState,
-    SagaState, SagaError, CompensationResult,
+    SagaState, SagaError, CompensationResult, CertificatePurpose,
 };
 use crate::domain::nats::saga_executor::{
     JetStreamSagaExecutor, SagaExecutorConfig, SagaExecutorError,
@@ -45,8 +45,22 @@ use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 
 /// Saga command handler for orchestrating multi-aggregate workflows
+///
+/// ## FRP Architecture (Axiom A6: Explicit Routing)
+///
+/// The handler composes saga execution with domain event publishing:
+///
+/// ```text
+/// execute_step >>> publish_domain_events >>> publish_saga_events
+/// ```
+///
+/// This follows the categorical composition pattern where:
+/// - Saga executor produces domain events as step outputs
+/// - Handler publishes events after each successful step
+/// - Causality chain is preserved via correlation_id
 pub struct SagaCommandHandler<P: JetStreamPort> {
     executor: JetStreamSagaExecutor<P>,
+    /// Publisher for domain events (KeyGenerated, CertificateIssued, etc.)
     publisher: EventPublisher<P>,
     config: SagaHandlerConfig,
 }
@@ -126,6 +140,29 @@ impl<P: JetStreamPort + Clone> SagaCommandHandler<P> {
         }
     }
 
+    /// Publish domain events produced by a saga step
+    ///
+    /// ## FRP Axiom Compliance
+    ///
+    /// - A6 (Explicit Routing): Composed with execute_step via `>>>`
+    /// - A7 (Change Prefixes): Events form causal chain via correlation_id
+    async fn publish_domain_events(
+        &self,
+        events: &[crate::events::DomainEvent],
+        correlation_id: Uuid,
+    ) -> Result<(), SagaCommandHandlerError> {
+        if events.is_empty() {
+            return Ok(());
+        }
+
+        self.publisher
+            .publish_batch(events, correlation_id)
+            .await
+            .map_err(|e| SagaCommandHandlerError::EventPublishFailed(e.to_string()))?;
+
+        Ok(())
+    }
+
     /// Handle a certificate provisioning command
     ///
     /// This command triggers the CertificateProvisioningSaga which:
@@ -198,7 +235,14 @@ impl<P: JetStreamPort + Clone> SagaCommandHandler<P> {
         }
     }
 
-    /// Execute a saga to completion, handling retries
+    /// Execute a saga to completion, handling retries and publishing domain events
+    ///
+    /// ## FRP Axiom Compliance
+    ///
+    /// - A3 (Decoupled): Domain events published AFTER step completes
+    /// - A6 (Explicit Routing): Composition: `execute_step >>> publish_domain_events`
+    /// - A7 (Change Prefixes): All events share correlation_id for causal chain
+    /// - A9 (Semantic Preservation): Event publishing preserves saga semantics
     async fn execute_saga_to_completion<S, E>(
         &self,
         saga: &mut S,
@@ -209,7 +253,7 @@ impl<P: JetStreamPort + Clone> SagaCommandHandler<P> {
         E: AsyncSagaExecutor<S>,
     {
         let mut retry_count = 0;
-        let _saga_id = saga.saga_id();
+        let correlation_id = saga.correlation_id();
 
         loop {
             if saga.is_terminal() {
@@ -225,7 +269,10 @@ impl<P: JetStreamPort + Clone> SagaCommandHandler<P> {
             }
 
             match executor.execute_next_step(saga).await {
-                Ok(StepExecutionResult::Completed(output)) => {
+                Ok(StepExecutionResult::Completed { output, domain_events }) => {
+                    // Publish domain events produced by final step (A6: explicit routing)
+                    self.publish_domain_events(&domain_events, correlation_id).await?;
+
                     // Update persisted state
                     let persisted = PersistedSagaState::new(saga.clone());
                     self.executor
@@ -234,7 +281,10 @@ impl<P: JetStreamPort + Clone> SagaCommandHandler<P> {
                         .map_err(|e| SagaCommandHandlerError::PersistenceFailed(e.to_string()))?;
                     return Ok(output);
                 }
-                Ok(StepExecutionResult::Continue) => {
+                Ok(StepExecutionResult::Continue { domain_events }) => {
+                    // Publish domain events produced by this step (A6: explicit routing)
+                    self.publish_domain_events(&domain_events, correlation_id).await?;
+
                     // Save progress and continue
                     let persisted = PersistedSagaState::new(saga.clone());
                     self.executor
@@ -353,15 +403,31 @@ impl Default for CertificateProvisioningExecutor {
 impl AsyncSagaExecutor<CertificateProvisioningSaga> for CertificateProvisioningExecutor {
     type Output = CertificateProvisioningResult;
 
+    /// Execute the next step of the saga, returning domain events
+    ///
+    /// ## FRP Axiom Compliance
+    ///
+    /// - A3 (Decoupled): Events created AFTER operation completes
+    /// - A6 (Explicit Routing): Caller composes step execution with event publishing
+    /// - A7 (Change Prefixes): Events use correlation_id from saga
     async fn execute_next_step(
         &self,
         state: &mut CertificateProvisioningSaga,
     ) -> Result<StepExecutionResult<Self::Output>, SagaExecutorError> {
+        use crate::events::{DomainEvent, KeyEvents, CertificateEvents, YubiKeyEvents};
+        use crate::events::key::KeyGeneratedEvent;
+        use crate::events::certificate::CertificateGeneratedEvent;
+        use crate::events::yubikey::YubiKeyProvisionedEvent;
+        use crate::types::{KeyMetadata, YubiKeySlot};
+        use chrono::Utc;
+
+        let correlation_id = state.correlation_id();
+
         match &state.state {
             ProvisioningState::Initial => {
                 // Already started, advance to key generation
                 state.advance();
-                Ok(StepExecutionResult::Continue)
+                Ok(StepExecutionResult::continue_empty())
             }
             ProvisioningState::GeneratingKey => {
                 // In a real implementation, this would call the key generation port
@@ -369,20 +435,85 @@ impl AsyncSagaExecutor<CertificateProvisioningSaga> for CertificateProvisioningE
                 let key_id = crate::domain::ids::KeyId::new();
                 state.record_key(key_id);
                 state.advance();
-                Ok(StepExecutionResult::Continue)
+
+                // Emit KeyGenerated domain event (A7: event log)
+                let event = DomainEvent::Key(KeyEvents::KeyGenerated(KeyGeneratedEvent {
+                    key_id: key_id.as_uuid(),
+                    algorithm: state.request.key_algorithm.clone(),
+                    purpose: state.request.purpose.to_key_purpose(),
+                    generated_at: Utc::now(),
+                    generated_by: state.request.person_email.clone(),
+                    hardware_backed: true, // YubiKey-backed
+                    metadata: KeyMetadata {
+                        label: format!("{} - {:?}", state.request.person_name, state.request.purpose),
+                        description: Some(format!("Generated for saga {}", state.saga_id())),
+                        tags: vec!["saga-generated".to_string()],
+                        attributes: std::collections::HashMap::new(),
+                        jwt_kid: None,
+                        jwt_alg: None,
+                        jwt_use: None,
+                    },
+                    ownership: None,
+                    correlation_id,
+                    causation_id: Some(state.saga_id()), // Saga is the cause
+                }));
+
+                Ok(StepExecutionResult::continue_with_events(vec![event]))
             }
             ProvisioningState::GeneratingCertificate => {
                 // In a real implementation, this would call the certificate generation port
                 let cert_id = crate::domain::ids::CertificateId::new();
-                state.record_certificate(cert_id, format!("SHA256:{}", Uuid::now_v7()));
+                let fingerprint = format!("SHA256:{}", Uuid::now_v7());
+                state.record_certificate(cert_id, fingerprint.clone());
                 state.advance();
-                Ok(StepExecutionResult::Continue)
+
+                // Emit CertificateGenerated domain event
+                let key_id = state.artifacts.key_id.expect("Key should exist after GeneratingKey step");
+                let event = DomainEvent::Certificate(CertificateEvents::CertificateGenerated(CertificateGeneratedEvent {
+                    cert_id: cert_id.as_uuid(),
+                    key_id: key_id.as_uuid(),
+                    subject: format!("CN={}, O=CIM, OU={:?}", state.request.person_name, state.request.purpose),
+                    issuer: Some(state.request.issuing_ca_id.as_uuid()),
+                    not_before: Utc::now(),
+                    not_after: Utc::now() + chrono::Duration::days(state.request.validity_days as i64),
+                    is_ca: false,
+                    san: vec![state.request.person_email.clone()],
+                    key_usage: vec!["digitalSignature".to_string()],
+                    extended_key_usage: match state.request.purpose {
+                        CertificatePurpose::Authentication => vec!["clientAuth".to_string()],
+                        CertificatePurpose::DigitalSignature => vec!["codeSigning".to_string()],
+                        CertificatePurpose::KeyManagement => vec!["emailProtection".to_string(), "keyAgreement".to_string()],
+                        CertificatePurpose::CardAuthentication => vec!["smartcardLogon".to_string()],
+                    },
+                    correlation_id,
+                    causation_id: Some(state.saga_id()),
+                }));
+
+                Ok(StepExecutionResult::continue_with_events(vec![event]))
             }
             ProvisioningState::ProvisioningToYubiKey => {
                 // In a real implementation, this would call the YubiKey port
-                state.record_provisioning(format!("{:?}", state.request.target_slot));
+                let slot_str = format!("{:?}", state.request.target_slot);
+                state.record_provisioning(slot_str.clone());
                 state.advance();
-                Ok(StepExecutionResult::Continue)
+
+                // Emit YubiKeyProvisioned domain event
+                let key_id = state.artifacts.key_id.expect("Key should exist after GeneratingKey step");
+                let event = DomainEvent::YubiKey(YubiKeyEvents::YubiKeyProvisioned(YubiKeyProvisionedEvent {
+                    event_id: Uuid::now_v7(),
+                    yubikey_serial: state.request.yubikey_serial.clone(),
+                    slots_configured: vec![YubiKeySlot {
+                        slot_id: slot_str,
+                        key_id: key_id.as_uuid(),
+                        purpose: state.request.purpose.to_key_purpose(),
+                    }],
+                    provisioned_at: Utc::now(),
+                    provisioned_by: state.request.person_email.clone(),
+                    correlation_id,
+                    causation_id: Some(state.saga_id()),
+                }));
+
+                Ok(StepExecutionResult::continue_with_events(vec![event]))
             }
             ProvisioningState::VerifyingProvisioning => {
                 // In a real implementation, this would verify the certificate is in the slot
@@ -397,7 +528,9 @@ impl AsyncSagaExecutor<CertificateProvisioningSaga> for CertificateProvisioningE
                     fingerprint: state.artifacts.certificate_fingerprint.clone().unwrap_or_default(),
                 };
 
-                Ok(StepExecutionResult::Completed(result))
+                // Verification complete - no additional domain event needed
+                // (The saga completion event from the executor covers this)
+                Ok(StepExecutionResult::completed_with_events(result, vec![]))
             }
             ProvisioningState::Completed => {
                 // Already complete
@@ -407,7 +540,7 @@ impl AsyncSagaExecutor<CertificateProvisioningSaga> for CertificateProvisioningE
                     slot: state.artifacts.provisioned_slot.clone().unwrap_or_default(),
                     fingerprint: state.artifacts.certificate_fingerprint.clone().unwrap_or_default(),
                 };
-                Ok(StepExecutionResult::Completed(result))
+                Ok(StepExecutionResult::completed_with_events(result, vec![]))
             }
             ProvisioningState::Failed => {
                 let err = state.error.clone().unwrap_or_else(|| SagaError::new("Unknown error", "unknown"));
@@ -677,21 +810,25 @@ mod tests {
         // Start the saga - transitions to GeneratingKey
         saga.start().unwrap();
 
-        // Step 1: GeneratingKey -> GeneratingCertificate
+        // Step 1: GeneratingKey -> GeneratingCertificate (emits KeyGenerated event)
         let step1 = executor.execute_next_step(&mut saga).await.unwrap();
-        assert!(matches!(step1, StepExecutionResult::Continue));
+        assert!(matches!(step1, StepExecutionResult::Continue { .. }));
+        assert_eq!(step1.domain_events().len(), 1);
 
-        // Step 2: GeneratingCertificate -> ProvisioningToYubiKey
+        // Step 2: GeneratingCertificate -> ProvisioningToYubiKey (emits CertificateGenerated)
         let step2 = executor.execute_next_step(&mut saga).await.unwrap();
-        assert!(matches!(step2, StepExecutionResult::Continue));
+        assert!(matches!(step2, StepExecutionResult::Continue { .. }));
+        assert_eq!(step2.domain_events().len(), 1);
 
-        // Step 3: ProvisioningToYubiKey -> VerifyingProvisioning
+        // Step 3: ProvisioningToYubiKey -> VerifyingProvisioning (emits YubiKeyProvisioned)
         let step3 = executor.execute_next_step(&mut saga).await.unwrap();
-        assert!(matches!(step3, StepExecutionResult::Continue));
+        assert!(matches!(step3, StepExecutionResult::Continue { .. }));
+        assert_eq!(step3.domain_events().len(), 1);
 
-        // Step 4: VerifyingProvisioning -> Completed (with result)
+        // Step 4: VerifyingProvisioning -> Completed (with result, no additional events)
         let step4 = executor.execute_next_step(&mut saga).await.unwrap();
-        assert!(matches!(step4, StepExecutionResult::Completed(_)));
+        assert!(matches!(step4, StepExecutionResult::Completed { .. }));
+        assert_eq!(step4.domain_events().len(), 0);
 
         // Verify saga is in completed state
         assert!(saga.is_completed());
@@ -734,5 +871,122 @@ mod tests {
         // Initially no active sagas
         let sagas = handler.list_active_sagas().await.unwrap();
         assert!(sagas.is_empty());
+    }
+
+    /// Test that domain events are correctly formed during saga execution
+    ///
+    /// ## FRP Axiom Validation
+    ///
+    /// - A3 (Decoupled): Events created after step completion
+    /// - A7 (Change Prefixes): Events form causal chain via correlation_id
+    #[tokio::test]
+    async fn test_domain_event_formation_and_causality() {
+        use crate::events::DomainEvent;
+
+        let executor = CertificateProvisioningExecutor::new();
+        let request = create_test_request();
+        let mut saga = CertificateProvisioningSaga::new(request);
+        let correlation_id = saga.correlation_id();
+        let saga_id = saga.saga_id();
+
+        // Start the saga
+        saga.start().unwrap();
+
+        // Step 1: KeyGenerated event
+        let step1 = executor.execute_next_step(&mut saga).await.unwrap();
+        let events1 = step1.domain_events();
+        assert_eq!(events1.len(), 1);
+
+        // Verify KeyGenerated event structure
+        match &events1[0] {
+            DomainEvent::Key(key_event) => {
+                match key_event {
+                    crate::events::KeyEvents::KeyGenerated(e) => {
+                        // A7: Verify causality chain
+                        assert_eq!(e.correlation_id, correlation_id);
+                        assert_eq!(e.causation_id, Some(saga_id));
+                        // Verify key was hardware-backed
+                        assert!(e.hardware_backed);
+                    }
+                    _ => panic!("Expected KeyGenerated event"),
+                }
+            }
+            _ => panic!("Expected Key domain event"),
+        }
+
+        // Step 2: CertificateGenerated event
+        let step2 = executor.execute_next_step(&mut saga).await.unwrap();
+        let events2 = step2.domain_events();
+        assert_eq!(events2.len(), 1);
+
+        match &events2[0] {
+            DomainEvent::Certificate(cert_event) => {
+                match cert_event {
+                    crate::events::CertificateEvents::CertificateGenerated(e) => {
+                        // A7: Verify causality chain
+                        assert_eq!(e.correlation_id, correlation_id);
+                        assert_eq!(e.causation_id, Some(saga_id));
+                        // Verify certificate metadata
+                        assert!(!e.is_ca);
+                    }
+                    _ => panic!("Expected CertificateGenerated event"),
+                }
+            }
+            _ => panic!("Expected Certificate domain event"),
+        }
+
+        // Step 3: YubiKeyProvisioned event
+        let step3 = executor.execute_next_step(&mut saga).await.unwrap();
+        let events3 = step3.domain_events();
+        assert_eq!(events3.len(), 1);
+
+        match &events3[0] {
+            DomainEvent::YubiKey(yk_event) => {
+                match yk_event {
+                    crate::events::YubiKeyEvents::YubiKeyProvisioned(e) => {
+                        // A7: Verify causality chain
+                        assert_eq!(e.correlation_id, correlation_id);
+                        assert_eq!(e.causation_id, Some(saga_id));
+                        // Verify slot was configured
+                        assert_eq!(e.slots_configured.len(), 1);
+                    }
+                    _ => panic!("Expected YubiKeyProvisioned event"),
+                }
+            }
+            _ => panic!("Expected YubiKey domain event"),
+        }
+
+        // Step 4: Completed (no additional events)
+        let step4 = executor.execute_next_step(&mut saga).await.unwrap();
+        assert!(matches!(step4, StepExecutionResult::Completed { .. }));
+        assert!(step4.domain_events().is_empty());
+    }
+
+    /// Test FRP Axiom A9: Semantic Preservation Under Composition
+    ///
+    /// Verify that the order of events respects the saga step sequence
+    #[tokio::test]
+    async fn test_axiom_a9_composition_semantics() {
+        let executor = CertificateProvisioningExecutor::new();
+        let request = create_test_request();
+        let mut saga = CertificateProvisioningSaga::new(request);
+        saga.start().unwrap();
+
+        // Collect all events in order
+        let mut all_events = Vec::new();
+
+        for _ in 0..4 {
+            if saga.is_terminal() { break; }
+            let result = executor.execute_next_step(&mut saga).await.unwrap();
+            all_events.extend(result.domain_events().to_vec());
+        }
+
+        // Total should be 3 domain events (Key, Certificate, YubiKey)
+        assert_eq!(all_events.len(), 3);
+
+        // Verify correct event order (composition semantics preserved)
+        assert!(matches!(&all_events[0], crate::events::DomainEvent::Key(_)));
+        assert!(matches!(&all_events[1], crate::events::DomainEvent::Certificate(_)));
+        assert!(matches!(&all_events[2], crate::events::DomainEvent::YubiKey(_)));
     }
 }

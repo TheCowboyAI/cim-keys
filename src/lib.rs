@@ -104,6 +104,9 @@ pub mod domains;
 // State machines for workflow control
 pub mod state_machines;
 
+// Workflow guidance system - Markov chain predictions for trust chain gap fulfillment
+pub mod workflow;
+
 // Value objects for cryptographic artifacts
 pub mod value_objects;
 
@@ -115,6 +118,9 @@ pub mod nats_identity_types;
 
 // IPLD support for content-addressed storage
 pub mod ipld_support;
+
+// CID-based event store for content-addressed event storage
+pub mod event_store;
 
 // Domain projections - functors mapping domain to library formats
 pub mod domain_projections;
@@ -181,6 +187,15 @@ pub use cim_domain::{
 
 // Re-export causation tracking for A4 compliance
 pub use causation::{Causation, CausationType, EventBuilder};
+
+// Re-export workflow guidance types
+pub use workflow::{
+    TrustChainGap, GapId, GapStatus, GapCategory, RequiredObject,
+    WorkflowMarkovChain, PredictedStep, TransitionProbability,
+    ObjectNavigator, NavigationTarget, NavigationPath,
+    ProgressionTracker, ProgressionState, ProgressionEvent,
+    SemanticPosition, GapConceptualSpace, SemanticDistanceCalculator, SphericalProjector,
+};
 
 // Re-export policy types when feature is enabled
 #[cfg(feature = "policy")]

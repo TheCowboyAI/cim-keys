@@ -54,6 +54,7 @@
 pub mod primitives;
 pub mod builder;
 pub mod subject;
+pub mod subject_algebra;
 
 #[cfg(test)]
 mod laws;  // Property tests for compositional laws (Axiom A9)
@@ -67,4 +68,12 @@ pub use subject::{
     SubjectIntent,
     SubjectRouter,
     HierarchicalRouter,
+};
+pub use subject_algebra::{
+    Monoid,
+    Token,
+    Subject as AlgebraicSubject,
+    SubjectBuilder as AlgebraicSubjectBuilder,
+    ParseError,
+    patterns,
 };
