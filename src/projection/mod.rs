@@ -84,6 +84,15 @@ pub mod sdcard;
 /// - Batch publishing with metadata
 pub mod jetstream;
 
+/// NSC Store projection - NATS credentials → NSC directory structure.
+///
+/// Transforms domain NATS credentials for NSC (NATS Security CLI):
+/// - Operator, Account, and User JWTs
+/// - Directory structure matching NSC conventions
+/// - Credentials files (.creds) for user authentication
+/// - Seed files (.nk) for key backup
+pub mod nscstore;
+
 // Re-export domain projections for convenience
 pub use domain::{
     // Key projections
@@ -132,6 +141,18 @@ pub use jetstream::{
     PublishResult,
     // Factory functions
     events_to_messages, single_event, events_for_org,
+};
+
+// Re-export NSC Store projections
+pub use nscstore::{
+    // Credential types
+    OperatorCredentials, AccountCredentials, UserCredentials, DomainNatsCredentials,
+    // Store types
+    NscStore, NscConfig, NscFile, NscFileType, NscStoreMetadata, NscExportResult,
+    // Projections
+    CredentialsToNscStoreProjection,
+    // Factory functions
+    credentials_to_nscstore, credentials_to_nscstore_with_seeds, operator_to_nscstore,
 };
 
 // ============================================================================
