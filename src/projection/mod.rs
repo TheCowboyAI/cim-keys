@@ -76,6 +76,14 @@ pub mod neo4j;
 /// - Manifest with integrity verification
 pub mod sdcard;
 
+/// JetStream projection - domain events → NATS JetStream messages.
+///
+/// Transforms domain events for event streaming:
+/// - Subject naming with organization/domain/aggregate patterns
+/// - Message headers with correlation and causation IDs
+/// - Batch publishing with metadata
+pub mod jetstream;
+
 // Re-export domain projections for convenience
 pub use domain::{
     // Key projections
@@ -112,6 +120,18 @@ pub use sdcard::{
     ManifestToExportProjection, ExportToFilesystemProjection,
     // Factory functions
     manifest_to_export, sdcard_export_pipeline,
+};
+
+// Re-export JetStream projections
+pub use jetstream::{
+    // Message types
+    JetStreamMessageOut, JetStreamMessageHeaders, JetStreamBatch,
+    // Projections
+    EventsToMessagesProjection, SingleEventProjection, SubjectConfig,
+    // Result types
+    PublishResult,
+    // Factory functions
+    events_to_messages, single_event, events_for_org,
 };
 
 // ============================================================================
