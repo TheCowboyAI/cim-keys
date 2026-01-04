@@ -1242,6 +1242,7 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-nats 0.38.0",
+ "async-stream",
  "async-trait",
  "chrono",
  "cim-domain",
