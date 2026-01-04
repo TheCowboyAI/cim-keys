@@ -68,6 +68,14 @@ pub mod domain;
 /// - Executed against Neo4j (via Neo4jPort)
 pub mod neo4j;
 
+/// SD Card projection - domain state → encrypted export package.
+///
+/// Exports the complete domain state (KeyManifest) to an SD card:
+/// - Directory structure creation
+/// - File generation with checksums
+/// - Manifest with integrity verification
+pub mod sdcard;
+
 // Re-export domain projections for convenience
 pub use domain::{
     // Key projections
@@ -94,6 +102,16 @@ pub use neo4j::{
     person_owns_key, certificate_signs, belongs_to_org, located_at,
     // Factory functions
     graph_to_cypher, cypher_to_file, collect_to_graph, domain_to_cypher_file,
+};
+
+// Re-export SD Card projections
+pub use sdcard::{
+    // Export types
+    SDCardExport, ExportMetadata, ExportFile, ExportSummary, WriteResult,
+    // Projections
+    ManifestToExportProjection, ExportToFilesystemProjection,
+    // Factory functions
+    manifest_to_export, sdcard_export_pipeline,
 };
 
 // ============================================================================
@@ -251,6 +269,10 @@ pub enum ProjectionError {
     ExternalError { system: String, error: String },
     /// Composition error (when composing projections)
     CompositionError { stage: String, inner: Box<ProjectionError> },
+    /// Serialization/deserialization error
+    SerializationError(String),
+    /// I/O error (filesystem, network, etc.)
+    IoError(String),
     /// Generic error
     Other(String),
 }
@@ -273,6 +295,8 @@ impl std::fmt::Display for ProjectionError {
             Self::CompositionError { stage, inner } => {
                 write!(f, "Composition failed at '{}': {}", stage, inner)
             }
+            Self::SerializationError(msg) => write!(f, "Serialization error: {}", msg),
+            Self::IoError(msg) => write!(f, "I/O error: {}", msg),
             Self::Other(msg) => write!(f, "{}", msg),
         }
     }

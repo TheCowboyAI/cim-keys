@@ -824,6 +824,9 @@ pub enum Message {
     ExportToCypher,
     CypherExported(Result<(String, usize), String>), // (file_path, query_count)
 
+    // SD Card export (enhanced result type)
+    SDCardExported(Result<(String, usize, usize), String>), // (base_path, files_written, bytes_written)
+
     // NATS Hierarchy operations
     GenerateNatsHierarchy,
     NatsHierarchyGenerated(Result<String, String>),
@@ -3028,8 +3031,58 @@ impl CimKeysApp {
             }
 
             Message::ExportToSDCard => {
-                let projection = self.projection.clone();
-                Task::perform(export_domain(projection), Message::DomainExported)
+                use crate::projection::{Projection, manifest_to_export, ExportToFilesystemProjection};
+
+                self.status_message = "Building SD Card export package...".to_string();
+
+                // Build KeyManifest from current loaded state
+                let manifest = crate::projections::KeyManifest {
+                    version: "1.0.0".to_string(),
+                    updated_at: chrono::Utc::now(),
+                    organization: crate::projections::OrganizationInfo {
+                        name: self.organization_name.clone(),
+                        domain: self.organization_domain.clone(),
+                        country: "US".to_string(), // TODO: Make configurable
+                        admin_email: self.admin_email.clone(),
+                    },
+                    people: self.loaded_people.clone(),
+                    locations: self.loaded_locations.clone(),
+                    keys: self.loaded_keys.clone(),
+                    certificates: self.loaded_certificates.clone(),
+                    pki_hierarchies: vec![], // TODO: Populate from projection
+                    yubikeys: vec![],        // TODO: Populate from projection
+                    nats_operators: vec![],  // TODO: Populate from projection
+                    nats_accounts: vec![],
+                    nats_users: vec![],
+                    event_count: 0, // TODO: Get from projection
+                    checksum: String::new(),
+                };
+
+                // Create the composed projection pipeline
+                let projection = manifest_to_export();
+                match projection.project(manifest) {
+                    Ok(export) => {
+                        // Write to filesystem
+                        let fs_projection = ExportToFilesystemProjection::new(&self.export_path);
+                        match fs_projection.project(export) {
+                            Ok(result) => {
+                                return Task::done(Message::SDCardExported(
+                                    Ok((result.base_path.display().to_string(), result.files_written, result.bytes_written))
+                                ));
+                            }
+                            Err(e) => {
+                                return Task::done(Message::SDCardExported(
+                                    Err(format!("Failed to write export: {}", e))
+                                ));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        return Task::done(Message::SDCardExported(
+                            Err(format!("Projection failed: {}", e))
+                        ));
+                    }
+                }
             }
 
             Message::DomainExported(result) => {
@@ -3105,6 +3158,11 @@ impl CimKeysApp {
                         // Use the projection system for Neo4j export
                         self.status_message = "Generating Cypher for Neo4j...".to_string();
                         return Task::done(Message::ExportToCypher);
+                    }
+                    ProjectionTarget::SDCard => {
+                        // Use the projection system for SD Card export
+                        self.status_message = "Exporting domain to SD Card...".to_string();
+                        return Task::done(Message::ExportToSDCard);
                     }
                     _ => {
                         self.status_message = format!("Syncing to {}...", target.display_name());
@@ -3227,6 +3285,32 @@ impl CimKeysApp {
                         self.error_message = Some(format!("Neo4j export failed: {}", e));
                         if let Some(proj) = self.projections.iter_mut()
                             .find(|p| p.target == ProjectionTarget::Neo4j) {
+                            proj.status = ProjectionStatus::Error(e);
+                        }
+                    }
+                }
+                Task::none()
+            }
+
+            Message::SDCardExported(result) => {
+                match result {
+                    Ok((path, files, bytes)) => {
+                        self.status_message = format!(
+                            "✅ Exported {} files ({} bytes) to {}",
+                            files, bytes, path
+                        );
+                        // Update SDCard projection status
+                        if let Some(proj) = self.projections.iter_mut()
+                            .find(|p| p.target == ProjectionTarget::SDCard) {
+                            proj.status = ProjectionStatus::Synced;
+                            proj.items_synced = files;
+                            proj.last_sync = Some(chrono::Utc::now());
+                        }
+                    }
+                    Err(e) => {
+                        self.error_message = Some(format!("SD Card export failed: {}", e));
+                        if let Some(proj) = self.projections.iter_mut()
+                            .find(|p| p.target == ProjectionTarget::SDCard) {
                             proj.status = ProjectionStatus::Error(e);
                         }
                     }
