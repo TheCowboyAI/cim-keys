@@ -37,6 +37,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 23. **Property-Based Testing**: Use proptest for invariant verification (idempotence, associativity)
 24. **FRP Axiom Tests**: Explicitly test A3 (decoupling), A5 (totality), A7 (events), A9 (composition)
 25. **Sprint Retrospectives**: Write `retrospectives/sprint_N.md` documenting what worked and lessons learned
+26. **Published Language**: Cross-context references use `*Reference` types from `*/published.rs`, NEVER internal types
+27. **Anti-Corruption Layers**: Use `*ContextPort` traits for cross-context access, implement via adapters
+28. **Context Boundaries**: Run `tests/context_boundaries.rs` to verify no direct cross-context imports
+29. **MorphismRegistry Pattern**: Store morphisms as DATA (HashMap entries) not CODE (match arms)
+30. **Non-Exhaustive Events**: Use `#[non_exhaustive]` on `DomainEvent` and `EventEnvelope` for future compatibility
+31. **Content-Addressed Events**: Use `EventEnvelope::with_cid()` for IPLD content addressing (requires `ipld` feature)
+32. **Pure Projections**: Prefer `apply_event_pure()` returning new state over mutating `apply_event(&mut self)`
+33. **CID Event Storage**: Use `CidEventStore` for content-addressed event storage with automatic deduplication
 
 ## 🔴 MANDATORY: N-ARY FRP AXIOMS
 
@@ -227,6 +235,45 @@ This codebase follows **Functional Reactive Programming with Event Sourcing**:
 - **NO CRUD operations** - Only domain events (PersonJoinedOrganization, KeyGeneratedForPerson, etc.)
 - **Commands → Events → Projections** - All changes flow through this pipeline
 - **Offline-first** - Events stored as JSON on encrypted partitions
+
+### Bounded Context Architecture (Sprint 35)
+
+Four bounded contexts with well-defined boundaries:
+
+```
+Organization Context [Upstream]
+        │
+        ▼ publishes
+┌─────────────────────────────┐
+│   Published Language        │
+│   - PersonReference         │
+│   - OrganizationReference   │
+│   - LocationReference       │
+└─────────────────────────────┘
+        │
+        ▼ consumes via ACL
+┌───────────────┬───────────────┬───────────────┐
+│ PKI Context   │ NATS Context  │ YubiKey Ctx   │
+│ [Downstream]  │ [Downstream]  │ [Downstream]  │
+└───────────────┴───────────────┴───────────────┘
+```
+
+**Key Files:**
+- `src/domains/organization/published.rs` - Published Language types
+- `src/domains/pki/acl.rs` - PKI Anti-Corruption Layer
+- `src/domains/nats/acl.rs` - NATS Anti-Corruption Layer
+- `tests/context_boundaries.rs` - Context boundary tests
+- `doc/architecture/context-map.md` - Full context map documentation
+
+**Usage Pattern:**
+```rust
+// Good: Use Published Language references
+use crate::domains::organization::published::PersonReference;
+let owner: PersonReference = port.get_person(id)?;
+
+// Bad: Direct cross-context imports
+use crate::domain::Person;  // AVOID
+```
 
 ## Build Commands
 
