@@ -5,8 +5,9 @@
 
 use iced::{
     application,
-    widget::{button, column, container, row, text, text_input, Container, horizontal_space, vertical_space, pick_list, progress_bar, checkbox, scrollable, Space, image, stack},
+    widget::{button, column, container, row, text, text_input, Container, horizontal_space, vertical_space, pick_list, progress_bar, checkbox, scrollable, Space, image, stack, canvas, Canvas},
     Task, Element, Length, Border, Theme, Background, Shadow, Alignment, Point, Color,
+    Rectangle, mouse, Renderer,
 };
 use iced_futures::Subscription;
 use serde::{Deserialize, Serialize};
@@ -294,6 +295,7 @@ pub struct CimKeysApp {
 
     // State Machine visualization
     selected_state_machine: state_machine_graph::StateMachineType,
+    state_machine_definition: state_machine_graph::StateMachineDefinition,
     state_machine_graph: OrganizationConcept,
 }
 
@@ -1190,6 +1192,7 @@ impl CimKeysApp {
 
                 // State Machine visualization
                 selected_state_machine: state_machine_graph::StateMachineType::Key,
+                state_machine_definition: state_machine_graph::build_key_state_machine(),
                 state_machine_graph: state_machine_graph::state_machine_to_graph(
                     &state_machine_graph::build_key_state_machine(),
                     &state_machine_graph::StateMachineLayoutConfig::default(),
@@ -4560,9 +4563,9 @@ impl CimKeysApp {
 
             Message::StateMachineSelected(sm_type) => {
                 self.selected_state_machine = sm_type;
-                let definition = state_machine_graph::get_state_machine(sm_type);
+                self.state_machine_definition = state_machine_graph::get_state_machine(sm_type);
                 self.state_machine_graph = state_machine_graph::state_machine_to_graph(
-                    &definition,
+                    &self.state_machine_definition,
                     &state_machine_graph::StateMachineLayoutConfig::default(),
                 );
                 self.status_message = format!("Viewing {} state machine", sm_type.display_name());
@@ -4573,9 +4576,9 @@ impl CimKeysApp {
                 match msg {
                     state_machine_graph::StateMachineMessage::SelectMachine(sm_type) => {
                         self.selected_state_machine = sm_type;
-                        let definition = state_machine_graph::get_state_machine(sm_type);
+                        self.state_machine_definition = state_machine_graph::get_state_machine(sm_type);
                         self.state_machine_graph = state_machine_graph::state_machine_to_graph(
-                            &definition,
+                            &self.state_machine_definition,
                             &state_machine_graph::StateMachineLayoutConfig::default(),
                         );
                     }
@@ -4586,9 +4589,9 @@ impl CimKeysApp {
                         self.status_message = format!("Transition: {} → {}", from, to);
                     }
                     state_machine_graph::StateMachineMessage::ResetView => {
-                        let definition = state_machine_graph::get_state_machine(self.selected_state_machine);
+                        self.state_machine_definition = state_machine_graph::get_state_machine(self.selected_state_machine);
                         self.state_machine_graph = state_machine_graph::state_machine_to_graph(
-                            &definition,
+                            &self.state_machine_definition,
                             &state_machine_graph::StateMachineLayoutConfig::default(),
                         );
                     }
@@ -7995,11 +7998,10 @@ impl CimKeysApp {
             .spacing(self.view_model.spacing_sm)
             .padding(self.view_model.padding_md);
 
-        // Current state machine info
-        let current_def = state_machine_graph::get_state_machine(self.selected_state_machine);
-        let state_count = current_def.states.len();
-        let transition_count = current_def.transitions.len();
-        let terminal_count = current_def.states.iter().filter(|s| s.is_terminal).count();
+        // Current state machine info (uses stored definition to avoid lifetime issues)
+        let state_count = self.state_machine_definition.states.len();
+        let transition_count = self.state_machine_definition.transitions.len();
+        let terminal_count = self.state_machine_definition.states.iter().filter(|s| s.is_terminal).count();
 
         let info_text = text(format!(
             "{} | {} states | {} transitions | {} terminal states",
@@ -8016,8 +8018,8 @@ impl CimKeysApp {
             .size(self.view_model.text_small)
             .color(self.view_model.colors.accent);
 
-        // State list
-        let state_items: Vec<Element<'_, Message>> = current_def.states.iter().map(|state| {
+        // State list (compact for side panel)
+        let state_items: Vec<Element<'_, Message>> = self.state_machine_definition.states.iter().map(|state| {
             let state_color = if state.is_terminal {
                 Color::from_rgb(0.8, 0.2, 0.2)
             } else if state.is_initial {
@@ -8027,67 +8029,53 @@ impl CimKeysApp {
             };
 
             let suffix = if state.is_terminal {
-                " [TERMINAL]"
+                " ◉"
             } else if state.is_initial {
-                " [INITIAL]"
+                " ◐"
             } else {
                 ""
             };
 
-            container(
-                row![
-                    container(text("●").color(state_color))
-                        .width(Length::Fixed(20.0)),
-                    column![
-                        text(format!("{}{}", state.name, suffix))
-                            .size(self.view_model.text_normal)
-                            .color(CowboyTheme::text_primary()),
-                        text(state.description.clone())
-                            .size(self.view_model.text_small)
-                            .color(CowboyTheme::text_secondary()),
-                    ]
-                    .spacing(2),
-                ]
-                .spacing(self.view_model.spacing_sm)
-                .align_y(Alignment::Center)
-            )
-            .padding(self.view_model.padding_sm)
+            row![
+                container(text("●").color(state_color))
+                    .width(Length::Fixed(16.0)),
+                text(format!("{}{}", state.name, suffix))
+                    .size(self.view_model.text_tiny),
+            ]
+            .spacing(4)
             .into()
         }).collect();
 
-        // Transition list
-        let transition_items: Vec<Element<'_, Message>> = current_def.transitions.iter().map(|trans| {
-            container(
-                row![
-                    text(trans.from.clone())
-                        .size(self.view_model.text_small)
-                        .color(self.view_model.colors.accent),
-                    text(" → ")
-                        .size(self.view_model.text_small)
-                        .color(CowboyTheme::text_secondary()),
-                    text(trans.to.clone())
-                        .size(self.view_model.text_small)
-                        .color(self.view_model.colors.primary),
-                    horizontal_space(),
-                    text(format!("[{}]", trans.label))
-                        .size(self.view_model.text_tiny)
-                        .color(CowboyTheme::text_muted()),
-                ]
-                .spacing(self.view_model.spacing_sm)
-                .align_y(Alignment::Center)
-            )
-            .padding(2)
-            .into()
+        // Transition list (compact)
+        let transition_items: Vec<Element<'_, Message>> = self.state_machine_definition.transitions.iter().map(|trans| {
+            let arrow = if trans.from == trans.to {
+                format!("{} ↻", trans.from)
+            } else {
+                format!("{} → {}", trans.from, trans.to)
+            };
+            text(format!("{} [{}]", arrow, trans.label))
+                .size(self.view_model.text_tiny)
+                .color(CowboyTheme::text_secondary())
+                .into()
         }).collect();
+
+        // Graph canvas - renders the actual Mealy state machine diagram
+        let graph_canvas: Element<'_, Message> = Canvas::new(StateMachineCanvasProgram {
+            definition: &self.state_machine_definition,
+            vm: &self.view_model,
+        })
+        .width(Length::Fill)
+        .height(Length::Fixed(450.0))
+        .into();
 
         let content = column![
             // Header
             container(
                 column![
-                    text("State Machine Visualization")
+                    text("Mealy State Machine Visualization")
                         .size(self.view_model.text_large)
                         .color(CowboyTheme::text_primary()),
-                    text("Each state machine is a category: states are objects, transitions are morphisms")
+                    text("States as objects, transitions as morphisms in a small category")
                         .size(self.view_model.text_small)
                         .color(CowboyTheme::text_secondary()),
                 ]
@@ -8104,45 +8092,40 @@ impl CimKeysApp {
                 row![info_text, horizontal_space(), category_text]
                     .align_y(Alignment::Center)
             )
-            .padding(self.view_model.padding_md),
+            .padding(self.view_model.padding_sm),
 
-            // Main content in two columns
+            // Main content: Graph on left, details on right
             row![
-                // States column
+                // Graph canvas (primary view)
+                container(graph_canvas)
+                    .style(CowboyCustomTheme::card_container())
+                    .padding(self.view_model.padding_sm)
+                    .width(Length::FillPortion(3)),
+
+                // Details panel (states + transitions)
                 container(
                     column![
                         text("States")
-                            .size(self.view_model.text_medium)
+                            .size(self.view_model.text_small)
                             .color(CowboyTheme::text_primary()),
-                        vertical_space().height(Length::Fixed(8.0)),
                         scrollable(
-                            column(state_items)
-                                .spacing(2)
+                            column(state_items).spacing(2)
                         )
-                        .height(Length::Fixed(400.0))
-                    ]
-                    .spacing(self.view_model.spacing_sm)
-                )
-                .padding(self.view_model.padding_md)
-                .style(CowboyCustomTheme::card_container())
-                .width(Length::FillPortion(1)),
+                        .height(Length::Fixed(180.0)),
 
-                // Transitions column
-                container(
-                    column![
-                        text("Valid Transitions")
-                            .size(self.view_model.text_medium)
-                            .color(CowboyTheme::text_primary()),
                         vertical_space().height(Length::Fixed(8.0)),
+
+                        text("Transitions")
+                            .size(self.view_model.text_small)
+                            .color(CowboyTheme::text_primary()),
                         scrollable(
-                            column(transition_items)
-                                .spacing(2)
+                            column(transition_items).spacing(1)
                         )
-                        .height(Length::Fixed(400.0))
+                        .height(Length::Fixed(200.0)),
                     ]
-                    .spacing(self.view_model.spacing_sm)
+                    .spacing(self.view_model.spacing_xs)
                 )
-                .padding(self.view_model.padding_md)
+                .padding(self.view_model.padding_sm)
                 .style(CowboyCustomTheme::card_container())
                 .width(Length::FillPortion(1)),
             ]
@@ -8151,31 +8134,324 @@ impl CimKeysApp {
             // Legend
             container(
                 row![
-                    container(text("●").color(Color::from_rgb(0.2, 0.8, 0.2)))
-                        .width(Length::Fixed(20.0)),
-                    text("Initial State")
-                        .size(self.view_model.text_small),
-                    horizontal_space().width(Length::Fixed(20.0)),
-                    container(text("●").color(Color::from_rgb(0.8, 0.2, 0.2)))
-                        .width(Length::Fixed(20.0)),
-                    text("Terminal State")
-                        .size(self.view_model.text_small),
-                    horizontal_space().width(Length::Fixed(20.0)),
-                    container(text("●").color(Color::from_rgb(0.6, 0.6, 0.6)))
-                        .width(Length::Fixed(20.0)),
-                    text("Intermediate State")
-                        .size(self.view_model.text_small),
+                    text("◐").color(Color::from_rgb(0.2, 0.8, 0.2)),
+                    text(" Initial").size(self.view_model.text_tiny),
+                    horizontal_space().width(Length::Fixed(15.0)),
+                    text("◉").color(Color::from_rgb(0.8, 0.2, 0.2)),
+                    text(" Terminal").size(self.view_model.text_tiny),
+                    horizontal_space().width(Length::Fixed(15.0)),
+                    text("●").color(Color::from_rgb(0.5, 0.6, 0.7)),
+                    text(" State").size(self.view_model.text_tiny),
+                    horizontal_space().width(Length::Fixed(15.0)),
+                    text("→").color(Color::from_rgb(0.5, 0.6, 0.7)),
+                    text(" Transition").size(self.view_model.text_tiny),
+                    horizontal_space().width(Length::Fixed(15.0)),
+                    text("↻").color(Color::from_rgb(0.5, 0.6, 0.7)),
+                    text(" Self-loop").size(self.view_model.text_tiny),
                 ]
-                .spacing(self.view_model.spacing_sm)
+                .spacing(4)
                 .align_y(Alignment::Center)
             )
-            .padding(self.view_model.padding_md)
+            .padding(self.view_model.padding_sm)
             .style(CowboyCustomTheme::pastel_mint_card()),
         ]
-        .spacing(self.view_model.spacing_md)
-        .padding(self.view_model.padding_lg);
+        .spacing(self.view_model.spacing_sm)
+        .padding(self.view_model.padding_md);
 
         scrollable(content).into()
+    }
+}
+
+// ============================================================================
+// State Machine Canvas Program - Renders the Mealy graph
+// ============================================================================
+
+/// Canvas program for rendering state machine as a graph
+struct StateMachineCanvasProgram<'a> {
+    definition: &'a state_machine_graph::StateMachineDefinition,
+    vm: &'a ViewModel,
+}
+
+impl<'a> canvas::Program<Message> for StateMachineCanvasProgram<'a> {
+    type State = ();
+
+    fn draw(
+        &self,
+        _state: &Self::State,
+        renderer: &Renderer,
+        _theme: &Theme,
+        bounds: Rectangle,
+        _cursor: mouse::Cursor,
+    ) -> Vec<canvas::Geometry> {
+        use std::f32::consts::PI;
+
+        let mut frame = canvas::Frame::new(renderer, bounds.size());
+
+        // Layout configuration from bounds and ViewModel
+        let center = Point::new(bounds.width / 2.0, bounds.height / 2.0);
+        let layout_radius = (bounds.width.min(bounds.height) / 2.0 - 60.0).max(80.0);
+        let node_radius = (25.0 * self.vm.scale).clamp(18.0, 35.0);
+
+        let states = &self.definition.states;
+        let transitions = &self.definition.transitions;
+
+        if states.is_empty() {
+            return vec![frame.into_geometry()];
+        }
+
+        // Calculate positions in a circle
+        let mut positions: std::collections::HashMap<String, Point> = std::collections::HashMap::new();
+        let angle_step = 2.0 * PI / states.len() as f32;
+
+        for (i, state) in states.iter().enumerate() {
+            let angle = angle_step * i as f32 - PI / 2.0; // Start from top
+            let x = center.x + layout_radius * angle.cos();
+            let y = center.y + layout_radius * angle.sin();
+            positions.insert(state.name.clone(), Point::new(x, y));
+        }
+
+        // Draw title
+        let title = canvas::Text {
+            content: self.definition.machine_type.display_name().to_string(),
+            position: Point::new(center.x, 15.0),
+            color: Color::from_rgb(0.9, 0.9, 0.9),
+            size: iced::Pixels(self.vm.text_medium as f32),
+            horizontal_alignment: iced::alignment::Horizontal::Center,
+            vertical_alignment: iced::alignment::Vertical::Top,
+            ..Default::default()
+        };
+        frame.fill_text(title);
+
+        // Draw transitions first (behind states)
+        for trans in transitions {
+            if let (Some(&from_pos), Some(&to_pos)) = (
+                positions.get(&trans.from),
+                positions.get(&trans.to),
+            ) {
+                self.draw_transition(&mut frame, trans, from_pos, to_pos, node_radius);
+            }
+        }
+
+        // Draw states
+        for state in states {
+            if let Some(&pos) = positions.get(&state.name) {
+                self.draw_state(&mut frame, state, pos, node_radius);
+            }
+        }
+
+        vec![frame.into_geometry()]
+    }
+}
+
+impl<'a> StateMachineCanvasProgram<'a> {
+    fn draw_state(
+        &self,
+        frame: &mut canvas::Frame,
+        state: &state_machine_graph::StateMachineState,
+        pos: Point,
+        radius: f32,
+    ) {
+        // Determine colors
+        let fill_color = if state.is_terminal {
+            Color::from_rgb(0.6, 0.2, 0.2)
+        } else if state.is_initial {
+            Color::from_rgb(0.2, 0.5, 0.3)
+        } else {
+            Color::from_rgb(0.25, 0.35, 0.45)
+        };
+
+        let stroke_color = Color::from_rgb(0.4, 0.6, 0.8);
+
+        // Initial state: outer circle
+        if state.is_initial {
+            let outer = canvas::Path::circle(pos, radius + 5.0);
+            frame.stroke(
+                &outer,
+                canvas::Stroke::default()
+                    .with_color(stroke_color)
+                    .with_width(self.vm.border_thin),
+            );
+        }
+
+        // Main circle
+        let circle = canvas::Path::circle(pos, radius);
+        frame.fill(&circle, fill_color);
+        frame.stroke(
+            &circle,
+            canvas::Stroke::default()
+                .with_color(stroke_color)
+                .with_width(self.vm.border_normal),
+        );
+
+        // Terminal state: inner circle
+        if state.is_terminal {
+            let inner = canvas::Path::circle(pos, radius - 5.0);
+            frame.stroke(
+                &inner,
+                canvas::Stroke::default()
+                    .with_color(stroke_color)
+                    .with_width(self.vm.border_thin),
+            );
+        }
+
+        // State name
+        let display_name = if state.name.len() > 10 {
+            format!("{}…", &state.name[..9])
+        } else {
+            state.name.clone()
+        };
+
+        let text_content = canvas::Text {
+            content: display_name,
+            position: pos,
+            color: Color::from_rgb(0.95, 0.95, 0.95),
+            size: iced::Pixels(self.vm.text_tiny as f32),
+            horizontal_alignment: iced::alignment::Horizontal::Center,
+            vertical_alignment: iced::alignment::Vertical::Center,
+            ..Default::default()
+        };
+        frame.fill_text(text_content);
+    }
+
+    fn draw_transition(
+        &self,
+        frame: &mut canvas::Frame,
+        trans: &state_machine_graph::StateMachineTransition,
+        from: Point,
+        to: Point,
+        node_radius: f32,
+    ) {
+        use std::f32::consts::PI;
+
+        let stroke_color = if trans.is_active {
+            Color::from_rgb(0.0, 0.8, 0.4)
+        } else {
+            Color::from_rgb(0.5, 0.6, 0.7)
+        };
+
+        let is_self_loop = trans.from == trans.to;
+
+        if is_self_loop {
+            // Self-loop: arc above state
+            let loop_radius = 18.0;
+            let loop_center = Point::new(from.x, from.y - node_radius - loop_radius);
+
+            let arc = canvas::Path::new(|builder| {
+                builder.arc(canvas::path::Arc {
+                    center: loop_center,
+                    radius: loop_radius,
+                    start_angle: iced::Radians(0.3 * PI),
+                    end_angle: iced::Radians(2.7 * PI),
+                });
+            });
+            frame.stroke(
+                &arc,
+                canvas::Stroke::default()
+                    .with_color(stroke_color)
+                    .with_width(self.vm.border_normal),
+            );
+
+            // Arrowhead
+            let arrow_pos = Point::new(from.x + 6.0, from.y - node_radius - 2.0);
+            self.draw_arrowhead(frame, arrow_pos, PI / 4.0, stroke_color);
+
+            // Label
+            let label_pos = Point::new(from.x, from.y - node_radius - loop_radius * 2.0 - 6.0);
+            let label = canvas::Text {
+                content: Self::truncate(&trans.label, 12),
+                position: label_pos,
+                color: stroke_color,
+                size: iced::Pixels((self.vm.text_tiny - 1) as f32),
+                horizontal_alignment: iced::alignment::Horizontal::Center,
+                vertical_alignment: iced::alignment::Vertical::Bottom,
+                ..Default::default()
+            };
+            frame.fill_text(label);
+        } else {
+            // Regular transition: curved arrow
+            let dx = to.x - from.x;
+            let dy = to.y - from.y;
+            let dist = (dx * dx + dy * dy).sqrt();
+
+            if dist < 0.001 {
+                return;
+            }
+
+            let ux = dx / dist;
+            let uy = dy / dist;
+            let px = -uy;
+            let py = ux;
+            let curve_offset = 18.0;
+
+            let start = Point::new(from.x + ux * node_radius, from.y + uy * node_radius);
+            let end = Point::new(to.x - ux * (node_radius + 6.0), to.y - uy * (node_radius + 6.0));
+            let mid = Point::new(
+                (from.x + to.x) / 2.0 + px * curve_offset,
+                (from.y + to.y) / 2.0 + py * curve_offset,
+            );
+
+            let curve = canvas::Path::new(|builder| {
+                builder.move_to(start);
+                builder.quadratic_curve_to(mid, end);
+            });
+            frame.stroke(
+                &curve,
+                canvas::Stroke::default()
+                    .with_color(stroke_color)
+                    .with_width(self.vm.border_normal),
+            );
+
+            // Arrowhead
+            let arrow_dx = end.x - mid.x;
+            let arrow_dy = end.y - mid.y;
+            let arrow_angle = arrow_dy.atan2(arrow_dx);
+            self.draw_arrowhead(frame, end, arrow_angle, stroke_color);
+
+            // Label
+            let label_pos = Point::new(mid.x, mid.y - 6.0);
+            let label = canvas::Text {
+                content: Self::truncate(&trans.label, 15),
+                position: label_pos,
+                color: stroke_color,
+                size: iced::Pixels((self.vm.text_tiny - 1) as f32),
+                horizontal_alignment: iced::alignment::Horizontal::Center,
+                vertical_alignment: iced::alignment::Vertical::Bottom,
+                ..Default::default()
+            };
+            frame.fill_text(label);
+        }
+    }
+
+    fn draw_arrowhead(&self, frame: &mut canvas::Frame, tip: Point, angle: f32, color: Color) {
+        use std::f32::consts::PI;
+
+        let size = 6.0 * self.vm.scale;
+        let half_angle = PI / 6.0;
+
+        let left = Point::new(
+            tip.x + size * (angle + PI - half_angle).cos(),
+            tip.y + size * (angle + PI - half_angle).sin(),
+        );
+        let right = Point::new(
+            tip.x + size * (angle + PI + half_angle).cos(),
+            tip.y + size * (angle + PI + half_angle).sin(),
+        );
+
+        let arrow = canvas::Path::new(|builder| {
+            builder.move_to(tip);
+            builder.line_to(left);
+            builder.line_to(right);
+            builder.close();
+        });
+        frame.fill(&arrow, color);
+    }
+
+    fn truncate(s: &str, max_len: usize) -> String {
+        if s.len() <= max_len {
+            s.to_string()
+        } else {
+            format!("{}…", &s[..max_len - 1])
+        }
     }
 }
 
