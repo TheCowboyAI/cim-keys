@@ -8,7 +8,7 @@
 //! NOTE: Uses deprecated `Injection` type. Migration pending.
 
 use iced::{
-    widget::{canvas, container, column, row, text, button, Canvas},
+    widget::{canvas, container, column, text, Canvas},
     Color, Element, Length, Point, Rectangle, Size, Theme, Vector,
     mouse, Renderer,
 };
@@ -368,6 +368,14 @@ pub enum EdgeType {
     Hierarchy,
     /// Trust relationship (CA -> signed cert)
     Trust,
+
+    // Workflow Gaps (Trust Chain Fulfillment)
+    /// Dependency relationship (Gap A must be done before Gap B)
+    WorkflowDependency,
+    /// Semantic neighbor (gaps that are close in conceptual space)
+    SemanticNeighbor,
+    /// Recommended transition (Markov chain prediction)
+    RecommendedTransition { probability: f64 },
 }
 
 /// Available graph layout algorithms
@@ -387,6 +395,8 @@ pub enum LayoutAlgorithm {
     YubiKeyGrouped,
     /// NATS hierarchical - Operator at top, Accounts in middle, Users at bottom
     NatsHierarchical,
+    /// Workflow semantic - positions gaps based on conceptual space coordinates
+    WorkflowSemantic,
 }
 
 #[derive(Debug, Clone)]
@@ -2517,6 +2527,11 @@ impl OrganizationConcept {
                     LayoutAlgorithm::NatsHierarchical => {
                         self.layout_nats_hierarchical();
                     }
+                    LayoutAlgorithm::WorkflowSemantic => {
+                        // Workflow gaps use hierarchical layout with semantic positioning
+                        // TODO: Integrate with SemanticPosition from workflow::semantic
+                        self.hierarchical_layout();
+                    }
                 }
 
                 // Store new layout positions as animation targets
@@ -3317,6 +3332,11 @@ impl canvas::Program<OrganizationIntent> for OrganizationConcept {
                     // Legacy
                     EdgeType::Hierarchy => "reports to",
                     EdgeType::Trust => "trusts",
+
+                    // Workflow Gaps
+                    EdgeType::WorkflowDependency => "enables",
+                    EdgeType::SemanticNeighbor => "near",
+                    EdgeType::RecommendedTransition { .. } => "recommended",
                 };
 
                 // Calculate midpoint for label
@@ -4129,50 +4149,12 @@ pub fn view_graph<'a>(graph: &'a OrganizationConcept, vm: &'a ViewModel) -> Elem
         .width(Length::Fill)
         .height(Length::Fill);
 
-    let controls = row![
-        button(text("+").size(vm.text_medium).font(crate::icons::FONT_BODY))
-            .on_press(OrganizationIntent::ZoomIn)
-            .style(CowboyCustomTheme::glass_button())
-            .padding(vm.padding_sm),
-        button(text("-").size(vm.text_medium).font(crate::icons::FONT_BODY))
-            .on_press(OrganizationIntent::ZoomOut)
-            .style(CowboyCustomTheme::glass_button())
-            .padding(vm.padding_sm),
-        button(text("🔄").size(vm.text_normal).font(crate::icons::EMOJI_FONT))
-            .on_press(OrganizationIntent::ResetView)
-            .style(CowboyCustomTheme::glass_button())
-            .padding(vm.padding_sm),
-        button(text("Auto Layout").size(vm.text_small).font(crate::icons::FONT_BODY))
-            .on_press(OrganizationIntent::AutoLayout)
-            .style(CowboyCustomTheme::glass_button())
-            .padding(vm.padding_sm),
-        // Layout algorithm buttons
-        button(text("Tutte").size(vm.text_tiny).font(crate::icons::FONT_BODY))
-            .on_press(OrganizationIntent::ApplyLayout(LayoutAlgorithm::Tutte))
-            .style(CowboyCustomTheme::glass_button())
-            .padding(vm.padding_xs),
-        button(text("F-R").size(vm.text_tiny).font(crate::icons::FONT_BODY))
-            .on_press(OrganizationIntent::ApplyLayout(LayoutAlgorithm::FruchtermanReingold))
-            .style(CowboyCustomTheme::glass_button())
-            .padding(vm.padding_xs),
-        button(text("Circle").size(vm.text_tiny).font(crate::icons::FONT_BODY))
-            .on_press(OrganizationIntent::ApplyLayout(LayoutAlgorithm::Circular))
-            .style(CowboyCustomTheme::glass_button())
-            .padding(vm.padding_xs),
-        button(text("Tree").size(vm.text_tiny).font(crate::icons::FONT_BODY))
-            .on_press(OrganizationIntent::ApplyLayout(LayoutAlgorithm::Hierarchical))
-            .style(CowboyCustomTheme::glass_button())
-            .padding(vm.padding_xs),
-        button(text("YubiKey").size(vm.text_tiny).font(crate::icons::FONT_BODY))
-            .on_press(OrganizationIntent::ApplyLayout(LayoutAlgorithm::YubiKeyGrouped))
-            .style(CowboyCustomTheme::glass_button())
-            .padding(vm.padding_xs),
-        button(text("NATS").size(vm.text_tiny).font(crate::icons::FONT_BODY))
-            .on_press(OrganizationIntent::ApplyLayout(LayoutAlgorithm::NatsHierarchical))
-            .style(CowboyCustomTheme::glass_button())
-            .padding(vm.padding_xs),
-    ]
-    .spacing(vm.spacing_sm);
+    // Compute visibility from graph content (stays in graph module)
+    let has_keys = graph.nodes.values().any(|n| n.injection().is_key() || n.injection().is_yubikey());
+    let has_nats = graph.nodes.values().any(|n| n.injection().is_nats());
+
+    // Pass visibility to button component (clean boundary)
+    let controls = super::graph_buttons::graph_controls(vm, has_keys, has_nats);
 
     let mut items = column![
         controls,

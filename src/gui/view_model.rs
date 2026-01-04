@@ -54,6 +54,10 @@ pub struct ViewModel {
     // Button sizing (scaled)
     pub button_padding: u16,
     pub button_radius: f32,
+    pub button_height: f32,
+    pub button_width_icon: f32,      // Icon-only buttons (e.g., +/-)
+    pub button_width_compact: f32,   // Compact icon+text buttons
+    pub button_width_standard: f32,  // Standard buttons with full text
 
     // Input sizing (scaled)
     pub input_padding: u16,
@@ -107,6 +111,12 @@ impl ViewModel {
         const BASE_SHADOW_MD: f32 = 8.0;
         const BASE_SHADOW_LG: f32 = 16.0;
 
+        // Button dimensions
+        const BASE_BUTTON_HEIGHT: f32 = 32.0;
+        const BASE_BUTTON_WIDTH_ICON: f32 = 36.0;
+        const BASE_BUTTON_WIDTH_COMPACT: f32 = 80.0;
+        const BASE_BUTTON_WIDTH_STANDARD: f32 = 100.0;
+
         Self {
             scale,
             colors: ColorPalette::default(),
@@ -149,6 +159,10 @@ impl ViewModel {
             // Button sizing
             button_padding: (BASE_PADDING_MD as f32 * scale) as u16,
             button_radius: BASE_RADIUS_XL * scale,
+            button_height: BASE_BUTTON_HEIGHT * scale,
+            button_width_icon: BASE_BUTTON_WIDTH_ICON * scale,
+            button_width_compact: BASE_BUTTON_WIDTH_COMPACT * scale,
+            button_width_standard: BASE_BUTTON_WIDTH_STANDARD * scale,
 
             // Input sizing
             input_padding: (BASE_PADDING_MD as f32 * scale) as u16,
@@ -176,6 +190,10 @@ impl Default for ViewModel {
         Self::new(1.0)
     }
 }
+
+// ============================================================================
+// COLOR PALETTE
+// ============================================================================
 
 /// Centralized color palette for the application
 #[derive(Debug, Clone)]
@@ -346,6 +364,11 @@ pub struct ColorPalette {
     pub edge_signed_by_person: Color,
     pub edge_hierarchy: Color,
     pub edge_trust: Color,
+
+    // Edge type colors - Workflow
+    pub edge_workflow_dependency: Color,
+    pub edge_semantic_neighbor: Color,
+    pub edge_recommended_transition: Color,
 
     // Visual effect colors
     pub selection_highlight: Color,
@@ -568,6 +591,11 @@ impl Default for ColorPalette {
             edge_hierarchy: Color::from_rgb(0.3, 0.3, 0.7),
             edge_trust: Color::from_rgb(0.7, 0.5, 0.3),
 
+            // Edge type colors - Workflow
+            edge_workflow_dependency: Color::from_rgb(0.4, 0.6, 0.8),    // Blue-ish for dependencies
+            edge_semantic_neighbor: Color::from_rgb(0.6, 0.7, 0.5),      // Green-ish for semantic proximity
+            edge_recommended_transition: Color::from_rgb(0.8, 0.6, 0.2), // Gold for recommendations
+
             // Visual effect colors
             selection_highlight: Color::from_rgba(0.3, 0.6, 1.0, 0.3),  // Blue highlight
             selection_border: Color::from_rgba(0.3, 0.6, 1.0, 0.8),     // Blue border
@@ -777,6 +805,11 @@ impl ColorPalette {
             EdgeType::SignedByPerson => self.edge_signed_by_person,
             EdgeType::Hierarchy => self.edge_hierarchy,
             EdgeType::Trust => self.edge_trust,
+
+            // Workflow
+            EdgeType::WorkflowDependency => self.edge_workflow_dependency,
+            EdgeType::SemanticNeighbor => self.edge_semantic_neighbor,
+            EdgeType::RecommendedTransition { .. } => self.edge_recommended_transition,
         }
     }
 
