@@ -73,6 +73,8 @@ pub mod graph_projection;
 pub mod workflow_view;
 pub mod workflow_graph;
 pub mod state_machine_graph;
+pub mod state_machine_svg;
+pub mod state_machine_view;
 pub mod graph_buttons;
 
 #[cfg(test)]
