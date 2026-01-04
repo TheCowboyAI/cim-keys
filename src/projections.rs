@@ -2190,6 +2190,179 @@ pub enum ProjectionError {
 }
 
 // ============================================================================
+// PURE PROJECTION FUNCTIONS (FRP COMPLIANT)
+// ============================================================================
+
+/// Extension trait for pure event application
+///
+/// Following FRP Axiom A5 (Totality and Well-Definedness), these functions
+/// are pure and return new instances rather than mutating existing state.
+/// This enables:
+/// - Referential transparency (same input → same output)
+/// - Easy testing without mock setup
+/// - Safe concurrent projection rebuilds
+/// - Deterministic event replay
+impl KeyManifest {
+    /// Apply an event purely, returning a new manifest
+    ///
+    /// This is the FRP-compliant version of `apply_event`. Instead of
+    /// mutating `self`, it returns a new `KeyManifest` with the event applied.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let manifest = KeyManifest::default();
+    /// let new_manifest = manifest.apply_event_pure(&stored_event)?;
+    /// // manifest is unchanged, new_manifest has the event applied
+    /// ```
+    pub fn apply_event_pure(self, stored_event: &StoredEvent) -> Result<Self, ProjectionError> {
+        use crate::events::{
+            KeyEvents, CertificateEvents, PersonEvents, LocationEvents,
+            NatsOperatorEvents, NatsAccountEvents, NatsUserEvents, YubiKeyEvents,
+        };
+
+        let mut result = self;
+
+        match &stored_event.event {
+            // Key aggregate events
+            DomainEvent::Key(KeyEvents::KeyGenerated(e)) => {
+                result.keys.push(KeyEntry {
+                    key_id: e.key_id,
+                    algorithm: e.algorithm.clone(),
+                    purpose: e.purpose.clone(),
+                    label: e.metadata.label.clone(),
+                    hardware_backed: e.hardware_backed,
+                    yubikey_serial: None,
+                    yubikey_slot: None,
+                    revoked: false,
+                    file_path: format!("keys/{}/metadata.json", e.key_id),
+                    state: None,
+                });
+            }
+            DomainEvent::Key(KeyEvents::KeyRevoked(e)) => {
+                if let Some(entry) = result.keys.iter_mut().find(|k| k.key_id == e.key_id) {
+                    entry.revoked = true;
+                }
+            }
+
+            // Certificate aggregate events
+            DomainEvent::Certificate(CertificateEvents::CertificateGenerated(e)) => {
+                result.certificates.push(CertificateEntry {
+                    cert_id: e.cert_id,
+                    key_id: e.key_id,
+                    subject: e.subject.clone(),
+                    issuer: e.issuer.map(|_| "issuer".to_string()),
+                    serial_number: e.cert_id.to_string(),
+                    not_before: e.not_before,
+                    not_after: e.not_after,
+                    is_ca: e.is_ca,
+                    file_path: format!("certificates/{}/cert.pem", e.cert_id),
+                    state: None,
+                });
+            }
+
+            // Person aggregate events
+            DomainEvent::Person(PersonEvents::PersonCreated(e)) => {
+                result.people.push(PersonEntry {
+                    person_id: e.person_id,
+                    name: e.name.clone(),
+                    email: e.email.clone().unwrap_or_default(),
+                    role: "member".to_string(),
+                    organization_id: Uuid::nil(),
+                    state: None,
+                });
+            }
+
+            // Location aggregate events
+            DomainEvent::Location(LocationEvents::LocationCreated(e)) => {
+                result.locations.push(LocationEntry {
+                    location_id: e.location_id,
+                    name: e.name.clone(),
+                    location_type: format!("{:?}", e.location_type),
+                    organization_id: e.organization_id.unwrap_or(Uuid::nil()),
+                    street: None,
+                    city: None,
+                    region: None,
+                    country: None,
+                    postal_code: None,
+                    state: None,
+                });
+            }
+
+            // YubiKey aggregate events
+            DomainEvent::YubiKey(YubiKeyEvents::YubiKeyProvisioned(e)) => {
+                result.yubikeys.push(YubiKeyEntry {
+                    serial: e.yubikey_serial.clone(),
+                    provisioned_at: e.provisioned_at,
+                    slots_used: e.slots_configured.iter().map(|s| format!("{:?}", s)).collect(),
+                    config_path: format!("yubikeys/{}/config.json", e.yubikey_serial),
+                    state: None,
+                });
+            }
+
+            // NATS Operator events
+            DomainEvent::NatsOperator(NatsOperatorEvents::NatsOperatorCreated(e)) => {
+                result.nats_operators.push(NatsOperatorEntry {
+                    operator_id: e.operator_id,
+                    name: e.name.clone(),
+                    public_key: e.public_key.clone(),
+                    organization_id: e.organization_id,
+                    created_by: e.created_by.clone(),
+                });
+            }
+
+            // NATS Account events
+            DomainEvent::NatsAccount(NatsAccountEvents::NatsAccountCreated(e)) => {
+                result.nats_accounts.push(NatsAccountEntry {
+                    account_id: e.account_id,
+                    operator_id: e.operator_id,
+                    name: e.name.clone(),
+                    public_key: e.public_key.clone(),
+                    is_system: e.is_system,
+                    organization_unit_id: e.organization_unit_id,
+                    created_by: e.created_by.clone(),
+                });
+            }
+
+            // NATS User events
+            DomainEvent::NatsUser(NatsUserEvents::NatsUserCreated(e)) => {
+                result.nats_users.push(NatsUserEntry {
+                    user_id: e.user_id,
+                    account_id: e.account_id,
+                    name: e.name.clone(),
+                    public_key: e.public_key.clone(),
+                    person_id: e.person_id,
+                    created_by: e.created_by.clone(),
+                });
+            }
+
+            // Other events - no state change
+            _ => {}
+        }
+
+        result.event_count += 1;
+        result.updated_at = stored_event.timestamp;
+
+        Ok(result)
+    }
+
+    /// Fold a sequence of events into a manifest
+    ///
+    /// This is a pure fold operation following FRP principles.
+    /// Starting from an initial state, applies all events in sequence.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let manifest = KeyManifest::default()
+    ///     .fold_events(&events)?;
+    /// ```
+    pub fn fold_events(self, events: &[StoredEvent]) -> Result<Self, ProjectionError> {
+        events.iter().try_fold(self, |acc, event| acc.apply_event_pure(event))
+    }
+}
+
+// ============================================================================
 // REBUILDABLE IMPLEMENTATION FOR EVENT REPLAY
 // ============================================================================
 
