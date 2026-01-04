@@ -48,6 +48,11 @@ pub mod commands;
 pub mod aggregate;
 pub mod projections;
 
+// Composable Projection System - CRITICAL architectural abstraction
+// Everything is a projection: Input → Process → Output
+// Composition over embedding: small abstractions that compose
+pub mod projection;
+
 // Graph projection layer - Functorial lifting of domain events to cim-graph
 pub mod graph_projection;
 
