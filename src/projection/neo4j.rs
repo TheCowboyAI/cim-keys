@@ -43,10 +43,10 @@
 
 use crate::projection::{Projection, ProjectionError};
 use crate::ports::neo4j::{
-    CypherBatch, CypherQuery, CypherValue, DomainGraphData, GraphNode, GraphEdge,
+    CypherBatch, CypherValue, DomainGraphData, GraphNode, GraphEdge,
     ToGraphNode, ToGraphEdge,
 };
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use uuid::Uuid;
 
 // ============================================================================

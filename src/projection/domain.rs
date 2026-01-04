@@ -26,7 +26,7 @@
 //!     .then(issue_certificate);
 //! ```
 
-use crate::projection::{Projection, ProjectionError, PrerequisiteProjection};
+use crate::projection::{Projection, ProjectionError};
 use crate::domain::pki::{CertificateInfo, CertificateType, KeyInfo};
 use crate::events::{KeyAlgorithm, KeyPurpose};
 use chrono::{DateTime, Utc};

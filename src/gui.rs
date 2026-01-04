@@ -820,6 +820,10 @@ pub enum Message {
     SyncProjection(ProjectionTarget),
     ImportFromSource(InjectionSource),
 
+    // Neo4j Cypher export
+    ExportToCypher,
+    CypherExported(Result<(String, usize), String>), // (file_path, query_count)
+
     // NATS Hierarchy operations
     GenerateNatsHierarchy,
     NatsHierarchyGenerated(Result<String, String>),
@@ -3096,14 +3100,137 @@ impl CimKeysApp {
             }
 
             Message::SyncProjection(target) => {
-                // TODO: Implement actual sync logic
-                self.status_message = format!("Syncing to {}...", target.display_name());
+                match target {
+                    ProjectionTarget::Neo4j => {
+                        // Use the projection system for Neo4j export
+                        self.status_message = "Generating Cypher for Neo4j...".to_string();
+                        return Task::done(Message::ExportToCypher);
+                    }
+                    _ => {
+                        self.status_message = format!("Syncing to {}...", target.display_name());
+                    }
+                }
                 Task::none()
             }
 
             Message::ImportFromSource(source) => {
                 // TODO: Implement actual import logic
                 self.status_message = format!("Importing from {}...", source.display_name());
+                Task::none()
+            }
+
+            Message::ExportToCypher => {
+                use crate::projection::DomainGraphBuilder;
+                use crate::ports::neo4j::GraphNode;
+
+                self.status_message = "Building domain graph for Neo4j export...".to_string();
+
+                // Build domain graph from current state
+                let mut builder = DomainGraphBuilder::new();
+
+                // Add organization if present
+                if let Some(org_id) = self.organization_id {
+                    builder = builder.add(&GraphNode::new(org_id, "Organization")
+                        .with_property("name", self.organization_name.clone())
+                        .with_property("domain", self.organization_domain.clone()));
+                }
+
+                // Add loaded people
+                for person in &self.loaded_people {
+                    builder = builder.add(&GraphNode::new(person.person_id, "Person")
+                        .with_property("name", person.name.clone())
+                        .with_property("email", person.email.clone())
+                        .with_property("role", person.role.clone()));
+
+                    // Relate person to organization
+                    if let Some(org_id) = self.organization_id {
+                        builder = builder.relate(person.person_id, org_id, "BELONGS_TO");
+                    }
+                }
+
+                // Add certificates from loaded_certificates
+                for cert in &self.loaded_certificates {
+                    let cert_type = if cert.is_ca { "CA" } else { "EndEntity" };
+                    builder = builder.add(&GraphNode::new(cert.cert_id, "Certificate")
+                        .with_property("type", cert_type)
+                        .with_property("subject", cert.subject.clone())
+                        .with_property("serial_number", cert.serial_number.clone())
+                        .with_property("not_before", cert.not_before.to_rfc3339())
+                        .with_property("not_after", cert.not_after.to_rfc3339()));
+
+                    // Relate cert to its key
+                    builder = builder.relate(cert.cert_id, cert.key_id, "USES_KEY");
+                }
+
+                // Add loaded keys
+                for key in &self.loaded_keys {
+                    builder = builder.add(&GraphNode::new(key.key_id, "CryptographicKey")
+                        .with_property("algorithm", format!("{:?}", key.algorithm))
+                        .with_property("purpose", format!("{:?}", key.purpose))
+                        .with_property("label", key.label.clone())
+                        .with_property("hardware_backed", if key.hardware_backed { "true" } else { "false" }));
+                }
+
+                // Add loaded locations
+                for location in &self.loaded_locations {
+                    builder = builder.add(&GraphNode::new(location.location_id, "Location")
+                        .with_property("name", location.name.clone())
+                        .with_property("type", location.location_type.clone()));
+                }
+
+                // Project to Cypher file
+                match builder.to_cypher_file() {
+                    Ok(cypher_content) => {
+                        let query_count = cypher_content.lines()
+                            .filter(|l| l.trim().starts_with("MERGE") || l.trim().starts_with("MATCH"))
+                            .count();
+
+                        // Write to file in export directory
+                        let file_path = self.export_path.join("domain-export.cypher");
+                        match std::fs::write(&file_path, &cypher_content) {
+                            Ok(_) => {
+                                return Task::done(Message::CypherExported(
+                                    Ok((file_path.display().to_string(), query_count))
+                                ));
+                            }
+                            Err(e) => {
+                                return Task::done(Message::CypherExported(
+                                    Err(format!("Failed to write file: {}", e))
+                                ));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        return Task::done(Message::CypherExported(
+                            Err(format!("Projection failed: {}", e))
+                        ));
+                    }
+                }
+            }
+
+            Message::CypherExported(result) => {
+                match result {
+                    Ok((path, count)) => {
+                        self.status_message = format!(
+                            "✅ Exported {} Cypher queries to {}",
+                            count, path
+                        );
+                        // Update Neo4j projection status
+                        if let Some(proj) = self.projections.iter_mut()
+                            .find(|p| p.target == ProjectionTarget::Neo4j) {
+                            proj.status = ProjectionStatus::Synced;
+                            proj.items_synced = count;
+                            proj.last_sync = Some(chrono::Utc::now());
+                        }
+                    }
+                    Err(e) => {
+                        self.error_message = Some(format!("Neo4j export failed: {}", e));
+                        if let Some(proj) = self.projections.iter_mut()
+                            .find(|p| p.target == ProjectionTarget::Neo4j) {
+                            proj.status = ProjectionStatus::Error(e);
+                        }
+                    }
+                }
                 Task::none()
             }
 
