@@ -14,6 +14,7 @@ pub mod yubikey;
 pub mod x509;
 pub mod gpg;
 pub mod ssh;
+pub mod neo4j;
 
 pub use nats::{
     // Key management port
@@ -45,4 +46,18 @@ pub use ssh::{
     SshKeyPort, SshKeyType, SshKeypair, SshPublicKey, SshPrivateKey,
     SshSignature, SshPrivateKeyFormat, SshPublicKeyFormat,
     FingerprintHashType, KeyConversionFormat, SshError,
+};
+pub use neo4j::{
+    // Neo4j Port trait
+    Neo4jPort, Neo4jTransaction,
+    // Query types
+    CypherQuery, CypherValue, CypherBatch, BatchMetadata,
+    // Result types
+    ExecutionResult, QueryResult, Record, DatabaseInfo,
+    // Graph data types
+    GraphNode, GraphEdge, DomainGraphData,
+    // Traits for projection
+    ToGraphNode, ToGraphEdge,
+    // Configuration and errors
+    Neo4jConfig, Neo4jError,
 };

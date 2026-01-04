@@ -49,6 +49,54 @@
 use std::fmt::Debug;
 
 // ============================================================================
+// DOMAIN-SPECIFIC PROJECTIONS
+// ============================================================================
+
+/// Domain-specific projection implementations for CIM concepts.
+///
+/// Includes composable projections for:
+/// - **Keys**: (TrustChain, Rules, Location) → Key
+/// - **Certificates**: (Key, Identity, ValidityPeriod) → Certificate
+/// - **Locations**: SpatialData → Location
+/// - **Persons**: (Identity, Roles, Policies) → Person
+pub mod domain;
+
+/// Neo4j graph projection - domain entities → Cypher queries.
+///
+/// Pure projections that generate CypherBatch which can be:
+/// - Saved to .cypher files (via StoragePort)
+/// - Executed against Neo4j (via Neo4jPort)
+pub mod neo4j;
+
+// Re-export domain projections for convenience
+pub use domain::{
+    // Key projections
+    KeyGenerationProjection, KeyGenerationInput, KeyGenerationPrerequisites,
+    // Certificate projections
+    CertificateProjection, CertificateInput, CertificatePrerequisites,
+    // Location projections
+    LocationProjection, LocationInput, LocationOutput, LocationType, AddressInput,
+    // Person projections
+    PersonProjection, PersonInput, PersonPrerequisites, PersonOutput,
+    // Composed workflows
+    PersonOnboardingProjection, OnboardingInput, OnboardingOutput,
+    // Factory functions
+    key_generation, certificate, location, person, person_onboarding,
+};
+
+// Re-export Neo4j projections
+pub use neo4j::{
+    // Pure projections
+    GraphToCypherProjection, CypherToFileProjection, CollectToGraphProjection,
+    // Builder
+    DomainGraphBuilder,
+    // Relationship helpers
+    person_owns_key, certificate_signs, belongs_to_org, located_at,
+    // Factory functions
+    graph_to_cypher, cypher_to_file, collect_to_graph, domain_to_cypher_file,
+};
+
+// ============================================================================
 // CORE PROJECTION TRAIT
 // ============================================================================
 
