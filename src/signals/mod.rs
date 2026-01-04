@@ -39,10 +39,18 @@
 pub mod kinds;
 pub mod vector;
 pub mod continuous;
+pub mod transformers;
 
-pub use kinds::{SignalKind, EventKind, StepKind, ContinuousKind};
+pub use kinds::{SignalKind, EventKind, StepKind, ContinuousKind, IsEvent, IsDiscrete, IsContinuous};
 pub use vector::{SignalVector, SignalVec2, SignalVec3, SignalVec4};
 pub use continuous::{ContinuousSignal};
+pub use transformers::{
+    Event, Step, Continuous,
+    hold, sample, sample_, merge, merge_either, filter, filter_map, scan, scan_with_time,
+    MergeStrategy, Either, TrackedStep,
+    IsEventWitness, IsStepWitness, IsContinuousWitness,
+    SignalFunction, Compose, Parallel, Fanout,
+};
 
 use std::marker::PhantomData;
 

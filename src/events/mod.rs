@@ -62,8 +62,15 @@ use serde::{Deserialize, Serialize};
 /// This enum provides a single entry point for event handling while maintaining
 /// proper aggregate boundaries. Each variant delegates to the appropriate aggregate's
 /// event enum.
+///
+/// # Future Compatibility
+///
+/// This enum is marked `#[non_exhaustive]` to allow adding new aggregate types
+/// in future versions without breaking existing code. Consumers should always
+/// include a catch-all arm in match expressions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "aggregate", content = "event")]
+#[non_exhaustive]
 pub enum DomainEvent {
     Person(PersonEvents),
     Organization(OrganizationEvents),
@@ -86,6 +93,7 @@ pub enum DomainEvent {
 /// - **Causal chains**: Track what event caused this one via causation_id
 /// - **NATS routing**: Specify the subject for event publication
 /// - **Temporal ordering**: Events have a timestamp for ordering
+/// - **Content addressing**: Optional CID for immutable event identity (with `ipld` feature)
 ///
 /// # NATS Subject Patterns
 ///
@@ -94,6 +102,14 @@ pub enum DomainEvent {
 /// - `organization.{org_id}.certificate.signed`
 /// - `organization.{org_id}.yubikey.provisioned`
 /// - `organization.{org_id}.nats.account.created`
+///
+/// # Content Addressing (IPLD)
+///
+/// When the `ipld` feature is enabled, events can be content-addressed using CIDs:
+/// ```ignore
+/// let envelope = EventEnvelope::new(event, correlation_id, None)
+///     .with_cid()?;  // Generates CID from event content
+/// ```
 ///
 /// # Example
 ///
@@ -104,7 +120,13 @@ pub enum DomainEvent {
 ///     Some(causation_id),
 /// ).with_subject("organization.cowboyai.person.created");
 /// ```
+///
+/// # Future Compatibility
+///
+/// This struct is marked `#[non_exhaustive]` to allow adding new fields
+/// in future versions without breaking existing code.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct EventEnvelope {
     /// Unique identifier for this event instance
     pub event_id: uuid::Uuid,
@@ -124,6 +146,12 @@ pub struct EventEnvelope {
     /// Timestamp when this event was created (UTC)
     pub timestamp: chrono::DateTime<chrono::Utc>,
 
+    /// Content Identifier (CID) for immutable event identity
+    /// Generated from the event content using SHA2-256 and DAG-CBOR codec.
+    /// Present only when content addressing is explicitly requested.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cid: Option<String>,
+
     /// The wrapped domain event
     #[serde(flatten)]
     pub event: DomainEvent,
@@ -142,8 +170,68 @@ impl EventEnvelope {
             causation_id,
             nats_subject: Self::default_subject(&event),
             timestamp: chrono::Utc::now(),
+            cid: None,
             event,
         }
+    }
+
+    /// Generate and attach a CID (Content Identifier) to this envelope
+    ///
+    /// The CID is generated from the event content using SHA2-256 hashing
+    /// and DAG-CBOR codec. This provides content-addressed identity for
+    /// the event, enabling deduplication and integrity verification.
+    ///
+    /// # Feature
+    ///
+    /// Requires the `ipld` feature to be enabled. Without it, this method
+    /// returns an error.
+    #[cfg(feature = "ipld")]
+    pub fn with_cid(mut self) -> Result<Self, crate::ipld_support::IpldError> {
+        let cid = crate::ipld_support::generate_cid(&self.event)?;
+        self.cid = Some(cid.to_string());
+        Ok(self)
+    }
+
+    /// Generate and attach a CID (stub when IPLD feature disabled)
+    #[cfg(not(feature = "ipld"))]
+    pub fn with_cid(self) -> Result<Self, crate::ipld_support::IpldError> {
+        Err(crate::ipld_support::IpldError::FeatureNotEnabled)
+    }
+
+    /// Verify that the event content matches its CID
+    ///
+    /// Returns `Ok(true)` if the CID matches, `Ok(false)` if it doesn't,
+    /// or an error if verification cannot be performed.
+    ///
+    /// # Feature
+    ///
+    /// Requires the `ipld` feature to be enabled.
+    #[cfg(feature = "ipld")]
+    pub fn verify_cid(&self) -> Result<bool, crate::ipld_support::IpldError> {
+        match &self.cid {
+            Some(cid_str) => {
+                let expected_cid = cid::Cid::try_from(cid_str.as_str())
+                    .map_err(|e| crate::ipld_support::IpldError::CidParseError(e.to_string()))?;
+                crate::ipld_support::verify_cid(&self.event, &expected_cid)
+            }
+            None => Ok(true), // No CID to verify
+        }
+    }
+
+    /// Verify that the event content matches its CID (stub when IPLD feature disabled)
+    #[cfg(not(feature = "ipld"))]
+    pub fn verify_cid(&self) -> Result<bool, crate::ipld_support::IpldError> {
+        Ok(true) // No verification when IPLD disabled
+    }
+
+    /// Check if this envelope has a CID attached
+    pub fn has_cid(&self) -> bool {
+        self.cid.is_some()
+    }
+
+    /// Get the CID string if present
+    pub fn cid_string(&self) -> Option<&str> {
+        self.cid.as_deref()
     }
 
     /// Set a custom NATS subject for this event
