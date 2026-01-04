@@ -33,10 +33,18 @@
 //! ```
 
 use crate::graph::morphism::MorphismRegistry;
-use crate::lifting::{Injection, LiftedNode};
-use crate::gui::folds::view::{ThemedVisualizationData, ThemedVisualizationFold};
+use crate::lifting::{
+    Injection, LiftedNode,
+    // Domain types
+    NatsOperatorSimple, NatsAccountSimple, NatsUserSimple,
+    AggregateOrganization, AggregatePkiChain, AggregateNatsSecurity, AggregateYubiKeyProvisioning,
+};
+use crate::gui::folds::view::{ThemedVisualizationData, ThemedVisualizationFold, CertificateType as VisCertType};
 use crate::domains::typography::VerifiedTheme;
-use crate::domain::{Organization, OrganizationUnit, Person, Location};
+use crate::domain::{Organization, OrganizationUnit, Person, Location, Role, Policy};
+use crate::domain::pki::{Certificate, CertificateType, CryptographicKey};
+use crate::domain::yubikey::{YubiKeyDevice, PivSlotView, YubiKeyStatus};
+use crate::domain::visualization::{PolicyGroup, PolicyCategory, PolicyRole, PolicyClaimView};
 
 /// Registry of visualization morphisms for all domain types.
 ///
@@ -52,19 +60,42 @@ impl VisualizationRegistry {
     /// This registers morphisms for all core domain types.
     /// Each morphism transforms a domain type to `ThemedVisualizationData`.
     pub fn new(theme: &VerifiedTheme) -> Self {
-        let theme_clone = theme.clone();
-        let theme_for_org = theme.clone();
-        let theme_for_unit = theme.clone();
-        let theme_for_loc = theme.clone();
+        // Clone theme for each closure that needs it
+        let theme_person = theme.clone();
+        let theme_org = theme.clone();
+        let theme_unit = theme.clone();
+        let theme_loc = theme.clone();
+        let theme_role = theme.clone();
+        let theme_policy = theme.clone();
+        let theme_cert = theme.clone();
+        let theme_key = theme.clone();
+        let theme_yubikey = theme.clone();
+        let theme_piv = theme.clone();
+        let theme_yk_status = theme.clone();
+        let theme_nats_op = theme.clone();
+        let theme_nats_acc = theme.clone();
+        let theme_nats_user = theme.clone();
+        let theme_pol_grp = theme.clone();
+        let theme_pol_cat = theme.clone();
+        let theme_pol_role = theme.clone();
+        let theme_pol_claim = theme.clone();
+        let theme_agg_org = theme.clone();
+        let theme_agg_pki = theme.clone();
+        let theme_agg_nats = theme.clone();
+        let theme_agg_yk = theme.clone();
 
         let registry = MorphismRegistry::<ThemedVisualizationData>::new()
+            // ================================================================
+            // ORGANIZATION BOUNDED CONTEXT
+            // ================================================================
+
             // Person morphism
             .with::<Person, _>(move |person| {
                 use crate::domain::RoleType;
                 use crate::domain::KeyOwnerRole;
                 use iced::Color;
 
-                let fold = ThemedVisualizationFold::new(&theme_clone);
+                let fold = ThemedVisualizationFold::new(&theme_person);
 
                 // Derive KeyOwnerRole from primary role
                 let role = person.roles.first()
@@ -92,22 +123,147 @@ impl VisualizationRegistry {
             })
             // Organization morphism
             .with::<Organization, _>(move |org| {
-                let fold = ThemedVisualizationFold::new(&theme_for_org);
+                let fold = ThemedVisualizationFold::new(&theme_org);
                 fold.fold_organization(&org.name, &org.display_name, org.description.as_deref())
             })
             // OrganizationUnit morphism
             .with::<OrganizationUnit, _>(move |unit| {
-                let fold = ThemedVisualizationFold::new(&theme_for_unit);
+                let fold = ThemedVisualizationFold::new(&theme_unit);
                 fold.fold_organization_unit(&unit.name)
             })
             // Location morphism
             .with::<Location, _>(move |loc| {
-                let fold = ThemedVisualizationFold::new(&theme_for_loc);
+                let fold = ThemedVisualizationFold::new(&theme_loc);
                 fold.fold_location(&loc.name, &format!("{:?}", loc.location_type))
+            })
+            // Role morphism
+            .with::<Role, _>(move |role| {
+                let fold = ThemedVisualizationFold::new(&theme_role);
+                fold.fold_role(&role.name, &role.description)
+            })
+            // Policy morphism
+            .with::<Policy, _>(move |policy| {
+                let fold = ThemedVisualizationFold::new(&theme_policy);
+                fold.fold_policy(&policy.name, &policy.description)
+            })
+
+            // ================================================================
+            // PKI BOUNDED CONTEXT
+            // ================================================================
+
+            // Certificate morphism
+            .with::<Certificate, _>(move |cert| {
+                let fold = ThemedVisualizationFold::new(&theme_cert);
+                let expires = cert.not_after.format("%Y-%m-%d").to_string();
+                let vis_cert_type = match cert.cert_type {
+                    CertificateType::Root => VisCertType::Root,
+                    CertificateType::Intermediate => VisCertType::Intermediate,
+                    CertificateType::Leaf | CertificateType::Policy => VisCertType::Leaf,
+                };
+                fold.fold_certificate(&cert.subject, &expires, vis_cert_type)
+            })
+            // CryptographicKey morphism
+            .with::<CryptographicKey, _>(move |key| {
+                let fold = ThemedVisualizationFold::new(&theme_key);
+                let purpose = format!("{:?}", key.purpose);
+                let algorithm = format!("{:?}", key.algorithm);
+                let expires = key.expires_at.map(|dt| dt.format("%Y-%m-%d").to_string());
+                fold.fold_key(&purpose, &algorithm, expires.as_deref())
+            })
+
+            // ================================================================
+            // YUBIKEY BOUNDED CONTEXT
+            // ================================================================
+
+            // YubiKeyDevice morphism
+            .with::<YubiKeyDevice, _>(move |yk| {
+                let fold = ThemedVisualizationFold::new(&theme_yubikey);
+                fold.fold_yubikey(&yk.serial, &yk.version, yk.slots_used.len())
+            })
+            // PivSlotView morphism
+            .with::<PivSlotView, _>(move |slot| {
+                let fold = ThemedVisualizationFold::new(&theme_piv);
+                let status = if slot.has_key { "Key present" } else { "Empty" };
+                fold.fold_key(&slot.slot_name, status, slot.certificate_subject.as_deref())
+            })
+            // YubiKeyStatus morphism
+            .with::<YubiKeyStatus, _>(move |status| {
+                let fold = ThemedVisualizationFold::new(&theme_yk_status);
+                let serial = status.yubikey_serial.clone().unwrap_or_else(|| "Not assigned".to_string());
+                let version = format!("{}/{} slots", status.slots_provisioned.len(), status.slots_needed.len());
+                fold.fold_yubikey(&serial, &version, status.slots_provisioned.len())
+            })
+
+            // ================================================================
+            // NATS BOUNDED CONTEXT
+            // ================================================================
+
+            // NatsOperatorSimple morphism
+            .with::<NatsOperatorSimple, _>(move |op| {
+                let fold = ThemedVisualizationFold::new(&theme_nats_op);
+                fold.fold_nats_operator(&op.name)
+            })
+            // NatsAccountSimple morphism
+            .with::<NatsAccountSimple, _>(move |acc| {
+                let fold = ThemedVisualizationFold::new(&theme_nats_acc);
+                fold.fold_nats_account(&acc.name, acc.is_system)
+            })
+            // NatsUserSimple morphism
+            .with::<NatsUserSimple, _>(move |user| {
+                let fold = ThemedVisualizationFold::new(&theme_nats_user);
+                fold.fold_nats_user(&user.name, &user.account_name)
+            })
+
+            // ================================================================
+            // POLICY VISUALIZATION TYPES
+            // ================================================================
+
+            // PolicyGroup (SeparationClass) morphism
+            .with::<PolicyGroup, _>(move |group| {
+                let fold = ThemedVisualizationFold::new(&theme_pol_grp);
+                fold.fold_policy(&group.name, &format!("Separation: {:?} - {} roles", group.separation_class, group.role_count))
+            })
+            // PolicyCategory morphism
+            .with::<PolicyCategory, _>(move |cat| {
+                let fold = ThemedVisualizationFold::new(&theme_pol_cat);
+                fold.fold_policy(&cat.name, &format!("{} claims", cat.claim_count))
+            })
+            // PolicyRole morphism
+            .with::<PolicyRole, _>(move |role| {
+                let fold = ThemedVisualizationFold::new(&theme_pol_role);
+                fold.fold_role(&role.name, &format!("{} - {} claims", role.purpose, role.claim_count))
+            })
+            // PolicyClaimView morphism
+            .with::<PolicyClaimView, _>(move |claim| {
+                let fold = ThemedVisualizationFold::new(&theme_pol_claim);
+                fold.fold_policy(&claim.name, &format!("Category: {}", claim.category))
+            })
+
+            // ================================================================
+            // AGGREGATE VISUALIZATION TYPES
+            // ================================================================
+
+            // AggregateOrganization morphism
+            .with::<AggregateOrganization, _>(move |agg| {
+                let fold = ThemedVisualizationFold::new(&theme_agg_org);
+                let desc = format!("v{} | {} people | {} units", agg.version, agg.people_count, agg.units_count);
+                fold.fold_organization(&agg.name, "Aggregate", Some(&desc))
+            })
+            // AggregatePkiChain morphism
+            .with::<AggregatePkiChain, _>(move |agg| {
+                let fold = ThemedVisualizationFold::new(&theme_agg_pki);
+                fold.fold_policy(&agg.name, &format!("v{} | {} certs | {} keys", agg.version, agg.certificates_count, agg.keys_count))
+            })
+            // AggregateNatsSecurity morphism
+            .with::<AggregateNatsSecurity, _>(move |agg| {
+                let fold = ThemedVisualizationFold::new(&theme_agg_nats);
+                fold.fold_nats_operator(&format!("{} (Aggregate)", agg.name))
+            })
+            // AggregateYubiKeyProvisioning morphism
+            .with::<AggregateYubiKeyProvisioning, _>(move |agg| {
+                let fold = ThemedVisualizationFold::new(&theme_agg_yk);
+                fold.fold_yubikey(&agg.name, &format!("v{}", agg.version), agg.devices_count)
             });
-            // Additional morphisms would be registered here for:
-            // - Key, Certificate, YubiKey, NATS entities, etc.
-            // Each follows the same pattern: .with::<Type, _>(|entity| fold.fold_xxx(...))
 
         VisualizationRegistry { inner: registry }
     }
@@ -237,12 +393,82 @@ mod tests {
     }
 
     #[test]
-    fn test_visualization_registry_unregistered_type() {
+    fn test_visualization_registry_key() {
         let theme = test_theme();
         let registry = VisualizationRegistry::new(&theme);
 
-        // Key type is not registered in the basic registry
-        assert!(!registry.has_visualization(Injection::Key));
+        // Key type is now registered
+        assert!(registry.has_visualization(Injection::Key));
+    }
+
+    #[test]
+    fn test_visualization_registry_certificate() {
+        let theme = test_theme();
+        let registry = VisualizationRegistry::new(&theme);
+
+        // Certificate type is registered (uses LeafCertificate as default injection)
+        // Note: The actual visualization for Root/Intermediate certs works via
+        // the Certificate.fold_certificate() which checks cert_type internally
+        assert!(registry.has_visualization(Injection::LeafCertificate));
+    }
+
+    #[test]
+    fn test_visualization_registry_yubikey() {
+        let theme = test_theme();
+        let registry = VisualizationRegistry::new(&theme);
+
+        assert!(registry.has_visualization(Injection::YubiKey));
+        assert!(registry.has_visualization(Injection::PivSlot));
+        assert!(registry.has_visualization(Injection::YubiKeyStatus));
+    }
+
+    #[test]
+    fn test_visualization_registry_nats() {
+        let theme = test_theme();
+        let registry = VisualizationRegistry::new(&theme);
+
+        assert!(registry.has_visualization(Injection::NatsOperatorSimple));
+        assert!(registry.has_visualization(Injection::NatsAccountSimple));
+        assert!(registry.has_visualization(Injection::NatsUserSimple));
+    }
+
+    #[test]
+    fn test_visualization_registry_policy() {
+        let theme = test_theme();
+        let registry = VisualizationRegistry::new(&theme);
+
+        assert!(registry.has_visualization(Injection::Policy));
+        assert!(registry.has_visualization(Injection::PolicyGroup));
+        assert!(registry.has_visualization(Injection::PolicyCategory));
+        assert!(registry.has_visualization(Injection::PolicyRole));
+        assert!(registry.has_visualization(Injection::PolicyClaim));
+    }
+
+    #[test]
+    fn test_visualization_registry_aggregates() {
+        let theme = test_theme();
+        let registry = VisualizationRegistry::new(&theme);
+
+        assert!(registry.has_visualization(Injection::AggregateOrganization));
+        assert!(registry.has_visualization(Injection::AggregatePkiChain));
+        assert!(registry.has_visualization(Injection::AggregateNatsSecurity));
+        assert!(registry.has_visualization(Injection::AggregateYubiKeyProvisioning));
+    }
+
+    #[test]
+    fn test_visualization_registry_all_types_count() {
+        let theme = test_theme();
+        let registry = VisualizationRegistry::new(&theme);
+
+        // We registered 22 domain types:
+        // Organization BC: Person, Organization, OrganizationUnit, Location, Role, Policy (6)
+        // PKI BC: Certificate, CryptographicKey (2)
+        // YubiKey BC: YubiKeyDevice, PivSlotView, YubiKeyStatus (3)
+        // NATS BC: NatsOperatorSimple, NatsAccountSimple, NatsUserSimple (3)
+        // Policy Viz: PolicyGroup, PolicyCategory, PolicyRole, PolicyClaimView (4)
+        // Aggregates: AggregateOrganization, AggregatePkiChain, AggregateNatsSecurity, AggregateYubiKeyProvisioning (4)
+        // Total: 22 types
+        assert_eq!(registry.len(), 22, "Expected 22 domain types registered");
     }
 
     #[test]
