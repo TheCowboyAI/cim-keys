@@ -189,13 +189,30 @@ pub struct CimKeysApp {
     cert_country: String,
     cert_validity_days: String,  // String for text input, will parse to u32
 
-    // Export configuration
+    // Projection configuration (Export is now part of the projection system)
     export_path: PathBuf,
     include_public_keys: bool,
     include_certificates: bool,
     include_nats_config: bool,
     include_private_keys: bool,
     export_password: String,
+
+    // Projection system state - bidirectional domain mappings
+    // Outgoing: Domain → External, Incoming: External → Domain
+    projection_section: ProjectionSection,
+    projections: Vec<ProjectionState>,
+    injections: Vec<InjectionState>,
+    selected_projection: Option<ProjectionTarget>,
+    selected_injection: Option<InjectionSource>,
+
+    // Neo4j projection configuration
+    neo4j_endpoint: String,
+    neo4j_username: String,
+    neo4j_password: String,
+
+    // JetStream projection configuration
+    jetstream_url: String,
+    jetstream_credentials_path: String,
 
     // NATS hierarchy state
     nats_hierarchy_generated: bool,
@@ -417,6 +434,243 @@ impl ExportReadiness {
 // which provides a proper categorical coproduct with 28 variants.
 // Use Injection::creatable() for the subset that can be manually created.
 
+// ============================================================================
+// PROJECTION SYSTEM TYPES
+// ============================================================================
+// Projections are functorial mappings between the domain and external systems.
+// - Outgoing Projections: Domain → External (exports, syncs)
+// - Incoming Injections: External → Domain (imports, feeds)
+// These form adjoint functors in the categorical sense.
+
+/// Outgoing projection targets - where domain state gets projected to
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectionTarget {
+    /// Complete domain snapshot to encrypted SD card (air-gapped export)
+    SDCard,
+    /// Neo4j graph database for queryable domain state
+    Neo4j,
+    /// OLAP analytics projection for Orgs/People
+    Olap,
+    /// Contact system adapters (JSON schema driven)
+    ContactSystems,
+    /// JetStream for commands/queries/events (after PKI established)
+    JetStream,
+    /// NSC store for NATS credentials
+    NscStore,
+}
+
+impl ProjectionTarget {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::SDCard => "Encrypted SD Card",
+            Self::Neo4j => "Neo4j Graph Database",
+            Self::Olap => "OLAP Analytics",
+            Self::ContactSystems => "Contact Systems",
+            Self::JetStream => "JetStream Events",
+            Self::NscStore => "NSC Store",
+        }
+    }
+
+    pub fn description(&self) -> &'static str {
+        match self {
+            Self::SDCard => "Air-gapped export of complete domain configuration",
+            Self::Neo4j => "Continuous sync to Neo4j for graph queries and visualization",
+            Self::Olap => "Analytics projection for organizations and people",
+            Self::ContactSystems => "JSON schema adapters for external contact management",
+            Self::JetStream => "Event stream for commands, queries, and domain events",
+            Self::NscStore => "NATS security credentials and hierarchy",
+        }
+    }
+
+    pub fn icon(&self) -> &'static str {
+        match self {
+            Self::SDCard => "💾",
+            Self::Neo4j => "🔷",
+            Self::Olap => "📊",
+            Self::ContactSystems => "📇",
+            Self::JetStream => "🌊",
+            Self::NscStore => "🔐",
+        }
+    }
+
+    /// Whether this projection requires PKI to be established first
+    pub fn requires_pki(&self) -> bool {
+        match self {
+            Self::SDCard => true,
+            Self::Neo4j => false,
+            Self::Olap => false,
+            Self::ContactSystems => false,
+            Self::JetStream => true, // Must have PKI for signed events
+            Self::NscStore => true,
+        }
+    }
+
+    /// All available projection targets
+    pub fn all() -> Vec<Self> {
+        vec![
+            Self::SDCard,
+            Self::Neo4j,
+            Self::Olap,
+            Self::ContactSystems,
+            Self::JetStream,
+            Self::NscStore,
+        ]
+    }
+}
+
+/// Incoming injection sources - where domain state comes from
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InjectionSource {
+    /// JSON configuration files (domain bootstrap, imports)
+    JsonFile,
+    /// Petgraph import (graph structures)
+    Petgraph,
+    /// Contact system imports
+    ContactImport,
+    /// JetStream event replay (event sourcing)
+    JetStreamReplay,
+    /// External API feeds
+    ApiImport,
+}
+
+impl InjectionSource {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::JsonFile => "JSON Configuration",
+            Self::Petgraph => "Petgraph Import",
+            Self::ContactImport => "Contact System Import",
+            Self::JetStreamReplay => "JetStream Replay",
+            Self::ApiImport => "API Import",
+        }
+    }
+
+    pub fn description(&self) -> &'static str {
+        match self {
+            Self::JsonFile => "Load domain configuration from JSON files",
+            Self::Petgraph => "Import graph structures from Petgraph format",
+            Self::ContactImport => "Import contacts from external systems",
+            Self::JetStreamReplay => "Replay events from JetStream for state reconstruction",
+            Self::ApiImport => "Import data from external API endpoints",
+        }
+    }
+
+    pub fn icon(&self) -> &'static str {
+        match self {
+            Self::JsonFile => "📄",
+            Self::Petgraph => "🕸️",
+            Self::ContactImport => "📥",
+            Self::JetStreamReplay => "⏪",
+            Self::ApiImport => "🔌",
+        }
+    }
+
+    /// All available injection sources
+    pub fn all() -> Vec<Self> {
+        vec![
+            Self::JsonFile,
+            Self::Petgraph,
+            Self::ContactImport,
+            Self::JetStreamReplay,
+            Self::ApiImport,
+        ]
+    }
+}
+
+/// Status of a projection or injection
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProjectionStatus {
+    /// Not configured
+    NotConfigured,
+    /// Configured but not connected
+    Disconnected,
+    /// Currently connecting/syncing
+    Syncing,
+    /// Connected and up to date
+    Synced,
+    /// Error state
+    Error(String),
+}
+
+impl ProjectionStatus {
+    pub fn icon(&self) -> &'static str {
+        match self {
+            Self::NotConfigured => "⚪",
+            Self::Disconnected => "🔴",
+            Self::Syncing => "🟡",
+            Self::Synced => "🟢",
+            Self::Error(_) => "❌",
+        }
+    }
+
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::NotConfigured => "Not Configured",
+            Self::Disconnected => "Disconnected",
+            Self::Syncing => "Syncing...",
+            Self::Synced => "Synced",
+            Self::Error(_) => "Error",
+        }
+    }
+}
+
+/// Configuration and state for an outgoing projection
+#[derive(Debug, Clone)]
+pub struct ProjectionState {
+    pub target: ProjectionTarget,
+    pub status: ProjectionStatus,
+    pub last_sync: Option<chrono::DateTime<chrono::Utc>>,
+    pub items_synced: usize,
+    pub endpoint: Option<String>,
+    pub enabled: bool,
+}
+
+impl ProjectionState {
+    pub fn new(target: ProjectionTarget) -> Self {
+        Self {
+            target,
+            status: ProjectionStatus::NotConfigured,
+            last_sync: None,
+            items_synced: 0,
+            endpoint: None,
+            enabled: false,
+        }
+    }
+}
+
+/// Configuration and state for an incoming injection
+#[derive(Debug, Clone)]
+pub struct InjectionState {
+    pub source: InjectionSource,
+    pub status: ProjectionStatus,
+    pub last_import: Option<chrono::DateTime<chrono::Utc>>,
+    pub items_imported: usize,
+    pub source_path: Option<String>,
+    pub enabled: bool,
+}
+
+impl InjectionState {
+    pub fn new(source: InjectionSource) -> Self {
+        Self {
+            source,
+            status: ProjectionStatus::NotConfigured,
+            last_import: None,
+            items_imported: 0,
+            source_path: None,
+            enabled: false,
+        }
+    }
+}
+
+/// Which projection section is currently expanded
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ProjectionSection {
+    #[default]
+    Overview,
+    Outgoing,
+    Incoming,
+    Configuration,
+}
+
 /// Graph layout algorithms
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GraphLayout {
@@ -433,7 +687,7 @@ pub enum Tab {
     Organization,
     Locations,
     Keys,
-    Export,
+    Projections,
     Workflow,
     StateMachines,
 }
@@ -551,6 +805,20 @@ pub enum Message {
     ExportPasswordChanged(String),
     ExportToSDCard,
     DomainExported(Result<String, String>),
+
+    // Projection configuration changes
+    Neo4jEndpointChanged(String),
+    Neo4jUsernameChanged(String),
+    Neo4jPasswordChanged(String),
+    JetStreamUrlChanged(String),
+    JetStreamCredentialsChanged(String),
+    ProjectionSectionChanged(ProjectionSection),
+    ProjectionSelected(ProjectionTarget),
+    InjectionSelected(InjectionSource),
+    ConnectProjection(ProjectionTarget),
+    DisconnectProjection(ProjectionTarget),
+    SyncProjection(ProjectionTarget),
+    ImportFromSource(InjectionSource),
 
     // NATS Hierarchy operations
     GenerateNatsHierarchy,
@@ -705,7 +973,7 @@ impl Message {
                     Tab::Welcome => crate::mvi::model::Tab::Welcome,
                     Tab::Organization => crate::mvi::model::Tab::Organization,
                     Tab::Keys => crate::mvi::model::Tab::Keys,
-                    Tab::Export => crate::mvi::model::Tab::Export,
+                    Tab::Projections => crate::mvi::model::Tab::Projections,
                     Tab::Locations => return None, // No equivalent in mvi::model::Tab
                     Tab::Workflow => return None, // No equivalent in mvi::model::Tab
                     Tab::StateMachines => return None, // No equivalent in mvi::model::Tab
@@ -1115,6 +1383,23 @@ impl CimKeysApp {
                 include_nats_config: true,
                 include_private_keys: false,
                 export_password: String::new(),
+
+                // Projection system initialization
+                projection_section: ProjectionSection::Overview,
+                projections: ProjectionTarget::all().into_iter().map(ProjectionState::new).collect(),
+                injections: InjectionSource::all().into_iter().map(InjectionState::new).collect(),
+                selected_projection: None,
+                selected_injection: None,
+
+                // Neo4j configuration
+                neo4j_endpoint: String::from("bolt://localhost:7687"),
+                neo4j_username: String::from("neo4j"),
+                neo4j_password: String::new(),
+
+                // JetStream configuration
+                jetstream_url: String::from("nats://localhost:4222"),
+                jetstream_credentials_path: String::new(),
+
                 nats_hierarchy_generated: false,
                 nats_operator_id: None,
                 nats_export_path: PathBuf::from(&output_dir).join("nsc"),
@@ -1216,7 +1501,7 @@ impl CimKeysApp {
                         self.org_graph.nodes.len(), self.org_graph.edges.len()),
                     Tab::Locations => format!("Manage Locations ({} loaded)", self.loaded_locations.len()),
                     Tab::Keys => "Generate and Manage Cryptographic Keys".to_string(),
-                    Tab::Export => "Export Domain Configuration".to_string(),
+                    Tab::Projections => "Projections".to_string(),
                     Tab::Workflow => {
                         let summary = self.workflow_view.tracker.summary();
                         format!("Trust Chain Gap Fulfillment ({}/{} complete)",
@@ -2698,7 +2983,7 @@ impl CimKeysApp {
                         self.keys_generated = count;
                         self.key_generation_progress = 1.0;
                         self.status_message = format!("Generated {} keys successfully", count);
-                        self.active_tab = Tab::Export;
+                        self.active_tab = Tab::Projections;
                     }
                     Err(e) => {
                         self.status_message = format!("Key generation failed: {}", e);
@@ -2746,12 +3031,79 @@ impl CimKeysApp {
             Message::DomainExported(result) => {
                 match result {
                     Ok(path) => {
-                        self.status_message = format!("Domain exported to: {}", path);
+                        self.status_message = format!("Domain projected to: {}", path);
                     }
                     Err(e) => {
-                        self.status_message = format!("Export failed: {}", e);
+                        self.status_message = format!("Projection failed: {}", e);
                     }
                 }
+                Task::none()
+            }
+
+            // Projection configuration handlers
+            Message::Neo4jEndpointChanged(endpoint) => {
+                self.neo4j_endpoint = endpoint;
+                Task::none()
+            }
+
+            Message::Neo4jUsernameChanged(username) => {
+                self.neo4j_username = username;
+                Task::none()
+            }
+
+            Message::Neo4jPasswordChanged(password) => {
+                self.neo4j_password = password;
+                Task::none()
+            }
+
+            Message::JetStreamUrlChanged(url) => {
+                self.jetstream_url = url;
+                Task::none()
+            }
+
+            Message::JetStreamCredentialsChanged(path) => {
+                self.jetstream_credentials_path = path;
+                Task::none()
+            }
+
+            Message::ProjectionSectionChanged(section) => {
+                self.projection_section = section;
+                Task::none()
+            }
+
+            Message::ProjectionSelected(target) => {
+                self.selected_projection = Some(target);
+                self.status_message = format!("Selected projection: {}", target.display_name());
+                Task::none()
+            }
+
+            Message::InjectionSelected(source) => {
+                self.selected_injection = Some(source);
+                self.status_message = format!("Selected injection: {}", source.display_name());
+                Task::none()
+            }
+
+            Message::ConnectProjection(target) => {
+                // TODO: Implement actual connection logic
+                self.status_message = format!("Connecting to {}...", target.display_name());
+                Task::none()
+            }
+
+            Message::DisconnectProjection(target) => {
+                // TODO: Implement actual disconnection logic
+                self.status_message = format!("Disconnected from {}", target.display_name());
+                Task::none()
+            }
+
+            Message::SyncProjection(target) => {
+                // TODO: Implement actual sync logic
+                self.status_message = format!("Syncing to {}...", target.display_name());
+                Task::none()
+            }
+
+            Message::ImportFromSource(source) => {
+                // TODO: Implement actual import logic
+                self.status_message = format!("Importing from {}...", source.display_name());
                 Task::none()
             }
 
@@ -5138,9 +5490,9 @@ impl CimKeysApp {
             button(text("Keys").size(self.view_model.text_normal))
                 .on_press(Message::TabSelected(Tab::Keys))
                 .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Keys)),
-            button(text("Export").size(self.view_model.text_normal))
-                .on_press(Message::TabSelected(Tab::Export))
-                .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Export)),
+            button(text("Projections").size(self.view_model.text_normal))
+                .on_press(Message::TabSelected(Tab::Projections))
+                .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Projections)),
             button(text("Workflow").size(self.view_model.text_normal))
                 .on_press(Message::TabSelected(Tab::Workflow))
                 .style(|theme: &Theme, _| self.tab_button_style(theme, self.active_tab == Tab::Workflow)),
@@ -5156,7 +5508,7 @@ impl CimKeysApp {
             Tab::Organization => self.view_organization(),
             Tab::Locations => self.view_locations(),
             Tab::Keys => self.view_keys(),
-            Tab::Export => self.view_export(),
+            Tab::Projections => self.view_projections(),
             Tab::Workflow => self.view_workflow(),
             Tab::StateMachines => self.view_state_machines(),
         };
@@ -7738,17 +8090,35 @@ impl CimKeysApp {
         readiness
     }
 
-    fn view_export(&self) -> Element<'_, Message> {
-        // Compute readiness status
+    fn view_projections(&self) -> Element<'_, Message> {
+        // Compute readiness status (still used for SD Card projection)
         let readiness = self.compute_export_readiness();
         let is_ready = readiness.is_ready();
         let percentage = readiness.readiness_percentage();
 
-        // Build status content separately to avoid opaque type conflicts
+        // ========================================================================
+        // HEADER - Projections Overview
+        // ========================================================================
+        let header = column![
+            text("Projections").size(self.view_model.text_xlarge),
+            text("Bidirectional domain state mappings between CIM and external systems")
+                .size(self.view_model.text_normal)
+                .color(CowboyTheme::text_secondary()),
+            row![
+                text("Outgoing: Domain → External").size(self.view_model.text_small).color(self.view_model.colors.green_success),
+                text(" | ").size(self.view_model.text_small).color(self.view_model.colors.text_tertiary),
+                text("Incoming: External → Domain").size(self.view_model.text_small).color(self.view_model.colors.blue_info),
+            ],
+        ]
+        .spacing(4);
+
+        // ========================================================================
+        // DOMAIN READINESS STATUS
+        // ========================================================================
         let status_content = column![
             row![
                 text(if is_ready { "✅" } else { "⚠️" }).font(EMOJI_FONT).size(20),
-                text(format!("Export Readiness: {}%", percentage))
+                text(format!("Domain Readiness: {}%", percentage))
                     .size(self.view_model.text_large)
                     .color(if is_ready {
                         self.view_model.colors.green_success
@@ -7758,8 +8128,6 @@ impl CimKeysApp {
             ]
             .spacing(8)
             .align_y(Alignment::Center),
-
-            // Progress bar - capture bar color for closure
             {
                 let bar_color = if is_ready {
                     self.view_model.colors.green_success
@@ -7774,8 +8142,6 @@ impl CimKeysApp {
                         border: Border::default(),
                     })
             },
-
-            // Summary stats
             row![
                 text(format!("📜 {} certs", readiness.root_ca_count + readiness.intermediate_ca_count + readiness.leaf_cert_count))
                     .size(self.view_model.text_small),
@@ -7783,181 +8149,337 @@ impl CimKeysApp {
                     .size(self.view_model.text_small),
                 text(format!("👥 {} people", self.loaded_people.len()))
                     .size(self.view_model.text_small),
-                if readiness.has_nats_operator {
-                    text(format!("🌐 NATS: {} accounts", readiness.nats_account_count))
-                        .size(self.view_model.text_small)
-                } else {
-                    text("🌐 NATS: none")
-                        .size(self.view_model.text_small)
-                        .color(self.view_model.colors.text_tertiary)
-                },
             ]
             .spacing(16),
         ]
         .spacing(8);
 
-        // Readiness status card - use conditional rendering to avoid opaque type conflict
         let readiness_card: Element<'_, Message> = if is_ready {
             container(status_content)
-                .padding(self.view_model.padding_lg)
+                .padding(self.view_model.padding_md)
                 .style(CowboyCustomTheme::pastel_mint_card())
                 .into()
         } else {
             container(status_content)
-                .padding(self.view_model.padding_lg)
+                .padding(self.view_model.padding_md)
                 .style(CowboyCustomTheme::pastel_coral_card())
                 .into()
         };
 
-        let content = column![
-            text("Export Domain Configuration").size(self.view_model.text_xlarge),
-            text("Export your domain configuration to encrypted storage").size(self.view_model.text_normal),
-
-            readiness_card,
-
-            // Missing items list (if any)
-            if !readiness.missing_items.is_empty() {
-                container(
-                    column![
-                        text(format!("Missing Items ({})", readiness.missing_items.len()))
-                            .size(self.view_model.text_medium)
-                            .color(CowboyTheme::text_primary()),
-                        {
-                            let mut missing_column = column![].spacing(6);
-                            for item in &readiness.missing_items {
-                                let (icon, color) = match item.severity {
-                                    MissingSeverity::Required => ("🔴", self.view_model.colors.red_error),
-                                    MissingSeverity::Recommended => ("🟡", self.view_model.colors.yellow_warning),
-                                    MissingSeverity::Optional => ("🔵", self.view_model.colors.blue_info),
-                                };
-                                let mut item_row = row![
-                                    text(icon).font(EMOJI_FONT).size(14),
-                                    text(format!("[{}] {}", item.category, item.description))
-                                        .size(self.view_model.text_small)
-                                        .color(color),
-                                ]
-                                .spacing(8)
-                                .align_y(Alignment::Center);
-
-                                if let Some(ref action) = item.action {
-                                    item_row = item_row.push(
-                                        text(format!("→ {}", action))
-                                            .size(self.view_model.text_tiny)
-                                            .color(self.view_model.colors.text_tertiary)
-                                    );
-                                }
-                                missing_column = missing_column.push(item_row);
-                            }
-                            missing_column
-                        }
-                    ]
-                    .spacing(self.view_model.spacing_md)
-                )
-                .padding(self.view_model.padding_lg)
-                .style(CowboyCustomTheme::pastel_cream_card())
-            } else {
-                container(
-                    text("All requirements met - ready for export!")
-                        .size(self.view_model.text_normal)
-                        .color(self.view_model.colors.green_success)
-                )
-                .padding(self.view_model.padding_md)
-            },
-
-            // Warnings (if any)
-            if !readiness.warnings.is_empty() {
-                container(
-                    column![
-                        text("⚠️ Warnings").size(self.view_model.text_medium),
-                        {
-                            let mut warn_column = column![].spacing(4);
-                            for warning in &readiness.warnings {
-                                warn_column = warn_column.push(
-                                    text(format!("• {}", warning))
-                                        .size(self.view_model.text_small)
-                                        .color(self.view_model.colors.yellow_warning)
-                                );
-                            }
-                            warn_column
-                        }
-                    ]
-                    .spacing(self.view_model.spacing_sm)
-                )
-                .padding(self.view_model.padding_md)
-                .style(CowboyCustomTheme::pastel_cream_card())
-            } else {
-                container(Space::with_height(0))
-            },
-
-            container(
+        // ========================================================================
+        // OUTGOING PROJECTIONS (Domain → External)
+        // ========================================================================
+        let outgoing_header = container(
+            row![
+                text("⬆️").font(EMOJI_FONT).size(20),
                 column![
-                    text("Export Options")
-                        .size(self.view_model.text_medium)
-                        .color(CowboyTheme::text_primary()),
-                    text_input("Output Directory", &self.export_path.display().to_string())
-                        .on_input(Message::ExportPathChanged)
-                        .style(CowboyCustomTheme::glass_input()),
-                    checkbox("Include public keys", self.include_public_keys)
+                    text("Outgoing Projections").size(self.view_model.text_large),
+                    text("Domain → External Systems").size(self.view_model.text_small).color(CowboyTheme::text_secondary()),
+                ]
+                .spacing(2),
+            ]
+            .spacing(12)
+            .align_y(Alignment::Center)
+        )
+        .padding(self.view_model.padding_sm);
+
+        // SD Card Projection (air-gapped export)
+        let sdcard_projection = container(
+            column![
+                row![
+                    text("💾").font(EMOJI_FONT).size(24),
+                    column![
+                        text("Encrypted SD Card").size(self.view_model.text_medium),
+                        text("Air-gapped snapshot of complete domain configuration").size(self.view_model.text_tiny).color(CowboyTheme::text_secondary()),
+                    ]
+                    .spacing(2),
+                    horizontal_space(),
+                    text(if is_ready { "🟢 Ready" } else { "🟡 Not Ready" }).size(self.view_model.text_small),
+                ]
+                .spacing(12)
+                .align_y(Alignment::Center),
+                text_input("Output Directory", &self.export_path.display().to_string())
+                    .on_input(Message::ExportPathChanged)
+                    .style(CowboyCustomTheme::glass_input()),
+                row![
+                    checkbox("Public keys", self.include_public_keys)
                         .on_toggle(Message::TogglePublicKeys)
                         .style(CowboyCustomTheme::light_checkbox()),
-                    checkbox("Include certificates", self.include_certificates)
+                    checkbox("Certificates", self.include_certificates)
                         .on_toggle(Message::ToggleCertificates)
                         .style(CowboyCustomTheme::light_checkbox()),
-                    checkbox("Generate NATS configuration", self.include_nats_config)
+                    checkbox("NATS config", self.include_nats_config)
                         .on_toggle(Message::ToggleNatsConfig)
                         .style(CowboyCustomTheme::light_checkbox()),
-                    checkbox("Include private keys (requires password)", self.include_private_keys)
+                ]
+                .spacing(16),
+                row![
+                    checkbox("Private keys (encrypted)", self.include_private_keys)
                         .on_toggle(Message::TogglePrivateKeys)
                         .style(CowboyCustomTheme::light_checkbox()),
-                    if self.include_private_keys {
-                        text_input("Encryption Password", &self.export_password)
+                ]
+                .spacing(16)
+                .align_y(Alignment::Center),
+                if self.include_private_keys {
+                    container(
+                        text_input("Password", &self.export_password)
                             .on_input(Message::ExportPasswordChanged)
                             .secure(true)
+                            .width(Length::Fixed(200.0))
                             .style(CowboyCustomTheme::glass_input())
-                    } else {
-                        text_input("", "")
-                            .on_input(Message::ExportPasswordChanged)
-                            .style(CowboyCustomTheme::glass_input())
-                    },
-                ]
-                .spacing(self.view_model.spacing_md)
-            )
-            .padding(self.view_model.padding_lg)
-            .style(CowboyCustomTheme::pastel_cream_card()),
+                    )
+                } else {
+                    container(Space::with_height(0))
+                },
+                button(text("Project to SD Card").size(self.view_model.text_small))
+                    .on_press(Message::ExportToSDCard)
+                    .style(CowboyCustomTheme::security_button()),
+            ]
+            .spacing(self.view_model.spacing_sm)
+        )
+        .padding(self.view_model.padding_md)
+        .style(CowboyCustomTheme::pastel_cream_card());
 
-            button("Export to Encrypted SD Card")
-                .on_press(Message::ExportToSDCard)
-                .style(CowboyCustomTheme::security_button()),
-
-            // NATS NSC Export
-            if self.nats_hierarchy_generated {
-                container(
+        // Neo4j Projection
+        let neo4j_projection = container(
+            column![
+                row![
+                    text("🔷").font(EMOJI_FONT).size(24),
                     column![
-                        text("Export NATS Hierarchy to NSC")
-                            .size(self.view_model.text_medium)
-                            .color(CowboyTheme::text_primary()),
-                        text(format!("Export directory: {}", self.nats_export_path.display()))
-                            .size(self.view_model.text_small)
-                            .color(CowboyTheme::text_secondary()),
-                        button("Export to NSC Store")
+                        text("Neo4j Graph Database").size(self.view_model.text_medium),
+                        text("Continuous sync for graph queries and visualization").size(self.view_model.text_tiny).color(CowboyTheme::text_secondary()),
+                    ]
+                    .spacing(2),
+                    horizontal_space(),
+                    text("⚪ Not Configured").size(self.view_model.text_small).color(self.view_model.colors.text_tertiary),
+                ]
+                .spacing(12)
+                .align_y(Alignment::Center),
+                row![
+                    text("Endpoint:").size(self.view_model.text_small),
+                    text_input("bolt://localhost:7687", &self.neo4j_endpoint)
+                        .on_input(Message::Neo4jEndpointChanged)
+                        .width(Length::Fixed(250.0))
+                        .style(CowboyCustomTheme::glass_input()),
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center),
+                text("Projects: Organizations, People, Keys, Certificates, Relationships")
+                    .size(self.view_model.text_tiny)
+                    .color(self.view_model.colors.text_tertiary),
+            ]
+            .spacing(self.view_model.spacing_sm)
+        )
+        .padding(self.view_model.padding_md)
+        .style(CowboyCustomTheme::card_container());
+
+        // JetStream Projection
+        let jetstream_status = if is_ready { "🟡 PKI Ready" } else { "🔴 Requires PKI" };
+        let jetstream_projection = container(
+            column![
+                row![
+                    text("🌊").font(EMOJI_FONT).size(24),
+                    column![
+                        text("JetStream Events").size(self.view_model.text_medium),
+                        text("Commands, queries, and domain events (requires PKI)").size(self.view_model.text_tiny).color(CowboyTheme::text_secondary()),
+                    ]
+                    .spacing(2),
+                    horizontal_space(),
+                    text(jetstream_status).size(self.view_model.text_small),
+                ]
+                .spacing(12)
+                .align_y(Alignment::Center),
+                row![
+                    text("NATS URL:").size(self.view_model.text_small),
+                    text_input("nats://localhost:4222", &self.jetstream_url)
+                        .on_input(Message::JetStreamUrlChanged)
+                        .width(Length::Fixed(250.0))
+                        .style(CowboyCustomTheme::glass_input()),
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center),
+                text("Publishes: DomainEvents, Commands, Queries to configured subjects")
+                    .size(self.view_model.text_tiny)
+                    .color(self.view_model.colors.text_tertiary),
+            ]
+            .spacing(self.view_model.spacing_sm)
+        )
+        .padding(self.view_model.padding_md)
+        .style(CowboyCustomTheme::card_container());
+
+        // NSC Store Projection
+        let nsc_projection = container(
+            column![
+                row![
+                    text("🔐").font(EMOJI_FONT).size(24),
+                    column![
+                        text("NSC Store").size(self.view_model.text_medium),
+                        text("NATS security credentials and hierarchy").size(self.view_model.text_tiny).color(CowboyTheme::text_secondary()),
+                    ]
+                    .spacing(2),
+                    horizontal_space(),
+                    text(if self.nats_hierarchy_generated { "🟢 Ready" } else { "⚪ Not Generated" }).size(self.view_model.text_small),
+                ]
+                .spacing(12)
+                .align_y(Alignment::Center),
+                if self.nats_hierarchy_generated {
+                    column![
+                        text(format!("Export path: {}", self.nats_export_path.display()))
+                            .size(self.view_model.text_tiny)
+                            .color(self.view_model.colors.text_tertiary),
+                        button(text("Project to NSC Store").size(self.view_model.text_small))
                             .on_press(Message::ExportToNsc)
                             .style(CowboyCustomTheme::primary_button()),
                     ]
-                    .spacing(self.view_model.spacing_md)
-                )
-                .padding(self.view_model.padding_lg)
-                .style(CowboyCustomTheme::pastel_teal_card())
-            } else {
-                container(
-                    text("Generate NATS hierarchy first to enable NSC export")
-                        .size(self.view_model.text_normal)
-                        .color(self.view_model.colors.text_tertiary)
-                )
-                .padding(self.view_model.padding_lg)
-                .style(CowboyCustomTheme::card_container())
-            },
+                    .spacing(8)
+                } else {
+                    column![
+                        text("Generate NATS hierarchy first (Keys tab)")
+                            .size(self.view_model.text_tiny)
+                            .color(self.view_model.colors.text_tertiary),
+                    ]
+                },
+            ]
+            .spacing(self.view_model.spacing_sm)
+        )
+        .padding(self.view_model.padding_md)
+        .style(CowboyCustomTheme::card_container());
+
+        // ========================================================================
+        // INCOMING INJECTIONS (External → Domain)
+        // ========================================================================
+        let incoming_header = container(
+            row![
+                text("⬇️").font(EMOJI_FONT).size(20),
+                column![
+                    text("Incoming Injections").size(self.view_model.text_large),
+                    text("External Sources → Domain").size(self.view_model.text_small).color(CowboyTheme::text_secondary()),
+                ]
+                .spacing(2),
+            ]
+            .spacing(12)
+            .align_y(Alignment::Center)
+        )
+        .padding(self.view_model.padding_sm);
+
+        // JSON Configuration Injection
+        let json_injection = container(
+            column![
+                row![
+                    text("📄").font(EMOJI_FONT).size(24),
+                    column![
+                        text("JSON Configuration").size(self.view_model.text_medium),
+                        text("Load domain configuration from JSON files").size(self.view_model.text_tiny).color(CowboyTheme::text_secondary()),
+                    ]
+                    .spacing(2),
+                    horizontal_space(),
+                    text("⚪ Not Configured").size(self.view_model.text_small).color(self.view_model.colors.text_tertiary),
+                ]
+                .spacing(12)
+                .align_y(Alignment::Center),
+                text("Imports: domain-bootstrap.json, organizations, people, policies")
+                    .size(self.view_model.text_tiny)
+                    .color(self.view_model.colors.text_tertiary),
+            ]
+            .spacing(self.view_model.spacing_sm)
+        )
+        .padding(self.view_model.padding_md)
+        .style(CowboyCustomTheme::card_container());
+
+        // Petgraph Injection
+        let petgraph_injection = container(
+            column![
+                row![
+                    text("🕸️").font(EMOJI_FONT).size(24),
+                    column![
+                        text("Petgraph Import").size(self.view_model.text_medium),
+                        text("Import graph structures from Petgraph format").size(self.view_model.text_tiny).color(CowboyTheme::text_secondary()),
+                    ]
+                    .spacing(2),
+                    horizontal_space(),
+                    text("⚪ Not Configured").size(self.view_model.text_small).color(self.view_model.colors.text_tertiary),
+                ]
+                .spacing(12)
+                .align_y(Alignment::Center),
+                text("Imports: Graph nodes, edges, relationships from petgraph serialization")
+                    .size(self.view_model.text_tiny)
+                    .color(self.view_model.colors.text_tertiary),
+            ]
+            .spacing(self.view_model.spacing_sm)
+        )
+        .padding(self.view_model.padding_md)
+        .style(CowboyCustomTheme::card_container());
+
+        // JetStream Replay Injection
+        let jetstream_replay = container(
+            column![
+                row![
+                    text("⏪").font(EMOJI_FONT).size(24),
+                    column![
+                        text("JetStream Replay").size(self.view_model.text_medium),
+                        text("Replay events from JetStream for state reconstruction").size(self.view_model.text_tiny).color(CowboyTheme::text_secondary()),
+                    ]
+                    .spacing(2),
+                    horizontal_space(),
+                    text("⚪ Not Configured").size(self.view_model.text_small).color(self.view_model.colors.text_tertiary),
+                ]
+                .spacing(12)
+                .align_y(Alignment::Center),
+                text("Replays: Domain events from JetStream streams for projection rebuild")
+                    .size(self.view_model.text_tiny)
+                    .color(self.view_model.colors.text_tertiary),
+            ]
+            .spacing(self.view_model.spacing_sm)
+        )
+        .padding(self.view_model.padding_md)
+        .style(CowboyCustomTheme::card_container());
+
+        // Contact Systems Injection
+        let contact_injection = container(
+            column![
+                row![
+                    text("📇").font(EMOJI_FONT).size(24),
+                    column![
+                        text("Contact Systems").size(self.view_model.text_medium),
+                        text("JSON schema adapters for external contact management").size(self.view_model.text_tiny).color(CowboyTheme::text_secondary()),
+                    ]
+                    .spacing(2),
+                    horizontal_space(),
+                    text("⚪ Not Configured").size(self.view_model.text_small).color(self.view_model.colors.text_tertiary),
+                ]
+                .spacing(12)
+                .align_y(Alignment::Center),
+                text("Bidirectional: Import/export contacts via JSON schema adapters")
+                    .size(self.view_model.text_tiny)
+                    .color(self.view_model.colors.text_tertiary),
+            ]
+            .spacing(self.view_model.spacing_sm)
+        )
+        .padding(self.view_model.padding_md)
+        .style(CowboyCustomTheme::card_container());
+
+        // ========================================================================
+        // COMPOSE THE FULL VIEW
+        // ========================================================================
+        let content = column![
+            header,
+            readiness_card,
+
+            // Outgoing Projections Section
+            outgoing_header,
+            sdcard_projection,
+            neo4j_projection,
+            jetstream_projection,
+            nsc_projection,
+
+            // Incoming Injections Section
+            incoming_header,
+            json_injection,
+            petgraph_injection,
+            jetstream_replay,
+            contact_injection,
         ]
-        .spacing(self.view_model.spacing_xl)
+        .spacing(self.view_model.spacing_md)
         .padding(self.view_model.padding_md);
 
         scrollable(content).into()

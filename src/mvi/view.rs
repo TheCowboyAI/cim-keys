@@ -25,7 +25,7 @@ pub fn view(model: &Model) -> Element<'_, Intent> {
         Tab::Welcome => view_welcome(model),
         Tab::Organization => view_organization(model),
         Tab::Keys => view_keys(model),
-        Tab::Export => view_export(model),
+        Tab::Projections => view_projections(model),
     };
 
     column![
@@ -78,7 +78,7 @@ fn view_header(model: &Model) -> Element<'_, Intent> {
         tab_button("Welcome", Tab::Welcome, model.current_tab == Tab::Welcome),
         tab_button("Organization", Tab::Organization, model.current_tab == Tab::Organization),
         tab_button("Keys", Tab::Keys, model.current_tab == Tab::Keys),
-        tab_button("Export", Tab::Export, model.current_tab == Tab::Export),
+        tab_button("Projections", Tab::Projections, model.current_tab == Tab::Projections),
     ]
     .spacing(10);
 
@@ -578,56 +578,94 @@ fn view_keys(model: &Model) -> Element<'_, Intent> {
     .into()
 }
 
-/// Export tab view
-fn view_export(model: &Model) -> Element<'_, Intent> {
-    let export_status_text = match &model.export_status {
-        ExportStatus::NotStarted => "Ready to export".to_string(),
-        ExportStatus::InProgress => "Exporting...".to_string(),
+/// Projections tab view - bidirectional domain state mappings
+fn view_projections(model: &Model) -> Element<'_, Intent> {
+    // SD Card projection status (the original export functionality)
+    let sdcard_status_text = match &model.export_status {
+        ExportStatus::NotStarted => "Ready to project".to_string(),
+        ExportStatus::InProgress => "Projecting...".to_string(),
         ExportStatus::Completed { path, bytes_written } => {
-            format!("Exported {} bytes to {} ✓", bytes_written, path.display())
+            format!("Projected {} bytes to {} ✓", bytes_written, path.display())
         }
         ExportStatus::Failed { error } => {
-            format!("✗ Export failed: {}", error)
+            format!("✗ Projection failed: {}", error)
         }
     };
 
-    let status = column![
-        text("Export Status").size(18),
-        text(export_status_text).size(14),
+    // Section: Outgoing Projections (Domain → External)
+    let outgoing_header = column![
+        text("Outgoing Projections").size(20),
+        text("Domain → External Systems").size(12),
     ]
-    .spacing(10)
-    .padding(20);
+    .spacing(4)
+    .padding(10);
 
-    let config = column![
-        text("Export Configuration").size(16),
-        text(format!("Output Directory: {}", model.output_directory.display())).size(12),
-        text("").size(10),
-        text("The following will be exported:").size(14),
-        text("  • Domain configuration (organization, people)").size(12),
-        text("  • Generated certificates and keys").size(12),
-        text("  • NATS credentials").size(12),
-        text("  • Audit log of all operations").size(12),
-    ]
-    .spacing(10)
-    .padding(20);
-
-    let actions = column![
-        button(text("Export to SD Card").size(16))
-            .width(Length::Fixed(250.0))
+    let sdcard_projection = column![
+        text("💾 Encrypted SD Card").size(16),
+        text("Air-gapped snapshot of complete domain configuration").size(12),
+        text(sdcard_status_text).size(14),
+        text(format!("Output: {}", model.output_directory.display())).size(12),
+        button(text("Project to SD Card").size(14))
+            .width(Length::Fixed(200.0))
             .on_press(Intent::UiExportClicked {
                 output_path: model.output_directory.clone()
             }),
     ]
-    .spacing(15)
-    .padding(20);
+    .spacing(8)
+    .padding(15);
+
+    let neo4j_projection = column![
+        text("🔷 Neo4j Graph Database").size(16),
+        text("Continuous sync for graph queries and visualization").size(12),
+        text("⚪ Not Configured").size(14),
+        text("Endpoint: (not set)").size(12),
+    ]
+    .spacing(8)
+    .padding(15);
+
+    let jetstream_projection = column![
+        text("🌊 JetStream Events").size(16),
+        text("Commands, queries, and domain events (requires PKI)").size(12),
+        text("⚪ Not Configured").size(14),
+    ]
+    .spacing(8)
+    .padding(15);
+
+    // Section: Incoming Injections (External → Domain)
+    let incoming_header = column![
+        text("Incoming Injections").size(20),
+        text("External Sources → Domain").size(12),
+    ]
+    .spacing(4)
+    .padding(10);
+
+    let json_injection = column![
+        text("📄 JSON Configuration").size(16),
+        text("Load domain configuration from JSON files").size(12),
+        text("⚪ Not Configured").size(14),
+    ]
+    .spacing(8)
+    .padding(15);
+
+    let petgraph_injection = column![
+        text("🕸️ Petgraph Import").size(16),
+        text("Import graph structures from Petgraph format").size(12),
+        text("⚪ Not Configured").size(14),
+    ]
+    .spacing(8)
+    .padding(15);
 
     scrollable(
         column![
-            status,
-            config,
-            actions,
+            outgoing_header,
+            sdcard_projection,
+            neo4j_projection,
+            jetstream_projection,
+            incoming_header,
+            json_injection,
+            petgraph_injection,
         ]
-        .spacing(20)
+        .spacing(15)
     )
     .into()
 }

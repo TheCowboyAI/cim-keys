@@ -51,7 +51,7 @@ pub enum Tab {
     Welcome,
     Organization,
     Keys,
-    Export,
+    Projections,
 }
 
 #[derive(Debug, Clone)]

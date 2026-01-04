@@ -306,7 +306,7 @@ mod frp_axioms {
         let _ = model.clone().with_tab(Tab::Welcome);
         let _ = model.clone().with_tab(Tab::Organization);
         let _ = model.clone().with_tab(Tab::Keys);
-        let _ = model.clone().with_tab(Tab::Export);
+        let _ = model.clone().with_tab(Tab::Projections);
 
         let _ = model.clone().with_organization_name(String::new());
         let _ = model.clone().with_organization_name("Test".to_string());
@@ -442,7 +442,7 @@ mod property_tests {
             Just(Tab::Welcome),
             Just(Tab::Organization),
             Just(Tab::Keys),
-            Just(Tab::Export),
+            Just(Tab::Projections),
         ]
     }
 
