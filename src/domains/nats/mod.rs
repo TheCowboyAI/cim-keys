@@ -10,6 +10,14 @@
 //! - NatsAccount (tier 1)
 //! - NatsUser (tier 2)
 //! - NatsServiceAccount (tier 2)
+//!
+//! ## Anti-Corruption Layer
+//!
+//! The `acl` submodule provides ports and adapters for accessing
+//! Organization and PKI contexts without direct imports.
+
+// Anti-Corruption Layer for Organization and PKI contexts
+pub mod acl;
 
 use std::fmt;
 use uuid::Uuid;

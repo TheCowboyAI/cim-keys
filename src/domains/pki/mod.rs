@@ -10,6 +10,18 @@
 //! - IntermediateCertificate (tier 1)
 //! - LeafCertificate (tier 2)
 //! - CryptographicKey (tier 2)
+//!
+//! ## Published Language
+//!
+//! The `published` submodule provides reference types for cross-context
+//! communication. Other contexts should use these types instead of
+//! importing internal PKI types directly.
+
+// Published Language for cross-context communication
+pub mod published;
+
+// Anti-Corruption Layer for Organization context
+pub mod acl;
 
 use std::fmt;
 use uuid::Uuid;

@@ -13,11 +13,20 @@
 //! - Role (intermediate)
 //! - Policy (intermediate)
 //!
+//! ## Published Language
+//!
+//! The `published` submodule provides reference types for cross-context
+//! communication. Other contexts should use these types instead of
+//! importing internal types directly.
+//!
 //! ## Categorical Structure
 //!
 //! OrganizationEntity is a coproduct with:
 //! - Injection morphisms for each entity type
 //! - Universal property via FoldOrganizationEntity trait
+
+// Published Language for cross-context communication
+pub mod published;
 
 use std::fmt;
 use uuid::Uuid;
