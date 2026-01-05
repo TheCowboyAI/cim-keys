@@ -1238,7 +1238,7 @@ dependencies = [
 
 [[package]]
 name = "cim-domain-spaces"
-version = "0.9.5"
+version = "0.9.7"
 dependencies = [
  "anyhow",
  "async-nats 0.38.0",

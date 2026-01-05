@@ -479,7 +479,7 @@ pub struct KeyDelegation {
 }
 
 /// Permissions that can be delegated
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum KeyPermission {
     Sign,
     Encrypt,

@@ -187,12 +187,15 @@ pub struct LocationEntry {
     pub name: String,
     pub location_type: String,
     pub organization_id: Uuid,
-    // Address details
+    // Address details (for physical locations)
     pub street: Option<String>,
     pub city: Option<String>,
     pub region: Option<String>,
     pub country: Option<String>,
     pub postal_code: Option<String>,
+    // URL for virtual/hybrid locations
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub virtual_url: Option<String>,
     /// Lifecycle state machine for this location
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<LocationState>,
@@ -675,6 +678,7 @@ impl OfflineKeyProjection {
             region: None,
             country: None,
             postal_code: None,
+            virtual_url: None,
             // Initialize state machine to Active (locations are immediately active when created)
             state: Some(LocationState::Active {
                 activated_at: Utc::now(),  // Derived from location_id (UUID v7 timestamp)
@@ -2024,6 +2028,7 @@ impl OfflineKeyProjection {
         region: Option<String>,
         country: Option<String>,
         postal_code: Option<String>,
+        virtual_url: Option<String>,
     ) -> Result<(), ProjectionError> {
         let location_entry = LocationEntry {
             location_id,
@@ -2035,6 +2040,7 @@ impl OfflineKeyProjection {
             region,
             country,
             postal_code,
+            virtual_url,
             // Initialize state machine
             state: Some(LocationState::Active {
                 activated_at: Utc::now(),
@@ -2285,6 +2291,7 @@ impl KeyManifest {
                     region: None,
                     country: None,
                     postal_code: None,
+                    virtual_url: None,
                     state: None,
                 });
             }
@@ -2444,6 +2451,7 @@ impl Rebuildable for KeyManifest {
                     region: None,
                     country: None,
                     postal_code: None,
+                    virtual_url: None,
                     state: None, // State machine state set separately
                 });
             }
