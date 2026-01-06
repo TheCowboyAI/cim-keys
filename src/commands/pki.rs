@@ -265,24 +265,26 @@ pub fn handle_generate_root_ca(cmd: GenerateRootCA) -> Result<RootCAGenerated, S
     };
 
     // Step 4: Emit certificate generated event
-    events.push(DomainEvent::Certificate(crate::events::CertificateEvents::CertificateGenerated(crate::events::certificate::CertificateGeneratedEvent {
-        cert_id: ca_id,
-        key_id: key_pair.key_id,
-        subject: certificate.subject.common_name.clone(),
-        issuer: None, // Self-signed root CA
-        not_before: certificate.validity.not_before,
-        not_after: certificate.validity.not_after,
-        is_ca: true,
-        san: vec![],
-        key_usage: vec![
+    #[allow(deprecated)]
+    let cert_event = crate::events::certificate::CertificateGeneratedEvent::new_legacy(
+        ca_id,
+        key_pair.key_id,
+        certificate.subject.common_name.clone(),
+        None, // Self-signed root CA
+        certificate.validity.not_before,
+        certificate.validity.not_after,
+        true, // is_ca
+        vec![], // san
+        vec![
             "KeyCertSign".to_string(),
             "CrlSign".to_string(),
             "DigitalSignature".to_string(),
         ],
-        extended_key_usage: vec![],
-        correlation_id: cmd.correlation_id,
-        causation_id: Some(key_pair.key_id), // Certificate caused by key generation
-    })));
+        vec![], // extended_key_usage
+        cmd.correlation_id,
+        Some(key_pair.key_id), // Certificate caused by key generation
+    );
+    events.push(DomainEvent::Certificate(crate::events::CertificateEvents::CertificateGenerated(cert_event)));
 
     Ok(RootCAGenerated {
         ca_id,
@@ -447,20 +449,22 @@ pub fn handle_generate_certificate(cmd: GenerateCertificate) -> Result<Certifica
     };
 
     // Step 4: Emit certificate generated event
-    events.push(DomainEvent::Certificate(crate::events::CertificateEvents::CertificateGenerated(crate::events::certificate::CertificateGeneratedEvent {
+    #[allow(deprecated)]
+    let cert_event = crate::events::certificate::CertificateGeneratedEvent::new_legacy(
         cert_id,
-        key_id: cmd.key_id, // Link to the actual key ID
-        subject: cmd.subject.common_name.clone(),
-        issuer: Some(cmd.ca_id), // The CA that issued this certificate
-        not_before: certificate.validity.not_before,
-        not_after: certificate.validity.not_after,
-        is_ca: false,
-        san: vec![],
+        cmd.key_id, // Link to the actual key ID
+        cmd.subject.common_name.clone(),
+        Some(cmd.ca_id), // The CA that issued this certificate
+        certificate.validity.not_before,
+        certificate.validity.not_after,
+        false, // is_ca
+        vec![], // san
         key_usage,
         extended_key_usage,
-        correlation_id: cmd.correlation_id,
-        causation_id: cmd.causation_id,
-    })));
+        cmd.correlation_id,
+        cmd.causation_id,
+    );
+    events.push(DomainEvent::Certificate(crate::events::CertificateEvents::CertificateGenerated(cert_event)));
 
     // Step 5: Emit certificate signed event
     events.push(DomainEvent::Certificate(crate::events::CertificateEvents::CertificateSigned(crate::events::certificate::CertificateSignedEvent {

@@ -4,6 +4,8 @@
 //!
 //! Tests all 10 event types for certificate lifecycle, PKI hierarchy, and validation.
 
+#![allow(deprecated)]
+
 use chrono::Utc;
 use cim_keys::events::certificate::*;
 use cim_keys::events::DomainEvent as DomainEventEnum;
@@ -35,6 +37,13 @@ fn sample_certificate_generated() -> CertificateGeneratedEvent {
         extended_key_usage: vec!["serverAuth".to_string(), "clientAuth".to_string()],
         correlation_id: Uuid::now_v7(),
         causation_id: None,
+        // New typed fields (None for backward compat testing)
+        subject_name: None,
+        subject_alt_name: None,
+        key_usage_ext: None,
+        extended_key_usage_ext: None,
+        validity: None,
+        basic_constraints: None,
     }
 }
 

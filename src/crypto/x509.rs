@@ -227,23 +227,21 @@ pub fn generate_root_ca(
     let cert_id = uuid::Uuid::now_v7();
     let key_id = uuid::Uuid::now_v7();
 
-    let event = crate::events::CertificateGeneratedEvent {
+    #[allow(deprecated)]
+    let event = crate::events::CertificateGeneratedEvent::new_legacy(
         cert_id,
         key_id,
-        subject: format!("CN={},O={}",
-            common_name,
-            organization
-        ),
-        issuer: None, // Self-signed root CA
-        not_before: chrono::DateTime::from_timestamp(not_before.unix_timestamp(), 0).unwrap(),
-        not_after: chrono::DateTime::from_timestamp(not_after.unix_timestamp(), 0).unwrap(),
-        is_ca: true,
-        san: vec![], // Root CAs typically don't have SANs
-        key_usage: vec!["keyCertSign".to_string(), "cRLSign".to_string()],
-        extended_key_usage: vec![],
+        format!("CN={},O={}", common_name, organization),
+        None, // Self-signed root CA
+        chrono::DateTime::from_timestamp(not_before.unix_timestamp(), 0).unwrap(),
+        chrono::DateTime::from_timestamp(not_after.unix_timestamp(), 0).unwrap(),
+        true, // is_ca
+        vec![], // Root CAs typically don't have SANs
+        vec!["keyCertSign".to_string(), "cRLSign".to_string()],
+        vec![], // extended_key_usage
         correlation_id,
         causation_id,
-    };
+    );
 
     Ok((x509_cert, event))
 }
@@ -365,24 +363,21 @@ pub fn generate_intermediate_ca(
     let key_id = uuid::Uuid::now_v7();
     let signed_at = chrono::Utc::now();
 
-    let generation_event = crate::events::CertificateGeneratedEvent {
+    #[allow(deprecated)]
+    let generation_event = crate::events::CertificateGeneratedEvent::new_legacy(
         cert_id,
         key_id,
-        subject: format!("CN={},OU={},O={}",
-            params.common_name,
-            params.organizational_unit,
-            params.organization
-        ),
-        issuer: Some(root_ca_id),
-        not_before: chrono::DateTime::from_timestamp(not_before.unix_timestamp(), 0).unwrap(),
-        not_after: chrono::DateTime::from_timestamp(not_after.unix_timestamp(), 0).unwrap(),
-        is_ca: true,
-        san: vec![],
-        key_usage: vec!["keyCertSign".to_string(), "cRLSign".to_string()],
-        extended_key_usage: vec![],
+        format!("CN={},OU={},O={}", params.common_name, params.organizational_unit, params.organization),
+        Some(root_ca_id),
+        chrono::DateTime::from_timestamp(not_before.unix_timestamp(), 0).unwrap(),
+        chrono::DateTime::from_timestamp(not_after.unix_timestamp(), 0).unwrap(),
+        true, // is_ca
+        vec![], // san
+        vec!["keyCertSign".to_string(), "cRLSign".to_string()],
+        vec![], // extended_key_usage
         correlation_id,
         causation_id,
-    };
+    );
 
     let signing_event = crate::events::CertificateSignedEvent {
         cert_id,
@@ -519,23 +514,21 @@ pub fn generate_server_certificate(
     let key_id = uuid::Uuid::now_v7();
     let signed_at = chrono::Utc::now();
 
-    let generation_event = crate::events::CertificateGeneratedEvent {
+    #[allow(deprecated)]
+    let generation_event = crate::events::CertificateGeneratedEvent::new_legacy(
         cert_id,
         key_id,
-        subject: format!("CN={},O={}",
-            params.common_name,
-            params.organization
-        ),
-        issuer: Some(intermediate_ca_id),
-        not_before: chrono::DateTime::from_timestamp(not_before.unix_timestamp(), 0).unwrap(),
-        not_after: chrono::DateTime::from_timestamp(not_after.unix_timestamp(), 0).unwrap(),
-        is_ca: false,
-        san: params.san_entries.clone(),
-        key_usage: vec!["digitalSignature".to_string(), "keyEncipherment".to_string()],
-        extended_key_usage: vec!["serverAuth".to_string(), "clientAuth".to_string()],
+        format!("CN={},O={}", params.common_name, params.organization),
+        Some(intermediate_ca_id),
+        chrono::DateTime::from_timestamp(not_before.unix_timestamp(), 0).unwrap(),
+        chrono::DateTime::from_timestamp(not_after.unix_timestamp(), 0).unwrap(),
+        false, // is_ca
+        params.san_entries.clone(),
+        vec!["digitalSignature".to_string(), "keyEncipherment".to_string()],
+        vec!["serverAuth".to_string(), "clientAuth".to_string()],
         correlation_id,
         causation_id,
-    };
+    );
 
     let signing_event = crate::events::CertificateSignedEvent {
         cert_id,

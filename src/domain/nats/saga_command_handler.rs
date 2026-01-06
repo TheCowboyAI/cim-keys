@@ -469,25 +469,27 @@ impl AsyncSagaExecutor<CertificateProvisioningSaga> for CertificateProvisioningE
 
                 // Emit CertificateGenerated domain event
                 let key_id = state.artifacts.key_id.expect("Key should exist after GeneratingKey step");
-                let event = DomainEvent::Certificate(CertificateEvents::CertificateGenerated(CertificateGeneratedEvent {
-                    cert_id: cert_id.as_uuid(),
-                    key_id: key_id.as_uuid(),
-                    subject: format!("CN={}, O=CIM, OU={:?}", state.request.person_name, state.request.purpose),
-                    issuer: Some(state.request.issuing_ca_id.as_uuid()),
-                    not_before: Utc::now(),
-                    not_after: Utc::now() + chrono::Duration::days(state.request.validity_days as i64),
-                    is_ca: false,
-                    san: vec![state.request.person_email.clone()],
-                    key_usage: vec!["digitalSignature".to_string()],
-                    extended_key_usage: match state.request.purpose {
+                #[allow(deprecated)]
+                let cert_gen_event = CertificateGeneratedEvent::new_legacy(
+                    cert_id.as_uuid(),
+                    key_id.as_uuid(),
+                    format!("CN={}, O=CIM, OU={:?}", state.request.person_name, state.request.purpose),
+                    Some(state.request.issuing_ca_id.as_uuid()),
+                    Utc::now(),
+                    Utc::now() + chrono::Duration::days(state.request.validity_days as i64),
+                    false, // is_ca
+                    vec![state.request.person_email.clone()],
+                    vec!["digitalSignature".to_string()],
+                    match state.request.purpose {
                         CertificatePurpose::Authentication => vec!["clientAuth".to_string()],
                         CertificatePurpose::DigitalSignature => vec!["codeSigning".to_string()],
                         CertificatePurpose::KeyManagement => vec!["emailProtection".to_string(), "keyAgreement".to_string()],
                         CertificatePurpose::CardAuthentication => vec!["smartcardLogon".to_string()],
                     },
                     correlation_id,
-                    causation_id: Some(state.saga_id()),
-                }));
+                    Some(state.saga_id()),
+                );
+                let event = DomainEvent::Certificate(CertificateEvents::CertificateGenerated(cert_gen_event));
 
                 Ok(StepExecutionResult::continue_with_events(vec![event]))
             }

@@ -255,17 +255,18 @@ pub fn handle_provision_yubikey_slot(
         cmd.organization.units.first().map(|u| u.name.as_str()).unwrap_or("Default")
     );
 
-    events.push(DomainEvent::Certificate(crate::events::CertificateEvents::CertificateGenerated(crate::events::certificate::CertificateGeneratedEvent {
+    #[allow(deprecated)]
+    let cert_event = crate::events::certificate::CertificateGeneratedEvent::new_legacy(
         cert_id,
         key_id,
         subject,
-        issuer: None, // Would be set to CA cert ID in real implementation
-        not_before: Utc::now(),
-        not_after: Utc::now() + chrono::Duration::days(365),
-        is_ca: false,
-        san: vec![format!("email:{}", cmd.person.email)],
-        key_usage: vec!["digitalSignature".to_string(), "keyEncipherment".to_string()],
-        extended_key_usage: match cmd.purpose {
+        None, // Would be set to CA cert ID in real implementation
+        Utc::now(),
+        Utc::now() + chrono::Duration::days(365),
+        false, // is_ca
+        vec![format!("email:{}", cmd.person.email)],
+        vec!["digitalSignature".to_string(), "keyEncipherment".to_string()],
+        match cmd.purpose {
             crate::value_objects::AuthKeyPurpose::SsoAuthentication => {
                 vec!["clientAuth".to_string()]
             }
@@ -274,9 +275,10 @@ pub fn handle_provision_yubikey_slot(
             }
             _ => vec!["clientAuth".to_string()],
         },
-        correlation_id: cmd.correlation_id,
-        causation_id: Some(key_id), // Certificate caused by key generation
-    })));
+        cmd.correlation_id,
+        Some(key_id), // Certificate caused by key generation
+    );
+    events.push(DomainEvent::Certificate(crate::events::CertificateEvents::CertificateGenerated(cert_event)));
 
     // Step 4: Import certificate to slot
     events.push(DomainEvent::YubiKey(crate::events::YubiKeyEvents::CertificateImportedToSlot(crate::events::yubikey::CertificateImportedToSlotEvent {
