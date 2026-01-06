@@ -28,6 +28,8 @@
 //! // "CN=Alice Smith,O=Cowboy AI\\, LLC,C=US"
 //! ```
 
+pub mod key_usage;
+pub mod subject_alt_name;
 pub mod subject_name;
 
 // Re-export all types
@@ -41,4 +43,21 @@ pub use subject_name::{
     StateName,
     SubjectName,
     SubjectNameError,
+};
+
+pub use key_usage::{
+    ExtendedKeyUsage,
+    ExtendedKeyUsagePurpose,
+    KeyUsage,
+    KeyUsageBit,
+};
+
+pub use subject_alt_name::{
+    DnsName,
+    SanEmail,
+    SanEntry,
+    SanError,
+    SanIpAddress,
+    SanUri,
+    SubjectAlternativeName,
 };
