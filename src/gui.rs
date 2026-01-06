@@ -78,8 +78,9 @@ pub mod state_machine_svg;
 pub mod state_machine_view;
 pub mod graph_buttons;
 
-// Domain-bounded modules (Sprint 48 refactoring)
+// Domain-bounded modules (Sprint 48-49 refactoring)
 pub mod domains;
+pub mod pki;
 
 #[cfg(test)]
 mod graph_integration_tests;
@@ -87,6 +88,7 @@ mod graph_integration_tests;
 use graph::{OrganizationConcept, OrganizationIntent};
 use crate::lifting::Injection;
 use domains::OrganizationMessage;
+use pki::PkiMessage;
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
 use view_model::ViewModel;
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
@@ -818,10 +820,12 @@ impl Default for GraphView {
 #[derive(Debug, Clone)]
 pub enum Message {
     // ============================================================================
-    // Domain-Bounded Message Delegation (Sprint 48 refactoring)
+    // Domain-Bounded Message Delegation (Sprint 48-49 refactoring)
     // ============================================================================
     /// Delegation to Organization bounded context
     Organization(OrganizationMessage),
+    /// Delegation to PKI bounded context
+    Pki(PkiMessage),
 
     // ============================================================================
     // Tab Navigation
@@ -1998,6 +2002,110 @@ impl CimKeysApp {
                 self.new_service_account_purpose = org_state.new_service_account_purpose;
                 self.new_service_account_owning_unit = org_state.new_service_account_owning_unit;
                 self.new_service_account_responsible_person = org_state.new_service_account_responsible_person;
+
+                task
+            }
+
+            // ================================================================
+            // PKI Domain Message Delegation (Sprint 49)
+            // ================================================================
+            Message::Pki(pki_msg) => {
+                use pki::key_generation;
+
+                // Create PKI state view from app state
+                let mut pki_state = pki::PkiState {
+                    key_generation_progress: self.key_generation_progress,
+                    keys_generated: self.keys_generated,
+                    total_keys_to_generate: self.total_keys_to_generate,
+                    intermediate_ca_name_input: self.intermediate_ca_name_input.clone(),
+                    server_cert_cn_input: self.server_cert_cn_input.clone(),
+                    server_cert_sans_input: self.server_cert_sans_input.clone(),
+                    selected_intermediate_ca: self.selected_intermediate_ca.clone(),
+                    selected_cert_location: self.selected_cert_location.clone(),
+                    loaded_units: self.loaded_units.clone(),
+                    selected_unit_for_ca: self.selected_unit_for_ca.clone(),
+                    cert_organization: self.cert_organization.clone(),
+                    cert_organizational_unit: self.cert_organizational_unit.clone(),
+                    cert_locality: self.cert_locality.clone(),
+                    cert_state_province: self.cert_state_province.clone(),
+                    cert_country: self.cert_country.clone(),
+                    cert_validity_days: self.cert_validity_days.clone(),
+                    loaded_certificates: self.loaded_certificates.clone(),
+                    root_ca_collapsed: self.root_ca_collapsed,
+                    intermediate_ca_collapsed: self.intermediate_ca_collapsed,
+                    server_cert_collapsed: self.server_cert_collapsed,
+                    certificates_collapsed: self.certificates_collapsed,
+                    keys_collapsed: self.keys_collapsed,
+                    gpg_section_collapsed: self.gpg_section_collapsed,
+                    gpg_user_id: self.gpg_user_id.clone(),
+                    gpg_key_type: self.gpg_key_type.clone(),
+                    gpg_key_length: self.gpg_key_length.clone(),
+                    gpg_expires_days: self.gpg_expires_days.clone(),
+                    generated_gpg_keys: self.generated_gpg_keys.clone(),
+                    gpg_generation_status: self.gpg_generation_status.clone(),
+                    recovery_section_collapsed: self.recovery_section_collapsed,
+                    recovery_passphrase: self.recovery_passphrase.clone(),
+                    recovery_passphrase_confirm: self.recovery_passphrase_confirm.clone(),
+                    recovery_organization_id: self.recovery_organization_id.clone(),
+                    recovery_status: self.recovery_status.clone(),
+                    recovery_seed_verified: self.recovery_seed_verified,
+                    client_cert_cn: self.client_cert_cn.clone(),
+                    client_cert_email: self.client_cert_email.clone(),
+                    multi_purpose_key_section_collapsed: self.multi_purpose_key_section_collapsed,
+                    multi_purpose_selected_person: self.multi_purpose_selected_person,
+                    multi_purpose_selected_purposes: self.multi_purpose_selected_purposes.clone(),
+                    root_passphrase: self.root_passphrase.clone(),
+                    root_passphrase_confirm: self.root_passphrase_confirm.clone(),
+                    show_passphrase: self.show_passphrase,
+                };
+
+                // Delegate to PKI domain update function
+                let task = key_generation::update(&mut pki_state, pki_msg);
+
+                // Sync state back from PKI module
+                self.key_generation_progress = pki_state.key_generation_progress;
+                self.keys_generated = pki_state.keys_generated;
+                self.total_keys_to_generate = pki_state.total_keys_to_generate;
+                self.intermediate_ca_name_input = pki_state.intermediate_ca_name_input;
+                self.server_cert_cn_input = pki_state.server_cert_cn_input;
+                self.server_cert_sans_input = pki_state.server_cert_sans_input;
+                self.selected_intermediate_ca = pki_state.selected_intermediate_ca;
+                self.selected_cert_location = pki_state.selected_cert_location;
+                self.loaded_units = pki_state.loaded_units;
+                self.selected_unit_for_ca = pki_state.selected_unit_for_ca;
+                self.cert_organization = pki_state.cert_organization;
+                self.cert_organizational_unit = pki_state.cert_organizational_unit;
+                self.cert_locality = pki_state.cert_locality;
+                self.cert_state_province = pki_state.cert_state_province;
+                self.cert_country = pki_state.cert_country;
+                self.cert_validity_days = pki_state.cert_validity_days;
+                self.loaded_certificates = pki_state.loaded_certificates;
+                self.root_ca_collapsed = pki_state.root_ca_collapsed;
+                self.intermediate_ca_collapsed = pki_state.intermediate_ca_collapsed;
+                self.server_cert_collapsed = pki_state.server_cert_collapsed;
+                self.certificates_collapsed = pki_state.certificates_collapsed;
+                self.keys_collapsed = pki_state.keys_collapsed;
+                self.gpg_section_collapsed = pki_state.gpg_section_collapsed;
+                self.gpg_user_id = pki_state.gpg_user_id;
+                self.gpg_key_type = pki_state.gpg_key_type;
+                self.gpg_key_length = pki_state.gpg_key_length;
+                self.gpg_expires_days = pki_state.gpg_expires_days;
+                self.generated_gpg_keys = pki_state.generated_gpg_keys;
+                self.gpg_generation_status = pki_state.gpg_generation_status;
+                self.recovery_section_collapsed = pki_state.recovery_section_collapsed;
+                self.recovery_passphrase = pki_state.recovery_passphrase;
+                self.recovery_passphrase_confirm = pki_state.recovery_passphrase_confirm;
+                self.recovery_organization_id = pki_state.recovery_organization_id;
+                self.recovery_status = pki_state.recovery_status;
+                self.recovery_seed_verified = pki_state.recovery_seed_verified;
+                self.client_cert_cn = pki_state.client_cert_cn;
+                self.client_cert_email = pki_state.client_cert_email;
+                self.multi_purpose_key_section_collapsed = pki_state.multi_purpose_key_section_collapsed;
+                self.multi_purpose_selected_person = pki_state.multi_purpose_selected_person;
+                self.multi_purpose_selected_purposes = pki_state.multi_purpose_selected_purposes;
+                self.root_passphrase = pki_state.root_passphrase;
+                self.root_passphrase_confirm = pki_state.root_passphrase_confirm;
+                self.show_passphrase = pki_state.show_passphrase;
 
                 task
             }
