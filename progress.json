@@ -1452,6 +1452,41 @@
         "Certificate entity implements AggregateContributions - ACHIEVED",
         "All 985 tests pass - ACHIEVED"
       ]
+    },
+    "sprint_43": {
+      "name": "Sprint E - Event Migration (Organization)",
+      "status": "completed",
+      "started": "2026-01-06",
+      "completed": "2026-01-06",
+      "retrospective": "retrospectives/sprint_43.md",
+      "description": "Add dual-path ActorId fields to organization events for backward-compatible migration",
+      "tasks": [
+        { "id": "43.1", "description": "Add dual-path ActorId to OrganizationUpdatedEvent", "status": "completed" },
+        { "id": "43.2", "description": "Add dual-path ActorId to OrganizationalUnitCreatedEvent", "status": "completed" },
+        { "id": "43.3", "description": "Add dual-path ActorId to OrganizationalUnitUpdatedEvent", "status": "completed" },
+        { "id": "43.4", "description": "Add dual-path ActorId to OrganizationalUnitDissolvedEvent", "status": "completed" },
+        { "id": "43.5", "description": "Add dual-path ActorId to RoleCreatedEvent", "status": "completed" },
+        { "id": "43.6", "description": "Add dual-path ActorId to RoleUpdatedEvent", "status": "completed" },
+        { "id": "43.7", "description": "Add dual-path ActorId to RoleDeletedEvent", "status": "completed" },
+        { "id": "43.8", "description": "Add dual-path ActorId to PolicyCreatedEvent", "status": "completed" },
+        { "id": "43.9", "description": "Add dual-path ActorId to PolicyUpdatedEvent", "status": "completed" },
+        { "id": "43.10", "description": "Add dual-path ActorId to PolicyRevokedEvent", "status": "completed" },
+        { "id": "43.11", "description": "Verify compilation and tests pass", "status": "completed" },
+        { "id": "43.12", "description": "Write retrospective", "status": "completed" }
+      ],
+      "results": {
+        "files_modified": 1,
+        "lines_added": 208,
+        "events_updated": 10,
+        "tests_verified": 63
+      },
+      "acceptance_criteria": [
+        "All 10 organization events have dual-path ActorId fields - ACHIEVED",
+        "Legacy string fields marked #[deprecated] - ACHIEVED",
+        "Accessor methods prefer typed field, fall back to parse - ACHIEVED",
+        "Backward compatibility maintained via serde defaults - ACHIEVED",
+        "All 63 organization/event tests pass - ACHIEVED"
+      ]
     }
   }
 }
