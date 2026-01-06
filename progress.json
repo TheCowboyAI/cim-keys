@@ -1413,6 +1413,45 @@
         "Integrity verification - ACHIEVED",
         "All 659 tests pass - ACHIEVED"
       ]
+    },
+    "sprint_42": {
+      "name": "Sprint D - Entity Integration",
+      "status": "completed",
+      "started": "2026-01-06",
+      "completed": "2026-01-06",
+      "retrospective": "retrospectives/sprint_42.md",
+      "description": "Implement NodeContributor pattern for ValueObjects to contribute Labels, Properties, and Relationships to graph Nodes",
+      "tasks": [
+        { "id": "42.1", "description": "Create traits.rs with Label, PropertyKey, PropertyValue, ValueRelationship types", "status": "completed" },
+        { "id": "42.2", "description": "Define NodeContributor trait with as_labels(), as_properties(), as_relationships()", "status": "completed" },
+        { "id": "42.3", "description": "Define AggregateContributions trait for entities", "status": "completed" },
+        { "id": "42.4", "description": "Extend LiftedNode with node_labels, node_properties, node_relationships fields", "status": "completed" },
+        { "id": "42.5", "description": "Add builder methods: with_labels(), with_properties(), with_aggregate_contributions()", "status": "completed" },
+        { "id": "42.6", "description": "Implement NodeContributor for CertificateValidity", "status": "completed" },
+        { "id": "42.7", "description": "Implement NodeContributor for KeyUsage", "status": "completed" },
+        { "id": "42.8", "description": "Implement NodeContributor for ExtendedKeyUsage", "status": "completed" },
+        { "id": "42.9", "description": "Implement NodeContributor for SubjectAlternativeName", "status": "completed" },
+        { "id": "42.10", "description": "Implement NodeContributor for BasicConstraints", "status": "completed" },
+        { "id": "42.11", "description": "Implement NodeContributor for SubjectName", "status": "completed" },
+        { "id": "42.12", "description": "Add aggregate_labels(), aggregate_properties(), aggregate_relationships() to Certificate", "status": "completed" },
+        { "id": "42.13", "description": "Implement AggregateContributions trait for Certificate", "status": "completed" },
+        { "id": "42.14", "description": "Verify all 985 tests pass", "status": "completed" },
+        { "id": "42.15", "description": "Write retrospective", "status": "completed" }
+      ],
+      "results": {
+        "new_files": ["src/value_objects/traits.rs"],
+        "modified_files": 8,
+        "lines_added": 1081,
+        "node_contributor_implementations": 6,
+        "total_tests": 985
+      },
+      "acceptance_criteria": [
+        "NodeContributor trait defined with as_labels(), as_properties(), as_relationships() - ACHIEVED",
+        "LiftedNode extended with labels/properties/relationships support - ACHIEVED",
+        "Six X.509 ValueObjects implement NodeContributor - ACHIEVED",
+        "Certificate entity implements AggregateContributions - ACHIEVED",
+        "All 985 tests pass - ACHIEVED"
+      ]
     }
   }
 }
