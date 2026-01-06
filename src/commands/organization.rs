@@ -167,6 +167,7 @@ pub async fn handle_create_person(
     }
 
     // Emit PersonCreated event
+    #[allow(deprecated)]
     let event = DomainEvent::Person(crate::events::PersonEvents::PersonCreated(crate::events::person::PersonCreatedEvent {
         person_id: cmd.person_id,
         name: cmd.name,
@@ -175,6 +176,7 @@ pub async fn handle_create_person(
         department: cmd.department,
         organization_id: cmd.organization_id.unwrap_or_else(|| Uuid::now_v7()),
         created_by: Some("system".to_string()),
+        created_by_actor: None,
         correlation_id: cmd.correlation_id,
         causation_id: Some(cmd.command_id),
     }));

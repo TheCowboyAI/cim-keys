@@ -7,6 +7,8 @@
 //! - Pure projection functions
 //! - Event envelope integrity
 
+#![allow(deprecated)]
+
 use cim_keys::events::{
     DomainEvent, EventEnvelope, EventChainBuilder,
     PersonEvents, KeyEvents,
@@ -31,6 +33,7 @@ fn create_person_event() -> DomainEvent {
         department: None,
         organization_id: Uuid::now_v7(),
         created_by: None,
+        created_by_actor: None,
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }))
@@ -265,6 +268,7 @@ mod ipld_tests {
             department: None,
             organization_id: org_id,
             created_by: None,
+            created_by_actor: None,
             correlation_id,
             causation_id: None,
         };
@@ -277,6 +281,7 @@ mod ipld_tests {
             department: None,
             organization_id: org_id,
             created_by: None,
+            created_by_actor: None,
             correlation_id,
             causation_id: None,
         };

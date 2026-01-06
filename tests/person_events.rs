@@ -9,6 +9,8 @@
 //! - DomainEvent Trait implementation
 //! - Event Wrapping Pattern (Inner → Enum → DomainEvent)
 
+#![allow(deprecated)]
+
 use chrono::Utc;
 use cim_keys::events::person::*;
 use cim_keys::events::DomainEvent as DomainEventEnum;
@@ -28,6 +30,7 @@ fn sample_person_created() -> PersonCreatedEvent {
         department: Some("Engineering".to_string()),
         organization_id: Uuid::now_v7(),
         created_by: Some("admin".to_string()),
+        created_by_actor: None,
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }
