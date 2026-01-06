@@ -23,7 +23,6 @@
 //! - **Delegation**: Authority delegated from one person to another
 //! - **CertificateSigning**: A certificate signed by an issuer key
 
-use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
@@ -637,7 +636,7 @@ impl<'a, C: PkiContext> TrustChainVerifier<'a, C> {
         required_permission: &str,
     ) -> Result<VerifiedTrustChain, TrustError> {
         let mut links = Vec::new();
-        let mut current_delegation_id = delegation_id;
+        let current_delegation_id = delegation_id;
         let mut visited = std::collections::HashSet::new();
 
         loop {
@@ -712,6 +711,7 @@ impl<'a, C: PkiContext> TrustChainVerifier<'a, C> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     // Mock PKI context for testing
     struct MockPkiContext {

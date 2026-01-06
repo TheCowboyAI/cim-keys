@@ -42,7 +42,7 @@
 //! ```
 
 use crate::projection::{Projection, ProjectionError};
-use crate::projections::{KeyManifest, KeyEntry, CertificateEntry, PersonEntry, LocationEntry};
+use crate::projections::KeyManifest;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -116,7 +116,6 @@ pub struct ManifestToExportProjection {
     include_public_keys: bool,
     include_certificates: bool,
     include_nats_config: bool,
-    include_private_keys: bool,
 }
 
 impl Default for ManifestToExportProjection {
@@ -125,7 +124,6 @@ impl Default for ManifestToExportProjection {
             include_public_keys: true,
             include_certificates: true,
             include_nats_config: true,
-            include_private_keys: false, // Never include private keys by default
         }
     }
 }
@@ -466,7 +464,7 @@ pub fn sdcard_export_pipeline(base_path: impl Into<PathBuf>) -> impl Projection<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::projections::OrganizationInfo;
+    use crate::projections::{OrganizationInfo, PersonEntry};
 
     fn sample_manifest() -> KeyManifest {
         KeyManifest {

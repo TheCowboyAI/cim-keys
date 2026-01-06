@@ -125,8 +125,3 @@ pub use cim_domain_location::value_objects::{
     VirtualLocationType, VirtualUrl,
 };
 
-// Re-export from cim-domain-person (when feature enabled)
-#[cfg(feature = "cross-domain")]
-pub use cim_domain_person::value_objects::{
-    EmailAddress as PersonEmailAddress, PersonName as DomainPersonName, PhoneNumber,
-};

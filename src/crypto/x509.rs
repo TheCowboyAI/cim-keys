@@ -30,7 +30,7 @@ use time::{Duration, OffsetDateTime};
 
 // Import our X.509 value objects for event construction
 use crate::value_objects::x509::{
-    SubjectName, CommonName, OrganizationName, OrganizationalUnitName, CountryCode,
+    SubjectName, CommonName, OrganizationName, OrganizationalUnitName,
     KeyUsage, ExtendedKeyUsage, CertificateValidity,
     BasicConstraints as BasicConstraintsVO, SubjectAlternativeName,
 };

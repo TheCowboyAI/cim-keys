@@ -160,7 +160,6 @@ pub struct CimKeysApp {
 
     // YubiKey fields
     yubikey_serial: String,
-    yubikey_assigned_to: Option<Uuid>,
     detected_yubikeys: Vec<crate::ports::yubikey::YubiKeyDevice>,
     yubikey_detection_status: String,
     yubikey_configs: Vec<crate::domain::YubiKeyConfig>,  // Imported from secrets
@@ -207,7 +206,6 @@ pub struct CimKeysApp {
     // Outgoing: Domain → External, Incoming: External → Domain
     projection_section: ProjectionSection,
     projections: Vec<ProjectionState>,
-    injections: Vec<InjectionState>,
     selected_projection: Option<ProjectionTarget>,
     selected_injection: Option<InjectionSource>,
 
@@ -1681,7 +1679,6 @@ impl CimKeysApp {
                 new_location_postal: String::new(),
                 new_location_url: String::new(),
                 yubikey_serial: String::new(),
-                yubikey_assigned_to: None,
                 detected_yubikeys: Vec::new(),
                 yubikey_detection_status: "Click 'Detect YubiKeys' to scan for hardware".to_string(),
                 yubikey_configs: Vec::new(),
@@ -1719,7 +1716,6 @@ impl CimKeysApp {
                 // Projection system initialization
                 projection_section: ProjectionSection::Overview,
                 projections: ProjectionTarget::all().into_iter().map(ProjectionState::new).collect(),
-                injections: InjectionSource::all().into_iter().map(InjectionState::new).collect(),
                 selected_projection: None,
                 selected_injection: None,
 
@@ -4392,8 +4388,6 @@ impl CimKeysApp {
                 // Find and deactivate the delegation
                 if let Some(delegation) = self.active_delegations.iter_mut().find(|d| d.id == delegation_id) {
                     delegation.is_active = false;
-                    let from_name = delegation.from_person_name.clone();
-                    let to_name = delegation.to_person_name.clone();
                     Task::done(Message::DelegationRevoked(Ok(delegation_id)))
                 } else {
                     Task::done(Message::DelegationRevoked(Err("Delegation not found".to_string())))
@@ -10504,7 +10498,6 @@ impl CimKeysApp {
 
                                     // Show slot info and management for selected YubiKey
                                     if let Some(ref selected_serial) = self.selected_yubikey_for_management {
-                                        let serial_for_ops = selected_serial.clone();
                                         let serial_for_pin = selected_serial.clone();
                                         let serial_for_mgmt = selected_serial.clone();
                                         let serial_for_reset = selected_serial.clone();
@@ -12780,7 +12773,6 @@ impl CimKeysApp {
                                                             crate::events::DomainEvent::Relationship(_) => "Relationship",
                                                             crate::events::DomainEvent::Manifest(_) => "Manifest",
                                                             crate::events::DomainEvent::Saga(_) => "Saga",
-                                                            _ => "Unknown",
                                                         };
                                                         event_list = event_list.push(
                                                             button(
@@ -14464,15 +14456,6 @@ async fn export_nats_to_nsc(
         .map_err(|e| format!("Failed to export to NSC: {}", e))?;
 
     Ok(export_path.display().to_string())
-}
-
-async fn export_domain(
-    projection: Arc<RwLock<OfflineKeyProjection>>,
-) -> Result<String, String> {
-    let projection = projection.read().await;
-    projection.save_manifest()
-        .map(|_| projection.root_path.display().to_string())
-        .map_err(|e| e.to_string())
 }
 
 /// Run the GUI application
