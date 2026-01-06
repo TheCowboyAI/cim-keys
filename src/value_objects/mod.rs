@@ -6,8 +6,27 @@
 //! Values have no identity - they are defined entirely by their attributes.
 //!
 //! All value objects implement `cim_domain::ValueObject` marker trait.
+//!
+//! ## Domain Ownership
+//!
+//! Value objects belong to their owning domains:
+//! - **Person domain** (`cim-domain-person`): PersonName, EmailAddress, PhoneNumber
+//! - **Location domain** (`cim-domain-location`): VirtualUrl, IpAddress, VirtualLocation
+//! - **Organization domain** (`cim-domain-organization`): Organization-specific types
+//!
+//! ## PKI Bounded Context
+//!
+//! This module contains PKI-specific value objects that compose from domain types:
+//! - **X.509 types**: SubjectName, KeyUsage, ExtendedKeyUsage, BasicConstraints
+//! - **NATS credentials**: NKey types, JWT claims
+//! - **YubiKey**: PIV configuration and slot management
+//!
+//! When building a CSR or Certificate, the bounded context composes:
+//! - Subject identity from Person domain
+//! - Organization from Organization domain
+//! - Location (email, address) from Location domain
+//! - PKI-specific extensions from this module
 
-pub mod common;
 pub mod core;
 pub mod key_purposes;
 pub mod nats;
@@ -59,7 +78,7 @@ pub use nats::{
     UserLimits,
 };
 
-// Re-export X.509 types
+// Re-export X.509 types (PKI bounded context)
 pub use x509::{
     BasicConstraints,
     CertificateValidity,
@@ -86,17 +105,18 @@ pub use x509::{
     ValidityError,
 };
 
-// Re-export Common types
-pub use common::{
-    Email,
-    EmailError,
-    FamilyName,
-    GivenName,
-    MiddleName,
-    NamePrefix,
-    NameSuffix,
-    PersonName,
-    PersonNameError,
-    Uri,
-    UriError,
+// ============================================================================
+// Domain Re-exports (when features enabled)
+// ============================================================================
+
+// Re-export from cim-domain-location (always available)
+pub use cim_domain_location::value_objects::{
+    IpAddress, IpAddressType, NetworkInfo, PortMapping, UrlType, VirtualLocation,
+    VirtualLocationType, VirtualUrl,
+};
+
+// Re-export from cim-domain-person (when feature enabled)
+#[cfg(feature = "cross-domain")]
+pub use cim_domain_person::value_objects::{
+    EmailAddress as PersonEmailAddress, PersonName as DomainPersonName, PhoneNumber,
 };
