@@ -7,8 +7,6 @@
 //! - Pure projection functions
 //! - Event envelope integrity
 
-#![allow(deprecated)]
-
 use cim_keys::events::{
     DomainEvent, EventEnvelope, EventChainBuilder,
     PersonEvents, KeyEvents,
@@ -16,6 +14,7 @@ use cim_keys::events::{
 use cim_keys::events::person::PersonCreatedEvent;
 use cim_keys::events::key::KeyGeneratedEvent;
 use cim_keys::types::{KeyAlgorithm, KeyPurpose, KeyMetadata};
+use cim_keys::value_objects::ActorId;
 use std::collections::HashMap;
 use uuid::Uuid;
 use chrono::Utc;
@@ -32,22 +31,19 @@ fn create_person_event() -> DomainEvent {
         title: None,
         department: None,
         organization_id: Uuid::now_v7(),
-        created_by: None,
-        created_by_actor: None,
+        created_by: ActorId::system("test"),
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }))
 }
 
-#[allow(deprecated)]
 fn create_key_event() -> DomainEvent {
     DomainEvent::Key(KeyEvents::KeyGenerated(KeyGeneratedEvent {
         key_id: Uuid::now_v7(),
         algorithm: KeyAlgorithm::Ed25519,
         purpose: KeyPurpose::Signing,
         generated_at: Utc::now(),
-        generated_by: "test".to_string(),
-        generated_by_actor: None,
+        generated_by: ActorId::system("test"),
         hardware_backed: false,
         metadata: KeyMetadata {
             label: "test-key".to_string(),
@@ -267,8 +263,7 @@ mod ipld_tests {
             title: None,
             department: None,
             organization_id: org_id,
-            created_by: None,
-            created_by_actor: None,
+            created_by: ActorId::system("test"),
             correlation_id,
             causation_id: None,
         };
@@ -280,8 +275,7 @@ mod ipld_tests {
             title: None,
             department: None,
             organization_id: org_id,
-            created_by: None,
-            created_by_actor: None,
+            created_by: ActorId::system("test"),
             correlation_id,
             causation_id: None,
         };

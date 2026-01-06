@@ -293,12 +293,12 @@ impl EventIndex {
 }
 
 #[cfg(test)]
-#[allow(deprecated)]
 mod tests {
     use super::*;
     use tempfile::TempDir;
     use crate::events::{DomainEvent, PersonEvents};
     use crate::events::person::PersonCreatedEvent;
+    use crate::value_objects::ActorId;
     use uuid::Uuid;
 
     fn create_test_envelope() -> EventEnvelope {
@@ -309,8 +309,7 @@ mod tests {
             title: None,
             department: None,
             organization_id: Uuid::now_v7(),
-            created_by: None,
-            created_by_actor: None,
+            created_by: ActorId::system("test"),
             correlation_id: Uuid::now_v7(),
             causation_id: None,
         }));
@@ -374,8 +373,7 @@ mod tests {
             title: None,
             department: None,
             organization_id: org_id,
-            created_by: None,
-            created_by_actor: None,
+            created_by: ActorId::system("test"),
             correlation_id: corr_id,
             causation_id: None,
         }));
@@ -387,8 +385,7 @@ mod tests {
             title: None,
             department: None,
             organization_id: org_id,
-            created_by: None,
-            created_by_actor: None,
+            created_by: ActorId::system("test"),
             correlation_id: corr_id,
             causation_id: None,
         }));
@@ -430,8 +427,7 @@ mod tests {
             title: None,
             department: None,
             organization_id: org_id,
-            created_by: None,
-            created_by_actor: None,
+            created_by: ActorId::system("test"),
             correlation_id: corr_id,
             causation_id: None,
         }));

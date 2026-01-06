@@ -272,6 +272,7 @@ mod tests {
     use super::*;
     use crate::events::{KeyEvents, key::KeyGeneratedEvent};
     use crate::types::{KeyAlgorithm, KeyMetadata, KeyPurpose};
+    use crate::value_objects::ActorId;
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
@@ -380,15 +381,13 @@ mod tests {
         }
     }
 
-    #[allow(deprecated)]
     fn create_test_key_event() -> DomainEvent {
         DomainEvent::Key(KeyEvents::KeyGenerated(KeyGeneratedEvent {
             key_id: Uuid::now_v7(),
             algorithm: KeyAlgorithm::Ed25519,
             purpose: KeyPurpose::Signing,
             generated_at: chrono::Utc::now(),
-            generated_by: "test".to_string(),
-            generated_by_actor: None,
+            generated_by: ActorId::system("test"),
             hardware_backed: false,
             metadata: KeyMetadata {
                 label: "test-key".to_string(),

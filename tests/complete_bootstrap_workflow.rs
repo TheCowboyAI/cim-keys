@@ -391,7 +391,8 @@ impl BootstrapWorkflow {
         let (root_ca, root_event) = generate_root_ca(&root_ca_seed, root_params, root_correlation_id, Some(self.correlation_id))
             .map_err(|e| format!("Failed to generate root CA: {}", e))?;
 
-        self.audit("root_ca_generated", &format!("Root CA generated: {}", root_event.subject), Some(root_correlation_id), {
+        let root_subject = root_event.subject_name.to_rfc4514();
+        self.audit("root_ca_generated", &format!("Root CA generated: {}", root_subject), Some(root_correlation_id), {
             let mut details = HashMap::new();
             details.insert("cert_id".to_string(), root_event.cert_id.to_string());
             details.insert("fingerprint".to_string(), root_ca.fingerprint.clone());
@@ -400,11 +401,11 @@ impl BootstrapWorkflow {
 
         let root_ca_output = CertificateOutput {
             id: root_event.cert_id.to_string(),
-            subject: root_event.subject.clone(),
+            subject: root_subject,
             issuer: None,
             fingerprint: root_ca.fingerprint.clone(),
-            not_before: root_event.not_before.to_rfc3339(),
-            not_after: root_event.not_after.to_rfc3339(),
+            not_before: root_event.validity.not_before().to_rfc3339(),
+            not_after: root_event.validity.not_after().to_rfc3339(),
             is_ca: true,
             certificate_pem: root_ca.certificate_pem.clone(),
             private_key_pem: Some(root_ca.private_key_pem.clone()), // Will be moved to YubiKey
@@ -439,7 +440,8 @@ impl BootstrapWorkflow {
                 Some(root_correlation_id),
             ).map_err(|e| format!("Failed to generate intermediate CA for {}: {}", unit.name, e))?;
 
-            self.audit("intermediate_ca_generated", &format!("Intermediate CA generated: {}", gen_event.subject), Some(intermediate_correlation_id), {
+            let intermediate_subject = gen_event.subject_name.to_rfc4514();
+            self.audit("intermediate_ca_generated", &format!("Intermediate CA generated: {}", intermediate_subject), Some(intermediate_correlation_id), {
                 let mut details = HashMap::new();
                 details.insert("cert_id".to_string(), gen_event.cert_id.to_string());
                 details.insert("unit".to_string(), unit.name.clone());
@@ -451,11 +453,11 @@ impl BootstrapWorkflow {
 
             intermediate_cas.push(CertificateOutput {
                 id: gen_event.cert_id.to_string(),
-                subject: gen_event.subject,
+                subject: intermediate_subject,
                 issuer: Some(root_event.cert_id.to_string()),
                 fingerprint: intermediate_ca.fingerprint,
-                not_before: gen_event.not_before.to_rfc3339(),
-                not_after: gen_event.not_after.to_rfc3339(),
+                not_before: gen_event.validity.not_before().to_rfc3339(),
+                not_after: gen_event.validity.not_after().to_rfc3339(),
                 is_ca: true,
                 certificate_pem: intermediate_ca.certificate_pem,
                 private_key_pem: Some(intermediate_ca.private_key_pem),
@@ -508,11 +510,11 @@ impl BootstrapWorkflow {
 
             server_certs.push(CertificateOutput {
                 id: gen_event.cert_id.to_string(),
-                subject: gen_event.subject,
+                subject: gen_event.subject_name.to_rfc4514(),
                 issuer: Some(intermediate_ca.id.clone()),
                 fingerprint: server_cert.fingerprint,
-                not_before: gen_event.not_before.to_rfc3339(),
-                not_after: gen_event.not_after.to_rfc3339(),
+                not_before: gen_event.validity.not_before().to_rfc3339(),
+                not_after: gen_event.validity.not_after().to_rfc3339(),
                 is_ca: false,
                 certificate_pem: server_cert.certificate_pem,
                 private_key_pem: Some(server_cert.private_key_pem),

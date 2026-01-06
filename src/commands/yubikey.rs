@@ -14,6 +14,11 @@ use crate::value_objects::{
     FirmwareVersion, ManagementKeyAlgorithm, ManagementKeyValue, PinValue, PukValue,
     YubiKeyPivConfiguration,
 };
+use crate::value_objects::x509::{
+    BasicConstraints, CertificateValidity, CommonName, ExtendedKeyUsage,
+    KeyUsage, OrganizationName, OrganizationalUnitName, SubjectAlternativeName,
+    SubjectName,
+};
 
 // ============================================================================
 // Command: Configure YubiKey Security (US-014, US-015)
@@ -248,36 +253,48 @@ pub fn handle_provision_yubikey_slot(
 
     // Step 3: Generate certificate for key
     let cert_id = Uuid::now_v7();
-    let subject = format!(
-        "CN={},O={},OU={}",
-        cmd.person.name,
-        cmd.organization.name,
-        cmd.organization.units.first().map(|u| u.name.as_str()).unwrap_or("Default")
-    );
 
-    #[allow(deprecated)]
-    let cert_event = crate::events::certificate::CertificateGeneratedEvent::new_legacy(
+    // Build subject name value object
+    let subject_name = SubjectName::new(CommonName::new_unchecked(&cmd.person.name))
+        .with_organization(OrganizationName::new_unchecked(&cmd.organization.name))
+        .with_organizational_unit(OrganizationalUnitName::new_unchecked(
+            cmd.organization.units.first().map(|u| u.name.as_str()).unwrap_or("Default")
+        ));
+
+    // Build SAN with email
+    let subject_alt_name = SubjectAlternativeName::new()
+        .with_email(&cmd.person.email)
+        .ok();
+
+    // Build validity (1 year from now)
+    let validity = CertificateValidity::years_from_now(1)
+        .expect("Valid certificate validity");
+
+    // Build key usage and extended key usage based on purpose
+    let key_usage = KeyUsage::tls_client();
+    let extended_key_usage = match cmd.purpose {
+        crate::value_objects::AuthKeyPurpose::SsoAuthentication => {
+            Some(ExtendedKeyUsage::tls_client())
+        }
+        crate::value_objects::AuthKeyPurpose::X509CodeSigning => {
+            Some(ExtendedKeyUsage::code_signing())
+        }
+        _ => Some(ExtendedKeyUsage::tls_client()),
+    };
+
+    let cert_event = crate::events::certificate::CertificateGeneratedEvent {
         cert_id,
         key_id,
-        subject,
-        None, // Would be set to CA cert ID in real implementation
-        Utc::now(),
-        Utc::now() + chrono::Duration::days(365),
-        false, // is_ca
-        vec![format!("email:{}", cmd.person.email)],
-        vec!["digitalSignature".to_string(), "keyEncipherment".to_string()],
-        match cmd.purpose {
-            crate::value_objects::AuthKeyPurpose::SsoAuthentication => {
-                vec!["clientAuth".to_string()]
-            }
-            crate::value_objects::AuthKeyPurpose::X509CodeSigning => {
-                vec!["codeSigning".to_string()]
-            }
-            _ => vec!["clientAuth".to_string()],
-        },
-        cmd.correlation_id,
-        Some(key_id), // Certificate caused by key generation
-    );
+        subject_name,
+        subject_alt_name,
+        key_usage,
+        extended_key_usage,
+        validity,
+        basic_constraints: BasicConstraints::end_entity(),
+        issuer: None, // Would be set to CA cert ID in real implementation
+        correlation_id: cmd.correlation_id,
+        causation_id: Some(key_id), // Certificate caused by key generation
+    };
     events.push(DomainEvent::Certificate(crate::events::CertificateEvents::CertificateGenerated(cert_event)));
 
     // Step 4: Import certificate to slot

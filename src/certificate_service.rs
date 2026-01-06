@@ -31,28 +31,23 @@ pub fn generate_root_ca_from_event(
     // Set as CA certificate
     params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
 
-    // Set distinguished name from the event subject
-    // Parse the subject string (e.g., "CN=Root CA, O=Org, C=US")
-    if event.subject.contains("CN=") {
-        // Simple parsing of subject components
-        for part in event.subject.split(',') {
-            if let Some((key, value)) = part.split_once('=') {
-                let key = key.trim();
-                let value = value.trim();
-                match key {
-                    "CN" => params.distinguished_name.push(DnType::CommonName, value),
-                    "O" => params.distinguished_name.push(DnType::OrganizationName, value),
-                    "OU" => params.distinguished_name.push(DnType::OrganizationalUnitName, value),
-                    "C" => params.distinguished_name.push(DnType::CountryName, value),
-                    "ST" => params.distinguished_name.push(DnType::StateOrProvinceName, value),
-                    "L" => params.distinguished_name.push(DnType::LocalityName, value),
-                    _ => {}
-                }
-            }
-        }
-    } else {
-        // If no structured subject, use as common name
-        params.distinguished_name.push(DnType::CommonName, &event.subject);
+    // Set distinguished name from the event subject using typed value objects
+    params.distinguished_name.push(DnType::CommonName, event.subject_name.common_name.as_str());
+
+    if let Some(ref org) = event.subject_name.organization {
+        params.distinguished_name.push(DnType::OrganizationName, org.as_str());
+    }
+    if let Some(ref ou) = event.subject_name.organizational_unit {
+        params.distinguished_name.push(DnType::OrganizationalUnitName, ou.as_str());
+    }
+    if let Some(ref country) = event.subject_name.country {
+        params.distinguished_name.push(DnType::CountryName, country.as_str());
+    }
+    if let Some(ref state) = event.subject_name.state {
+        params.distinguished_name.push(DnType::StateOrProvinceName, state.as_str());
+    }
+    if let Some(ref locality) = event.subject_name.locality {
+        params.distinguished_name.push(DnType::LocalityName, locality.as_str());
     }
 
     // Set validity period using time crate
@@ -66,19 +61,27 @@ pub fn generate_root_ca_from_event(
     params.not_after = not_after;
 
     // Add Subject Alternative Names if provided
-    for san in &event.san {
-        if san.contains('@') {
-            // Email address
-            if let Ok(email) = san.as_str().try_into() {
-                params.subject_alt_names.push(SanType::Rfc822Name(email));
-            }
-        } else if let Ok(ip_addr) = san.parse::<std::net::IpAddr>() {
-            // IP address
-            params.subject_alt_names.push(SanType::IpAddress(ip_addr));
-        } else {
-            // DNS name
-            if let Ok(dns_name) = san.as_str().try_into() {
-                params.subject_alt_names.push(SanType::DnsName(dns_name));
+    if let Some(ref san) = event.subject_alt_name {
+        for entry in san.entries() {
+            match entry {
+                crate::value_objects::x509::SanEntry::Email(email) => {
+                    if let Ok(e) = email.as_str().try_into() {
+                        params.subject_alt_names.push(SanType::Rfc822Name(e));
+                    }
+                }
+                crate::value_objects::x509::SanEntry::IpAddress(ip) => {
+                    params.subject_alt_names.push(SanType::IpAddress(*ip.addr()));
+                }
+                crate::value_objects::x509::SanEntry::DnsName(dns) => {
+                    if let Ok(dns_name) = dns.as_str().try_into() {
+                        params.subject_alt_names.push(SanType::DnsName(dns_name));
+                    }
+                }
+                crate::value_objects::x509::SanEntry::Uri(uri) => {
+                    // URIs are handled differently in rcgen, skip for now
+                    let _ = uri;
+                }
+                crate::value_objects::x509::SanEntry::Other { .. } => {}
             }
         }
     }
@@ -128,8 +131,18 @@ pub fn generate_intermediate_ca_from_event(
     // Set as CA certificate with path length constraint
     params.is_ca = IsCa::Ca(BasicConstraints::Constrained(0));
 
-    // Set distinguished name
-    params.distinguished_name.push(DnType::CommonName, &event.subject);
+    // Set distinguished name from the event subject using typed value objects
+    params.distinguished_name.push(DnType::CommonName, event.subject_name.common_name.as_str());
+
+    if let Some(ref org) = event.subject_name.organization {
+        params.distinguished_name.push(DnType::OrganizationName, org.as_str());
+    }
+    if let Some(ref ou) = event.subject_name.organizational_unit {
+        params.distinguished_name.push(DnType::OrganizationalUnitName, ou.as_str());
+    }
+    if let Some(ref country) = event.subject_name.country {
+        params.distinguished_name.push(DnType::CountryName, country.as_str());
+    }
 
     // Set validity period
     let day = Duration::days(1);
@@ -185,15 +198,26 @@ pub fn generate_leaf_certificate_from_event(
     issuer_params: CertificateParams,
     issuer_key_pair: &KeyPair,
 ) -> Result<GeneratedCertificate, String> {
-    // Create certificate parameters with SANs
-    let mut params = CertificateParams::new(vec![event.subject.clone()])
+    // Create certificate parameters with SANs - use common name as default SAN
+    let common_name = event.subject_name.common_name.as_str().to_string();
+    let mut params = CertificateParams::new(vec![common_name])
         .map_err(|e| format!("Failed to create certificate params: {}", e))?;
 
     // Not a CA certificate
     params.is_ca = IsCa::NoCa;
 
-    // Set distinguished name
-    params.distinguished_name.push(DnType::CommonName, &event.subject);
+    // Set distinguished name from the event subject using typed value objects
+    params.distinguished_name.push(DnType::CommonName, event.subject_name.common_name.as_str());
+
+    if let Some(ref org) = event.subject_name.organization {
+        params.distinguished_name.push(DnType::OrganizationName, org.as_str());
+    }
+    if let Some(ref ou) = event.subject_name.organizational_unit {
+        params.distinguished_name.push(DnType::OrganizationalUnitName, ou.as_str());
+    }
+    if let Some(ref country) = event.subject_name.country {
+        params.distinguished_name.push(DnType::CountryName, country.as_str());
+    }
 
     // Set validity period (shorter for leaf certs)
     let day = Duration::days(1);
@@ -206,13 +230,15 @@ pub fn generate_leaf_certificate_from_event(
     params.not_after = not_after;
 
     // Add extended key usage for leaf certificates
-    for eku in &event.extended_key_usage {
-        match eku.as_str() {
-            "serverAuth" => params.extended_key_usages.push(ExtendedKeyUsagePurpose::ServerAuth),
-            "clientAuth" => params.extended_key_usages.push(ExtendedKeyUsagePurpose::ClientAuth),
-            "codeSigning" => params.extended_key_usages.push(ExtendedKeyUsagePurpose::CodeSigning),
-            "emailProtection" => params.extended_key_usages.push(ExtendedKeyUsagePurpose::EmailProtection),
-            _ => {}
+    if let Some(ref eku) = event.extended_key_usage {
+        for purpose_str in eku.to_string_list() {
+            match purpose_str.as_str() {
+                "TLS Web Server Authentication" | "serverAuth" => params.extended_key_usages.push(ExtendedKeyUsagePurpose::ServerAuth),
+                "TLS Web Client Authentication" | "clientAuth" => params.extended_key_usages.push(ExtendedKeyUsagePurpose::ClientAuth),
+                "Code Signing" | "codeSigning" => params.extended_key_usages.push(ExtendedKeyUsagePurpose::CodeSigning),
+                "Email Protection" | "emailProtection" => params.extended_key_usages.push(ExtendedKeyUsagePurpose::EmailProtection),
+                _ => {}
+            }
         }
     }
 

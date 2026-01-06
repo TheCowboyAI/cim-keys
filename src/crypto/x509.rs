@@ -22,10 +22,18 @@ use super::seed_derivation::MasterSeed;
 use super::key_generation::KeyPair;
 use rcgen::{
     CertificateParams, DistinguishedName, DnType,
-    KeyUsagePurpose, ExtendedKeyUsagePurpose, IsCa, BasicConstraints,
+    KeyUsagePurpose, ExtendedKeyUsagePurpose, IsCa,
+    BasicConstraints as RcgenBasicConstraints,
     KeyPair as RcgenKeyPair, Issuer,
 };
 use time::{Duration, OffsetDateTime};
+
+// Import our X.509 value objects for event construction
+use crate::value_objects::x509::{
+    SubjectName, CommonName, OrganizationName, OrganizationalUnitName, CountryCode,
+    KeyUsage, ExtendedKeyUsage, CertificateValidity,
+    BasicConstraints as BasicConstraintsVO, SubjectAlternativeName,
+};
 
 /// X.509 certificate with associated keypair
 #[derive(Clone, Debug)]
@@ -187,7 +195,7 @@ pub fn generate_root_ca(
     cert_params.distinguished_name = dn;
 
     // Root CA specific settings - pathlen determines how many intermediate levels allowed
-    cert_params.is_ca = IsCa::Ca(BasicConstraints::Constrained(params.pathlen));
+    cert_params.is_ca = IsCa::Ca(RcgenBasicConstraints::Constrained(params.pathlen));
     cert_params.key_usages = vec![
         KeyUsagePurpose::KeyCertSign,
         KeyUsagePurpose::CrlSign,
@@ -227,21 +235,29 @@ pub fn generate_root_ca(
     let cert_id = uuid::Uuid::now_v7();
     let key_id = uuid::Uuid::now_v7();
 
-    #[allow(deprecated)]
-    let event = crate::events::CertificateGeneratedEvent::new_legacy(
+    // Build subject name value object
+    let subject_name = SubjectName::new(CommonName::new_unchecked(&common_name))
+        .with_organization(OrganizationName::new_unchecked(&organization));
+
+    // Build validity value object
+    let not_before_chrono = chrono::DateTime::from_timestamp(not_before.unix_timestamp(), 0).unwrap();
+    let not_after_chrono = chrono::DateTime::from_timestamp(not_after.unix_timestamp(), 0).unwrap();
+    let validity = CertificateValidity::new(not_before_chrono, not_after_chrono)
+        .map_err(|e| format!("Invalid validity period: {}", e))?;
+
+    let event = crate::events::CertificateGeneratedEvent {
         cert_id,
         key_id,
-        format!("CN={},O={}", common_name, organization),
-        None, // Self-signed root CA
-        chrono::DateTime::from_timestamp(not_before.unix_timestamp(), 0).unwrap(),
-        chrono::DateTime::from_timestamp(not_after.unix_timestamp(), 0).unwrap(),
-        true, // is_ca
-        vec![], // Root CAs typically don't have SANs
-        vec!["keyCertSign".to_string(), "cRLSign".to_string()],
-        vec![], // extended_key_usage
+        subject_name,
+        subject_alt_name: None, // Root CAs typically don't have SANs
+        key_usage: KeyUsage::ca_certificate(),
+        extended_key_usage: None,
+        validity,
+        basic_constraints: BasicConstraintsVO::root_ca(),
+        issuer: None, // Self-signed root CA
         correlation_id,
         causation_id,
-    );
+    };
 
     Ok((x509_cert, event))
 }
@@ -301,7 +317,7 @@ pub fn generate_intermediate_ca(
     // pathlen determines how many more intermediate levels can exist below this CA
     // pathlen: 0 = can only sign leaf certs (typical)
     // pathlen: 1 = can sign one more intermediate level (for hosting scenario)
-    cert_params.is_ca = IsCa::Ca(BasicConstraints::Constrained(params.pathlen));
+    cert_params.is_ca = IsCa::Ca(RcgenBasicConstraints::Constrained(params.pathlen));
 
     // CRITICAL: SIGNING ONLY - no digitalSignature, no keyEncipherment
     cert_params.key_usages = vec![
@@ -363,21 +379,30 @@ pub fn generate_intermediate_ca(
     let key_id = uuid::Uuid::now_v7();
     let signed_at = chrono::Utc::now();
 
-    #[allow(deprecated)]
-    let generation_event = crate::events::CertificateGeneratedEvent::new_legacy(
+    // Build subject name value object
+    let subject_name = SubjectName::new(CommonName::new_unchecked(&params.common_name))
+        .with_organization(OrganizationName::new_unchecked(&params.organization))
+        .with_organizational_unit(OrganizationalUnitName::new_unchecked(&params.organizational_unit));
+
+    // Build validity value object
+    let not_before_chrono = chrono::DateTime::from_timestamp(not_before.unix_timestamp(), 0).unwrap();
+    let not_after_chrono = chrono::DateTime::from_timestamp(not_after.unix_timestamp(), 0).unwrap();
+    let validity = CertificateValidity::new(not_before_chrono, not_after_chrono)
+        .map_err(|e| format!("Invalid validity period: {}", e))?;
+
+    let generation_event = crate::events::CertificateGeneratedEvent {
         cert_id,
         key_id,
-        format!("CN={},OU={},O={}", params.common_name, params.organizational_unit, params.organization),
-        Some(root_ca_id),
-        chrono::DateTime::from_timestamp(not_before.unix_timestamp(), 0).unwrap(),
-        chrono::DateTime::from_timestamp(not_after.unix_timestamp(), 0).unwrap(),
-        true, // is_ca
-        vec![], // san
-        vec!["keyCertSign".to_string(), "cRLSign".to_string()],
-        vec![], // extended_key_usage
+        subject_name,
+        subject_alt_name: None, // Intermediate CAs typically don't have SANs
+        key_usage: KeyUsage::ca_certificate(),
+        extended_key_usage: None,
+        validity,
+        basic_constraints: BasicConstraintsVO::ca_with_path_len(params.pathlen as u32),
+        issuer: Some(root_ca_id),
         correlation_id,
         causation_id,
-    );
+    };
 
     let signing_event = crate::events::CertificateSignedEvent {
         cert_id,
@@ -514,21 +539,46 @@ pub fn generate_server_certificate(
     let key_id = uuid::Uuid::now_v7();
     let signed_at = chrono::Utc::now();
 
-    #[allow(deprecated)]
-    let generation_event = crate::events::CertificateGeneratedEvent::new_legacy(
+    // Build subject name value object
+    let subject_name = SubjectName::new(CommonName::new_unchecked(&params.common_name))
+        .with_organization(OrganizationName::new_unchecked(&params.organization));
+
+    // Build SAN from entries - try DNS first, fallback to IP
+    let subject_alt_name = if !params.san_entries.is_empty() {
+        let mut san = SubjectAlternativeName::new();
+        for entry in &params.san_entries {
+            // Try DNS name first, if it fails try IP address
+            if let Ok(updated) = san.clone().with_dns_name(entry) {
+                san = updated;
+            } else if let Ok(updated) = san.clone().with_ip_address(entry) {
+                san = updated;
+            }
+            // Ignore entries that don't parse as DNS or IP
+        }
+        if !san.is_empty() { Some(san) } else { None }
+    } else {
+        None
+    };
+
+    // Build validity value object
+    let not_before_chrono = chrono::DateTime::from_timestamp(not_before.unix_timestamp(), 0).unwrap();
+    let not_after_chrono = chrono::DateTime::from_timestamp(not_after.unix_timestamp(), 0).unwrap();
+    let validity = CertificateValidity::new(not_before_chrono, not_after_chrono)
+        .map_err(|e| format!("Invalid validity period: {}", e))?;
+
+    let generation_event = crate::events::CertificateGeneratedEvent {
         cert_id,
         key_id,
-        format!("CN={},O={}", params.common_name, params.organization),
-        Some(intermediate_ca_id),
-        chrono::DateTime::from_timestamp(not_before.unix_timestamp(), 0).unwrap(),
-        chrono::DateTime::from_timestamp(not_after.unix_timestamp(), 0).unwrap(),
-        false, // is_ca
-        params.san_entries.clone(),
-        vec!["digitalSignature".to_string(), "keyEncipherment".to_string()],
-        vec!["serverAuth".to_string(), "clientAuth".to_string()],
+        subject_name,
+        subject_alt_name,
+        key_usage: KeyUsage::tls_server(),
+        extended_key_usage: Some(ExtendedKeyUsage::tls_server_client()),
+        validity,
+        basic_constraints: BasicConstraintsVO::end_entity(),
+        issuer: Some(intermediate_ca_id),
         correlation_id,
         causation_id,
-    );
+    };
 
     let signing_event = crate::events::CertificateSignedEvent {
         cert_id,

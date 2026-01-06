@@ -13,6 +13,7 @@ use cim_keys::types::{
     ExportDestination, RevocationReason,
 };
 use cim_keys::domain::{KeyOwnership, KeyOwnerRole};
+use cim_keys::value_objects::ActorId;
 use uuid::Uuid;
 use std::collections::HashMap;
 
@@ -48,15 +49,13 @@ fn test_key_ownership() -> KeyOwnership {
     }
 }
 
-#[allow(deprecated)]
 fn sample_key_generated() -> KeyGeneratedEvent {
     KeyGeneratedEvent {
         key_id: test_key_id(),
         algorithm: KeyAlgorithm::Ed25519,
         purpose: KeyPurpose::Signing,
         generated_at: Utc::now(),
-        generated_by: "key_admin".to_string(),
-        generated_by_actor: None,
+        generated_by: ActorId::system("key_admin"),
         hardware_backed: false,
         metadata: test_key_metadata(),
         ownership: Some(test_key_ownership()),
@@ -65,30 +64,26 @@ fn sample_key_generated() -> KeyGeneratedEvent {
     }
 }
 
-#[allow(deprecated)]
 fn sample_key_imported() -> KeyImportedEvent {
     KeyImportedEvent {
         key_id: test_key_id(),
         source: ImportSource::File { path: "/tmp/key.pem".to_string() },
         format: KeyFormat::Pem,
         imported_at: Utc::now(),
-        imported_by: "admin".to_string(),
-        imported_by_actor: None,
+        imported_by: ActorId::system("admin"),
         metadata: test_key_metadata(),
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }
 }
 
-#[allow(deprecated)]
 fn sample_key_exported() -> KeyExportedEvent {
     KeyExportedEvent {
         key_id: test_key_id(),
         format: KeyFormat::Pem,
         include_private: false,
         exported_at: Utc::now(),
-        exported_by: "admin".to_string(),
-        exported_by_actor: None,
+        exported_by: ActorId::system("admin"),
         destination: ExportDestination::File { path: "/mnt/encrypted/keys/key.pem".to_string() },
         correlation_id: Uuid::now_v7(),
         causation_id: None,
@@ -107,20 +102,17 @@ fn sample_key_stored_offline() -> KeyStoredOfflineEvent {
     }
 }
 
-#[allow(deprecated)]
 fn sample_key_revoked() -> KeyRevokedEvent {
     KeyRevokedEvent {
         key_id: test_key_id(),
         reason: RevocationReason::KeyCompromise,
         revoked_at: Utc::now(),
-        revoked_by: "security_admin".to_string(),
-        revoked_by_actor: None,
+        revoked_by: ActorId::system("security_admin"),
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }
 }
 
-#[allow(deprecated)]
 fn sample_key_rotation_initiated() -> KeyRotationInitiatedEvent {
     KeyRotationInitiatedEvent {
         rotation_id: test_rotation_id(),
@@ -128,8 +120,7 @@ fn sample_key_rotation_initiated() -> KeyRotationInitiatedEvent {
         new_key_id: Uuid::now_v7(),
         rotation_reason: "Scheduled rotation".to_string(),
         initiated_at: Utc::now(),
-        initiated_by: "key_admin".to_string(),
-        initiated_by_actor: None,
+        initiated_by: ActorId::system("key_admin"),
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }
@@ -147,21 +138,18 @@ fn sample_key_rotation_completed() -> KeyRotationCompletedEvent {
     }
 }
 
-#[allow(deprecated)]
 fn sample_ssh_key_generated() -> SshKeyGeneratedEvent {
     SshKeyGeneratedEvent {
         key_id: test_key_id(),
         key_type: "ed25519".to_string(),
         comment: "user@example.com".to_string(),
         generated_at: Utc::now(),
-        generated_by: "user".to_string(),
-        generated_by_actor: None,
+        generated_by: ActorId::system("user"),
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }
 }
 
-#[allow(deprecated)]
 fn sample_gpg_key_generated() -> GpgKeyGeneratedEvent {
     GpgKeyGeneratedEvent {
         key_id: test_key_id(),
@@ -169,8 +157,7 @@ fn sample_gpg_key_generated() -> GpgKeyGeneratedEvent {
         user_id: "John Doe <john@example.com>".to_string(),
         key_type: "RSA".to_string(),
         generated_at: Utc::now(),
-        generated_by: "john".to_string(),
-        generated_by_actor: None,
+        generated_by: ActorId::system("john"),
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }

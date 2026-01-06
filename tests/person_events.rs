@@ -9,11 +9,10 @@
 //! - DomainEvent Trait implementation
 //! - Event Wrapping Pattern (Inner → Enum → DomainEvent)
 
-#![allow(deprecated)]
-
 use chrono::Utc;
 use cim_keys::events::person::*;
 use cim_keys::events::DomainEvent as DomainEventEnum;
+use cim_keys::value_objects::ActorId;
 use cim_domain::DomainEvent;
 use uuid::Uuid;
 
@@ -29,8 +28,7 @@ fn sample_person_created() -> PersonCreatedEvent {
         title: Some("Software Engineer".to_string()),
         department: Some("Engineering".to_string()),
         organization_id: Uuid::now_v7(),
-        created_by: Some("admin".to_string()),
-        created_by_actor: None,
+        created_by: ActorId::system("admin"),
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }
@@ -43,7 +41,7 @@ fn sample_person_updated() -> PersonUpdatedEvent {
         old_value: Some("Engineer".to_string()),
         new_value: "Senior Engineer".to_string(),
         updated_at: Utc::now(),
-        updated_by: "manager".to_string(),
+        updated_by: ActorId::system("manager"),
         correlation_id: Uuid::now_v7(),
         causation_id: Some(Uuid::now_v7()),
     }

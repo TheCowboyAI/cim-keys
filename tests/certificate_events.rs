@@ -4,12 +4,15 @@
 //!
 //! Tests all 10 event types for certificate lifecycle, PKI hierarchy, and validation.
 
-#![allow(deprecated)]
-
 use chrono::Utc;
 use cim_keys::events::certificate::*;
 use cim_keys::events::DomainEvent as DomainEventEnum;
 use cim_domain::DomainEvent;
+use cim_keys::value_objects::ActorId;
+use cim_keys::value_objects::x509::{
+    BasicConstraints, CertificateValidity, CommonName, CountryCode, ExtendedKeyUsage, KeyUsage,
+    OrganizationName, SubjectAlternativeName, SubjectName,
+};
 use uuid::Uuid;
 
 // =============================================================================
@@ -23,27 +26,36 @@ fn test_person_id() -> Uuid { Uuid::now_v7() }
 fn test_org_id() -> Uuid { Uuid::now_v7() }
 fn test_export_id() -> Uuid { Uuid::now_v7() }
 
+fn sample_subject_name() -> SubjectName {
+    SubjectName::new(CommonName::new_unchecked("example.com"))
+        .with_organization(OrganizationName::new_unchecked("Example Org"))
+        .with_country(CountryCode::new_unchecked("US"))
+}
+
+fn sample_validity() -> CertificateValidity {
+    CertificateValidity::new(
+        Utc::now(),
+        Utc::now() + chrono::Duration::days(365),
+    ).expect("Valid validity period")
+}
+
 fn sample_certificate_generated() -> CertificateGeneratedEvent {
+    let san = SubjectAlternativeName::new()
+        .with_dns_name("example.com")
+        .and_then(|s| s.with_dns_name("www.example.com"))
+        .ok();
     CertificateGeneratedEvent {
         cert_id: test_cert_id(),
         key_id: test_key_id(),
-        subject: "CN=example.com,O=Example Org".to_string(),
+        subject_name: sample_subject_name(),
+        subject_alt_name: san,
+        key_usage: KeyUsage::tls_server(),
+        extended_key_usage: Some(ExtendedKeyUsage::tls_server()),
+        validity: sample_validity(),
+        basic_constraints: BasicConstraints::end_entity(),
         issuer: Some(test_ca_id()),
-        not_before: Utc::now(),
-        not_after: Utc::now() + chrono::Duration::days(365),
-        is_ca: false,
-        san: vec!["example.com".to_string(), "www.example.com".to_string()],
-        key_usage: vec!["digitalSignature".to_string(), "keyEncipherment".to_string()],
-        extended_key_usage: vec!["serverAuth".to_string(), "clientAuth".to_string()],
         correlation_id: Uuid::now_v7(),
         causation_id: None,
-        // New typed fields (None for backward compat testing)
-        subject_name: None,
-        subject_alt_name: None,
-        key_usage_ext: None,
-        extended_key_usage_ext: None,
-        validity: None,
-        basic_constraints: None,
     }
 }
 
@@ -63,7 +75,7 @@ fn sample_certificate_revoked() -> CertificateRevokedEvent {
         cert_id: test_cert_id(),
         reason: "Key compromise suspected".to_string(),
         revoked_at: Utc::now(),
-        revoked_by: "security_admin".to_string(),
+        revoked_by: ActorId::system("security_admin"),
         crl_distribution_point: Some("http://crl.example.com/crl.pem".to_string()),
         correlation_id: Uuid::now_v7(),
         causation_id: None,
@@ -75,7 +87,7 @@ fn sample_certificate_renewed() -> CertificateRenewedEvent {
         old_cert_id: test_cert_id(),
         new_cert_id: Uuid::now_v7(),
         renewed_at: Utc::now(),
-        renewed_by: "cert_admin".to_string(),
+        renewed_by: ActorId::system("cert_admin"),
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }
@@ -109,7 +121,7 @@ fn sample_pki_hierarchy_created() -> PkiHierarchyCreatedEvent {
     PkiHierarchyCreatedEvent {
         root_ca_id: test_cert_id(),
         intermediate_cas: vec![Uuid::now_v7(), Uuid::now_v7()],
-        created_by: "pki_admin".to_string(),
+        created_by: ActorId::system("pki_admin"),
         organization_id: test_org_id(),
         correlation_id: Uuid::now_v7(),
         causation_id: None,
@@ -158,8 +170,6 @@ fn test_certificate_generated_serialization() {
     let deserialized: CertificateGeneratedEvent = serde_json::from_str(&json).unwrap();
     assert_eq!(event.cert_id, deserialized.cert_id);
     assert_eq!(event.key_id, deserialized.key_id);
-    assert_eq!(event.san, deserialized.san);
-    assert_eq!(event.key_usage, deserialized.key_usage);
 }
 
 #[test]
@@ -320,15 +330,15 @@ fn test_uuid_fields_are_valid() {
 #[test]
 fn test_certificate_validity_period() {
     let cert = sample_certificate_generated();
-    assert!(cert.not_after > cert.not_before);
+    assert!(cert.validity.not_after() > cert.validity.not_before());
 }
 
 #[test]
-fn test_san_and_key_usage_fields() {
+fn test_subject_name_and_key_usage_fields() {
     let cert = sample_certificate_generated();
-    assert!(!cert.san.is_empty());
-    assert!(!cert.key_usage.is_empty());
-    assert!(!cert.extended_key_usage.is_empty());
+    assert!(!cert.subject_name.common_name.as_str().is_empty());
+    // Key usage should have at least one bit set (use bits() iterator)
+    assert!(cert.key_usage.bits().count() > 0);
 }
 
 // =============================================================================
@@ -489,4 +499,38 @@ fn test_certificate_validation_workflow() {
     assert!(valid.validation_errors.is_empty());
     assert!(!invalid.validation_result);
     assert!(!invalid.validation_errors.is_empty());
+}
+
+// =============================================================================
+// X.509 Value Object Tests
+// =============================================================================
+
+#[test]
+fn test_subject_name_construction() {
+    let subject = SubjectName::new(CommonName::new_unchecked("test.example.com"))
+        .with_organization(OrganizationName::new_unchecked("Test Org"))
+        .with_country(CountryCode::new_unchecked("US"));
+
+    assert_eq!(subject.common_name.as_str(), "test.example.com");
+}
+
+#[test]
+fn test_basic_constraints_ca_vs_end_entity() {
+    let ca = BasicConstraints::ca();
+    let end_entity = BasicConstraints::end_entity();
+
+    assert!(ca.is_ca());
+    assert!(!end_entity.is_ca());
+}
+
+#[test]
+fn test_key_usage_presets() {
+    let code_signing = KeyUsage::code_signing();
+    let email_protection = KeyUsage::email_protection();
+    let ca = KeyUsage::ca_certificate();
+
+    // All should have at least one bit set
+    assert!(code_signing.bits().count() > 0);
+    assert!(email_protection.bits().count() > 0);
+    assert!(ca.bits().count() > 0);
 }

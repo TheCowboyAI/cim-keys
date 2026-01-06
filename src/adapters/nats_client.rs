@@ -885,6 +885,7 @@ impl crate::ports::JetStreamSubscription for JetStreamSubscriptionImpl {
 mod tests {
     use super::*;
     use crate::events::*;
+    use crate::value_objects::ActorId;
     use uuid::Uuid;
 
     #[tokio::test]
@@ -894,14 +895,12 @@ mod tests {
 
         // A4: Generate test event_id for causation tracking
         let test_event_id = Uuid::now_v7();
-        #[allow(deprecated)]
         let event = DomainEvent::Key(crate::events::KeyEvents::KeyGenerated(crate::events::key::KeyGeneratedEvent {
             key_id: Uuid::now_v7(),
             algorithm: crate::types::KeyAlgorithm::Ed25519,
             purpose: crate::types::KeyPurpose::Signing,
             generated_at: chrono::Utc::now(),
-            generated_by: "test".to_string(),
-            generated_by_actor: None,
+            generated_by: ActorId::system("test"),
             hardware_backed: false,
             metadata: crate::types::KeyMetadata {
                 label: "test".to_string(),

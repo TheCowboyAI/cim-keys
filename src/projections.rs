@@ -458,7 +458,7 @@ impl OfflineKeyProjection {
             algorithm: event.algorithm.clone(),
             purpose: event.purpose.clone(),
             generated_at: event.generated_at,
-            generated_by: event.generated_by.clone(),
+            generated_by: event.generated_by.to_string(),
             hardware_backed: event.hardware_backed,
             metadata: event.metadata.clone(),
         };
@@ -1385,20 +1385,39 @@ impl OfflineKeyProjection {
         fs::create_dir_all(&cert_dir)
             .map_err(|e| ProjectionError::IoError(format!("Failed to create certificate directory: {}", e)))?;
 
+        // Extract values from typed value objects
+        let subject_str = event.subject_name.to_rfc4514();
+        let not_before = event.validity.not_before();
+        let not_after = event.validity.not_after();
+        let is_ca = event.basic_constraints.is_ca();
+
+        // Convert SAN entries to string list
+        let san: Vec<String> = event.subject_alt_name.as_ref()
+            .map(|san| san.entries().map(|e| e.value_string()).collect())
+            .unwrap_or_default();
+
+        // Convert key usage to string list
+        let key_usage = event.key_usage.to_string_list();
+
+        // Convert extended key usage to string list
+        let extended_key_usage = event.extended_key_usage.as_ref()
+            .map(|eku| eku.to_string_list())
+            .unwrap_or_default();
+
         // Write metadata
         let metadata_path = cert_dir.join("metadata.json");
         let metadata = CertificateMetadataFile {
             cert_id: event.cert_id,
             key_id: event.key_id,
-            subject: event.subject.clone(),
+            subject: subject_str.clone(),
             issuer: event.issuer.map(|id| id.to_string()),
             serial_number: Uuid::now_v7().to_string(), // Generate serial
-            not_before: event.not_before,
-            not_after: event.not_after,
-            is_ca: event.is_ca,
-            san: event.san.clone(),
-            key_usage: event.key_usage.clone(),
-            extended_key_usage: event.extended_key_usage.clone(),
+            not_before,
+            not_after,
+            is_ca,
+            san,
+            key_usage,
+            extended_key_usage,
         };
 
         let metadata_json = serde_json::to_string_pretty(&metadata)
@@ -1411,17 +1430,17 @@ impl OfflineKeyProjection {
         self.manifest.certificates.push(CertificateEntry {
             cert_id: event.cert_id,
             key_id: event.key_id,
-            subject: event.subject.clone(),
+            subject: subject_str,
             issuer: event.issuer.map(|id| id.to_string()),
             serial_number: metadata.serial_number.clone(),
-            not_before: event.not_before,
-            not_after: event.not_after,
-            is_ca: event.is_ca,
+            not_before,
+            not_after,
+            is_ca,
             file_path: format!("certificates/{}", event.cert_id),
             // Initialize state machine
             state: Some(CertificateState::Pending {
                 csr_id: None,
-                pending_since: event.not_before,
+                pending_since: not_before,
                 requested_by: Uuid::now_v7(), // TODO: Get from event
             }),
         });
@@ -2256,12 +2275,12 @@ impl KeyManifest {
                 result.certificates.push(CertificateEntry {
                     cert_id: e.cert_id,
                     key_id: e.key_id,
-                    subject: e.subject.clone(),
+                    subject: e.subject_name.to_rfc4514(),
                     issuer: e.issuer.map(|_| "issuer".to_string()),
                     serial_number: e.cert_id.to_string(),
-                    not_before: e.not_before,
-                    not_after: e.not_after,
-                    is_ca: e.is_ca,
+                    not_before: e.validity.not_before(),
+                    not_after: e.validity.not_after(),
+                    is_ca: e.basic_constraints.is_ca(),
                     file_path: format!("certificates/{}/cert.pem", e.cert_id),
                     state: None,
                 });
@@ -2410,12 +2429,12 @@ impl Rebuildable for KeyManifest {
                 self.certificates.push(CertificateEntry {
                     cert_id: e.cert_id,
                     key_id: e.key_id,
-                    subject: e.subject.clone(),
+                    subject: e.subject_name.to_rfc4514(),
                     issuer: e.issuer.map(|_| "issuer".to_string()),
                     serial_number: e.cert_id.to_string(),
-                    not_before: e.not_before,
-                    not_after: e.not_after,
-                    is_ca: e.is_ca,
+                    not_before: e.validity.not_before(),
+                    not_after: e.validity.not_after(),
+                    is_ca: e.basic_constraints.is_ca(),
                     file_path: format!("certificates/{}/cert.pem", e.cert_id),
                     state: None, // State machine state set separately
                 });

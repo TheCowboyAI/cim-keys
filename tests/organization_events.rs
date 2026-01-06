@@ -9,6 +9,7 @@ use cim_keys::events::organization::*;
 use cim_keys::events::DomainEvent as DomainEventEnum;
 use cim_domain::DomainEvent;
 use cim_keys::policy_types::{PolicyClaim, PolicyCondition, SecurityClearance};
+use cim_keys::value_objects::ActorId;
 use uuid::Uuid;
 
 // =============================================================================
@@ -49,7 +50,7 @@ fn sample_organization_updated() -> OrganizationUpdatedEvent {
         old_value: Some("Acme Corp".to_string()),
         new_value: "Acme Corporation".to_string(),
         updated_at: Utc::now(),
-        updated_by: "admin".to_string(),
+        updated_by: ActorId::system("admin"),
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }
@@ -61,7 +62,7 @@ fn sample_organizational_unit_created() -> OrganizationalUnitCreatedEvent {
         name: "Engineering".to_string(),
         parent_id: None,
         organization_id: test_org_id(),
-        created_by: "admin".to_string(),
+        created_by: ActorId::system("admin"),
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }
@@ -74,7 +75,7 @@ fn sample_organizational_unit_updated() -> OrganizationalUnitUpdatedEvent {
         old_value: Some("Engineering".to_string()),
         new_value: "Engineering Department".to_string(),
         updated_at: Utc::now(),
-        updated_by: "admin".to_string(),
+        updated_by: ActorId::system("admin"),
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }
@@ -85,7 +86,7 @@ fn sample_organizational_unit_dissolved() -> OrganizationalUnitDissolvedEvent {
         unit_id: test_unit_id(),
         reason: "Restructuring".to_string(),
         dissolved_at: Utc::now(),
-        dissolved_by: "admin".to_string(),
+        dissolved_by: ActorId::system("admin"),
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }
@@ -97,7 +98,7 @@ fn sample_role_created() -> RoleCreatedEvent {
         name: "Developer".to_string(),
         description: "Software developer role".to_string(),
         organization_id: Some(test_org_id()),
-        created_by: "admin".to_string(),
+        created_by: ActorId::system("admin"),
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }
@@ -110,7 +111,7 @@ fn sample_role_updated() -> RoleUpdatedEvent {
         old_value: Some("Software developer role".to_string()),
         new_value: "Senior software developer role".to_string(),
         updated_at: Utc::now(),
-        updated_by: "admin".to_string(),
+        updated_by: ActorId::system("admin"),
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }
@@ -121,7 +122,7 @@ fn sample_role_deleted() -> RoleDeletedEvent {
         role_id: test_role_id(),
         reason: "Role obsolete".to_string(),
         deleted_at: Utc::now(),
-        deleted_by: "admin".to_string(),
+        deleted_by: ActorId::system("admin"),
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }
@@ -135,7 +136,7 @@ fn sample_policy_created() -> PolicyCreatedEvent {
         claims: sample_policy_claims(),
         conditions: sample_policy_conditions(),
         organization_id: Some(test_org_id()),
-        created_by: "admin".to_string(),
+        created_by: ActorId::system("admin"),
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }
@@ -148,7 +149,7 @@ fn sample_policy_updated() -> PolicyUpdatedEvent {
         old_value: Some("Code Signing Policy".to_string()),
         new_value: "Production Code Signing Policy".to_string(),
         updated_at: Utc::now(),
-        updated_by: "admin".to_string(),
+        updated_by: ActorId::system("admin"),
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }
@@ -159,7 +160,7 @@ fn sample_policy_revoked() -> PolicyRevokedEvent {
         policy_id: test_policy_id(),
         reason: "Policy outdated".to_string(),
         revoked_at: Utc::now(),
-        revoked_by: "admin".to_string(),
+        revoked_by: ActorId::system("admin"),
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }

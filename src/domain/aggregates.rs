@@ -356,20 +356,21 @@ impl PkiCertificateChainAggregate {
                     CertificateEvents::CertificateGenerated(e) => {
                         let cert_id = CertificateId::from_uuid(e.cert_id);
                         let key_id = KeyId::from_uuid(e.key_id);
+                        let is_ca = e.basic_constraints.is_ca();
                         let cert_state = CertificateState {
                             id: cert_id,
-                            subject: e.subject.clone(),
+                            subject: e.subject_name.to_rfc4514(),
                             issuer_id: e.issuer.map(CertificateId::from_uuid),
                             key_id,
-                            cert_type: if e.is_ca { super::pki::CertificateType::Root } else { super::pki::CertificateType::Leaf },
+                            cert_type: if is_ca { super::pki::CertificateType::Root } else { super::pki::CertificateType::Leaf },
                             status: super::pki::CertificateStatus::Active,
-                            not_before: e.not_before,
-                            not_after: e.not_after,
+                            not_before: e.validity.not_before(),
+                            not_after: e.validity.not_after(),
                         };
 
-                        if e.is_ca && e.issuer.is_none() {
+                        if is_ca && e.issuer.is_none() {
                             self.root_ca = Some(cert_state);
-                        } else if e.is_ca {
+                        } else if is_ca {
                             self.intermediate_cas.insert(cert_id, cert_state);
                         } else {
                             self.leaf_certificates.insert(cert_id, cert_state);

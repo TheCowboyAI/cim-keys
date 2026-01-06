@@ -14337,12 +14337,12 @@ async fn generate_root_ca(
                 // Save metadata
                 let metadata = serde_json::json!({
                     "cert_id": e.cert_id,
-                    "subject": e.subject,
+                    "subject": e.subject_name.to_rfc4514(),
                     "issuer": e.issuer,
-                    "not_before": e.not_before,
-                    "not_after": e.not_after,
-                    "is_ca": e.is_ca,
-                    "key_usage": e.key_usage,
+                    "not_before": e.validity.not_before(),
+                    "not_after": e.validity.not_after(),
+                    "is_ca": e.basic_constraints.is_ca(),
+                    "key_usage": e.key_usage.to_string_list(),
                     "fingerprint": generated.fingerprint,
                 });
 

@@ -14,6 +14,9 @@ use crate::types::{KeyAlgorithm, KeyPurpose};
 use crate::value_objects::{
     ActorId, Certificate, CertificateSubject, PublicKey, Validity,
 };
+use crate::value_objects::x509::{
+    BasicConstraints, CertificateValidity, ExtendedKeyUsage, KeyUsage, SubjectName,
+};
 
 // ============================================================================
 // Command: Generate Key Pair (US-012, US-013)
@@ -79,20 +82,20 @@ pub fn handle_generate_key_pair(cmd: GenerateKeyPair) -> Result<KeyPairGenerated
         format: crate::value_objects::PublicKeyFormat::Der,
     };
 
-    // Step 3: Emit key generated event with typed ActorId
-    let key_event = crate::events::key::KeyGeneratedEvent::new_typed(
+    // Step 3: Emit key generated event
+    let key_event = crate::events::key::KeyGeneratedEvent {
         key_id,
-        algorithm.clone(),
-        match cmd.purpose {
+        algorithm: algorithm.clone(),
+        purpose: match cmd.purpose {
             crate::value_objects::AuthKeyPurpose::X509ServerAuth => KeyPurpose::Authentication,
             crate::value_objects::AuthKeyPurpose::X509CodeSigning => KeyPurpose::Signing,
             crate::value_objects::AuthKeyPurpose::GpgEncryption => KeyPurpose::Encryption,
             _ => KeyPurpose::Authentication,
         },
-        Utc::now(),
-        ActorId::system("pki-keygen"),
-        false, // hardware_backed
-        crate::types::KeyMetadata {
+        generated_at: Utc::now(),
+        generated_by: ActorId::system("pki-keygen"),
+        hardware_backed: false,
+        metadata: crate::types::KeyMetadata {
             label: format!("Key pair for {:?}", cmd.purpose),
             description: Some(format!("Generated {:?} key for {:?}", algorithm, cmd.purpose)),
             tags: vec![],
@@ -101,10 +104,10 @@ pub fn handle_generate_key_pair(cmd: GenerateKeyPair) -> Result<KeyPairGenerated
             jwt_alg: None,
             jwt_use: None,
         },
-        Some(cmd.owner_context.actor.clone()),
-        cmd.correlation_id,
-        cmd.causation_id,
-    );
+        ownership: Some(cmd.owner_context.actor.clone()),
+        correlation_id: cmd.correlation_id,
+        causation_id: cmd.causation_id,
+    };
     events.push(DomainEvent::Key(crate::events::KeyEvents::KeyGenerated(key_event)));
 
     Ok(KeyPairGenerated {
@@ -191,7 +194,7 @@ pub fn handle_generate_root_ca(cmd: GenerateRootCA) -> Result<RootCAGenerated, S
     let _csr = CertificateRequestProjection::project_root_ca(&cmd.organization, key_pair.public_key.clone());
 
     // Step 3: Generate self-signed certificate using rcgen
-    use rcgen::{CertificateParams, DistinguishedName, DnType, IsCa, BasicConstraints, KeyUsagePurpose, SerialNumber, KeyPair as RcgenKeyPair};
+    use rcgen::{CertificateParams, DistinguishedName, DnType, IsCa, BasicConstraints as RcgenBasicConstraints, KeyUsagePurpose, SerialNumber, KeyPair as RcgenKeyPair};
     use time::{Duration as TimeDuration, OffsetDateTime};
 
     // Generate a new key pair for the certificate
@@ -205,7 +208,7 @@ pub fn handle_generate_root_ca(cmd: GenerateRootCA) -> Result<RootCAGenerated, S
     dn.push(DnType::OrganizationName, cmd.organization.name.clone());
     dn.push(DnType::CountryName, "US");
     params.distinguished_name = dn;
-    params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    params.is_ca = IsCa::Ca(RcgenBasicConstraints::Unconstrained);
 
     // Set validity period
     let not_before = OffsetDateTime::now_utc();
@@ -266,25 +269,35 @@ pub fn handle_generate_root_ca(cmd: GenerateRootCA) -> Result<RootCAGenerated, S
     };
 
     // Step 4: Emit certificate generated event
-    #[allow(deprecated)]
-    let cert_event = crate::events::certificate::CertificateGeneratedEvent::new_legacy(
-        ca_id,
-        key_pair.key_id,
-        certificate.subject.common_name.clone(),
-        None, // Self-signed root CA
+    let common_name = crate::value_objects::x509::CommonName::new_unchecked(&certificate.subject.common_name);
+    let subject_name = SubjectName::new(common_name)
+        .with_organization(crate::value_objects::x509::OrganizationName::new_unchecked(
+            certificate.subject.organization.as_deref().unwrap_or("")
+        ))
+        .with_country(crate::value_objects::x509::CountryCode::new_unchecked(
+            certificate.subject.country.as_deref().unwrap_or("US")
+        ));
+
+    let validity = CertificateValidity::new(
         certificate.validity.not_before,
         certificate.validity.not_after,
-        true, // is_ca
-        vec![], // san
-        vec![
-            "KeyCertSign".to_string(),
-            "CrlSign".to_string(),
-            "DigitalSignature".to_string(),
-        ],
-        vec![], // extended_key_usage
-        cmd.correlation_id,
-        Some(key_pair.key_id), // Certificate caused by key generation
-    );
+    ).expect("Valid certificate validity");
+
+    let key_usage = KeyUsage::ca_certificate(); // KeyCertSign, CrlSign, DigitalSignature
+
+    let cert_event = crate::events::certificate::CertificateGeneratedEvent {
+        cert_id: ca_id,
+        key_id: key_pair.key_id,
+        subject_name,
+        subject_alt_name: None,
+        key_usage,
+        extended_key_usage: None,
+        validity,
+        basic_constraints: BasicConstraints::ca(),
+        issuer: None, // Self-signed root CA
+        correlation_id: cmd.correlation_id,
+        causation_id: Some(key_pair.key_id), // Certificate caused by key generation
+    };
     events.push(DomainEvent::Certificate(crate::events::CertificateEvents::CertificateGenerated(cert_event)));
 
     Ok(RootCAGenerated {
@@ -343,26 +356,31 @@ pub fn handle_generate_certificate(cmd: GenerateCertificate) -> Result<Certifica
         .unwrap_or_else(|| "Ed25519".to_string());
 
     // Step 1: Determine key usage and extended key usage based on purpose
-    let (key_usage, extended_key_usage) = match cmd.purpose {
+    let (key_usage_typed, extended_key_usage_typed, key_usage_strings) = match cmd.purpose {
         KeyPurpose::Authentication => (
+            KeyUsage::tls_server(),
+            Some(ExtendedKeyUsage::tls_server()),
             vec!["DigitalSignature".to_string(), "KeyAgreement".to_string()],
-            vec!["ServerAuth".to_string(), "ClientAuth".to_string()],
         ),
         KeyPurpose::Signing => (
+            KeyUsage::code_signing(),
+            Some(ExtendedKeyUsage::code_signing()),
             vec!["DigitalSignature".to_string()],
-            vec!["CodeSigning".to_string()],
         ),
         KeyPurpose::Encryption => (
+            KeyUsage::email_protection(),
+            Some(ExtendedKeyUsage::email_protection()),
             vec!["KeyEncipherment".to_string(), "DataEncipherment".to_string()],
-            vec!["EmailProtection".to_string()],
         ),
         KeyPurpose::JwtSigning => (
+            KeyUsage::code_signing(),
+            None,
             vec!["DigitalSignature".to_string()],
-            vec![],
         ),
         _ => (
+            KeyUsage::code_signing(),
+            None,
             vec!["DigitalSignature".to_string()],
-            vec![],
         ),
     };
 
@@ -399,7 +417,7 @@ pub fn handle_generate_certificate(cmd: GenerateCertificate) -> Result<Certifica
     params.not_after = not_after;
 
     // Set key usages based on purpose
-    params.key_usages = key_usage.iter().filter_map(|usage| match usage.as_str() {
+    params.key_usages = key_usage_strings.iter().filter_map(|usage| match usage.as_str() {
         "DigitalSignature" => Some(KeyUsagePurpose::DigitalSignature),
         "KeyEncipherment" => Some(KeyUsagePurpose::KeyEncipherment),
         "DataEncipherment" => Some(KeyUsagePurpose::DataEncipherment),
@@ -450,21 +468,33 @@ pub fn handle_generate_certificate(cmd: GenerateCertificate) -> Result<Certifica
     };
 
     // Step 4: Emit certificate generated event
-    #[allow(deprecated)]
-    let cert_event = crate::events::certificate::CertificateGeneratedEvent::new_legacy(
-        cert_id,
-        cmd.key_id, // Link to the actual key ID
-        cmd.subject.common_name.clone(),
-        Some(cmd.ca_id), // The CA that issued this certificate
+    let common_name = crate::value_objects::x509::CommonName::new_unchecked(&cmd.subject.common_name);
+    let subject_name = SubjectName::new(common_name)
+        .with_organization(crate::value_objects::x509::OrganizationName::new_unchecked(
+            cmd.subject.organization.as_deref().unwrap_or("")
+        ))
+        .with_country(crate::value_objects::x509::CountryCode::new_unchecked(
+            cmd.subject.country.as_deref().unwrap_or("US")
+        ));
+
+    let validity = CertificateValidity::new(
         certificate.validity.not_before,
         certificate.validity.not_after,
-        false, // is_ca
-        vec![], // san
-        key_usage,
-        extended_key_usage,
-        cmd.correlation_id,
-        cmd.causation_id,
-    );
+    ).expect("Valid certificate validity");
+
+    let cert_event = crate::events::certificate::CertificateGeneratedEvent {
+        cert_id,
+        key_id: cmd.key_id,
+        subject_name,
+        subject_alt_name: None,
+        key_usage: key_usage_typed,
+        extended_key_usage: extended_key_usage_typed,
+        validity,
+        basic_constraints: BasicConstraints::end_entity(),
+        issuer: Some(cmd.ca_id), // The CA that issued this certificate
+        correlation_id: cmd.correlation_id,
+        causation_id: cmd.causation_id,
+    };
     events.push(DomainEvent::Certificate(crate::events::CertificateEvents::CertificateGenerated(cert_event)));
 
     // Step 5: Emit certificate signed event

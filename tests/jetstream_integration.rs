@@ -13,6 +13,7 @@ use cim_keys::domain::nats::replay::{
 };
 use cim_keys::events::{DomainEvent, KeyEvents};
 use cim_keys::types::{KeyAlgorithm, KeyPurpose, KeyMetadata};
+use cim_keys::value_objects::ActorId;
 use uuid::Uuid;
 use std::collections::HashMap;
 
@@ -20,7 +21,6 @@ use std::collections::HashMap;
 // Test Helpers
 // =============================================================================
 
-#[allow(deprecated)]
 fn create_test_key_event(key_id: Uuid, seq: u64) -> StoredEvent {
     use cim_keys::events::key::KeyGeneratedEvent;
 
@@ -29,8 +29,7 @@ fn create_test_key_event(key_id: Uuid, seq: u64) -> StoredEvent {
         algorithm: KeyAlgorithm::Ed25519,
         purpose: KeyPurpose::Signing,
         generated_at: Utc::now(),
-        generated_by: "test-user".to_string(),
-        generated_by_actor: None,
+        generated_by: ActorId::system("test-user"),
         hardware_backed: false,
         metadata: KeyMetadata {
             label: "Test Key".to_string(),

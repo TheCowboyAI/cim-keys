@@ -420,6 +420,10 @@ impl AsyncSagaExecutor<CertificateProvisioningSaga> for CertificateProvisioningE
         use crate::events::certificate::CertificateGeneratedEvent;
         use crate::events::yubikey::YubiKeyProvisionedEvent;
         use crate::types::{KeyMetadata, YubiKeySlot};
+        use crate::value_objects::x509::{
+            BasicConstraints, CertificateValidity, ExtendedKeyUsage, KeyUsage,
+            SubjectAlternativeName, SubjectName,
+        };
         use chrono::Utc;
 
         let correlation_id = state.correlation_id();
@@ -437,16 +441,14 @@ impl AsyncSagaExecutor<CertificateProvisioningSaga> for CertificateProvisioningE
                 state.record_key(key_id);
                 state.advance();
 
-                // Emit KeyGenerated domain event (A7: event log) with typed ActorId
-                #[allow(deprecated)]
+                // Emit KeyGenerated domain event (A7: event log)
                 let event = DomainEvent::Key(KeyEvents::KeyGenerated(KeyGeneratedEvent {
                     key_id: key_id.as_uuid(),
                     algorithm: state.request.key_algorithm.clone(),
                     purpose: state.request.purpose.to_key_purpose(),
                     generated_at: Utc::now(),
-                    generated_by: state.request.person_email.clone(), // Legacy field for backward compat
-                    generated_by_actor: Some(ActorId::legacy(&state.request.person_email)),
-                    hardware_backed: true, // YubiKey-backed
+                    generated_by: ActorId::legacy(&state.request.person_email),
+                    hardware_backed: true,
                     metadata: KeyMetadata {
                         label: format!("{} - {:?}", state.request.person_name, state.request.purpose),
                         description: Some(format!("Generated for saga {}", state.saga_id())),
@@ -458,7 +460,7 @@ impl AsyncSagaExecutor<CertificateProvisioningSaga> for CertificateProvisioningE
                     },
                     ownership: None,
                     correlation_id,
-                    causation_id: Some(state.saga_id()), // Saga is the cause
+                    causation_id: Some(state.saga_id()),
                 }));
 
                 Ok(StepExecutionResult::continue_with_events(vec![event]))
@@ -472,26 +474,44 @@ impl AsyncSagaExecutor<CertificateProvisioningSaga> for CertificateProvisioningE
 
                 // Emit CertificateGenerated domain event
                 let key_id = state.artifacts.key_id.expect("Key should exist after GeneratingKey step");
-                #[allow(deprecated)]
-                let cert_gen_event = CertificateGeneratedEvent::new_legacy(
-                    cert_id.as_uuid(),
-                    key_id.as_uuid(),
-                    format!("CN={}, O=CIM, OU={:?}", state.request.person_name, state.request.purpose),
-                    Some(state.request.issuing_ca_id.as_uuid()),
+
+                use crate::value_objects::x509::{CommonName, OrganizationName, OrganizationalUnitName};
+                let common_name = CommonName::new_unchecked(&state.request.person_name);
+                let subject_name = SubjectName::new(common_name)
+                    .with_organization(OrganizationName::new_unchecked("CIM"))
+                    .with_organizational_unit(OrganizationalUnitName::new_unchecked(
+                        &format!("{:?}", state.request.purpose)
+                    ));
+
+                let validity = CertificateValidity::new(
                     Utc::now(),
                     Utc::now() + chrono::Duration::days(state.request.validity_days as i64),
-                    false, // is_ca
-                    vec![state.request.person_email.clone()],
-                    vec!["digitalSignature".to_string()],
-                    match state.request.purpose {
-                        CertificatePurpose::Authentication => vec!["clientAuth".to_string()],
-                        CertificatePurpose::DigitalSignature => vec!["codeSigning".to_string()],
-                        CertificatePurpose::KeyManagement => vec!["emailProtection".to_string(), "keyAgreement".to_string()],
-                        CertificatePurpose::CardAuthentication => vec!["smartcardLogon".to_string()],
-                    },
+                ).expect("Valid certificate validity");
+
+                let extended_key_usage = match state.request.purpose {
+                    CertificatePurpose::Authentication => Some(ExtendedKeyUsage::tls_client()),
+                    CertificatePurpose::DigitalSignature => Some(ExtendedKeyUsage::code_signing()),
+                    CertificatePurpose::KeyManagement => Some(ExtendedKeyUsage::email_protection()),
+                    CertificatePurpose::CardAuthentication => None, // No standard EKU for smart card
+                };
+
+                let subject_alt_name = SubjectAlternativeName::new()
+                    .with_email(&state.request.person_email)
+                    .ok();
+
+                let cert_gen_event = CertificateGeneratedEvent {
+                    cert_id: cert_id.as_uuid(),
+                    key_id: key_id.as_uuid(),
+                    subject_name,
+                    subject_alt_name,
+                    key_usage: KeyUsage::code_signing(),
+                    extended_key_usage,
+                    validity,
+                    basic_constraints: BasicConstraints::end_entity(),
+                    issuer: Some(state.request.issuing_ca_id.as_uuid()),
                     correlation_id,
-                    Some(state.saga_id()),
-                );
+                    causation_id: Some(state.saga_id()),
+                };
                 let event = DomainEvent::Certificate(CertificateEvents::CertificateGenerated(cert_gen_event));
 
                 Ok(StepExecutionResult::continue_with_events(vec![event]))
@@ -931,8 +951,8 @@ mod tests {
                         // A7: Verify causality chain
                         assert_eq!(e.correlation_id, correlation_id);
                         assert_eq!(e.causation_id, Some(saga_id));
-                        // Verify certificate metadata
-                        assert!(!e.is_ca);
+                        // Verify certificate metadata - should be end-entity (not CA)
+                        assert!(!e.basic_constraints.is_ca());
                     }
                     _ => panic!("Expected CertificateGenerated event"),
                 }
