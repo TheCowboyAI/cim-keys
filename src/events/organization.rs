@@ -2,6 +2,13 @@
 //!
 //! Events related to the Organization aggregate root.
 //! Includes organizational structure, units, roles, and policies.
+//!
+//! ## Value Object Migration
+//!
+//! Events use dual-path fields for backward compatibility:
+//! - Old string fields are kept for deserializing existing events
+//! - New typed fields use Option<T> for gradual migration
+//! - Accessor methods prefer typed fields, fall back to strings
 
 use cim_domain::DomainEvent;
 use serde::{Deserialize, Serialize};
@@ -9,6 +16,7 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
 use crate::policy_types::{PolicyClaim, PolicyCondition};
+use crate::value_objects::ActorId;
 
 /// Events for the Organization aggregate
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,9 +94,29 @@ pub struct OrganizationUpdatedEvent {
     pub old_value: Option<String>,
     pub new_value: String,
     pub updated_at: DateTime<Utc>,
+
+    // Legacy field (deprecated)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[deprecated(note = "Use updated_by_actor field instead")]
     pub updated_by: String,
+
+    // Typed field (preferred)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_by_actor: Option<ActorId>,
+
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
+}
+
+#[allow(deprecated)]
+impl OrganizationUpdatedEvent {
+    /// Get ActorId, preferring typed field, falling back to parsing legacy string
+    pub fn updated_by_value_object(&self) -> ActorId {
+        if let Some(ref actor) = self.updated_by_actor {
+            return actor.clone();
+        }
+        ActorId::parse(&self.updated_by)
+    }
 }
 
 /// An organizational unit was created
@@ -98,9 +126,29 @@ pub struct OrganizationalUnitCreatedEvent {
     pub name: String,
     pub parent_id: Option<Uuid>,
     pub organization_id: Uuid,
+
+    // Legacy field (deprecated)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[deprecated(note = "Use created_by_actor field instead")]
     pub created_by: String,
+
+    // Typed field (preferred)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_by_actor: Option<ActorId>,
+
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
+}
+
+#[allow(deprecated)]
+impl OrganizationalUnitCreatedEvent {
+    /// Get ActorId, preferring typed field, falling back to parsing legacy string
+    pub fn created_by_value_object(&self) -> ActorId {
+        if let Some(ref actor) = self.created_by_actor {
+            return actor.clone();
+        }
+        ActorId::parse(&self.created_by)
+    }
 }
 
 /// An organizational unit was updated
@@ -111,9 +159,29 @@ pub struct OrganizationalUnitUpdatedEvent {
     pub old_value: Option<String>,
     pub new_value: String,
     pub updated_at: DateTime<Utc>,
+
+    // Legacy field (deprecated)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[deprecated(note = "Use updated_by_actor field instead")]
     pub updated_by: String,
+
+    // Typed field (preferred)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_by_actor: Option<ActorId>,
+
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
+}
+
+#[allow(deprecated)]
+impl OrganizationalUnitUpdatedEvent {
+    /// Get ActorId, preferring typed field, falling back to parsing legacy string
+    pub fn updated_by_value_object(&self) -> ActorId {
+        if let Some(ref actor) = self.updated_by_actor {
+            return actor.clone();
+        }
+        ActorId::parse(&self.updated_by)
+    }
 }
 
 /// An organizational unit was dissolved
@@ -122,9 +190,29 @@ pub struct OrganizationalUnitDissolvedEvent {
     pub unit_id: Uuid,
     pub reason: String,
     pub dissolved_at: DateTime<Utc>,
+
+    // Legacy field (deprecated)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[deprecated(note = "Use dissolved_by_actor field instead")]
     pub dissolved_by: String,
+
+    // Typed field (preferred)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dissolved_by_actor: Option<ActorId>,
+
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
+}
+
+#[allow(deprecated)]
+impl OrganizationalUnitDissolvedEvent {
+    /// Get ActorId, preferring typed field, falling back to parsing legacy string
+    pub fn dissolved_by_value_object(&self) -> ActorId {
+        if let Some(ref actor) = self.dissolved_by_actor {
+            return actor.clone();
+        }
+        ActorId::parse(&self.dissolved_by)
+    }
 }
 
 /// A role was created
@@ -134,9 +222,29 @@ pub struct RoleCreatedEvent {
     pub name: String,
     pub description: String,
     pub organization_id: Option<Uuid>,
+
+    // Legacy field (deprecated)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[deprecated(note = "Use created_by_actor field instead")]
     pub created_by: String,
+
+    // Typed field (preferred)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_by_actor: Option<ActorId>,
+
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
+}
+
+#[allow(deprecated)]
+impl RoleCreatedEvent {
+    /// Get ActorId, preferring typed field, falling back to parsing legacy string
+    pub fn created_by_value_object(&self) -> ActorId {
+        if let Some(ref actor) = self.created_by_actor {
+            return actor.clone();
+        }
+        ActorId::parse(&self.created_by)
+    }
 }
 
 /// A role was updated
@@ -147,9 +255,29 @@ pub struct RoleUpdatedEvent {
     pub old_value: Option<String>,
     pub new_value: String,
     pub updated_at: DateTime<Utc>,
+
+    // Legacy field (deprecated)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[deprecated(note = "Use updated_by_actor field instead")]
     pub updated_by: String,
+
+    // Typed field (preferred)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_by_actor: Option<ActorId>,
+
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
+}
+
+#[allow(deprecated)]
+impl RoleUpdatedEvent {
+    /// Get ActorId, preferring typed field, falling back to parsing legacy string
+    pub fn updated_by_value_object(&self) -> ActorId {
+        if let Some(ref actor) = self.updated_by_actor {
+            return actor.clone();
+        }
+        ActorId::parse(&self.updated_by)
+    }
 }
 
 /// A role was deleted
@@ -158,9 +286,29 @@ pub struct RoleDeletedEvent {
     pub role_id: Uuid,
     pub reason: String,
     pub deleted_at: DateTime<Utc>,
+
+    // Legacy field (deprecated)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[deprecated(note = "Use deleted_by_actor field instead")]
     pub deleted_by: String,
+
+    // Typed field (preferred)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deleted_by_actor: Option<ActorId>,
+
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
+}
+
+#[allow(deprecated)]
+impl RoleDeletedEvent {
+    /// Get ActorId, preferring typed field, falling back to parsing legacy string
+    pub fn deleted_by_value_object(&self) -> ActorId {
+        if let Some(ref actor) = self.deleted_by_actor {
+            return actor.clone();
+        }
+        ActorId::parse(&self.deleted_by)
+    }
 }
 
 /// A policy was created
@@ -172,9 +320,29 @@ pub struct PolicyCreatedEvent {
     pub claims: Vec<PolicyClaim>,
     pub conditions: Vec<PolicyCondition>,
     pub organization_id: Option<Uuid>,
+
+    // Legacy field (deprecated)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[deprecated(note = "Use created_by_actor field instead")]
     pub created_by: String,
+
+    // Typed field (preferred)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_by_actor: Option<ActorId>,
+
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
+}
+
+#[allow(deprecated)]
+impl PolicyCreatedEvent {
+    /// Get ActorId, preferring typed field, falling back to parsing legacy string
+    pub fn created_by_value_object(&self) -> ActorId {
+        if let Some(ref actor) = self.created_by_actor {
+            return actor.clone();
+        }
+        ActorId::parse(&self.created_by)
+    }
 }
 
 /// A policy was updated
@@ -185,9 +353,29 @@ pub struct PolicyUpdatedEvent {
     pub old_value: Option<String>,
     pub new_value: String,
     pub updated_at: DateTime<Utc>,
+
+    // Legacy field (deprecated)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[deprecated(note = "Use updated_by_actor field instead")]
     pub updated_by: String,
+
+    // Typed field (preferred)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_by_actor: Option<ActorId>,
+
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
+}
+
+#[allow(deprecated)]
+impl PolicyUpdatedEvent {
+    /// Get ActorId, preferring typed field, falling back to parsing legacy string
+    pub fn updated_by_value_object(&self) -> ActorId {
+        if let Some(ref actor) = self.updated_by_actor {
+            return actor.clone();
+        }
+        ActorId::parse(&self.updated_by)
+    }
 }
 
 /// A policy was revoked
@@ -196,9 +384,29 @@ pub struct PolicyRevokedEvent {
     pub policy_id: Uuid,
     pub reason: String,
     pub revoked_at: DateTime<Utc>,
+
+    // Legacy field (deprecated)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[deprecated(note = "Use revoked_by_actor field instead")]
     pub revoked_by: String,
+
+    // Typed field (preferred)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revoked_by_actor: Option<ActorId>,
+
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
+}
+
+#[allow(deprecated)]
+impl PolicyRevokedEvent {
+    /// Get ActorId, preferring typed field, falling back to parsing legacy string
+    pub fn revoked_by_value_object(&self) -> ActorId {
+        if let Some(ref actor) = self.revoked_by_actor {
+            return actor.clone();
+        }
+        ActorId::parse(&self.revoked_by)
+    }
 }
 
 // ============================================================================
