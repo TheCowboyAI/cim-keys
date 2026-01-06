@@ -1,12 +1,19 @@
-// YubiKey Value Objects
-//
-// Immutable value objects representing YubiKey PIV security parameters.
-// These are NOT entities - they are values that define the security posture.
+// Copyright (c) 2025 - Cowboy AI, LLC.
+
+//! YubiKey Value Objects
+//!
+//! Immutable value objects representing YubiKey PIV security parameters.
+//! These are NOT entities - they are values that define the security posture.
+//!
+//! All types implement `cim_domain::ValueObject` marker trait.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use crate::state_machines::PivSlot;
+
+// Import DDD marker traits from cim-domain
+use cim_domain::{DomainConcept, ValueObject};
 
 // ============================================================================
 // YubiKey Security Parameters (Value Objects)
@@ -16,7 +23,7 @@ use crate::state_machines::PivSlot;
 ///
 /// CRITICAL SECURITY: Never store plaintext PINs in production!
 /// This structure is for projection/configuration only.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PinValue {
     /// PIN hash (for verification, never plaintext in production)
     pin_hash: String,
@@ -89,7 +96,7 @@ impl fmt::Display for PinValue {
 /// PUK (PIN Unblock Key) value object
 ///
 /// Used to reset a locked PIN
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PukValue {
     /// PUK hash (for verification)
     puk_hash: String,
@@ -144,7 +151,7 @@ impl fmt::Debug for PukValue {
 /// Management Key value object
 ///
 /// Used to authenticate administrative operations on the YubiKey
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ManagementKeyValue {
     /// Management key bytes (encrypted in production!)
     key_bytes: Vec<u8>,
@@ -274,7 +281,7 @@ impl ManagementKeyAlgorithm {
 /// PIV Slot state value object
 ///
 /// Represents the complete state of a single PIV slot
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SlotState {
     pub slot: PivSlot,
     pub status: SlotStatus,
@@ -348,7 +355,7 @@ pub enum SlotTouchPolicy {
 /// Complete YubiKey PIV configuration value object
 ///
 /// This is the complete security posture of a YubiKey
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct YubiKeyPivConfiguration {
     /// YubiKey serial number
     pub serial: String,
@@ -464,6 +471,46 @@ impl fmt::Display for FirmwareVersion {
         write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
     }
 }
+
+// ============================================================================
+// DDD Marker Trait Implementations
+// ============================================================================
+
+// PIN/PUK/Management Key Value Objects
+impl DomainConcept for PinValue {}
+impl ValueObject for PinValue {}
+
+impl DomainConcept for PukValue {}
+impl ValueObject for PukValue {}
+
+impl DomainConcept for ManagementKeyValue {}
+impl ValueObject for ManagementKeyValue {}
+
+impl DomainConcept for ManagementKeyAlgorithm {}
+impl ValueObject for ManagementKeyAlgorithm {}
+
+// Slot Value Objects
+impl DomainConcept for SlotState {}
+impl ValueObject for SlotState {}
+
+impl DomainConcept for SlotStatus {}
+impl ValueObject for SlotStatus {}
+
+impl DomainConcept for SlotKeyAlgorithm {}
+impl ValueObject for SlotKeyAlgorithm {}
+
+impl DomainConcept for SlotPinPolicy {}
+impl ValueObject for SlotPinPolicy {}
+
+impl DomainConcept for SlotTouchPolicy {}
+impl ValueObject for SlotTouchPolicy {}
+
+// Configuration Value Objects
+impl DomainConcept for YubiKeyPivConfiguration {}
+impl ValueObject for YubiKeyPivConfiguration {}
+
+impl DomainConcept for FirmwareVersion {}
+impl ValueObject for FirmwareVersion {}
 
 #[cfg(test)]
 mod tests {

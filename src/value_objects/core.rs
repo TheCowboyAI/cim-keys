@@ -1,8 +1,16 @@
-// Value Objects for CIM Keys
-//
-// All cryptographic artifacts are immutable value objects that compose
-// across domain boundaries. These are NOT entities - they have no identity
-// of their own and are defined entirely by their attributes.
+// Copyright (c) 2025 - Cowboy AI, LLC.
+
+//! Value Objects for CIM Keys
+//!
+//! All cryptographic artifacts are immutable value objects that compose
+//! across domain boundaries. These are NOT entities - they have no identity
+//! of their own and are defined entirely by their attributes.
+//!
+//! Value Objects implement `cim_domain::ValueObject` marker trait, indicating:
+//! - Immutable after creation
+//! - No identity beyond their attributes
+//! - Compared by structural equality
+//! - Can be freely copied and shared
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -10,6 +18,9 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
 use crate::events::{KeyAlgorithm, KeyPurpose};
+
+// Import DDD marker traits from cim-domain
+use cim_domain::{DomainConcept, ValueObject};
 
 // ============================================================================
 // Cryptographic Value Objects
@@ -1144,6 +1155,98 @@ pub struct TrustPathLink {
     /// Trust level assigned to this link
     pub trust_level: TrustLevel,
 }
+
+// ============================================================================
+// DDD Marker Trait Implementations
+// ============================================================================
+
+// ValueObject trait requires: DomainConcept + Clone + PartialEq + Eq + Debug
+// All types below already derive Clone, PartialEq, Eq, Debug
+
+// Cryptographic Value Objects
+impl DomainConcept for PublicKey {}
+impl ValueObject for PublicKey {}
+
+impl DomainConcept for PublicKeyFormat {}
+impl ValueObject for PublicKeyFormat {}
+
+impl DomainConcept for PrivateKey {}
+impl ValueObject for PrivateKey {}
+
+impl DomainConcept for EncryptionAlgorithm {}
+impl ValueObject for EncryptionAlgorithm {}
+
+impl DomainConcept for Certificate {}
+impl ValueObject for Certificate {}
+
+impl DomainConcept for CertificateSubject {}
+impl ValueObject for CertificateSubject {}
+
+impl DomainConcept for Validity {}
+impl ValueObject for Validity {}
+
+impl DomainConcept for Signature {}
+impl ValueObject for Signature {}
+
+impl DomainConcept for SignatureAlgorithm {}
+impl ValueObject for SignatureAlgorithm {}
+
+// Domain Composition Value Objects
+impl DomainConcept for CertificateChain {}
+impl ValueObject for CertificateChain {}
+
+impl DomainConcept for KeyOwnership {}
+impl ValueObject for KeyOwnership {}
+
+impl DomainConcept for OwnerType {}
+impl ValueObject for OwnerType {}
+
+// Self-Sovereign Identity (SSI) Value Objects
+impl DomainConcept for DID {}
+impl ValueObject for DID {}
+
+impl DomainConcept for DidMethod {}
+impl ValueObject for DidMethod {}
+
+impl DomainConcept for DidDocument {}
+impl ValueObject for DidDocument {}
+
+impl DomainConcept for VerificationMethod {}
+impl ValueObject for VerificationMethod {}
+
+impl DomainConcept for VerificationMethodType {}
+impl ValueObject for VerificationMethodType {}
+
+impl DomainConcept for Service {}
+impl ValueObject for Service {}
+
+impl DomainConcept for ServiceType {}
+impl ValueObject for ServiceType {}
+
+impl DomainConcept for VerifiableCredential {}
+impl ValueObject for VerifiableCredential {}
+
+impl DomainConcept for CredentialType {}
+impl ValueObject for CredentialType {}
+
+impl DomainConcept for CredentialSubject {}
+impl ValueObject for CredentialSubject {}
+
+impl DomainConcept for CredentialProof {}
+impl ValueObject for CredentialProof {}
+
+impl DomainConcept for ProofType {}
+impl ValueObject for ProofType {}
+
+impl DomainConcept for TrustChainLink {}
+impl ValueObject for TrustChainLink {}
+
+impl DomainConcept for TrustLevel {}
+impl ValueObject for TrustLevel {}
+
+// Export Format Value Object
+impl DomainConcept for ExportFormat {}
+impl ValueObject for ExportFormat {}
 
 // ============================================================================
 // Tests

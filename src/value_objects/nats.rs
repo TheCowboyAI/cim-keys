@@ -1,20 +1,27 @@
-// NATS Security Value Objects
-//
-// NKeys and JWTs for NATS decentralized authentication and authorization.
-//
-// NKeys are Ed25519 key pairs with specific prefixes:
-// - Operator: O prefix
-// - Account: A prefix
-// - User: U prefix
-// - Server: N prefix
-// - Cluster: C prefix
-//
-// JWTs are signed tokens containing identity claims and permissions.
+// Copyright (c) 2025 - Cowboy AI, LLC.
+
+//! NATS Security Value Objects
+//!
+//! NKeys and JWTs for NATS decentralized authentication and authorization.
+//!
+//! NKeys are Ed25519 key pairs with specific prefixes:
+//! - Operator: O prefix
+//! - Account: A prefix
+//! - User: U prefix
+//! - Server: N prefix
+//! - Cluster: C prefix
+//!
+//! JWTs are signed tokens containing identity claims and permissions.
+//!
+//! All types implement `cim_domain::ValueObject` marker trait.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
+
+// Import DDD marker traits from cim-domain
+use cim_domain::{DomainConcept, ValueObject};
 
 // ============================================================================
 // NKey Value Objects
@@ -68,7 +75,7 @@ impl fmt::Display for NKeyType {
 /// NATS NKey Seed (private key material)
 ///
 /// CRITICAL: This is SECRET KEY MATERIAL and must be protected!
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NKeySeed {
     /// Key type (determines prefix)
     pub key_type: NKeyType,
@@ -171,7 +178,7 @@ impl fmt::Display for NKeyPublic {
 }
 
 /// Complete NKey Pair (seed + public key)
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NKeyPair {
     /// Unique identifier for this key pair
     pub id: Uuid,
@@ -312,7 +319,7 @@ impl fmt::Debug for NKeyPair {
 // ============================================================================
 
 /// NATS JWT Header
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NatsJwtHeader {
     /// Algorithm (always "ed25519" for NKeys)
     pub alg: String,
@@ -330,7 +337,7 @@ impl Default for NatsJwtHeader {
 }
 
 /// NATS Operator JWT Claims
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperatorClaims {
     /// JWT ID (unique identifier)
     pub jti: String,
@@ -344,7 +351,7 @@ pub struct OperatorClaims {
     pub nats: OperatorData,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperatorData {
     /// Operator name
     pub name: String,
@@ -361,7 +368,7 @@ pub struct OperatorData {
 }
 
 /// NATS Account JWT Claims
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AccountClaims {
     /// JWT ID
     pub jti: String,
@@ -378,7 +385,7 @@ pub struct AccountClaims {
     pub nats: AccountData,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AccountData {
     /// Account name
     pub name: String,
@@ -394,7 +401,7 @@ pub struct AccountData {
     pub default_permissions: Option<Permissions>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AccountLimits {
     /// Max connections (-1 = unlimited)
     pub conn: i64,
@@ -430,7 +437,7 @@ impl Default for AccountLimits {
 }
 
 /// NATS User JWT Claims
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UserClaims {
     /// JWT ID
     pub jti: String,
@@ -447,7 +454,7 @@ pub struct UserClaims {
     pub nats: UserData,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UserData {
     /// User name
     pub name: String,
@@ -461,7 +468,7 @@ pub struct UserData {
     pub limits: Option<UserLimits>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UserLimits {
     /// Max subscriptions
     pub subs: i64,
@@ -472,7 +479,7 @@ pub struct UserLimits {
 }
 
 /// NATS Permissions
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Permissions {
     /// Publish permissions
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -489,7 +496,7 @@ pub struct Permissions {
 }
 
 /// Complete NATS JWT (header + claims + signature)
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NatsJwt {
     /// JWT ID for tracking
     pub id: Uuid,
@@ -755,7 +762,7 @@ impl fmt::Display for NatsJwt {
 /// -----BEGIN USER NKEY SEED-----
 /// <seed>
 /// ------END USER NKEY SEED------
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NatsCredential {
     /// Credential ID
     pub id: Uuid,
@@ -787,6 +794,60 @@ impl NatsCredential {
         )
     }
 }
+
+// ============================================================================
+// DDD Marker Trait Implementations
+// ============================================================================
+
+// NKey Value Objects
+impl DomainConcept for NKeyType {}
+impl ValueObject for NKeyType {}
+
+impl DomainConcept for NKeySeed {}
+impl ValueObject for NKeySeed {}
+
+impl DomainConcept for NKeyPublic {}
+impl ValueObject for NKeyPublic {}
+
+impl DomainConcept for NKeyPair {}
+impl ValueObject for NKeyPair {}
+
+// JWT Value Objects
+impl DomainConcept for NatsJwtHeader {}
+impl ValueObject for NatsJwtHeader {}
+
+impl DomainConcept for OperatorClaims {}
+impl ValueObject for OperatorClaims {}
+
+impl DomainConcept for OperatorData {}
+impl ValueObject for OperatorData {}
+
+impl DomainConcept for AccountClaims {}
+impl ValueObject for AccountClaims {}
+
+impl DomainConcept for AccountData {}
+impl ValueObject for AccountData {}
+
+impl DomainConcept for AccountLimits {}
+impl ValueObject for AccountLimits {}
+
+impl DomainConcept for UserClaims {}
+impl ValueObject for UserClaims {}
+
+impl DomainConcept for UserData {}
+impl ValueObject for UserData {}
+
+impl DomainConcept for UserLimits {}
+impl ValueObject for UserLimits {}
+
+impl DomainConcept for Permissions {}
+impl ValueObject for Permissions {}
+
+impl DomainConcept for NatsJwt {}
+impl ValueObject for NatsJwt {}
+
+impl DomainConcept for NatsCredential {}
+impl ValueObject for NatsCredential {}
 
 #[cfg(test)]
 mod tests {

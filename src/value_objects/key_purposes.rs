@@ -1,12 +1,19 @@
-// Key Purpose Taxonomy
-//
-// Comprehensive key purposes mapping to authentication/authorization mechanisms.
-// Each purpose maps to specific YubiKey slots, GPG capabilities, and X.509 extensions.
+// Copyright (c) 2025 - Cowboy AI, LLC.
+
+//! Key Purpose Taxonomy
+//!
+//! Comprehensive key purposes mapping to authentication/authorization mechanisms.
+//! Each purpose maps to specific YubiKey slots, GPG capabilities, and X.509 extensions.
+//!
+//! All types implement `cim_domain::ValueObject` marker trait.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use crate::state_machines::{PivSlot, PinPolicy, TouchPolicy};
+
+// Import DDD marker traits from cim-domain
+use cim_domain::{DomainConcept, ValueObject};
 
 // ============================================================================
 // Key Purpose Taxonomy
@@ -377,7 +384,7 @@ pub enum KeyAlgorithmRecommendation {
 // ============================================================================
 
 /// Complete key bundle for a person supporting all auth mechanisms
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PersonKeyBundle {
     /// Person identifier
     pub person_id: uuid::Uuid,
@@ -390,7 +397,7 @@ pub struct PersonKeyBundle {
 }
 
 /// Key assignment to slot/purpose
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KeyAssignment {
     pub purpose: AuthKeyPurpose,
     pub key_id: uuid::Uuid,
@@ -448,6 +455,22 @@ impl PersonKeyBundle {
         self.keys.iter().find(|k| k.purpose == purpose)
     }
 }
+
+// ============================================================================
+// DDD Marker Trait Implementations
+// ============================================================================
+
+impl DomainConcept for AuthKeyPurpose {}
+impl ValueObject for AuthKeyPurpose {}
+
+impl DomainConcept for KeyAlgorithmRecommendation {}
+impl ValueObject for KeyAlgorithmRecommendation {}
+
+impl DomainConcept for PersonKeyBundle {}
+impl ValueObject for PersonKeyBundle {}
+
+impl DomainConcept for KeyAssignment {}
+impl ValueObject for KeyAssignment {}
 
 #[cfg(test)]
 mod tests {
