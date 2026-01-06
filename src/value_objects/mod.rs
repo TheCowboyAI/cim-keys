@@ -27,6 +27,7 @@
 //! - Location (email, address) from Location domain
 //! - PKI-specific extensions from this module
 
+pub mod actor;
 pub mod core;
 pub mod key_purposes;
 pub mod nats;
@@ -35,6 +36,9 @@ pub mod yubikey;
 
 // Re-export core types
 pub use core::*;
+
+// Re-export Actor types
+pub use actor::ActorId;
 
 // Re-export YubiKey types
 pub use yubikey::{

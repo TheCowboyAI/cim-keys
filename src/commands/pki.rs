@@ -80,19 +80,20 @@ pub fn handle_generate_key_pair(cmd: GenerateKeyPair) -> Result<KeyPairGenerated
     };
 
     // Step 3: Emit key generated event
-    events.push(DomainEvent::Key(crate::events::KeyEvents::KeyGenerated(crate::events::key::KeyGeneratedEvent {
+    #[allow(deprecated)]
+    let key_event = crate::events::key::KeyGeneratedEvent::new_legacy(
         key_id,
-        algorithm: algorithm.clone(),
-        purpose: match cmd.purpose {
+        algorithm.clone(),
+        match cmd.purpose {
             crate::value_objects::AuthKeyPurpose::X509ServerAuth => KeyPurpose::Authentication,
             crate::value_objects::AuthKeyPurpose::X509CodeSigning => KeyPurpose::Signing,
             crate::value_objects::AuthKeyPurpose::GpgEncryption => KeyPurpose::Encryption,
             _ => KeyPurpose::Authentication,
         },
-        generated_at: Utc::now(),
-        generated_by: "system".to_string(),
-        hardware_backed: false,
-        metadata: crate::types::KeyMetadata {
+        Utc::now(),
+        "system".to_string(),
+        false, // hardware_backed
+        crate::types::KeyMetadata {
             label: format!("Key pair for {:?}", cmd.purpose),
             description: Some(format!("Generated {:?} key for {:?}", algorithm, cmd.purpose)),
             tags: vec![],
@@ -101,10 +102,11 @@ pub fn handle_generate_key_pair(cmd: GenerateKeyPair) -> Result<KeyPairGenerated
             jwt_alg: None,
             jwt_use: None,
         },
-        ownership: Some(cmd.owner_context.actor.clone()),
-        correlation_id: cmd.correlation_id,
-        causation_id: cmd.causation_id,
-    })));
+        Some(cmd.owner_context.actor.clone()),
+        cmd.correlation_id,
+        cmd.causation_id,
+    );
+    events.push(DomainEvent::Key(crate::events::KeyEvents::KeyGenerated(key_event)));
 
     Ok(KeyPairGenerated {
         key_id,

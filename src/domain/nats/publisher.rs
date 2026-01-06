@@ -380,6 +380,7 @@ mod tests {
         }
     }
 
+    #[allow(deprecated)]
     fn create_test_key_event() -> DomainEvent {
         DomainEvent::Key(KeyEvents::KeyGenerated(KeyGeneratedEvent {
             key_id: Uuid::now_v7(),
@@ -387,6 +388,7 @@ mod tests {
             purpose: KeyPurpose::Signing,
             generated_at: chrono::Utc::now(),
             generated_by: "test".to_string(),
+            generated_by_actor: None,
             hardware_backed: false,
             metadata: KeyMetadata {
                 label: "test-key".to_string(),

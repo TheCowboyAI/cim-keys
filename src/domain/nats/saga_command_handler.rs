@@ -437,12 +437,14 @@ impl AsyncSagaExecutor<CertificateProvisioningSaga> for CertificateProvisioningE
                 state.advance();
 
                 // Emit KeyGenerated domain event (A7: event log)
+                #[allow(deprecated)]
                 let event = DomainEvent::Key(KeyEvents::KeyGenerated(KeyGeneratedEvent {
                     key_id: key_id.as_uuid(),
                     algorithm: state.request.key_algorithm.clone(),
                     purpose: state.request.purpose.to_key_purpose(),
                     generated_at: Utc::now(),
                     generated_by: state.request.person_email.clone(),
+                    generated_by_actor: None,
                     hardware_backed: true, // YubiKey-backed
                     metadata: KeyMetadata {
                         label: format!("{} - {:?}", state.request.person_name, state.request.purpose),

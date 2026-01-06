@@ -48,6 +48,7 @@ fn test_key_ownership() -> KeyOwnership {
     }
 }
 
+#[allow(deprecated)]
 fn sample_key_generated() -> KeyGeneratedEvent {
     KeyGeneratedEvent {
         key_id: test_key_id(),
@@ -55,6 +56,7 @@ fn sample_key_generated() -> KeyGeneratedEvent {
         purpose: KeyPurpose::Signing,
         generated_at: Utc::now(),
         generated_by: "key_admin".to_string(),
+        generated_by_actor: None,
         hardware_backed: false,
         metadata: test_key_metadata(),
         ownership: Some(test_key_ownership()),

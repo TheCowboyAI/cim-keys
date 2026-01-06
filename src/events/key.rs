@@ -2,6 +2,13 @@
 //!
 //! Events related to the Key aggregate root.
 //! Keys represent cryptographic key material (public/private keypairs).
+//!
+//! ## Value Object Migration
+//!
+//! Events use dual-path fields for backward compatibility:
+//! - Old string fields are kept for deserializing existing events
+//! - New typed fields use Option<T> for gradual migration
+//! - Accessor methods prefer typed fields, fall back to strings
 
 use cim_domain::DomainEvent;
 use serde::{Deserialize, Serialize};
@@ -15,6 +22,8 @@ use crate::types::{
 };
 // Import from domain
 use crate::domain::KeyOwnership;
+// Import value objects
+use crate::value_objects::ActorId;
 
 /// Events for the Key aggregate
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,18 +61,124 @@ pub enum KeyEvents {
 }
 
 /// A new key was generated
+///
+/// This event uses dual-path fields for backward compatibility:
+/// - Legacy string field (`generated_by`) for existing events
+/// - Typed value object (`generated_by_actor`) for new events
+///
+/// Use the accessor method `generated_by_actor()` which prefers
+/// typed field and falls back to parsing legacy string.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyGeneratedEvent {
     pub key_id: Uuid,
     pub algorithm: KeyAlgorithm,
     pub purpose: KeyPurpose,
     pub generated_at: DateTime<Utc>,
+
+    // ========================================================================
+    // Legacy fields (deprecated, kept for backward compatibility)
+    // ========================================================================
+
+    /// Legacy: Actor who generated the key (use generated_by_actor instead)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[deprecated(note = "Use generated_by_actor field instead")]
     pub generated_by: String,
+
+    // ========================================================================
+    // Typed value object fields (preferred)
+    // ========================================================================
+
+    /// Typed: Actor who generated the key
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generated_by_actor: Option<ActorId>,
+
+    // ========================================================================
+    // Other fields
+    // ========================================================================
+
     pub hardware_backed: bool,
     pub metadata: KeyMetadata,
     pub ownership: Option<KeyOwnership>,
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
+}
+
+#[allow(deprecated)]
+impl KeyGeneratedEvent {
+    /// Create a new event using legacy string field (for backward compatibility)
+    ///
+    /// Use this when migrating existing code. New code should use `new_typed()`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_legacy(
+        key_id: Uuid,
+        algorithm: KeyAlgorithm,
+        purpose: KeyPurpose,
+        generated_at: DateTime<Utc>,
+        generated_by: String,
+        hardware_backed: bool,
+        metadata: KeyMetadata,
+        ownership: Option<KeyOwnership>,
+        correlation_id: Uuid,
+        causation_id: Option<Uuid>,
+    ) -> Self {
+        Self {
+            key_id,
+            algorithm,
+            purpose,
+            generated_at,
+            generated_by,
+            generated_by_actor: None,
+            hardware_backed,
+            metadata,
+            ownership,
+            correlation_id,
+            causation_id,
+        }
+    }
+
+    /// Create a new event using typed value objects (preferred for new code)
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_typed(
+        key_id: Uuid,
+        algorithm: KeyAlgorithm,
+        purpose: KeyPurpose,
+        generated_at: DateTime<Utc>,
+        generated_by_actor: ActorId,
+        hardware_backed: bool,
+        metadata: KeyMetadata,
+        ownership: Option<KeyOwnership>,
+        correlation_id: Uuid,
+        causation_id: Option<Uuid>,
+    ) -> Self {
+        Self {
+            key_id,
+            algorithm,
+            purpose,
+            generated_at,
+            // Legacy field populated for backward compat serialization
+            generated_by: generated_by_actor.to_legacy_string(),
+            generated_by_actor: Some(generated_by_actor),
+            hardware_backed,
+            metadata,
+            ownership,
+            correlation_id,
+            causation_id,
+        }
+    }
+
+    /// Get ActorId, preferring typed field, falling back to parsing legacy string
+    pub fn generated_by_value_object(&self) -> ActorId {
+        if let Some(ref actor) = self.generated_by_actor {
+            return actor.clone();
+        }
+        // Fall back to parsing legacy string
+        ActorId::parse(&self.generated_by)
+    }
+
+    /// Check if this event uses typed value objects (new format)
+    pub fn uses_typed_fields(&self) -> bool {
+        self.generated_by_actor.is_some()
+    }
 }
 
 /// A key was imported

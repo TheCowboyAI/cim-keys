@@ -20,6 +20,7 @@ use std::collections::HashMap;
 // Test Helpers
 // =============================================================================
 
+#[allow(deprecated)]
 fn create_test_key_event(key_id: Uuid, seq: u64) -> StoredEvent {
     use cim_keys::events::key::KeyGeneratedEvent;
 
@@ -29,6 +30,7 @@ fn create_test_key_event(key_id: Uuid, seq: u64) -> StoredEvent {
         purpose: KeyPurpose::Signing,
         generated_at: Utc::now(),
         generated_by: "test-user".to_string(),
+        generated_by_actor: None,
         hardware_backed: false,
         metadata: KeyMetadata {
             label: "Test Key".to_string(),
