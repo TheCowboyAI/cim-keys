@@ -226,6 +226,55 @@ impl DomainConcept for BasicConstraints {}
 impl ValueObject for BasicConstraints {}
 
 // ============================================================================
+// NodeContributor Implementation for BasicConstraints (Sprint D)
+// ============================================================================
+
+impl crate::value_objects::NodeContributor for BasicConstraints {
+    /// Generate labels for graph node based on basic constraints
+    fn as_labels(&self) -> Vec<crate::value_objects::Label> {
+        use crate::value_objects::Label;
+        let mut labels = Vec::new();
+
+        if self.is_ca {
+            labels.push(Label::new("CACertificate"));
+
+            if self.can_issue_ca_certs() {
+                labels.push(Label::new("CanIssueCA"));
+            } else {
+                labels.push(Label::new("EndEntityIssuerOnly"));
+            }
+
+            match self.path_len_constraint {
+                None => labels.push(Label::new("UnlimitedPathLen")),
+                Some(0) => labels.push(Label::new("PathLen0")),
+                Some(n) => labels.push(Label::new(format!("PathLen{}", n))),
+            }
+        } else {
+            labels.push(Label::new("EndEntityCertificate"));
+        }
+
+        labels
+    }
+
+    /// Generate properties for graph node
+    fn as_properties(&self) -> Vec<(crate::value_objects::PropertyKey, crate::value_objects::PropertyValue)> {
+        use crate::value_objects::{PropertyKey, PropertyValue};
+
+        let mut props = vec![
+            (PropertyKey::new("is_ca"), PropertyValue::bool(self.is_ca)),
+            (PropertyKey::new("can_issue_ca_certs"), PropertyValue::bool(self.can_issue_ca_certs())),
+            (PropertyKey::new("critical"), PropertyValue::bool(self.critical)),
+        ];
+
+        if let Some(path_len) = self.path_len_constraint {
+            props.push((PropertyKey::new("path_len_constraint"), PropertyValue::int(path_len as i64)));
+        }
+
+        props
+    }
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 

@@ -31,11 +31,17 @@ pub mod actor;
 pub mod core;
 pub mod key_purposes;
 pub mod nats;
+pub mod traits;
 pub mod x509;
 pub mod yubikey;
 
 // Re-export core types
 pub use core::*;
+
+// Re-export traits for graph contribution
+pub use traits::{
+    AggregateContributions, Label, NodeContributor, PropertyKey, PropertyValue, ValueRelationship,
+};
 
 // Re-export Actor types
 pub use actor::ActorId;

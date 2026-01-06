@@ -559,6 +559,19 @@ pub struct LiftedNode {
     /// Captured at lift time - NO pattern matching required at fold time.
     /// This is the categorical fold eliminator for the coproduct.
     edit_fields_fold: Option<FoldCapability<EditFieldData>>,
+
+    // ========================================================================
+    // ValueObject Graph Contributions (Sprint D)
+    // ========================================================================
+
+    /// Labels contributed by ValueObjects (e.g., "CACertificate", "Expired")
+    pub node_labels: Vec<crate::value_objects::Label>,
+
+    /// Properties contributed by ValueObjects
+    pub node_properties: Vec<(crate::value_objects::PropertyKey, crate::value_objects::PropertyValue)>,
+
+    /// Relationships contributed by ValueObjects
+    pub node_relationships: Vec<crate::value_objects::ValueRelationship>,
 }
 
 // Custom Debug impl since FoldCapability doesn't have useful Debug
@@ -571,6 +584,9 @@ impl std::fmt::Debug for LiftedNode {
             .field("secondary", &self.secondary)
             .field("color", &self.color)
             .field("has_edit_fields_fold", &self.edit_fields_fold.is_some())
+            .field("node_labels", &self.node_labels.len())
+            .field("node_properties", &self.node_properties.len())
+            .field("node_relationships", &self.node_relationships.len())
             .finish()
     }
 }
@@ -592,6 +608,9 @@ impl LiftedNode {
             color,
             data: Arc::new(data),
             edit_fields_fold: None,
+            node_labels: Vec::new(),
+            node_properties: Vec::new(),
+            node_relationships: Vec::new(),
         }
     }
 
@@ -616,6 +635,9 @@ impl LiftedNode {
             color,
             data: Arc::new(data),
             edit_fields_fold: Some(fold_cap),
+            node_labels: Vec::new(),
+            node_properties: Vec::new(),
+            node_relationships: Vec::new(),
         }
     }
 
@@ -629,6 +651,97 @@ impl LiftedNode {
     pub fn with_primary(mut self, text: impl Into<String>) -> Self {
         self.label = text.into();
         self
+    }
+
+    // ========================================================================
+    // ValueObject Graph Contributions (Sprint D)
+    // ========================================================================
+
+    /// Add labels from ValueObject contributions
+    pub fn with_labels(mut self, labels: Vec<crate::value_objects::Label>) -> Self {
+        self.node_labels = labels;
+        self
+    }
+
+    /// Add a single label
+    pub fn with_label(mut self, label: impl Into<crate::value_objects::Label>) -> Self {
+        self.node_labels.push(label.into());
+        self
+    }
+
+    /// Add properties from ValueObject contributions
+    pub fn with_properties(
+        mut self,
+        properties: Vec<(crate::value_objects::PropertyKey, crate::value_objects::PropertyValue)>,
+    ) -> Self {
+        self.node_properties = properties;
+        self
+    }
+
+    /// Add a single property
+    pub fn with_property(
+        mut self,
+        key: impl Into<crate::value_objects::PropertyKey>,
+        value: crate::value_objects::PropertyValue,
+    ) -> Self {
+        self.node_properties.push((key.into(), value));
+        self
+    }
+
+    /// Add relationships from ValueObject contributions
+    pub fn with_relationships(mut self, relationships: Vec<crate::value_objects::ValueRelationship>) -> Self {
+        self.node_relationships = relationships;
+        self
+    }
+
+    /// Add a single relationship
+    pub fn with_relationship(mut self, relationship: crate::value_objects::ValueRelationship) -> Self {
+        self.node_relationships.push(relationship);
+        self
+    }
+
+    /// Apply contributions from an entity that aggregates ValueObjects
+    pub fn with_aggregate_contributions<T: crate::value_objects::AggregateContributions>(
+        mut self,
+        aggregate: &T,
+    ) -> Self {
+        self.node_labels.extend(aggregate.aggregate_labels());
+        self.node_properties.extend(aggregate.aggregate_properties());
+        self.node_relationships.extend(aggregate.aggregate_relationships());
+        self
+    }
+
+    /// Get node labels
+    pub fn labels(&self) -> &[crate::value_objects::Label] {
+        &self.node_labels
+    }
+
+    /// Get node properties
+    pub fn properties(&self) -> &[(crate::value_objects::PropertyKey, crate::value_objects::PropertyValue)] {
+        &self.node_properties
+    }
+
+    /// Get node relationships
+    pub fn relationships(&self) -> &[crate::value_objects::ValueRelationship] {
+        &self.node_relationships
+    }
+
+    /// Check if node has any labels
+    pub fn has_labels(&self) -> bool {
+        !self.node_labels.is_empty()
+    }
+
+    /// Check if node has a specific label
+    pub fn has_label(&self, label_name: &str) -> bool {
+        self.node_labels.iter().any(|l| l.as_str() == label_name)
+    }
+
+    /// Get a property value by key
+    pub fn get_property(&self, key: &str) -> Option<&crate::value_objects::PropertyValue> {
+        self.node_properties
+            .iter()
+            .find(|(k, _)| k.as_str() == key)
+            .map(|(_, v)| v)
     }
 
     /// Add a fold capability for EditFieldData extraction (FRP A5/A6 compliance)

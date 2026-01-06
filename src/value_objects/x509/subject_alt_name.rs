@@ -594,6 +594,70 @@ impl DomainConcept for SubjectAlternativeName {}
 impl ValueObject for SubjectAlternativeName {}
 
 // ============================================================================
+// NodeContributor Implementation for SubjectAlternativeName (Sprint D)
+// ============================================================================
+
+impl crate::value_objects::NodeContributor for SubjectAlternativeName {
+    /// Generate labels for graph node based on SAN contents
+    fn as_labels(&self) -> Vec<crate::value_objects::Label> {
+        use crate::value_objects::Label;
+        let mut labels = Vec::new();
+
+        if self.has_wildcard() {
+            labels.push(Label::new("WildcardCertificate"));
+        }
+        if self.dns_names().count() > 0 {
+            labels.push(Label::new("HasDnsNames"));
+        }
+        if self.ip_addresses().count() > 0 {
+            labels.push(Label::new("HasIpAddresses"));
+        }
+        if self.emails().count() > 0 {
+            labels.push(Label::new("HasEmailAddresses"));
+        }
+        if self.uris().count() > 0 {
+            labels.push(Label::new("HasUris"));
+        }
+        if self.len() > 10 {
+            labels.push(Label::new("ManySans"));
+        }
+
+        labels
+    }
+
+    /// Generate properties for graph node
+    fn as_properties(&self) -> Vec<(crate::value_objects::PropertyKey, crate::value_objects::PropertyValue)> {
+        use crate::value_objects::{PropertyKey, PropertyValue};
+
+        let dns_names: Vec<String> = self.dns_names().map(|d| d.as_str().to_string()).collect();
+        let ip_addresses: Vec<String> = self.ip_addresses().map(|ip| ip.addr().to_string()).collect();
+        let emails: Vec<String> = self.emails().map(|e| e.as_str().to_string()).collect();
+        let uris: Vec<String> = self.uris().map(|u| u.as_str().to_string()).collect();
+
+        let mut props = vec![
+            (PropertyKey::new("san_count"), PropertyValue::int(self.len() as i64)),
+            (PropertyKey::new("has_wildcard"), PropertyValue::bool(self.has_wildcard())),
+            (PropertyKey::new("critical"), PropertyValue::bool(self.critical)),
+        ];
+
+        if !dns_names.is_empty() {
+            props.push((PropertyKey::new("dns_names"), PropertyValue::string_list(dns_names.iter().map(|s| s.as_str()))));
+        }
+        if !ip_addresses.is_empty() {
+            props.push((PropertyKey::new("ip_addresses"), PropertyValue::string_list(ip_addresses.iter().map(|s| s.as_str()))));
+        }
+        if !emails.is_empty() {
+            props.push((PropertyKey::new("san_emails"), PropertyValue::string_list(emails.iter().map(|s| s.as_str()))));
+        }
+        if !uris.is_empty() {
+            props.push((PropertyKey::new("san_uris"), PropertyValue::string_list(uris.iter().map(|s| s.as_str()))));
+        }
+
+        props
+    }
+}
+
+// ============================================================================
 // Errors
 // ============================================================================
 

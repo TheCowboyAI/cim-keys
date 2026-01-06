@@ -255,6 +255,51 @@ impl DomainConcept for KeyUsage {}
 impl ValueObject for KeyUsage {}
 
 // ============================================================================
+// NodeContributor Implementation for KeyUsage (Sprint D)
+// ============================================================================
+
+impl crate::value_objects::NodeContributor for KeyUsage {
+    /// Generate labels for graph node based on key usage
+    fn as_labels(&self) -> Vec<crate::value_objects::Label> {
+        use crate::value_objects::Label;
+        let mut labels = Vec::new();
+
+        if self.is_ca() {
+            labels.push(Label::new("CACertificate"));
+        }
+        if self.can_sign() {
+            labels.push(Label::new("SigningCapable"));
+        }
+        if self.supports_key_exchange() {
+            labels.push(Label::new("KeyExchangeCapable"));
+        }
+        if self.has(KeyUsageBit::NonRepudiation) {
+            labels.push(Label::new("NonRepudiationCapable"));
+        }
+        if self.has(KeyUsageBit::CrlSign) {
+            labels.push(Label::new("CRLSigningCapable"));
+        }
+
+        labels
+    }
+
+    /// Generate properties for graph node
+    fn as_properties(&self) -> Vec<(crate::value_objects::PropertyKey, crate::value_objects::PropertyValue)> {
+        use crate::value_objects::{PropertyKey, PropertyValue};
+
+        let bit_names: Vec<String> = self.bits().map(|b| b.oid_name().to_string()).collect();
+
+        vec![
+            (PropertyKey::new("key_usage_bits"), PropertyValue::string_list(bit_names.iter().map(|s| s.as_str()))),
+            (PropertyKey::new("is_ca"), PropertyValue::bool(self.is_ca())),
+            (PropertyKey::new("can_sign"), PropertyValue::bool(self.can_sign())),
+            (PropertyKey::new("supports_key_exchange"), PropertyValue::bool(self.supports_key_exchange())),
+            (PropertyKey::new("critical"), PropertyValue::bool(self.critical)),
+        ]
+    }
+}
+
+// ============================================================================
 // Extended Key Usage Extension (RFC 5280 Section 4.2.1.12)
 // ============================================================================
 
@@ -491,6 +536,58 @@ impl fmt::Display for ExtendedKeyUsage {
 
 impl DomainConcept for ExtendedKeyUsage {}
 impl ValueObject for ExtendedKeyUsage {}
+
+// ============================================================================
+// NodeContributor Implementation for ExtendedKeyUsage (Sprint D)
+// ============================================================================
+
+impl crate::value_objects::NodeContributor for ExtendedKeyUsage {
+    /// Generate labels for graph node based on extended key usage
+    fn as_labels(&self) -> Vec<crate::value_objects::Label> {
+        use crate::value_objects::Label;
+        let mut labels = Vec::new();
+
+        if self.allows_server_auth() {
+            labels.push(Label::new("TLSServerCapable"));
+        }
+        if self.allows_client_auth() {
+            labels.push(Label::new("TLSClientCapable"));
+        }
+        if self.has(&ExtendedKeyUsagePurpose::CodeSigning) {
+            labels.push(Label::new("CodeSigningCapable"));
+        }
+        if self.has(&ExtendedKeyUsagePurpose::EmailProtection) {
+            labels.push(Label::new("EmailProtectionCapable"));
+        }
+        if self.has(&ExtendedKeyUsagePurpose::TimeStamping) {
+            labels.push(Label::new("TimeStampingCapable"));
+        }
+        if self.has(&ExtendedKeyUsagePurpose::OcspSigning) {
+            labels.push(Label::new("OCSPSigningCapable"));
+        }
+        if self.has(&ExtendedKeyUsagePurpose::AnyExtendedKeyUsage) {
+            labels.push(Label::new("AnyUsage"));
+        }
+
+        labels
+    }
+
+    /// Generate properties for graph node
+    fn as_properties(&self) -> Vec<(crate::value_objects::PropertyKey, crate::value_objects::PropertyValue)> {
+        use crate::value_objects::{PropertyKey, PropertyValue};
+
+        let purpose_names: Vec<String> = self.purposes().map(|p| p.name().to_string()).collect();
+        let purpose_oids: Vec<String> = self.purposes().map(|p| p.oid().to_string()).collect();
+
+        vec![
+            (PropertyKey::new("eku_purposes"), PropertyValue::string_list(purpose_names.iter().map(|s| s.as_str()))),
+            (PropertyKey::new("eku_oids"), PropertyValue::string_list(purpose_oids.iter().map(|s| s.as_str()))),
+            (PropertyKey::new("allows_server_auth"), PropertyValue::bool(self.allows_server_auth())),
+            (PropertyKey::new("allows_client_auth"), PropertyValue::bool(self.allows_client_auth())),
+            (PropertyKey::new("critical"), PropertyValue::bool(self.critical)),
+        ]
+    }
+}
 
 // ============================================================================
 // Tests

@@ -473,6 +473,66 @@ impl DomainConcept for SubjectName {}
 impl ValueObject for SubjectName {}
 
 // ============================================================================
+// NodeContributor Implementation for SubjectName (Sprint D)
+// ============================================================================
+
+impl crate::value_objects::NodeContributor for SubjectName {
+    /// Generate labels for graph node based on subject name
+    fn as_labels(&self) -> Vec<crate::value_objects::Label> {
+        use crate::value_objects::Label;
+        let mut labels = Vec::new();
+
+        // Add country label if present
+        if let Some(ref country) = self.country {
+            labels.push(Label::new(format!("Country:{}", country.as_str())));
+        }
+
+        // Add organization label if present
+        if self.organization.is_some() {
+            labels.push(Label::new("HasOrganization"));
+        }
+
+        // Add email label if present in DN
+        if self.email.is_some() {
+            labels.push(Label::new("HasDnEmail"));
+        }
+
+        labels
+    }
+
+    /// Generate properties for graph node
+    fn as_properties(&self) -> Vec<(crate::value_objects::PropertyKey, crate::value_objects::PropertyValue)> {
+        use crate::value_objects::{PropertyKey, PropertyValue};
+
+        let mut props = vec![
+            (PropertyKey::new("subject_cn"), PropertyValue::string(self.common_name.as_str())),
+            (PropertyKey::new("subject_dn"), PropertyValue::string(self.to_rfc4514())),
+        ];
+
+        if let Some(ref org) = self.organization {
+            props.push((PropertyKey::new("subject_o"), PropertyValue::string(org.as_str())));
+        }
+        if let Some(ref ou) = self.organizational_unit {
+            props.push((PropertyKey::new("subject_ou"), PropertyValue::string(ou.as_str())));
+        }
+        if let Some(ref country) = self.country {
+            props.push((PropertyKey::new("subject_c"), PropertyValue::string(country.as_str())));
+        }
+        if let Some(ref state) = self.state {
+            props.push((PropertyKey::new("subject_st"), PropertyValue::string(state.as_str())));
+        }
+        if let Some(ref locality) = self.locality {
+            props.push((PropertyKey::new("subject_l"), PropertyValue::string(locality.as_str())));
+        }
+        if let Some(ref email) = self.email {
+            props.push((PropertyKey::new("subject_email"), PropertyValue::string(email.as_str())));
+        }
+
+        props
+    }
+}
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 

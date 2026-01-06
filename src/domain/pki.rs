@@ -343,6 +343,106 @@ impl Certificate {
         let now = Utc::now();
         (self.not_after - now).num_days()
     }
+
+    // ========================================================================
+    // Aggregate Contribution Methods (Sprint D)
+    // ========================================================================
+
+    /// Aggregate labels from all composed ValueObjects
+    ///
+    /// Collects labels from:
+    /// - Certificate type (CA, Leaf, etc.)
+    /// - Validity status (Valid, Expired, ExpiringSoon)
+    /// - Key usage capabilities
+    /// - SAN characteristics (Wildcard, etc.)
+    pub fn aggregate_labels(&self) -> Vec<crate::value_objects::Label> {
+        use crate::value_objects::{Label, NodeContributor};
+
+        let mut labels = Vec::new();
+
+        // Add certificate type label
+        match self.cert_type {
+            CertificateType::Root => labels.push(Label::new("RootCA")),
+            CertificateType::Intermediate => labels.push(Label::new("IntermediateCA")),
+            CertificateType::Leaf => labels.push(Label::new("LeafCertificate")),
+            CertificateType::Policy => labels.push(Label::new("PolicyCA")),
+        }
+
+        // Add validity labels from CertificateValidity value object (via NodeContributor trait)
+        if let Ok(validity) = crate::value_objects::CertificateValidity::new(self.not_before, self.not_after) {
+            labels.extend(NodeContributor::as_labels(&validity));
+        }
+
+        // Add key usage labels from KeyUsage value object (via NodeContributor trait)
+        let key_usage = crate::value_objects::KeyUsage::from_string_list(&self.key_usage);
+        labels.extend(NodeContributor::as_labels(&key_usage));
+
+        // Add SAN labels from SubjectAlternativeName value object (via NodeContributor trait)
+        let san = crate::value_objects::SubjectAlternativeName::from_string_list(&self.san);
+        labels.extend(NodeContributor::as_labels(&san));
+
+        labels
+    }
+
+    /// Aggregate properties from all composed ValueObjects
+    ///
+    /// Collects properties from:
+    /// - Subject and issuer names
+    /// - Validity period details
+    /// - Key usage flags
+    /// - SAN entries
+    pub fn aggregate_properties(&self) -> Vec<(crate::value_objects::PropertyKey, crate::value_objects::PropertyValue)> {
+        use crate::value_objects::{PropertyKey, PropertyValue, NodeContributor};
+
+        let mut props = Vec::new();
+
+        // Add core certificate properties
+        props.push((PropertyKey::new("certificate_id"), PropertyValue::uuid(self.id.as_uuid())));
+        props.push((PropertyKey::new("certificate_type"), PropertyValue::string(format!("{}", self.cert_type))));
+        props.push((PropertyKey::new("subject"), PropertyValue::string(&self.subject)));
+        props.push((PropertyKey::new("issuer"), PropertyValue::string(&self.issuer)));
+
+        // Add validity properties from CertificateValidity value object
+        if let Ok(validity) = crate::value_objects::CertificateValidity::new(self.not_before, self.not_after) {
+            props.extend(validity.as_properties());
+        }
+
+        // Add key usage properties from KeyUsage value object
+        let key_usage = crate::value_objects::KeyUsage::from_string_list(&self.key_usage);
+        props.extend(key_usage.as_properties());
+
+        // Add SAN properties from SubjectAlternativeName value object
+        let san = crate::value_objects::SubjectAlternativeName::from_string_list(&self.san);
+        props.extend(san.as_properties());
+
+        props
+    }
+
+    /// Aggregate relationships from all composed ValueObjects
+    ///
+    /// Note: Most certificate relationships (issuer, key) are at the entity level,
+    /// not from ValueObjects. This method collects any ValueObject-sourced relationships.
+    pub fn aggregate_relationships(&self) -> Vec<crate::value_objects::ValueRelationship> {
+        // Currently, certificate relationships are primarily entity-level (issuer-cert, key-cert)
+        // which are handled in the LiftedGraph edge creation, not ValueObject contributions.
+        // This method is provided for consistency and future extension.
+        Vec::new()
+    }
+}
+
+/// Implement AggregateContributions trait for Certificate
+impl crate::value_objects::AggregateContributions for Certificate {
+    fn aggregate_labels(&self) -> Vec<crate::value_objects::Label> {
+        Certificate::aggregate_labels(self)
+    }
+
+    fn aggregate_properties(&self) -> Vec<(crate::value_objects::PropertyKey, crate::value_objects::PropertyValue)> {
+        Certificate::aggregate_properties(self)
+    }
+
+    fn aggregate_relationships(&self) -> Vec<crate::value_objects::ValueRelationship> {
+        Certificate::aggregate_relationships(self)
+    }
 }
 
 /// Cryptographic key for graph visualization

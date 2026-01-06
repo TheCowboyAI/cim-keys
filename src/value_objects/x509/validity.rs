@@ -243,6 +243,53 @@ impl DomainConcept for CertificateValidity {}
 impl ValueObject for CertificateValidity {}
 
 // ============================================================================
+// NodeContributor Implementation (Sprint D)
+// ============================================================================
+
+impl crate::value_objects::NodeContributor for CertificateValidity {
+    /// Generate labels for graph node based on validity status
+    fn as_labels(&self) -> Vec<crate::value_objects::Label> {
+        let mut labels = Vec::new();
+
+        if self.is_expired() {
+            labels.push(crate::value_objects::Label::new("Expired"));
+        } else if self.is_not_yet_valid() {
+            labels.push(crate::value_objects::Label::new("NotYetValid"));
+        } else {
+            labels.push(crate::value_objects::Label::new("Valid"));
+
+            // Add warning labels
+            if self.expires_within_days(30) {
+                labels.push(crate::value_objects::Label::new("ExpiringSoon"));
+            } else if self.expires_within_days(90) {
+                labels.push(crate::value_objects::Label::new("ExpiringWithin90Days"));
+            }
+        }
+
+        labels
+    }
+
+    /// Generate properties for graph node
+    fn as_properties(&self) -> Vec<(crate::value_objects::PropertyKey, crate::value_objects::PropertyValue)> {
+        use crate::value_objects::{PropertyKey, PropertyValue};
+
+        let mut props = vec![
+            (PropertyKey::new("not_before"), PropertyValue::datetime(self.not_before)),
+            (PropertyKey::new("not_after"), PropertyValue::datetime(self.not_after)),
+            (PropertyKey::new("duration_days"), PropertyValue::int(self.duration().num_days())),
+            (PropertyKey::new("is_valid"), PropertyValue::bool(self.is_valid_now())),
+            (PropertyKey::new("is_expired"), PropertyValue::bool(self.is_expired())),
+        ];
+
+        if let Some(remaining) = self.days_remaining() {
+            props.push((PropertyKey::new("days_remaining"), PropertyValue::int(remaining)));
+        }
+
+        props
+    }
+}
+
+// ============================================================================
 // Errors
 // ============================================================================
 
