@@ -214,6 +214,16 @@ impl<P: JetStreamPort> EventPublisher<P> {
             DomainEvent::Organization(_) => "keys.events.organization.updated".to_string(),
             DomainEvent::Person(_) => "keys.events.person.updated".to_string(),
             DomainEvent::Location(_) => "keys.events.location.updated".to_string(),
+            DomainEvent::Delegation(del_event) => {
+                use crate::events::DelegationEvents;
+                match del_event {
+                    DelegationEvents::DelegationCreated(_) => "keys.events.delegation.created".to_string(),
+                    DelegationEvents::DelegationRevoked(_) => "keys.events.delegation.revoked".to_string(),
+                    DelegationEvents::DelegationCascadeRevoked(_) => "keys.events.delegation.cascade-revoked".to_string(),
+                    DelegationEvents::DelegationExtended(_) => "keys.events.delegation.extended".to_string(),
+                    DelegationEvents::DelegationPermissionsModified(_) => "keys.events.delegation.permissions-modified".to_string(),
+                }
+            }
             DomainEvent::Relationship(_) => "keys.events.relationship.updated".to_string(),
             DomainEvent::Manifest(_) => "keys.events.manifest.updated".to_string(),
             DomainEvent::Saga(saga_event) => format!("keys.events.{}", saga_event.event_type()),

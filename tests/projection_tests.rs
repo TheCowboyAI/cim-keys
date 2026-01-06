@@ -95,6 +95,7 @@ mod application_correctness {
             Some("TX".to_string()),
             Some("USA".to_string()),
             Some("78701".to_string()),
+            None, // virtual_url
         );
 
         assert!(result.is_ok());
@@ -238,6 +239,7 @@ mod idempotency {
             country: Some("USA".to_string()),
             postal_code: Some("78701".to_string()),
             state: None,
+            virtual_url: None,
         };
 
         let json = serde_json::to_string(&entry).unwrap();
@@ -461,8 +463,8 @@ mod state_queries {
         let (_temp_dir, mut projection) = create_temp_projection();
         let org_id = Uuid::now_v7();
 
-        projection.add_location(Uuid::now_v7(), "HQ".to_string(), "Physical".to_string(), org_id, None, None, None, None, None).unwrap();
-        projection.add_location(Uuid::now_v7(), "Branch".to_string(), "Physical".to_string(), org_id, None, None, None, None, None).unwrap();
+        projection.add_location(Uuid::now_v7(), "HQ".to_string(), "Physical".to_string(), org_id, None, None, None, None, None, None).unwrap();
+        projection.add_location(Uuid::now_v7(), "Branch".to_string(), "Physical".to_string(), org_id, None, None, None, None, None, None).unwrap();
 
         assert_eq!(projection.get_locations().len(), 2);
     }
@@ -473,7 +475,7 @@ mod state_queries {
         let org_id = Uuid::now_v7();
         let location_id = Uuid::now_v7();
 
-        projection.add_location(location_id, "HQ".to_string(), "Physical".to_string(), org_id, None, None, None, None, None).unwrap();
+        projection.add_location(location_id, "HQ".to_string(), "Physical".to_string(), org_id, None, None, None, None, None, None).unwrap();
         assert_eq!(projection.get_locations().len(), 1);
 
         projection.remove_location(location_id).unwrap();
@@ -559,7 +561,7 @@ mod multiple_entries {
                 format!("Location {}", i),
                 "Physical".to_string(),
                 org_id,
-                None, None, None, None, None,
+                None, None, None, None, None, None, // virtual_url
             ).unwrap();
         }
 

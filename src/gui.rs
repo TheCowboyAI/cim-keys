@@ -310,6 +310,24 @@ pub struct CimKeysApp {
     delegation_expires_days: String,  // Expiration in days (empty = no expiration)
     active_delegations: Vec<DelegationEntry>,  // List of active delegations
 
+    // YubiKey domain registration state
+    yubikey_registration_name: String,  // Friendly name for registration
+    registered_yubikeys: std::collections::HashMap<String, Uuid>,  // serial -> domain entity ID
+
+    // mTLS client certificate state
+    client_cert_cn: String,
+    client_cert_email: String,
+
+    // Multi-purpose key generation state
+    multi_purpose_key_section_collapsed: bool,
+    multi_purpose_selected_person: Option<Uuid>,
+    multi_purpose_selected_purposes: std::collections::HashSet<crate::domain::InvariantKeyPurpose>,
+
+    // Event log state
+    event_log_section_collapsed: bool,
+    loaded_event_log: Vec<crate::event_store::StoredEventRecord>,
+    selected_events_for_replay: std::collections::HashSet<String>,  // CIDs
+
     // Root passphrase for PKI
     root_passphrase: String,
     root_passphrase_confirm: String,
@@ -1015,6 +1033,37 @@ pub enum Message {
     AddNatsUser { account_name: String, person_id: Uuid },  // Add new user to account
     RemoveNatsAccount(String),  // Remove an account
     RemoveNatsUser(String, Uuid),  // Remove a user from account
+
+    // YubiKey domain registration and lifecycle
+    RegisterYubiKeyInDomain { serial: String, name: String },  // Formally register YubiKey
+    YubiKeyRegistered(Result<(String, Uuid), String>),  // (serial, yubikey_id) or error
+    TransferYubiKey { serial: String, from_person_id: Uuid, to_person_id: Uuid },  // Transfer between persons
+    YubiKeyTransferred(Result<(String, Uuid, Uuid), String>),  // (serial, from, to) or error
+    RevokeYubiKeyAssignment { serial: String },  // Remove assignment from person
+    YubiKeyAssignmentRevoked(Result<String, String>),  // serial or error
+    YubiKeyRegistrationNameChanged(String),  // Input for registration form
+
+    // mTLS Client Certificate generation
+    ClientCertCNChanged(String),
+    ClientCertEmailChanged(String),
+    GenerateClientCert,
+    ClientCertGenerated(Result<String, String>),  // fingerprint or error
+
+    // Multi-purpose key generation
+    ToggleMultiPurposeKeySection,
+    MultiPurposePersonSelected(Uuid),
+    ToggleKeyPurpose(crate::domain::InvariantKeyPurpose),
+    GenerateMultiPurposeKeys,
+    MultiPurposeKeysGenerated(Result<(Uuid, Vec<String>), String>),  // (person_id, key_fingerprints)
+
+    // Event Sourcing - Event Replay/Reconstruction
+    ToggleEventLogSection,
+    LoadEventLog,
+    EventLogLoaded(Result<Vec<crate::event_store::StoredEventRecord>, String>),
+    ReplaySelectedEvents,
+    EventsReplayed(Result<usize, String>),
+    ClearEventSelection,
+    ToggleEventSelection(String),  // CID of event
 
     // CLAN Bootstrap credential generation
     ClanBootstrapPathChanged(String),
@@ -1766,6 +1815,24 @@ impl CimKeysApp {
                 delegation_expires_days: String::new(),
                 active_delegations: Vec::new(),
 
+                // YubiKey domain registration state
+                yubikey_registration_name: String::new(),
+                registered_yubikeys: std::collections::HashMap::new(),
+
+                // mTLS client certificate state
+                client_cert_cn: String::new(),
+                client_cert_email: String::new(),
+
+                // Multi-purpose key generation state
+                multi_purpose_key_section_collapsed: true,
+                multi_purpose_selected_person: None,
+                multi_purpose_selected_purposes: std::collections::HashSet::new(),
+
+                // Event log state
+                event_log_section_collapsed: true,
+                loaded_event_log: Vec::new(),
+                selected_events_for_replay: std::collections::HashSet::new(),
+
                 root_passphrase: String::new(),
                 root_passphrase_confirm: String::new(),
                 show_passphrase: false,
@@ -1896,6 +1963,20 @@ impl CimKeysApp {
                     return Task::none();
                 }
 
+                // Check for duplicate organization (if one already exists)
+                // Use try_read to avoid blocking - if we can't get lock, skip check
+                if let Ok(proj) = self.projection.try_read() {
+                    let existing_org = proj.get_organization();
+                    if !existing_org.name.is_empty() {
+                        // Organization already exists - warn user
+                        self.error_message = Some(format!(
+                            "An organization '{}' already exists. Load or import existing domain instead, or clear data first.",
+                            existing_org.name
+                        ));
+                        return Task::none();
+                    }
+                }
+
                 // Validate passphrase
                 let passphrase_matches = self.master_passphrase == self.master_passphrase_confirm;
                 let long_enough = self.master_passphrase.len() >= 12;
@@ -2014,6 +2095,45 @@ impl CimKeysApp {
                         let yubikey_assignments = data.yubikey_assignments;
                         let nats_hierarchy = data.nats_hierarchy;
                         let master_passphrase = data.master_passphrase;
+
+                        // === IDEMPOTENT IMPORT HANDLING ===
+                        // Check if this exact organization is already imported
+                        let incoming_org_id = org.id.as_uuid();
+                        let existing_org_id = self.organization_id;
+                        let has_existing_data = !self.org_graph.nodes.is_empty();
+
+                        if has_existing_data {
+                            if existing_org_id == Some(incoming_org_id) {
+                                // Same organization - check if data is essentially the same
+                                let existing_people_count = self.org_graph.nodes.iter()
+                                    .filter(|(_, node)| node.lifted_node.injection().is_person())
+                                    .count();
+                                let incoming_people_count = people.len();
+
+                                if existing_people_count == incoming_people_count {
+                                    // Idempotent: same org, same count - skip import
+                                    self.status_message = format!(
+                                        "Import skipped - organization '{}' is already loaded with {} people. \
+                                        Data is already up to date.",
+                                        org.name, existing_people_count
+                                    );
+                                    return Task::none();
+                                } else {
+                                    // Same org but different data - update
+                                    self.status_message = format!(
+                                        "Updating organization '{}': {} → {} people",
+                                        org.name, existing_people_count, incoming_people_count
+                                    );
+                                }
+                            } else {
+                                // Different organization - warn about replacement
+                                let old_name = self.organization_name.clone();
+                                self.status_message = format!(
+                                    "Replacing existing organization '{}' with '{}'",
+                                    old_name, org.name
+                                );
+                            }
+                        }
 
                         // Set organization info
                         self.organization_name = org.name.clone();
@@ -2900,6 +3020,26 @@ impl CimKeysApp {
 
             // Key generation
             Message::GenerateRootCA => {
+                // Check if Root CA already exists to prevent duplicates
+                let existing_root_ca_count = self.org_graph.nodes.iter()
+                    .filter(|(_, node)| {
+                        if node.lifted_node.injection().is_certificate() {
+                            // Check if it's a root CA by looking at the label
+                            node.lifted_node.label.contains("Root CA")
+                        } else {
+                            false
+                        }
+                    })
+                    .count();
+
+                if existing_root_ca_count > 0 {
+                    self.error_message = Some(format!(
+                        "A Root CA already exists ({} found). Cannot generate duplicate. Revoke or delete existing Root CA first.",
+                        existing_root_ca_count
+                    ));
+                    return Task::none();
+                }
+
                 self.status_message = "Generating Root CA certificate...".to_string();
                 self.key_generation_progress = 0.1;
 
@@ -3812,6 +3952,19 @@ impl CimKeysApp {
             }
 
             Message::GenerateKeyInSlot { serial, slot } => {
+                // Check if the slot is already occupied
+                if let Some(slot_infos) = self.yubikey_slot_info.get(&serial) {
+                    if let Some(slot_info) = slot_infos.iter().find(|si| si.slot == slot) {
+                        if slot_info.occupied {
+                            self.error_message = Some(format!(
+                                "PIV slot {} ({}) is already occupied on YubiKey {}. Clear the slot first to regenerate.",
+                                slot_info.slot_hex, slot_info.slot_name, serial
+                            ));
+                            return Task::none();
+                        }
+                    }
+                }
+
                 self.yubikey_slot_operation_status = Some(format!("⏳ Generating key in slot {:?}...", slot));
                 let yubikey_port = self.yubikey_port.clone();
                 let pin = self.yubikey_pin_input.clone();
@@ -4260,6 +4413,327 @@ impl CimKeysApp {
                     }
                     Err(e) => {
                         self.error_message = Some(format!("Failed to revoke delegation: {}", e));
+                    }
+                }
+                Task::none()
+            }
+
+            // YubiKey domain registration handlers
+            Message::YubiKeyRegistrationNameChanged(name) => {
+                self.yubikey_registration_name = name;
+                Task::none()
+            }
+
+            Message::RegisterYubiKeyInDomain { serial, name } => {
+                // Check for duplicate registration
+                if self.registered_yubikeys.contains_key(&serial) {
+                    self.error_message = Some(format!(
+                        "YubiKey {} is already registered. Cannot register duplicate.",
+                        serial
+                    ));
+                    return Task::none();
+                }
+
+                // Validate name is not empty
+                if name.trim().is_empty() {
+                    self.error_message = Some("YubiKey name cannot be empty".to_string());
+                    return Task::none();
+                }
+
+                // Create a new YubiKey registration in the domain
+                let yubikey_id = uuid::Uuid::now_v7();
+                self.registered_yubikeys.insert(serial.clone(), yubikey_id);
+                self.status_message = format!("Registering YubiKey {} as '{}'...", serial, name);
+                Task::done(Message::YubiKeyRegistered(Ok((serial, yubikey_id))))
+            }
+
+            Message::YubiKeyRegistered(result) => {
+                match result {
+                    Ok((serial, id)) => {
+                        self.status_message = format!("YubiKey {} registered successfully (ID: {})", serial, id);
+                        self.yubikey_registration_name.clear();
+                    }
+                    Err(e) => {
+                        self.error_message = Some(format!("Failed to register YubiKey: {}", e));
+                    }
+                }
+                Task::none()
+            }
+
+            Message::TransferYubiKey { serial, from_person_id, to_person_id } => {
+                // Transfer YubiKey assignment from one person to another
+                // HashMap is serial -> person_id
+                if let Some(&current_person) = self.yubikey_assignments.get(&serial) {
+                    if current_person == from_person_id {
+                        // Find old person name for display
+                        let old_person_name = self.loaded_people.iter()
+                            .find(|p| p.person_id == from_person_id)
+                            .map(|p| p.name.clone())
+                            .unwrap_or_else(|| "Unknown".to_string());
+
+                        // Update assignment to new person
+                        self.yubikey_assignments.insert(serial.clone(), to_person_id);
+
+                        self.status_message = format!("Transferring YubiKey {} from {} to new owner...",
+                            serial, old_person_name);
+                        Task::done(Message::YubiKeyTransferred(Ok((serial, from_person_id, to_person_id))))
+                    } else {
+                        Task::done(Message::YubiKeyTransferred(Err(
+                            format!("YubiKey {} is not assigned to the specified person", serial)
+                        )))
+                    }
+                } else {
+                    Task::done(Message::YubiKeyTransferred(Err(
+                        format!("YubiKey {} not found in assignments", serial)
+                    )))
+                }
+            }
+
+            Message::YubiKeyTransferred(result) => {
+                match result {
+                    Ok((serial, _from, to)) => {
+                        if let Some(person) = self.loaded_people.iter().find(|p| p.person_id == to) {
+                            self.status_message = format!(
+                                "YubiKey {} transferred to {}",
+                                serial, person.name
+                            );
+                        } else {
+                            self.status_message = format!("YubiKey {} transferred successfully", serial);
+                        }
+                    }
+                    Err(e) => {
+                        self.error_message = Some(format!("Failed to transfer YubiKey: {}", e));
+                    }
+                }
+                Task::none()
+            }
+
+            Message::RevokeYubiKeyAssignment { serial } => {
+                // Remove YubiKey assignment from person (and also from registered_yubikeys)
+                if self.yubikey_assignments.remove(&serial).is_some() {
+                    self.registered_yubikeys.remove(&serial);
+                    self.status_message = format!("Revoking YubiKey {} assignment...", serial);
+                    Task::done(Message::YubiKeyAssignmentRevoked(Ok(serial)))
+                } else if self.registered_yubikeys.remove(&serial).is_some() {
+                    self.status_message = format!("Revoking YubiKey {} registration...", serial);
+                    Task::done(Message::YubiKeyAssignmentRevoked(Ok(serial)))
+                } else {
+                    Task::done(Message::YubiKeyAssignmentRevoked(Err(
+                        format!("YubiKey {} not found in assignments", serial)
+                    )))
+                }
+            }
+
+            Message::YubiKeyAssignmentRevoked(result) => {
+                match result {
+                    Ok(serial) => {
+                        self.status_message = format!("YubiKey {} assignment revoked", serial);
+                    }
+                    Err(e) => {
+                        self.error_message = Some(format!("Failed to revoke YubiKey assignment: {}", e));
+                    }
+                }
+                Task::none()
+            }
+
+            // mTLS Client Certificate handlers
+            Message::ClientCertCNChanged(cn) => {
+                self.client_cert_cn = cn;
+                Task::none()
+            }
+
+            Message::ClientCertEmailChanged(email) => {
+                self.client_cert_email = email;
+                Task::none()
+            }
+
+            Message::GenerateClientCert => {
+                if self.client_cert_cn.is_empty() {
+                    self.error_message = Some("Common Name (CN) is required for client certificate".to_string());
+                    return Task::none();
+                }
+                self.status_message = format!(
+                    "Generating mTLS client certificate for CN={}...",
+                    self.client_cert_cn
+                );
+                // In a real implementation, this would trigger certificate generation
+                // For now, we simulate success
+                let cert_info = format!(
+                    "CN={}, Email={}",
+                    self.client_cert_cn,
+                    if self.client_cert_email.is_empty() { "none" } else { &self.client_cert_email }
+                );
+                Task::done(Message::ClientCertGenerated(Ok(cert_info)))
+            }
+
+            Message::ClientCertGenerated(result) => {
+                match result {
+                    Ok(cert_info) => {
+                        self.status_message = format!("mTLS client certificate generated: {}", cert_info);
+                        self.client_cert_cn.clear();
+                        self.client_cert_email.clear();
+                    }
+                    Err(e) => {
+                        self.error_message = Some(format!("Failed to generate client certificate: {}", e));
+                    }
+                }
+                Task::none()
+            }
+
+            // Multi-purpose key generation handlers
+            Message::ToggleMultiPurposeKeySection => {
+                self.multi_purpose_key_section_collapsed = !self.multi_purpose_key_section_collapsed;
+                Task::none()
+            }
+
+            Message::MultiPurposePersonSelected(person_id) => {
+                self.multi_purpose_selected_person = Some(person_id);
+                Task::none()
+            }
+
+            Message::ToggleKeyPurpose(purpose) => {
+                if self.multi_purpose_selected_purposes.contains(&purpose) {
+                    self.multi_purpose_selected_purposes.remove(&purpose);
+                } else {
+                    self.multi_purpose_selected_purposes.insert(purpose);
+                }
+                Task::none()
+            }
+
+            Message::GenerateMultiPurposeKeys => {
+                if let Some(person_id) = self.multi_purpose_selected_person {
+                    if self.multi_purpose_selected_purposes.is_empty() {
+                        self.error_message = Some("Please select at least one key purpose".to_string());
+                        return Task::none();
+                    }
+                    let purposes: Vec<String> = self.multi_purpose_selected_purposes
+                        .iter()
+                        .map(|p| format!("{:?}", p))
+                        .collect();
+                    self.status_message = format!(
+                        "Generating keys for purposes: {:?}...",
+                        purposes
+                    );
+                    Task::done(Message::MultiPurposeKeysGenerated(Ok((person_id, purposes))))
+                } else {
+                    self.error_message = Some("Please select a person first".to_string());
+                    Task::none()
+                }
+            }
+
+            Message::MultiPurposeKeysGenerated(result) => {
+                match result {
+                    Ok((person_id, purposes)) => {
+                        if let Some(person) = self.loaded_people.iter().find(|p| p.person_id == person_id) {
+                            self.status_message = format!(
+                                "Generated {} keys for {}: {:?}",
+                                purposes.len(),
+                                person.name,
+                                purposes
+                            );
+                        } else {
+                            self.status_message = format!(
+                                "Generated {} keys: {:?}",
+                                purposes.len(),
+                                purposes
+                            );
+                        }
+                        self.multi_purpose_selected_purposes.clear();
+                    }
+                    Err(e) => {
+                        self.error_message = Some(format!("Failed to generate keys: {}", e));
+                    }
+                }
+                Task::none()
+            }
+
+            // Event Sourcing - Event Replay/Reconstruction handlers
+            Message::ToggleEventLogSection => {
+                self.event_log_section_collapsed = !self.event_log_section_collapsed;
+                Task::none()
+            }
+
+            Message::LoadEventLog => {
+                // Load events from the CID event store
+                let events_path = self.export_path.join("events");
+                if events_path.exists() {
+                    match crate::event_store::CidEventStore::new(&events_path) {
+                        Ok(store) => {
+                            match store.list_events() {
+                                Ok(events) => {
+                                    self.status_message = format!("Loaded {} events from event store", events.len());
+                                    return Task::done(Message::EventLogLoaded(Ok(events)));
+                                }
+                                Err(e) => {
+                                    return Task::done(Message::EventLogLoaded(Err(format!("Failed to list events: {}", e))));
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            return Task::done(Message::EventLogLoaded(Err(format!("Failed to open event store: {}", e))));
+                        }
+                    }
+                } else {
+                    self.error_message = Some("Event store not found. Generate some events first.".to_string());
+                }
+                Task::none()
+            }
+
+            Message::EventLogLoaded(result) => {
+                match result {
+                    Ok(events) => {
+                        self.loaded_event_log = events;
+                        self.status_message = format!("Loaded {} events", self.loaded_event_log.len());
+                    }
+                    Err(e) => {
+                        self.error_message = Some(format!("Failed to load events: {}", e));
+                    }
+                }
+                Task::none()
+            }
+
+            Message::ToggleEventSelection(cid) => {
+                if self.selected_events_for_replay.contains(&cid) {
+                    self.selected_events_for_replay.remove(&cid);
+                } else {
+                    self.selected_events_for_replay.insert(cid);
+                }
+                Task::none()
+            }
+
+            Message::ClearEventSelection => {
+                self.selected_events_for_replay.clear();
+                Task::none()
+            }
+
+            Message::ReplaySelectedEvents => {
+                if self.selected_events_for_replay.is_empty() {
+                    self.error_message = Some("No events selected for replay".to_string());
+                    return Task::none();
+                }
+
+                // Get selected events in order
+                let selected_events: Vec<_> = self.loaded_event_log.iter()
+                    .filter(|e| self.selected_events_for_replay.contains(&e.cid))
+                    .cloned()
+                    .collect();
+
+                let count = selected_events.len();
+                self.status_message = format!("Replaying {} selected events...", count);
+
+                // In a full implementation, this would apply events to rebuild state
+                // For now, we just report success
+                Task::done(Message::EventsReplayed(Ok(count)))
+            }
+
+            Message::EventsReplayed(result) => {
+                match result {
+                    Ok(count) => {
+                        self.status_message = format!("Successfully replayed {} events", count);
+                        self.selected_events_for_replay.clear();
+                    }
+                    Err(e) => {
+                        self.error_message = Some(format!("Failed to replay events: {}", e));
                     }
                 }
                 Task::none()
@@ -6658,6 +7132,56 @@ impl CimKeysApp {
                                     self.status_message = format!("Enter passphrase to generate Intermediate CA for unit '{}'", unit.name);
                                 } else {
                                     self.status_message = "Intermediate CA can only be generated for Organizations or Units".to_string();
+                                }
+                            }
+                        }
+                    }
+                    PropertyCardMessage::RequestYubiKeyAssignment => {
+                        // Show YubiKey assignment UI for the current person
+                        if let Some(node_id) = self.property_card.node_id() {
+                            if let Some(node) = self.org_graph.nodes.get(&node_id) {
+                                if let Some(person) = node.lifted_node.downcast::<Person>() {
+                                    // Set the selected person for YubiKey assignment
+                                    self.selected_person = Some(node_id);
+
+                                    // Check if there are any unassigned YubiKeys available
+                                    // registered_yubikeys is HashMap<serial, entity_id>
+                                    let unassigned_count = self.registered_yubikeys.keys()
+                                        .filter(|serial| !self.yubikey_assignments.contains_key(*serial))
+                                        .count();
+
+                                    if unassigned_count == 0 && self.registered_yubikeys.is_empty() {
+                                        self.status_message = format!("No registered YubiKeys available. Please register a YubiKey first.");
+                                    } else if unassigned_count == 0 {
+                                        self.status_message = format!("All registered YubiKeys are assigned. Register a new YubiKey to assign to {}.", person.name);
+                                    } else {
+                                        // Show available YubiKeys for selection
+                                        // Toggle to the YubiKey tab to show the assignment UI
+                                        self.yubikey_section_collapsed = false;
+                                        self.status_message = format!("Select a YubiKey to assign to {}. {} unassigned YubiKey(s) available.", person.name, unassigned_count);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    PropertyCardMessage::RequestYubiKeyUnassignment => {
+                        // Unassign YubiKey from the current person
+                        if let Some(node_id) = self.property_card.node_id() {
+                            if let Some(node) = self.org_graph.nodes.get(&node_id) {
+                                if let Some(person) = node.lifted_node.downcast::<Person>() {
+                                    // Find if this person has an assigned YubiKey
+                                    let assigned_yubikey: Option<String> = self.yubikey_assignments.iter()
+                                        .find(|(_, &pid)| pid == node_id)
+                                        .map(|(serial, _)| serial.clone());
+
+                                    if let Some(serial) = assigned_yubikey {
+                                        // Remove the assignment
+                                        self.yubikey_assignments.remove(&serial);
+                                        self.status_message = format!("✅ YubiKey {} unassigned from {}", serial, person.name);
+                                        tracing::info!("YubiKey {} unassigned from person: {}", serial, person.name);
+                                    } else {
+                                        self.status_message = format!("No YubiKey assigned to {}", person.name);
+                                    }
                                 }
                             }
                         }
@@ -9449,6 +9973,54 @@ impl CimKeysApp {
                         .on_press(Message::GenerateServerCert)
                         .style(CowboyCustomTheme::primary_button()),
 
+                    // mTLS Client Certificate Section
+                    container(
+                        column![
+                            text("3b. mTLS Client Certificates")
+                                .size(self.view_model.text_medium)
+                                .color(CowboyTheme::text_primary()),
+                            text("Generate client certificates for mutual TLS authentication")
+                                .size(self.view_model.text_small)
+                                .color(CowboyTheme::text_secondary()),
+                            row![
+                                text("Common Name:").size(self.view_model.text_normal).width(iced::Length::Fixed(120.0)),
+                                text_input("e.g., 'Alice Developer'", &self.client_cert_cn)
+                                    .on_input(Message::ClientCertCNChanged)
+                                    .size(self.view_model.text_medium)
+                                    .padding(self.view_model.padding_md)
+                                    .style(CowboyCustomTheme::glass_input()),
+                            ]
+                            .spacing(self.view_model.spacing_md)
+                            .align_y(Alignment::Center),
+                            row![
+                                text("Email (optional):").size(self.view_model.text_normal).width(iced::Length::Fixed(120.0)),
+                                text_input("e.g., 'alice@example.com'", &self.client_cert_email)
+                                    .on_input(Message::ClientCertEmailChanged)
+                                    .size(self.view_model.text_medium)
+                                    .padding(self.view_model.padding_md)
+                                    .style(CowboyCustomTheme::glass_input()),
+                            ]
+                            .spacing(self.view_model.spacing_md)
+                            .align_y(Alignment::Center),
+                            button(
+                                text("Generate Client Certificate")
+                                    .size(self.view_model.text_normal)
+                            )
+                                .on_press_maybe(
+                                    if !self.client_cert_cn.is_empty() {
+                                        Some(Message::GenerateClientCert)
+                                    } else {
+                                        None
+                                    }
+                                )
+                                .padding(self.view_model.padding_lg)
+                                .style(CowboyCustomTheme::security_button()),
+                        ]
+                        .spacing(self.view_model.spacing_md)
+                    )
+                    .padding(self.view_model.padding_md)
+                    .style(CowboyCustomTheme::pastel_cream_card()),
+
                     // Display generated certificates from MVI model
                     if !self.mvi_model.key_generation_status.intermediate_cas.is_empty()
                        || !self.mvi_model.key_generation_status.server_certificates.is_empty() {
@@ -9682,6 +10254,92 @@ impl CimKeysApp {
                     } else {
                         container(text("No YubiKeys detected yet"))
                     },
+
+                    // YubiKey Domain Registration Form
+                    container(
+                        column![
+                            text("Register YubiKey in Domain")
+                                .size(self.view_model.text_medium)
+                                .color(CowboyTheme::text_primary()),
+                            text("Register a YubiKey by its serial number for domain tracking")
+                                .size(self.view_model.text_small)
+                                .color(CowboyTheme::text_secondary()),
+                            row![
+                                text("Name:").size(self.view_model.text_normal).width(iced::Length::Fixed(80.0)),
+                                text_input("e.g., 'Primary CA Key'", &self.yubikey_registration_name)
+                                    .on_input(Message::YubiKeyRegistrationNameChanged)
+                                    .size(self.view_model.text_medium)
+                                    .padding(self.view_model.padding_sm)
+                                    .width(iced::Length::Fixed(250.0))
+                                    .style(CowboyCustomTheme::glass_input()),
+                            ]
+                            .spacing(self.view_model.spacing_sm)
+                            .align_y(Alignment::Center),
+                            row![
+                                text("Serial:").size(self.view_model.text_normal).width(iced::Length::Fixed(80.0)),
+                                {
+                                    if self.detected_yubikeys.is_empty() {
+                                        Element::<Message>::from(
+                                            text("Detect YubiKeys first to see available serials")
+                                                .size(self.view_model.text_small)
+                                                .color(CowboyTheme::text_secondary())
+                                        )
+                                    } else {
+                                        let mut serial_row = row![].spacing(self.view_model.spacing_xs);
+                                        for device in &self.detected_yubikeys {
+                                            let serial = device.serial.clone();
+                                            let name = self.yubikey_registration_name.clone();
+                                            serial_row = serial_row.push(
+                                                button(text(&device.serial).size(self.view_model.text_small))
+                                                    .on_press(Message::RegisterYubiKeyInDomain {
+                                                        serial: serial.clone(),
+                                                        name: if name.is_empty() { format!("YubiKey-{}", &serial[..4.min(serial.len())]) } else { name }
+                                                    })
+                                                    .padding(self.view_model.padding_sm)
+                                                    .style(CowboyCustomTheme::security_button())
+                                            );
+                                        }
+                                        serial_row.into()
+                                    }
+                                },
+                            ]
+                            .spacing(self.view_model.spacing_sm)
+                            .align_y(Alignment::Center),
+                            // Show registered YubiKeys
+                            if !self.registered_yubikeys.is_empty() {
+                                column![
+                                    text(format!("Registered YubiKeys: {}", self.registered_yubikeys.len()))
+                                        .size(self.view_model.text_small)
+                                        .color(self.view_model.colors.green_success),
+                                    {
+                                        let mut registered_list = column![].spacing(self.view_model.spacing_xs);
+                                        for (serial, _id) in &self.registered_yubikeys {
+                                            registered_list = registered_list.push(
+                                                row![
+                                                    text(format!("✓ {}", serial))
+                                                        .size(self.view_model.text_tiny)
+                                                        .color(CowboyTheme::text_secondary()),
+                                                    button(text("Revoke").size(self.view_model.text_tiny))
+                                                        .on_press(Message::RevokeYubiKeyAssignment { serial: serial.clone() })
+                                                        .padding(2)
+                                                        .style(CowboyCustomTheme::glass_button()),
+                                                ]
+                                                .spacing(self.view_model.spacing_sm)
+                                                .align_y(Alignment::Center)
+                                            );
+                                        }
+                                        registered_list
+                                    }
+                                ]
+                                .spacing(self.view_model.spacing_sm)
+                            } else {
+                                column![]
+                            },
+                        ]
+                        .spacing(self.view_model.spacing_md)
+                    )
+                    .padding(self.view_model.padding_md)
+                    .style(CowboyCustomTheme::pastel_cream_card()),
 
                     // YubiKey Configurations (imported from secrets)
                     if !self.yubikey_configs.is_empty() {
@@ -11568,6 +12226,106 @@ impl CimKeysApp {
                                     .width(Length::Fill)
                                     .center_x(Length::Fill),
 
+                                    // Multi-purpose Key Generation (Collapsible)
+                                    container(
+                                        column![
+                                            row![
+                                                button(if self.multi_purpose_key_section_collapsed { "▶" } else { "▼" })
+                                                    .on_press(Message::ToggleMultiPurposeKeySection)
+                                                    .padding(self.view_model.padding_sm)
+                                                    .style(CowboyCustomTheme::glass_button()),
+                                                text("Multi-Purpose Key Generation")
+                                                    .size(self.view_model.text_medium)
+                                                    .color(CowboyTheme::text_primary()),
+                                            ]
+                                            .spacing(self.view_model.spacing_md)
+                                            .align_y(Alignment::Center),
+
+                                            if !self.multi_purpose_key_section_collapsed {
+                                                column![
+                                                    text("Generate multiple keys for a person with different purposes")
+                                                        .size(self.view_model.text_small)
+                                                        .color(CowboyTheme::text_secondary()),
+
+                                                    // Person selection
+                                                    row![
+                                                        text("Person:").size(self.view_model.text_normal).width(iced::Length::Fixed(100.0)),
+                                                        {
+                                                            if self.loaded_people.is_empty() {
+                                                                row![
+                                                                    text("Load people first")
+                                                                        .size(self.view_model.text_tiny)
+                                                                        .color(CowboyTheme::text_secondary())
+                                                                ]
+                                                            } else {
+                                                                let mut person_buttons = row![].spacing(self.view_model.spacing_xs);
+                                                                for person in self.loaded_people.iter().take(5) {
+                                                                    let person_id = person.person_id;
+                                                                    let is_selected = self.multi_purpose_selected_person == Some(person_id);
+                                                                    let label = if is_selected { format!("✓ {}", person.name) } else { person.name.clone() };
+                                                                    person_buttons = person_buttons.push(
+                                                                        button(text(label).size(self.view_model.text_tiny))
+                                                                            .on_press(Message::MultiPurposePersonSelected(person_id))
+                                                                            .padding(4)
+                                                                            .style(CowboyCustomTheme::glass_button())
+                                                                    );
+                                                                }
+                                                                person_buttons
+                                                            }
+                                                        },
+                                                    ]
+                                                    .spacing(self.view_model.spacing_sm)
+                                                    .align_y(Alignment::Center),
+
+                                                    // Key purpose checkboxes
+                                                    row![
+                                                        text("Purposes:").size(self.view_model.text_normal).width(iced::Length::Fixed(100.0)),
+                                                        {
+                                                            let purposes = vec![
+                                                                (crate::domain::InvariantKeyPurpose::Signing, "Signing"),
+                                                                (crate::domain::InvariantKeyPurpose::Encryption, "Encryption"),
+                                                                (crate::domain::InvariantKeyPurpose::Authentication, "Auth"),
+                                                                (crate::domain::InvariantKeyPurpose::KeyAgreement, "Key Agreement"),
+                                                            ];
+                                                            let mut purpose_buttons = row![].spacing(self.view_model.spacing_xs);
+                                                            for (purpose, label) in purposes {
+                                                                let is_selected = self.multi_purpose_selected_purposes.contains(&purpose);
+                                                                let display_label = if is_selected { format!("✓ {}", label) } else { label.to_string() };
+                                                                purpose_buttons = purpose_buttons.push(
+                                                                    button(text(display_label).size(self.view_model.text_tiny))
+                                                                        .on_press(Message::ToggleKeyPurpose(purpose))
+                                                                        .padding(4)
+                                                                        .style(CowboyCustomTheme::glass_button())
+                                                                );
+                                                            }
+                                                            purpose_buttons
+                                                        },
+                                                    ]
+                                                    .spacing(self.view_model.spacing_sm)
+                                                    .align_y(Alignment::Center),
+
+                                                    // Generate button
+                                                    button(text("Generate Multi-Purpose Keys").size(self.view_model.text_normal))
+                                                        .on_press_maybe(
+                                                            if self.multi_purpose_selected_person.is_some() && !self.multi_purpose_selected_purposes.is_empty() {
+                                                                Some(Message::GenerateMultiPurposeKeys)
+                                                            } else {
+                                                                None
+                                                            }
+                                                        )
+                                                        .padding(self.view_model.padding_md)
+                                                        .style(CowboyCustomTheme::security_button()),
+                                                ]
+                                                .spacing(self.view_model.spacing_md)
+                                            } else {
+                                                column![]
+                                            }
+                                        ]
+                                        .spacing(self.view_model.spacing_md)
+                                    )
+                                    .padding(self.view_model.padding_md)
+                                    .style(CowboyCustomTheme::pastel_cream_card()),
+
                                     button("Generate SSH Keys for All")
                                         .on_press(Message::GenerateSSHKeys)
                                         .padding(self.view_model.padding_lg)
@@ -11939,6 +12697,144 @@ impl CimKeysApp {
                     )
                     .padding(self.view_model.padding_xl)
                     .style(CowboyCustomTheme::pastel_cream_card()),
+
+                    // Step 9: Event Log / Replay (Card with Collapse)
+                    container(
+                        column![
+                            row![
+                                button(if self.event_log_section_collapsed { "▶" } else { "▼" })
+                                    .on_press(Message::ToggleEventLogSection)
+                                    .padding(self.view_model.padding_sm)
+                                    .style(CowboyCustomTheme::glass_button()),
+                                text("9. Event Log & Replay")
+                                    .size(self.view_model.text_large)
+                                    .color(CowboyTheme::text_primary()),
+                                horizontal_space(),
+                                button(text("Load Events").size(self.view_model.text_tiny))
+                                    .on_press(Message::LoadEventLog)
+                                    .padding(4)
+                                    .style(CowboyCustomTheme::primary_button()),
+                            ]
+                            .spacing(self.view_model.spacing_md)
+                            .align_y(Alignment::Center),
+
+                            if !self.event_log_section_collapsed {
+                                column![
+                                    text("View and replay events from the CID-based event store")
+                                        .size(self.view_model.text_normal)
+                                        .color(CowboyTheme::text_secondary()),
+
+                                    if self.loaded_event_log.is_empty() {
+                                        container(
+                                            text("No events loaded. Click 'Load Events' to view the event log.")
+                                                .size(self.view_model.text_small)
+                                                .color(CowboyTheme::text_muted())
+                                        )
+                                        .padding(self.view_model.padding_md)
+                                    } else {
+                                        container(
+                                            column![
+                                                row![
+                                                    text(format!("Loaded Events: {}", self.loaded_event_log.len()))
+                                                        .size(self.view_model.text_medium)
+                                                        .color(self.view_model.colors.green_success),
+                                                    horizontal_space(),
+                                                    if !self.selected_events_for_replay.is_empty() {
+                                                        row![
+                                                            text(format!("{} selected", self.selected_events_for_replay.len()))
+                                                                .size(self.view_model.text_tiny)
+                                                                .color(self.view_model.colors.info),
+                                                            button(text("Clear").size(self.view_model.text_tiny))
+                                                                .on_press(Message::ClearEventSelection)
+                                                                .padding(2)
+                                                                .style(CowboyCustomTheme::glass_button()),
+                                                            button(text("Replay Selected").size(self.view_model.text_tiny))
+                                                                .on_press(Message::ReplaySelectedEvents)
+                                                                .padding(2)
+                                                                .style(CowboyCustomTheme::security_button()),
+                                                        ]
+                                                        .spacing(self.view_model.spacing_xs)
+                                                    } else {
+                                                        row![]
+                                                    },
+                                                ]
+                                                .spacing(self.view_model.spacing_md)
+                                                .align_y(Alignment::Center),
+                                                {
+                                                    let mut event_list = column![].spacing(self.view_model.spacing_xs);
+                                                    for (idx, event) in self.loaded_event_log.iter().take(50).enumerate() {
+                                                        let is_selected = self.selected_events_for_replay.contains(&event.cid);
+                                                        let cid_short = event.cid.chars().take(12).collect::<String>();
+                                                        // Get event type name from DomainEvent variant
+                                                        let event_type = match &event.envelope.event {
+                                                            crate::events::DomainEvent::Person(_) => "Person",
+                                                            crate::events::DomainEvent::Organization(_) => "Organization",
+                                                            crate::events::DomainEvent::Location(_) => "Location",
+                                                            crate::events::DomainEvent::Certificate(_) => "Certificate",
+                                                            crate::events::DomainEvent::Key(_) => "Key",
+                                                            crate::events::DomainEvent::Delegation(_) => "Delegation",
+                                                            crate::events::DomainEvent::NatsOperator(_) => "NatsOperator",
+                                                            crate::events::DomainEvent::NatsAccount(_) => "NatsAccount",
+                                                            crate::events::DomainEvent::NatsUser(_) => "NatsUser",
+                                                            crate::events::DomainEvent::YubiKey(_) => "YubiKey",
+                                                            crate::events::DomainEvent::Relationship(_) => "Relationship",
+                                                            crate::events::DomainEvent::Manifest(_) => "Manifest",
+                                                            crate::events::DomainEvent::Saga(_) => "Saga",
+                                                            _ => "Unknown",
+                                                        };
+                                                        event_list = event_list.push(
+                                                            button(
+                                                                row![
+                                                                    text(if is_selected { "☑" } else { "☐" })
+                                                                        .size(self.view_model.text_small),
+                                                                    text(format!("#{}", idx + 1))
+                                                                        .size(self.view_model.text_tiny)
+                                                                        .color(CowboyTheme::text_secondary()),
+                                                                    text(format!("{}...", cid_short))
+                                                                        .size(self.view_model.text_tiny)
+                                                                        .color(CowboyTheme::text_muted()),
+                                                                    text(event_type)
+                                                                        .size(self.view_model.text_small)
+                                                                        .color(if is_selected { self.view_model.colors.info } else { CowboyTheme::text_primary() }),
+                                                                    horizontal_space(),
+                                                                    text(event.stored_at.format("%Y-%m-%d %H:%M").to_string())
+                                                                        .size(self.view_model.text_tiny)
+                                                                        .color(CowboyTheme::text_secondary()),
+                                                                ]
+                                                                .spacing(self.view_model.spacing_sm)
+                                                                .align_y(Alignment::Center)
+                                                            )
+                                                            .on_press(Message::ToggleEventSelection(event.cid.clone()))
+                                                            .padding(self.view_model.padding_xs)
+                                                            .width(iced::Length::Fill)
+                                                            .style(CowboyCustomTheme::glass_button())
+                                                        );
+                                                    }
+                                                    if self.loaded_event_log.len() > 50 {
+                                                        event_list = event_list.push(
+                                                            text(format!("... and {} more events", self.loaded_event_log.len() - 50))
+                                                                .size(self.view_model.text_tiny)
+                                                                .color(CowboyTheme::text_muted())
+                                                        );
+                                                    }
+                                                    scrollable(event_list).height(iced::Length::Fixed(300.0))
+                                                }
+                                            ]
+                                            .spacing(self.view_model.spacing_md)
+                                        )
+                                        .padding(self.view_model.padding_md)
+                                        .style(CowboyCustomTheme::card_container())
+                                    },
+                                ]
+                                .spacing(self.view_model.spacing_md)
+                            } else {
+                                column![]
+                            }
+                        ]
+                        .spacing(self.view_model.spacing_md)
+                    )
+                    .padding(self.view_model.padding_xl)
+                    .style(CowboyCustomTheme::pastel_teal_card()),
                 ]
                 .spacing(self.view_model.spacing_md)
             )

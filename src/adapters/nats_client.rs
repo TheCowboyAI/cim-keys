@@ -307,6 +307,7 @@ impl NatsClientAdapter {
             DomainEvent::Key(_) => "key",
             DomainEvent::Certificate(_) => "certificate",
             DomainEvent::YubiKey(_) => "yubikey",
+            DomainEvent::Delegation(_) => "delegation",
             DomainEvent::NatsOperator(_) => "nats.operator",
             DomainEvent::NatsAccount(_) => "nats.account",
             DomainEvent::NatsUser(_) => "nats.user",

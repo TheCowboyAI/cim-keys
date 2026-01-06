@@ -26,6 +26,7 @@ pub mod organization;
 pub mod location;
 pub mod certificate;
 pub mod key;
+pub mod delegation;
 pub mod nats_operator;
 pub mod nats_account;
 pub mod nats_user;
@@ -40,6 +41,7 @@ pub use organization::OrganizationEvents;
 pub use location::LocationEvents;
 pub use certificate::CertificateEvents;
 pub use key::KeyEvents;
+pub use delegation::DelegationEvents;
 pub use nats_operator::NatsOperatorEvents;
 pub use nats_account::NatsAccountEvents;
 pub use nats_user::NatsUserEvents;
@@ -47,6 +49,12 @@ pub use yubikey::YubiKeyEvents;
 pub use relationship::RelationshipEvents;
 pub use manifest::ManifestEvents;
 pub use saga::SagaEvents;
+
+// Re-export delegation event types
+pub use delegation::{
+    DelegationCreatedEvent, DelegationRevokedEvent, DelegationCascadeRevokedEvent,
+    RevocationReason as DelegationRevocationReason,
+};
 
 // Re-export commonly used event structs for convenience
 // This allows using crate::events::CertificateGeneratedEvent instead of
@@ -77,6 +85,7 @@ pub enum DomainEvent {
     Location(LocationEvents),
     Certificate(CertificateEvents),
     Key(KeyEvents),
+    Delegation(DelegationEvents),
     NatsOperator(NatsOperatorEvents),
     NatsAccount(NatsAccountEvents),
     NatsUser(NatsUserEvents),
@@ -254,6 +263,7 @@ impl EventEnvelope {
             DomainEvent::Location(_) => "cim.location.event".to_string(),
             DomainEvent::Certificate(_) => "cim.certificate.event".to_string(),
             DomainEvent::Key(_) => "cim.key.event".to_string(),
+            DomainEvent::Delegation(_) => "cim.delegation.event".to_string(),
             DomainEvent::NatsOperator(_) => "cim.nats.operator.event".to_string(),
             DomainEvent::NatsAccount(_) => "cim.nats.account.event".to_string(),
             DomainEvent::NatsUser(_) => "cim.nats.user.event".to_string(),
@@ -272,6 +282,7 @@ impl EventEnvelope {
             DomainEvent::Location(_) => "Location",
             DomainEvent::Certificate(_) => "Certificate",
             DomainEvent::Key(_) => "Key",
+            DomainEvent::Delegation(_) => "Delegation",
             DomainEvent::NatsOperator(_) => "NatsOperator",
             DomainEvent::NatsAccount(_) => "NatsAccount",
             DomainEvent::NatsUser(_) => "NatsUser",

@@ -69,6 +69,15 @@ pub mod graph;
 #[cfg(feature = "gui")]
 pub mod foldable_impls;
 
+/// Cross-Context Invariants for Domain Integrity
+pub mod invariants;
+
+/// Trust Chain Verification with Cryptographic Proofs
+pub mod trust;
+
+/// Conceptual Space for Semantic Positioning (Gärdenfors Theory)
+pub mod conceptual_space;
+
 // ============================================================================
 // RE-EXPORTS FOR CONVENIENCE
 // ============================================================================
@@ -122,4 +131,56 @@ pub use graph::{
     RelationMetadata,
     // Graph events for event sourcing
     GraphDomainEvent,
+};
+
+// Re-export cross-context invariant types
+pub use invariants::{
+    // Core invariant types
+    InvariantResult,
+    InvariantViolation,
+    CrossContextInvariant,
+    // Specific invariants
+    NatsUserPersonInvariant,
+    YubiKeySlotBindingInvariant,
+    NatsOrganizationHierarchyInvariant,
+    InvariantRegistry,
+    // Supporting types
+    PivSlot as InvariantPivSlot,
+    KeyPurpose as InvariantKeyPurpose,
+    SlotBinding,
+};
+
+// Re-export trust chain verification types
+pub use trust::{
+    // Core types
+    TrustLink,
+    VerifiedTrustChain,
+    VerificationProof,
+    TrustError,
+    TrustVerificationLevel,
+    // Supporting types
+    DelegationScope,
+    RootEntityType,
+    LinkProof,
+    // PKI Context trait and types
+    PkiContext,
+    CertificateInfo,
+    KeyInfo,
+    OwnershipInfo,
+    DelegationInfo,
+    // Verifier
+    TrustChainVerifier,
+};
+
+// Re-export conceptual space types for semantic positioning
+pub use conceptual_space::{
+    ConceptPosition,
+    AttentionWeights,
+    KnowledgeLevel,
+    EvidenceScore,
+    ConceptKnowledge,
+    prototypes as concept_prototypes,
+    attention as concept_attention,
+    thresholds as similarity_thresholds,
+    prohibited_aliases,
 };

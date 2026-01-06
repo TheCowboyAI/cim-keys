@@ -797,6 +797,396 @@ impl AggregateRoot for YubiKeyProvisioningAggregate {
 }
 
 // ============================================================================
+// DELEGATION AGGREGATE
+// ============================================================================
+
+/// Delegation ID type for tracking delegations
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct DelegationId(Uuid);
+
+impl DelegationId {
+    pub fn new() -> Self {
+        Self(Uuid::now_v7())
+    }
+
+    pub fn from_uuid(id: Uuid) -> Self {
+        Self(id)
+    }
+
+    pub fn as_uuid(&self) -> Uuid {
+        self.0
+    }
+}
+
+impl Default for DelegationId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Display for DelegationId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// Delegation Aggregate Root
+///
+/// Manages permission delegations between persons with cascade revocation support.
+///
+/// ## Invariants
+/// - Delegator and delegate must be different persons
+/// - Delegator must have the permissions being delegated
+/// - Delegation chain depth must not exceed maximum (default: 5)
+/// - Revoked delegations cascade to all dependents
+/// - No cycles allowed in delegation chains
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DelegationAggregate {
+    /// Aggregate ID (organization-scoped)
+    pub id: Uuid,
+    /// Version for optimistic concurrency
+    pub version: u64,
+    /// Organization this delegation management belongs to
+    pub organization_id: BootstrapOrgId,
+    /// Active delegations (indexed by delegation ID)
+    pub delegations: HashMap<DelegationId, DelegationState>,
+    /// Index: delegator → delegations they've created
+    pub by_delegator: HashMap<Uuid, Vec<DelegationId>>,
+    /// Index: delegate → delegations they've received
+    pub by_delegate: HashMap<Uuid, Vec<DelegationId>>,
+    /// Index: parent → child delegations (for cascade revocation)
+    pub children: HashMap<DelegationId, Vec<DelegationId>>,
+    /// Maximum allowed chain depth
+    pub max_chain_depth: u32,
+}
+
+/// State of a delegation within the aggregate
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DelegationState {
+    pub id: DelegationId,
+    pub delegator_id: Uuid,
+    pub delegate_id: Uuid,
+    pub permissions: Vec<crate::domain::KeyPermission>,
+    pub derives_from: Option<DelegationId>,
+    pub valid_from: chrono::DateTime<chrono::Utc>,
+    pub valid_until: Option<chrono::DateTime<chrono::Utc>>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub revoked: bool,
+    pub revoked_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub revocation_reason: Option<String>,
+}
+
+impl DelegationAggregate {
+    /// Create a new delegation aggregate for an organization
+    pub fn new(organization_id: BootstrapOrgId) -> Self {
+        Self {
+            id: Uuid::now_v7(),
+            version: 0,
+            organization_id,
+            delegations: HashMap::new(),
+            by_delegator: HashMap::new(),
+            by_delegate: HashMap::new(),
+            children: HashMap::new(),
+            max_chain_depth: 5,
+        }
+    }
+
+    /// Check if a delegation would create a cycle
+    pub fn would_create_cycle(&self, delegator_id: Uuid, delegate_id: Uuid) -> bool {
+        // Check if delegate has any delegation that leads back to delegator
+        self.has_delegation_path(delegate_id, delegator_id)
+    }
+
+    /// Check if there's a delegation path from source to target
+    fn has_delegation_path(&self, source_id: Uuid, target_id: Uuid) -> bool {
+        let mut visited = std::collections::HashSet::new();
+        let mut queue = std::collections::VecDeque::new();
+        queue.push_back(source_id);
+
+        while let Some(current) = queue.pop_front() {
+            if current == target_id {
+                return true;
+            }
+            if visited.contains(&current) {
+                continue;
+            }
+            visited.insert(current);
+
+            // Find all delegations where current is the delegator
+            if let Some(delegation_ids) = self.by_delegator.get(&current) {
+                for &del_id in delegation_ids {
+                    if let Some(del) = self.delegations.get(&del_id) {
+                        if !del.revoked {
+                            queue.push_back(del.delegate_id);
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Calculate the chain depth for a delegation
+    pub fn chain_depth(&self, derives_from: Option<DelegationId>) -> u32 {
+        let mut depth = 0;
+        let mut current = derives_from;
+
+        while let Some(parent_id) = current {
+            depth += 1;
+            if let Some(parent) = self.delegations.get(&parent_id) {
+                current = parent.derives_from;
+            } else {
+                break;
+            }
+        }
+        depth
+    }
+
+    /// Validate a new delegation
+    pub fn can_create_delegation(
+        &self,
+        delegator_id: Uuid,
+        delegate_id: Uuid,
+        derives_from: Option<DelegationId>,
+    ) -> Result<(), String> {
+        // Rule 1: Cannot delegate to self
+        if delegator_id == delegate_id {
+            return Err("Cannot delegate to yourself".to_string());
+        }
+
+        // Rule 2: No cycles
+        if self.would_create_cycle(delegator_id, delegate_id) {
+            return Err("Delegation would create a cycle".to_string());
+        }
+
+        // Rule 3: Parent must exist and be active if specified
+        if let Some(parent_id) = derives_from {
+            match self.delegations.get(&parent_id) {
+                Some(parent) if !parent.revoked => {
+                    // Verify delegator is the delegate of the parent (transitive delegation)
+                    if parent.delegate_id != delegator_id {
+                        return Err("Can only derive from delegations you received".to_string());
+                    }
+                }
+                Some(_) => {
+                    return Err("Cannot derive from a revoked delegation".to_string());
+                }
+                None => {
+                    return Err(format!("Parent delegation {} does not exist", parent_id));
+                }
+            }
+        }
+
+        // Rule 4: Chain depth limit
+        let depth = self.chain_depth(derives_from);
+        if depth >= self.max_chain_depth {
+            return Err(format!(
+                "Delegation chain depth {} exceeds maximum {}",
+                depth + 1,
+                self.max_chain_depth
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Find all delegations that depend on a given delegation (transitively)
+    ///
+    /// Uses BFS to find all dependent delegations for cascade revocation.
+    pub fn find_dependent_delegations(&self, root_id: DelegationId) -> Vec<DelegationId> {
+        let mut dependents = Vec::new();
+        let mut visited = std::collections::HashSet::new();
+        let mut queue = std::collections::VecDeque::new();
+        queue.push_back(root_id);
+
+        while let Some(current) = queue.pop_front() {
+            if visited.contains(&current) {
+                continue;
+            }
+            visited.insert(current);
+
+            // Find all delegations that derive from current
+            if let Some(children) = self.children.get(&current) {
+                for &child_id in children {
+                    if let Some(child) = self.delegations.get(&child_id) {
+                        if !child.revoked {
+                            dependents.push(child_id);
+                            queue.push_back(child_id);
+                        }
+                    }
+                }
+            }
+        }
+
+        dependents
+    }
+
+    /// Revoke a delegation with cascade to dependents
+    ///
+    /// Returns a list of (delegation_id, cascade_reason) for all revocations needed.
+    pub fn prepare_revocation_cascade(
+        &self,
+        delegation_id: DelegationId,
+        reason: &str,
+    ) -> Vec<(DelegationId, String)> {
+        let mut revocations = Vec::new();
+
+        // Find all dependent delegations
+        let dependents = self.find_dependent_delegations(delegation_id);
+
+        // Create cascade revocation entries
+        for dependent_id in dependents {
+            let cascade_reason = format!(
+                "Cascade revoked: parent delegation {} was revoked: {}",
+                delegation_id, reason
+            );
+            revocations.push((dependent_id, cascade_reason));
+        }
+
+        revocations
+    }
+
+    /// Apply a delegation event to update state
+    pub fn apply(&mut self, event: &crate::events::DomainEvent) -> Result<(), String> {
+        match event {
+            crate::events::DomainEvent::Delegation(del_event) => {
+                use crate::events::delegation::DelegationEvents;
+                match del_event {
+                    DelegationEvents::DelegationCreated(e) => {
+                        let del_id = DelegationId::from_uuid(e.delegation_id);
+                        let state = DelegationState {
+                            id: del_id,
+                            delegator_id: e.delegator_id,
+                            delegate_id: e.delegate_id,
+                            permissions: e.permissions.clone(),
+                            derives_from: e.derives_from.map(DelegationId::from_uuid),
+                            valid_from: e.valid_from,
+                            valid_until: e.valid_until,
+                            created_at: e.created_at,
+                            revoked: false,
+                            revoked_at: None,
+                            revocation_reason: None,
+                        };
+
+                        // Update indexes
+                        self.by_delegator
+                            .entry(e.delegator_id)
+                            .or_default()
+                            .push(del_id);
+                        self.by_delegate
+                            .entry(e.delegate_id)
+                            .or_default()
+                            .push(del_id);
+
+                        if let Some(parent_id) = e.derives_from {
+                            self.children
+                                .entry(DelegationId::from_uuid(parent_id))
+                                .or_default()
+                                .push(del_id);
+                        }
+
+                        self.delegations.insert(del_id, state);
+                    }
+                    DelegationEvents::DelegationRevoked(e) => {
+                        let del_id = DelegationId::from_uuid(e.delegation_id);
+                        if let Some(del) = self.delegations.get_mut(&del_id) {
+                            del.revoked = true;
+                            del.revoked_at = Some(e.revoked_at);
+                            del.revocation_reason = Some(e.reason.to_string());
+                        }
+                    }
+                    DelegationEvents::DelegationCascadeRevoked(e) => {
+                        let del_id = DelegationId::from_uuid(e.delegation_id);
+                        if let Some(del) = self.delegations.get_mut(&del_id) {
+                            del.revoked = true;
+                            del.revoked_at = Some(e.revoked_at);
+                            del.revocation_reason = Some(e.reason.clone());
+                        }
+                    }
+                    DelegationEvents::DelegationExtended(e) => {
+                        let del_id = DelegationId::from_uuid(e.delegation_id);
+                        if let Some(del) = self.delegations.get_mut(&del_id) {
+                            del.valid_until = e.new_valid_until;
+                        }
+                    }
+                    DelegationEvents::DelegationPermissionsModified(e) => {
+                        let del_id = DelegationId::from_uuid(e.delegation_id);
+                        if let Some(del) = self.delegations.get_mut(&del_id) {
+                            // Remove permissions
+                            del.permissions.retain(|p| !e.permissions_removed.contains(p));
+                            // Add new permissions
+                            for perm in &e.permissions_added {
+                                if !del.permissions.contains(perm) {
+                                    del.permissions.push(perm.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+                self.increment_version();
+            }
+            _ => {
+                // Events from other aggregates are ignored
+            }
+        }
+        Ok(())
+    }
+
+    /// Get active delegations for a person (as delegate)
+    pub fn get_delegations_for(&self, person_id: Uuid) -> Vec<&DelegationState> {
+        self.by_delegate
+            .get(&person_id)
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(|id| self.delegations.get(id))
+                    .filter(|d| !d.revoked)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Get active delegations from a person (as delegator)
+    pub fn get_delegations_from(&self, person_id: Uuid) -> Vec<&DelegationState> {
+        self.by_delegator
+            .get(&person_id)
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(|id| self.delegations.get(id))
+                    .filter(|d| !d.revoked)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Check if a person has a specific permission through delegations
+    pub fn has_delegated_permission(
+        &self,
+        person_id: Uuid,
+        permission: &crate::domain::KeyPermission,
+    ) -> bool {
+        self.get_delegations_for(person_id)
+            .iter()
+            .any(|d| d.permissions.contains(permission))
+    }
+}
+
+impl AggregateRoot for DelegationAggregate {
+    type Id = Uuid;
+
+    fn id(&self) -> Self::Id {
+        self.id
+    }
+
+    fn version(&self) -> u64 {
+        self.version
+    }
+
+    fn increment_version(&mut self) {
+        self.version += 1;
+    }
+}
+
+// ============================================================================
 // TESTS
 // ============================================================================
 
@@ -911,5 +1301,203 @@ mod tests {
         assert!(!aggregate.is_serial_unique("12345678"));
         // Different serial should be unique
         assert!(aggregate.is_serial_unique("87654321"));
+    }
+
+    #[test]
+    fn test_delegation_aggregate_creation() {
+        let org_id = BootstrapOrgId::new();
+        let aggregate = DelegationAggregate::new(org_id);
+
+        assert_eq!(aggregate.version(), 0);
+        assert!(aggregate.delegations.is_empty());
+        assert_eq!(aggregate.max_chain_depth, 5);
+    }
+
+    #[test]
+    fn test_delegation_cannot_self_delegate() {
+        let org_id = BootstrapOrgId::new();
+        let aggregate = DelegationAggregate::new(org_id);
+        let alice = Uuid::now_v7();
+
+        let result = aggregate.can_create_delegation(alice, alice, None);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("yourself"));
+    }
+
+    #[test]
+    fn test_delegation_chain_depth() {
+        let org_id = BootstrapOrgId::new();
+        let mut aggregate = DelegationAggregate::new(org_id);
+        let now = chrono::Utc::now();
+
+        // Create a chain: Alice → Bob → Charlie
+        let alice = Uuid::now_v7();
+        let bob = Uuid::now_v7();
+        let charlie = Uuid::now_v7();
+
+        // Alice → Bob (depth 0)
+        let del1_id = DelegationId::new();
+        aggregate.delegations.insert(del1_id, DelegationState {
+            id: del1_id,
+            delegator_id: alice,
+            delegate_id: bob,
+            permissions: vec![crate::domain::KeyPermission::Sign],
+            derives_from: None,
+            valid_from: now,
+            valid_until: None,
+            created_at: now,
+            revoked: false,
+            revoked_at: None,
+            revocation_reason: None,
+        });
+
+        // Bob → Charlie (derives from del1, depth 1)
+        let del2_id = DelegationId::new();
+        aggregate.delegations.insert(del2_id, DelegationState {
+            id: del2_id,
+            delegator_id: bob,
+            delegate_id: charlie,
+            permissions: vec![crate::domain::KeyPermission::Sign],
+            derives_from: Some(del1_id),
+            valid_from: now,
+            valid_until: None,
+            created_at: now,
+            revoked: false,
+            revoked_at: None,
+            revocation_reason: None,
+        });
+
+        // Chain depth from del2 should be 1
+        assert_eq!(aggregate.chain_depth(Some(del1_id)), 1);
+        assert_eq!(aggregate.chain_depth(None), 0);
+    }
+
+    #[test]
+    fn test_delegation_cascade_revocation() {
+        let org_id = BootstrapOrgId::new();
+        let mut aggregate = DelegationAggregate::new(org_id);
+        let now = chrono::Utc::now();
+
+        // Create a chain: Alice → Bob → Charlie → Dave
+        let alice = Uuid::now_v7();
+        let bob = Uuid::now_v7();
+        let charlie = Uuid::now_v7();
+        let dave = Uuid::now_v7();
+
+        // Alice → Bob
+        let del1_id = DelegationId::new();
+        aggregate.delegations.insert(del1_id, DelegationState {
+            id: del1_id,
+            delegator_id: alice,
+            delegate_id: bob,
+            permissions: vec![crate::domain::KeyPermission::Sign],
+            derives_from: None,
+            valid_from: now,
+            valid_until: None,
+            created_at: now,
+            revoked: false,
+            revoked_at: None,
+            revocation_reason: None,
+        });
+        aggregate.children.insert(del1_id, vec![]);
+
+        // Bob → Charlie (derives from del1)
+        let del2_id = DelegationId::new();
+        aggregate.delegations.insert(del2_id, DelegationState {
+            id: del2_id,
+            delegator_id: bob,
+            delegate_id: charlie,
+            permissions: vec![crate::domain::KeyPermission::Sign],
+            derives_from: Some(del1_id),
+            valid_from: now,
+            valid_until: None,
+            created_at: now,
+            revoked: false,
+            revoked_at: None,
+            revocation_reason: None,
+        });
+        aggregate.children.entry(del1_id).or_default().push(del2_id);
+        aggregate.children.insert(del2_id, vec![]);
+
+        // Charlie → Dave (derives from del2)
+        let del3_id = DelegationId::new();
+        aggregate.delegations.insert(del3_id, DelegationState {
+            id: del3_id,
+            delegator_id: charlie,
+            delegate_id: dave,
+            permissions: vec![crate::domain::KeyPermission::Sign],
+            derives_from: Some(del2_id),
+            valid_from: now,
+            valid_until: None,
+            created_at: now,
+            revoked: false,
+            revoked_at: None,
+            revocation_reason: None,
+        });
+        aggregate.children.entry(del2_id).or_default().push(del3_id);
+
+        // Find dependents of del1 (should include del2 and del3)
+        let dependents = aggregate.find_dependent_delegations(del1_id);
+        assert_eq!(dependents.len(), 2);
+        assert!(dependents.contains(&del2_id));
+        assert!(dependents.contains(&del3_id));
+
+        // Prepare cascade revocation
+        let cascades = aggregate.prepare_revocation_cascade(del1_id, "Policy violation");
+        assert_eq!(cascades.len(), 2);
+        for (_, reason) in &cascades {
+            assert!(reason.contains("Cascade revoked"));
+            assert!(reason.contains("Policy violation"));
+        }
+    }
+
+    #[test]
+    fn test_delegation_cycle_detection() {
+        let org_id = BootstrapOrgId::new();
+        let mut aggregate = DelegationAggregate::new(org_id);
+        let now = chrono::Utc::now();
+
+        let alice = Uuid::now_v7();
+        let bob = Uuid::now_v7();
+        let charlie = Uuid::now_v7();
+
+        // Alice → Bob
+        let del1_id = DelegationId::new();
+        aggregate.delegations.insert(del1_id, DelegationState {
+            id: del1_id,
+            delegator_id: alice,
+            delegate_id: bob,
+            permissions: vec![],
+            derives_from: None,
+            valid_from: now,
+            valid_until: None,
+            created_at: now,
+            revoked: false,
+            revoked_at: None,
+            revocation_reason: None,
+        });
+        aggregate.by_delegator.entry(alice).or_default().push(del1_id);
+
+        // Bob → Charlie
+        let del2_id = DelegationId::new();
+        aggregate.delegations.insert(del2_id, DelegationState {
+            id: del2_id,
+            delegator_id: bob,
+            delegate_id: charlie,
+            permissions: vec![],
+            derives_from: None,
+            valid_from: now,
+            valid_until: None,
+            created_at: now,
+            revoked: false,
+            revoked_at: None,
+            revocation_reason: None,
+        });
+        aggregate.by_delegator.entry(bob).or_default().push(del2_id);
+
+        // Try Charlie → Alice (would create cycle)
+        let result = aggregate.can_create_delegation(charlie, alice, None);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("cycle"));
     }
 }

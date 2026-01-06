@@ -173,6 +173,43 @@ Terms are organized by bounded context.
 | **Decoupled** | Output at time t depends only on input before t |
 | **Causality** | Effects cannot precede their causes |
 
+## Conceptual Spaces (Gärdenfors Theory)
+
+| Term | Definition | Type |
+|------|------------|------|
+| **ConceptPosition** | 8-dimensional position in semantic space defining concept meaning | Value Object |
+| **QualityDimension** | One of 8 axes: Authority, TrustScope, Temporal, CryptoStrength, Revocability, HardwareBinding, DelegationDepth, AuditCompleteness | Value Object |
+| **ConceptKnowledge** | Complete knowledge about a concept: position + evidence + aliases | Value Object |
+| **EvidenceScore** | Weighted score from tests, BDD scenarios, property tests, docs, usage | Value Object |
+| **KnowledgeLevel** | Bloom's Taxonomy for PKI: Awareness → Understanding → Application → Analysis → Synthesis → Evaluation | Enumeration |
+| **AttentionWeights** | Salience in contexts: Bootstrap, Operational, Audit, Recovery | Value Object |
+
+### Similarity Thresholds
+
+| Threshold | Value | Meaning |
+|-----------|-------|---------|
+| **SYNONYM_THRESHOLD** | 0.90 | Concepts requiring disambiguation |
+| **RELATED_THRESHOLD** | 0.70 | Concepts often used together |
+| **DISTINCT_THRESHOLD** | 0.50 | Concepts distinct but connected |
+| **Unrelated** | ≤ 0.50 | Different bounded contexts |
+
+### Prohibited Aliases (Anti-Vocabulary)
+
+The ubiquitous language is a **Projection** from conceptual space. These terms MUST NOT be used:
+
+| Canonical Term | Prohibited Aliases |
+|----------------|-------------------|
+| Organization | Company, Firm, Enterprise, Corp, Business |
+| Person | User, Member, Employee, Individual, Human |
+| CryptographicKey | KeyPair, CryptoKey, PrivateKey, SecretKey |
+| Certificate | Cert, X509, PKICert, X509Cert |
+| YubiKey | Token, HSM, SmartCard, SecurityKey, FIDO |
+| Location | Site, Place, Venue, Address |
+| NatsOperator | Operator, SystemOperator |
+| NatsAccount | Account, Namespace, Tenant |
+| NatsUser | Subscriber, Client |
+| Delegation | Permission, Grant, Authorization, Allowance |
+
 ## Abbreviations
 
 | Abbreviation | Full Term |

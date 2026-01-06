@@ -80,6 +80,10 @@ pub enum PropertyCardMessage {
     GeneratePersonalKeys,
     /// User clicked provision YubiKey button (Person)
     ProvisionYubiKey,
+    /// User clicked assign YubiKey button (Person) - opens YubiKey selection
+    RequestYubiKeyAssignment,
+    /// User clicked unassign YubiKey button (Person)
+    RequestYubiKeyUnassignment,
     // Edge editing messages
     /// User changed edge type
     EdgeTypeChanged(EdgeType),
@@ -317,6 +321,12 @@ impl PropertyCard {
             }
             PropertyCardMessage::ProvisionYubiKey => {
                 // Handled by parent
+            }
+            PropertyCardMessage::RequestYubiKeyAssignment => {
+                // Handled by parent - opens YubiKey selection UI
+            }
+            PropertyCardMessage::RequestYubiKeyUnassignment => {
+                // Handled by parent - removes YubiKey assignment
             }
             PropertyCardMessage::DeleteEdge => {
                 // Handled by parent
@@ -607,6 +617,30 @@ impl PropertyCard {
                             button::Style {
                                 background: Some(iced::Background::Color(palette.secondary.strong.color)),
                                 text_color: palette.secondary.strong.text,
+                                border: iced::Border::default(),
+                                shadow: iced::Shadow::default(),
+                            }
+                        }),
+                    button(text("Assign YubiKey").size(11))
+                        .on_press(PropertyCardMessage::RequestYubiKeyAssignment)
+                        .width(Length::Fill)
+                        .style(|theme: &Theme, _status| {
+                            let palette = theme.extended_palette();
+                            button::Style {
+                                background: Some(iced::Background::Color(palette.secondary.base.color)),
+                                text_color: palette.secondary.base.text,
+                                border: iced::Border::default(),
+                                shadow: iced::Shadow::default(),
+                            }
+                        }),
+                    button(text("Unassign YubiKey").size(11))
+                        .on_press(PropertyCardMessage::RequestYubiKeyUnassignment)
+                        .width(Length::Fill)
+                        .style(|theme: &Theme, _status| {
+                            let palette = theme.extended_palette();
+                            button::Style {
+                                background: Some(iced::Background::Color(palette.danger.base.color)),
+                                text_color: palette.danger.base.text,
                                 border: iced::Border::default(),
                                 shadow: iced::Shadow::default(),
                             }
