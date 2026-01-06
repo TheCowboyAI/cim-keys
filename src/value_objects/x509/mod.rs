@@ -28,9 +28,11 @@
 //! // "CN=Alice Smith,O=Cowboy AI\\, LLC,C=US"
 //! ```
 
+pub mod basic_constraints;
 pub mod key_usage;
 pub mod subject_alt_name;
 pub mod subject_name;
+pub mod validity;
 
 // Re-export all types
 pub use subject_name::{
@@ -61,3 +63,7 @@ pub use subject_alt_name::{
     SanUri,
     SubjectAlternativeName,
 };
+
+pub use basic_constraints::BasicConstraints;
+
+pub use validity::{CertificateValidity, ValidityError};

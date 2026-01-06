@@ -60,6 +60,7 @@ pub use nats::{
 
 // Re-export X.509 types
 pub use x509::{
+    BasicConstraints,
     CommonName,
     CountryCode,
     DnsName,
@@ -80,4 +81,6 @@ pub use x509::{
     SubjectAlternativeName,
     SubjectName,
     SubjectNameError,
+    CertificateValidity,
+    ValidityError,
 };
