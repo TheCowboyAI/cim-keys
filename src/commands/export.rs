@@ -102,12 +102,14 @@ pub fn handle_export_to_encrypted_storage(
         // Map ExportFormat to KeyFormat
         let key_format = map_export_format_to_key_format(&key_item.export_format);
 
+        #[allow(deprecated)]
         events.push(DomainEvent::Key(crate::events::KeyEvents::KeyExported(crate::events::key::KeyExportedEvent {
             key_id: key_item.key_id,
             format: key_format,
             include_private: false, // Only exporting public keys
             exported_at: Utc::now(),
             exported_by: cmd.organization.name.clone(),
+            exported_by_actor: None, // Legacy code path
             destination: crate::types::ExportDestination::File {
                 path: key_item.destination_path.to_string_lossy().to_string(),
             },

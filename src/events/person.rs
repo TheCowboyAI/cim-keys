@@ -179,9 +179,29 @@ pub struct PersonUpdatedEvent {
     pub old_value: Option<String>,
     pub new_value: String,
     pub updated_at: DateTime<Utc>,
+
+    // Legacy field (deprecated)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[deprecated(note = "Use updated_by_actor field instead")]
     pub updated_by: String,
+
+    // Typed field (preferred)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_by_actor: Option<ActorId>,
+
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
+}
+
+#[allow(deprecated)]
+impl PersonUpdatedEvent {
+    /// Get ActorId, preferring typed field, falling back to parsing legacy string
+    pub fn updated_by_value_object(&self) -> ActorId {
+        if let Some(ref actor) = self.updated_by_actor {
+            return actor.clone();
+        }
+        ActorId::parse(&self.updated_by)
+    }
 }
 
 /// Role assigned to person

@@ -188,10 +188,30 @@ pub struct KeyImportedEvent {
     pub source: ImportSource,
     pub format: KeyFormat,
     pub imported_at: DateTime<Utc>,
+
+    // Legacy field (deprecated)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[deprecated(note = "Use imported_by_actor field instead")]
     pub imported_by: String,
+
+    // Typed field (preferred)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imported_by_actor: Option<ActorId>,
+
     pub metadata: KeyMetadata,
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
+}
+
+#[allow(deprecated)]
+impl KeyImportedEvent {
+    /// Get ActorId, preferring typed field, falling back to parsing legacy string
+    pub fn imported_by_value_object(&self) -> ActorId {
+        if let Some(ref actor) = self.imported_by_actor {
+            return actor.clone();
+        }
+        ActorId::parse(&self.imported_by)
+    }
 }
 
 /// A key was exported
@@ -201,10 +221,30 @@ pub struct KeyExportedEvent {
     pub format: KeyFormat,
     pub include_private: bool,
     pub exported_at: DateTime<Utc>,
+
+    // Legacy field (deprecated)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[deprecated(note = "Use exported_by_actor field instead")]
     pub exported_by: String,
+
+    // Typed field (preferred)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exported_by_actor: Option<ActorId>,
+
     pub destination: ExportDestination,
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
+}
+
+#[allow(deprecated)]
+impl KeyExportedEvent {
+    /// Get ActorId, preferring typed field, falling back to parsing legacy string
+    pub fn exported_by_value_object(&self) -> ActorId {
+        if let Some(ref actor) = self.exported_by_actor {
+            return actor.clone();
+        }
+        ActorId::parse(&self.exported_by)
+    }
 }
 
 /// Key stored in offline partition
@@ -225,9 +265,29 @@ pub struct KeyRevokedEvent {
     pub key_id: Uuid,
     pub reason: RevocationReason,
     pub revoked_at: DateTime<Utc>,
+
+    // Legacy field (deprecated)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[deprecated(note = "Use revoked_by_actor field instead")]
     pub revoked_by: String,
+
+    // Typed field (preferred)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revoked_by_actor: Option<ActorId>,
+
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
+}
+
+#[allow(deprecated)]
+impl KeyRevokedEvent {
+    /// Get ActorId, preferring typed field, falling back to parsing legacy string
+    pub fn revoked_by_value_object(&self) -> ActorId {
+        if let Some(ref actor) = self.revoked_by_actor {
+            return actor.clone();
+        }
+        ActorId::parse(&self.revoked_by)
+    }
 }
 
 /// Key rotation was initiated
@@ -238,9 +298,29 @@ pub struct KeyRotationInitiatedEvent {
     pub new_key_id: Uuid,
     pub rotation_reason: String,
     pub initiated_at: DateTime<Utc>,
+
+    // Legacy field (deprecated)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[deprecated(note = "Use initiated_by_actor field instead")]
     pub initiated_by: String,
+
+    // Typed field (preferred)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initiated_by_actor: Option<ActorId>,
+
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
+}
+
+#[allow(deprecated)]
+impl KeyRotationInitiatedEvent {
+    /// Get ActorId, preferring typed field, falling back to parsing legacy string
+    pub fn initiated_by_value_object(&self) -> ActorId {
+        if let Some(ref actor) = self.initiated_by_actor {
+            return actor.clone();
+        }
+        ActorId::parse(&self.initiated_by)
+    }
 }
 
 /// Key rotation was completed
@@ -262,9 +342,29 @@ pub struct SshKeyGeneratedEvent {
     pub key_type: String, // e.g., "rsa", "ed25519"
     pub comment: String,
     pub generated_at: DateTime<Utc>,
+
+    // Legacy field (deprecated)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[deprecated(note = "Use generated_by_actor field instead")]
     pub generated_by: String,
+
+    // Typed field (preferred)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generated_by_actor: Option<ActorId>,
+
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
+}
+
+#[allow(deprecated)]
+impl SshKeyGeneratedEvent {
+    /// Get ActorId, preferring typed field, falling back to parsing legacy string
+    pub fn generated_by_value_object(&self) -> ActorId {
+        if let Some(ref actor) = self.generated_by_actor {
+            return actor.clone();
+        }
+        ActorId::parse(&self.generated_by)
+    }
 }
 
 /// GPG key was generated
@@ -275,9 +375,29 @@ pub struct GpgKeyGeneratedEvent {
     pub user_id: String,
     pub key_type: String,
     pub generated_at: DateTime<Utc>,
+
+    // Legacy field (deprecated)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[deprecated(note = "Use generated_by_actor field instead")]
     pub generated_by: String,
+
+    // Typed field (preferred)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generated_by_actor: Option<ActorId>,
+
     pub correlation_id: Uuid,
     pub causation_id: Option<Uuid>,
+}
+
+#[allow(deprecated)]
+impl GpgKeyGeneratedEvent {
+    /// Get ActorId, preferring typed field, falling back to parsing legacy string
+    pub fn generated_by_value_object(&self) -> ActorId {
+        if let Some(ref actor) = self.generated_by_actor {
+            return actor.clone();
+        }
+        ActorId::parse(&self.generated_by)
+    }
 }
 
 /// TOTP secret was generated

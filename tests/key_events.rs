@@ -65,6 +65,7 @@ fn sample_key_generated() -> KeyGeneratedEvent {
     }
 }
 
+#[allow(deprecated)]
 fn sample_key_imported() -> KeyImportedEvent {
     KeyImportedEvent {
         key_id: test_key_id(),
@@ -72,12 +73,14 @@ fn sample_key_imported() -> KeyImportedEvent {
         format: KeyFormat::Pem,
         imported_at: Utc::now(),
         imported_by: "admin".to_string(),
+        imported_by_actor: None,
         metadata: test_key_metadata(),
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }
 }
 
+#[allow(deprecated)]
 fn sample_key_exported() -> KeyExportedEvent {
     KeyExportedEvent {
         key_id: test_key_id(),
@@ -85,6 +88,7 @@ fn sample_key_exported() -> KeyExportedEvent {
         include_private: false,
         exported_at: Utc::now(),
         exported_by: "admin".to_string(),
+        exported_by_actor: None,
         destination: ExportDestination::File { path: "/mnt/encrypted/keys/key.pem".to_string() },
         correlation_id: Uuid::now_v7(),
         causation_id: None,
@@ -103,17 +107,20 @@ fn sample_key_stored_offline() -> KeyStoredOfflineEvent {
     }
 }
 
+#[allow(deprecated)]
 fn sample_key_revoked() -> KeyRevokedEvent {
     KeyRevokedEvent {
         key_id: test_key_id(),
         reason: RevocationReason::KeyCompromise,
         revoked_at: Utc::now(),
         revoked_by: "security_admin".to_string(),
+        revoked_by_actor: None,
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }
 }
 
+#[allow(deprecated)]
 fn sample_key_rotation_initiated() -> KeyRotationInitiatedEvent {
     KeyRotationInitiatedEvent {
         rotation_id: test_rotation_id(),
@@ -122,6 +129,7 @@ fn sample_key_rotation_initiated() -> KeyRotationInitiatedEvent {
         rotation_reason: "Scheduled rotation".to_string(),
         initiated_at: Utc::now(),
         initiated_by: "key_admin".to_string(),
+        initiated_by_actor: None,
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }
@@ -139,6 +147,7 @@ fn sample_key_rotation_completed() -> KeyRotationCompletedEvent {
     }
 }
 
+#[allow(deprecated)]
 fn sample_ssh_key_generated() -> SshKeyGeneratedEvent {
     SshKeyGeneratedEvent {
         key_id: test_key_id(),
@@ -146,11 +155,13 @@ fn sample_ssh_key_generated() -> SshKeyGeneratedEvent {
         comment: "user@example.com".to_string(),
         generated_at: Utc::now(),
         generated_by: "user".to_string(),
+        generated_by_actor: None,
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }
 }
 
+#[allow(deprecated)]
 fn sample_gpg_key_generated() -> GpgKeyGeneratedEvent {
     GpgKeyGeneratedEvent {
         key_id: test_key_id(),
@@ -159,6 +170,7 @@ fn sample_gpg_key_generated() -> GpgKeyGeneratedEvent {
         key_type: "RSA".to_string(),
         generated_at: Utc::now(),
         generated_by: "john".to_string(),
+        generated_by_actor: None,
         correlation_id: Uuid::now_v7(),
         causation_id: None,
     }
