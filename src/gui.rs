@@ -78,11 +78,15 @@ pub mod state_machine_svg;
 pub mod state_machine_view;
 pub mod graph_buttons;
 
+// Domain-bounded modules (Sprint 48 refactoring)
+pub mod domains;
+
 #[cfg(test)]
 mod graph_integration_tests;
 
 use graph::{OrganizationConcept, OrganizationIntent};
 use crate::lifting::Injection;
+use domains::OrganizationMessage;
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
 use view_model::ViewModel;
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
@@ -813,13 +817,21 @@ impl Default for GraphView {
 /// Messages for the application
 #[derive(Debug, Clone)]
 pub enum Message {
+    // ============================================================================
+    // Domain-Bounded Message Delegation (Sprint 48 refactoring)
+    // ============================================================================
+    /// Delegation to Organization bounded context
+    Organization(OrganizationMessage),
+
+    // ============================================================================
     // Tab Navigation
+    // ============================================================================
     TabSelected(Tab),
 
     // Graph View Selection
     GraphViewSelected(GraphView),
 
-    // Domain operations
+    // Domain operations (migrating to Organization bounded context)
     CreateNewDomain,
     LoadExistingDomain,
     ImportFromSecrets,
@@ -1905,6 +1917,91 @@ impl CimKeysApp {
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            // ================================================================
+            // Domain-Bounded Message Delegation (Sprint 48)
+            // ================================================================
+            Message::Organization(org_msg) => {
+                // Delegate to organization domain module
+                // Note: Complex operations that need aggregate/projection access
+                // are still handled here; simple state updates are delegated
+                use domains::organization;
+
+                // Create organization state view from app state
+                let mut org_state = domains::OrganizationState {
+                    domain_loaded: self.domain_loaded,
+                    organization_name: self.organization_name.clone(),
+                    organization_domain: self.organization_domain.clone(),
+                    organization_id: self.organization_id,
+                    admin_email: self.admin_email.clone(),
+                    master_passphrase: self.master_passphrase.clone(),
+                    master_passphrase_confirm: self.master_passphrase_confirm.clone(),
+                    new_person_name: self.new_person_name.clone(),
+                    new_person_email: self.new_person_email.clone(),
+                    new_person_role: self.new_person_role,
+                    selected_person: self.selected_person,
+                    inline_edit_name: self.inline_edit_name.clone(),
+                    editing_new_node: self.editing_new_node,
+                    new_location_name: self.new_location_name.clone(),
+                    new_location_type: self.new_location_type.clone(),
+                    new_location_street: self.new_location_street.clone(),
+                    new_location_city: self.new_location_city.clone(),
+                    new_location_region: self.new_location_region.clone(),
+                    new_location_country: self.new_location_country.clone(),
+                    new_location_postal: self.new_location_postal.clone(),
+                    new_location_url: self.new_location_url.clone(),
+                    org_unit_section_collapsed: self.org_unit_section_collapsed,
+                    new_unit_name: self.new_unit_name.clone(),
+                    new_unit_type: self.new_unit_type.clone(),
+                    new_unit_parent: self.new_unit_parent.clone(),
+                    new_unit_nats_account: self.new_unit_nats_account.clone(),
+                    new_unit_responsible_person: self.new_unit_responsible_person,
+                    service_account_section_collapsed: self.service_account_section_collapsed,
+                    new_service_account_name: self.new_service_account_name.clone(),
+                    new_service_account_purpose: self.new_service_account_purpose.clone(),
+                    new_service_account_owning_unit: self.new_service_account_owning_unit,
+                    new_service_account_responsible_person: self.new_service_account_responsible_person,
+                };
+
+                // Delegate to domain update function
+                let task = organization::update(&mut org_state, org_msg);
+
+                // Sync state back from domain module
+                self.domain_loaded = org_state.domain_loaded;
+                self.organization_name = org_state.organization_name;
+                self.organization_domain = org_state.organization_domain;
+                self.organization_id = org_state.organization_id;
+                self.admin_email = org_state.admin_email;
+                self.master_passphrase = org_state.master_passphrase;
+                self.master_passphrase_confirm = org_state.master_passphrase_confirm;
+                self.new_person_name = org_state.new_person_name;
+                self.new_person_email = org_state.new_person_email;
+                self.new_person_role = org_state.new_person_role;
+                self.selected_person = org_state.selected_person;
+                self.inline_edit_name = org_state.inline_edit_name;
+                self.editing_new_node = org_state.editing_new_node;
+                self.new_location_name = org_state.new_location_name;
+                self.new_location_type = org_state.new_location_type;
+                self.new_location_street = org_state.new_location_street;
+                self.new_location_city = org_state.new_location_city;
+                self.new_location_region = org_state.new_location_region;
+                self.new_location_country = org_state.new_location_country;
+                self.new_location_postal = org_state.new_location_postal;
+                self.new_location_url = org_state.new_location_url;
+                self.org_unit_section_collapsed = org_state.org_unit_section_collapsed;
+                self.new_unit_name = org_state.new_unit_name;
+                self.new_unit_type = org_state.new_unit_type;
+                self.new_unit_parent = org_state.new_unit_parent;
+                self.new_unit_nats_account = org_state.new_unit_nats_account;
+                self.new_unit_responsible_person = org_state.new_unit_responsible_person;
+                self.service_account_section_collapsed = org_state.service_account_section_collapsed;
+                self.new_service_account_name = org_state.new_service_account_name;
+                self.new_service_account_purpose = org_state.new_service_account_purpose;
+                self.new_service_account_owning_unit = org_state.new_service_account_owning_unit;
+                self.new_service_account_responsible_person = org_state.new_service_account_responsible_person;
+
+                task
+            }
+
             // Tab navigation
             Message::TabSelected(tab) => {
                 self.active_tab = tab;
