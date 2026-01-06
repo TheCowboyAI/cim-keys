@@ -7,11 +7,12 @@
 //!
 //! All value objects implement `cim_domain::ValueObject` marker trait.
 
+pub mod common;
 pub mod core;
-pub mod yubikey;
 pub mod key_purposes;
 pub mod nats;
 pub mod x509;
+pub mod yubikey;
 
 // Re-export core types
 pub use core::*;
@@ -61,6 +62,7 @@ pub use nats::{
 // Re-export X.509 types
 pub use x509::{
     BasicConstraints,
+    CertificateValidity,
     CommonName,
     CountryCode,
     DnsName,
@@ -81,6 +83,20 @@ pub use x509::{
     SubjectAlternativeName,
     SubjectName,
     SubjectNameError,
-    CertificateValidity,
     ValidityError,
+};
+
+// Re-export Common types
+pub use common::{
+    Email,
+    EmailError,
+    FamilyName,
+    GivenName,
+    MiddleName,
+    NamePrefix,
+    NameSuffix,
+    PersonName,
+    PersonNameError,
+    Uri,
+    UriError,
 };
