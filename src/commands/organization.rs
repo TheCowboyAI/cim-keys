@@ -15,6 +15,7 @@ use crate::policy_types::{
     PolicyClaim, PolicyCondition,
 };
 use crate::events::DomainEvent;
+use crate::value_objects::ActorId;
 
 // ============================================================================
 // Entity Creation Commands
@@ -166,20 +167,20 @@ pub async fn handle_create_person(
         ));
     }
 
-    // Emit PersonCreated event
-    #[allow(deprecated)]
-    let event = DomainEvent::Person(crate::events::PersonEvents::PersonCreated(crate::events::person::PersonCreatedEvent {
-        person_id: cmd.person_id,
-        name: cmd.name,
-        email: Some(cmd.email),
-        title: cmd.title,
-        department: cmd.department,
-        organization_id: cmd.organization_id.unwrap_or_else(|| Uuid::now_v7()),
-        created_by: Some("system".to_string()),
-        created_by_actor: None,
-        correlation_id: cmd.correlation_id,
-        causation_id: Some(cmd.command_id),
-    }));
+    // Emit PersonCreated event with typed ActorId
+    let event = DomainEvent::Person(crate::events::PersonEvents::PersonCreated(
+        crate::events::person::PersonCreatedEvent::new_typed(
+            cmd.person_id,
+            cmd.name,
+            Some(cmd.email),
+            cmd.title,
+            cmd.department,
+            cmd.organization_id.unwrap_or_else(|| Uuid::now_v7()),
+            ActorId::system("organization-cmd"),
+            cmd.correlation_id,
+            Some(cmd.command_id),
+        )
+    ));
 
     Ok(vec![event])
 }

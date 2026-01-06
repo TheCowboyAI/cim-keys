@@ -12,7 +12,7 @@ use crate::domain_projections::CertificateRequestProjection;
 use crate::events::DomainEvent;
 use crate::types::{KeyAlgorithm, KeyPurpose};
 use crate::value_objects::{
-    Certificate, CertificateSubject, PublicKey, Validity,
+    ActorId, Certificate, CertificateSubject, PublicKey, Validity,
 };
 
 // ============================================================================
@@ -79,9 +79,8 @@ pub fn handle_generate_key_pair(cmd: GenerateKeyPair) -> Result<KeyPairGenerated
         format: crate::value_objects::PublicKeyFormat::Der,
     };
 
-    // Step 3: Emit key generated event
-    #[allow(deprecated)]
-    let key_event = crate::events::key::KeyGeneratedEvent::new_legacy(
+    // Step 3: Emit key generated event with typed ActorId
+    let key_event = crate::events::key::KeyGeneratedEvent::new_typed(
         key_id,
         algorithm.clone(),
         match cmd.purpose {
@@ -91,7 +90,7 @@ pub fn handle_generate_key_pair(cmd: GenerateKeyPair) -> Result<KeyPairGenerated
             _ => KeyPurpose::Authentication,
         },
         Utc::now(),
-        "system".to_string(),
+        ActorId::system("pki-keygen"),
         false, // hardware_backed
         crate::types::KeyMetadata {
             label: format!("Key pair for {:?}", cmd.purpose),

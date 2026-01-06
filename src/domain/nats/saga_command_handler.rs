@@ -33,6 +33,7 @@ use crate::domain::sagas::{
     CertificateProvisioningSaga, ProvisioningRequest, ProvisioningState,
     SagaState, SagaError, CompensationResult, CertificatePurpose,
 };
+use crate::value_objects::ActorId;
 use crate::domain::nats::saga_executor::{
     JetStreamSagaExecutor, SagaExecutorConfig, SagaExecutorError,
     AsyncSagaExecutor, StepExecutionResult, PersistedSagaState,
@@ -436,15 +437,15 @@ impl AsyncSagaExecutor<CertificateProvisioningSaga> for CertificateProvisioningE
                 state.record_key(key_id);
                 state.advance();
 
-                // Emit KeyGenerated domain event (A7: event log)
+                // Emit KeyGenerated domain event (A7: event log) with typed ActorId
                 #[allow(deprecated)]
                 let event = DomainEvent::Key(KeyEvents::KeyGenerated(KeyGeneratedEvent {
                     key_id: key_id.as_uuid(),
                     algorithm: state.request.key_algorithm.clone(),
                     purpose: state.request.purpose.to_key_purpose(),
                     generated_at: Utc::now(),
-                    generated_by: state.request.person_email.clone(),
-                    generated_by_actor: None,
+                    generated_by: state.request.person_email.clone(), // Legacy field for backward compat
+                    generated_by_actor: Some(ActorId::legacy(&state.request.person_email)),
                     hardware_backed: true, // YubiKey-backed
                     metadata: KeyMetadata {
                         label: format!("{} - {:?}", state.request.person_name, state.request.purpose),
