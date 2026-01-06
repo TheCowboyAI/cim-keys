@@ -1,12 +1,17 @@
-// Value Objects Module
-//
-// All cryptographic artifacts and security parameters as immutable value objects.
-// Values have no identity - they are defined entirely by their attributes.
+// Copyright (c) 2025 - Cowboy AI, LLC.
+
+//! Value Objects Module
+//!
+//! All cryptographic artifacts and security parameters as immutable value objects.
+//! Values have no identity - they are defined entirely by their attributes.
+//!
+//! All value objects implement `cim_domain::ValueObject` marker trait.
 
 pub mod core;
 pub mod yubikey;
 pub mod key_purposes;
 pub mod nats;
+pub mod x509;
 
 // Re-export core types
 pub use core::*;
@@ -51,4 +56,17 @@ pub use nats::{
     UserClaims,
     UserData,
     UserLimits,
+};
+
+// Re-export X.509 types
+pub use x509::{
+    CommonName,
+    CountryCode,
+    EmailAddress,
+    LocalityName,
+    OrganizationalUnitName,
+    OrganizationName,
+    StateName,
+    SubjectName,
+    SubjectNameError,
 };
