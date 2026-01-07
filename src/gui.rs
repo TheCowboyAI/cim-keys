@@ -89,6 +89,7 @@ pub mod trustchain;
 pub mod location;
 pub mod service_account;
 pub mod gpg;
+pub mod recovery;
 
 #[cfg(test)]
 mod graph_integration_tests;
@@ -105,6 +106,7 @@ use trustchain::TrustChainMessage;
 use location::LocationMessage;
 use service_account::ServiceAccountMessage;
 use gpg::GpgMessage;
+use recovery::RecoveryMessage;
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
 use view_model::ViewModel;
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
@@ -858,6 +860,8 @@ pub enum Message {
     ServiceAccount(ServiceAccountMessage),
     /// Delegation to GPG Keys bounded context (GPG/PGP key generation)
     Gpg(GpgMessage),
+    /// Delegation to Key Recovery bounded context (seed-based recovery)
+    Recovery(RecoveryMessage),
 
     // ============================================================================
     // Tab Navigation
@@ -2378,6 +2382,33 @@ impl CimKeysApp {
                 self.gpg_expires_days = gpg_state.expires_days;
                 self.gpg_generation_status = gpg_state.generation_status;
                 self.generated_gpg_keys = gpg_state.generated_keys;
+
+                task
+            }
+
+            Message::Recovery(recovery_msg) => {
+                use recovery::seed;
+
+                // Create recovery state view from app state
+                let mut recovery_state = recovery::RecoveryState {
+                    section_collapsed: self.recovery_section_collapsed,
+                    passphrase: self.recovery_passphrase.clone(),
+                    passphrase_confirm: self.recovery_passphrase_confirm.clone(),
+                    organization_id: self.recovery_organization_id.clone(),
+                    status: self.recovery_status.clone(),
+                    seed_verified: self.recovery_seed_verified,
+                };
+
+                // Delegate to Recovery domain update function
+                let task = seed::update(&mut recovery_state, recovery_msg);
+
+                // Sync state back from Recovery module
+                self.recovery_section_collapsed = recovery_state.section_collapsed;
+                self.recovery_passphrase = recovery_state.passphrase;
+                self.recovery_passphrase_confirm = recovery_state.passphrase_confirm;
+                self.recovery_organization_id = recovery_state.organization_id;
+                self.recovery_status = recovery_state.status;
+                self.recovery_seed_verified = recovery_state.seed_verified;
 
                 task
             }
