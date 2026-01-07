@@ -93,6 +93,7 @@ pub mod recovery;
 pub mod org_unit;
 pub mod multi_key;
 pub mod certificate;
+pub mod event_log;
 
 #[cfg(test)]
 mod graph_integration_tests;
@@ -113,6 +114,7 @@ use recovery::RecoveryMessage;
 use org_unit::OrgUnitMessage;
 use multi_key::MultiKeyMessage;
 use certificate::CertificateMessage;
+use event_log::EventLogMessage;
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
 use view_model::ViewModel;
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
@@ -874,6 +876,8 @@ pub enum Message {
     MultiKey(MultiKeyMessage),
     /// Delegation to Certificate bounded context (X.509 certificate management)
     Certificate(CertificateMessage),
+    /// Delegation to Event Log bounded context (event replay/reconstruction)
+    EventLog(EventLogMessage),
 
     // ============================================================================
     // Tab Navigation
@@ -2523,6 +2527,28 @@ impl CimKeysApp {
                 self.selected_trust_chain_cert = cert_state.selected_chain_cert;
                 self.loaded_certificates = cert_state.loaded_certificates;
                 self._certificates_generated = cert_state.certificates_generated;
+
+                task
+            }
+
+            Message::EventLog(el_msg) => {
+                use event_log::replay;
+
+                // Create event log state view from app state
+                let mut el_state = event_log::EventLogState {
+                    section_collapsed: self.event_log_section_collapsed,
+                    loaded_events: self.loaded_event_log.clone(),
+                    selected_cids: self.selected_events_for_replay.clone(),
+                    status: None,
+                };
+
+                // Delegate to EventLog domain update function
+                let task = replay::update(&mut el_state, el_msg);
+
+                // Sync state back from EventLog module
+                self.event_log_section_collapsed = el_state.section_collapsed;
+                self.loaded_event_log = el_state.loaded_events;
+                self.selected_events_for_replay = el_state.selected_cids;
 
                 task
             }
