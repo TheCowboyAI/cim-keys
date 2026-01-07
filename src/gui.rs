@@ -917,6 +917,7 @@ pub enum Message {
     NewPersonEmailChanged(String),
     NewPersonRoleSelected(KeyOwnerRole),
     AddPerson,
+    PersonAdded(Result<(Uuid, String, String, Uuid, KeyOwnerRole), String>), // (person_id, name, email, org_id, role)
     RemovePerson(Uuid),
     SelectPerson(Uuid),
     NodeTypeSelected(String),  // Context-aware node type selection from dropdown
@@ -936,6 +937,7 @@ pub enum Message {
     NewLocationPostalChanged(String),
     NewLocationUrlChanged(String),
     AddLocation,
+    LocationAdded(Result<(Uuid, String, String, Uuid), String>), // (location_id, name, type, org_id)
     RemoveLocation(Uuid),
 
     // YubiKey operations
@@ -3774,7 +3776,7 @@ impl CimKeysApp {
             }
 
             Message::AddPerson => {
-                // Sprint 68: Use command factory for FRP-compliant validation
+                // Sprint 75: Use CQRS through aggregate (replaces Sprint 68 factory pattern)
 
                 // Validate domain is created first (precondition)
                 let org_uuid = match self.organization_id {
@@ -3785,27 +3787,97 @@ impl CimKeysApp {
                     }
                 };
 
-                // Build form from GUI state (presentation → ViewModel)
-                let mut form = NewPersonForm::new()
-                    .with_name(self.new_person_name.clone())
-                    .with_email(self.new_person_email.clone());
-                if let Some(role) = self.new_person_role {
-                    form = form.with_role(role);
+                // GUI-level validation for immediate feedback
+                if self.new_person_name.trim().is_empty() {
+                    self.error_message = Some("Person name is required".to_string());
+                    return Task::none();
+                }
+                if self.new_person_email.trim().is_empty() || !self.new_person_email.contains('@') {
+                    self.error_message = Some("Valid email is required".to_string());
+                    return Task::none();
                 }
 
-                // Create correlation ID for event tracing
-                let correlation_id = Uuid::now_v7();
+                // Build CQRS command
+                use crate::commands::{KeyCommand, organization::CreatePerson};
 
-                // Use curried command factory (ACL validation + command creation)
-                let result: PersonResult = person_factory::create(correlation_id)(Some(org_uuid))(&form);
+                let role = self.new_person_role.unwrap_or(KeyOwnerRole::Developer);
+                let person_name = self.new_person_name.clone();
+                let person_email = self.new_person_email.clone();
+
+                let cmd = CreatePerson {
+                    command_id: Uuid::now_v7(),
+                    person_id: Uuid::now_v7(),
+                    name: person_name.clone(),
+                    email: person_email.clone(),
+                    title: Some(format!("{:?}", role)),
+                    department: None,
+                    organization_id: Some(org_uuid),
+                    correlation_id: Uuid::now_v7(),
+                    causation_id: None,
+                    timestamp: chrono::Utc::now(),
+                };
+
+                // Clone for async and GUI update
+                let aggregate = self.aggregate.clone();
+                let projection = self.projection.clone();
+                let person_id = cmd.person_id;
+
+                // Clear form fields optimistically
+                self.new_person_name.clear();
+                self.new_person_email.clear();
+                self.new_person_role = None;
+                self.error_message = None;
+
+                // Process command through aggregate (CQRS pattern - Sprint 75)
+                Task::perform(
+                    async move {
+                        let aggregate_read = aggregate.read().await;
+                        let projection_read = projection.read().await;
+
+                        let events = aggregate_read.handle_command(
+                            KeyCommand::CreatePerson(cmd),
+                            &projection_read,
+                            None, // No NATS port in offline mode
+                            #[cfg(feature = "policy")]
+                            None  // No policy engine in GUI yet
+                        ).await
+                        .map_err(|e| e.to_string())?;
+
+                        // Extract person info from emitted event for GUI update
+                        for event in &events {
+                            if let crate::events::DomainEvent::Person(
+                                crate::events::PersonEvents::PersonCreated(evt)
+                            ) = event {
+                                return Ok((
+                                    evt.person_id,
+                                    evt.name.clone(),
+                                    evt.email.clone().unwrap_or_default(),
+                                    org_uuid,
+                                    role,
+                                ));
+                            }
+                        }
+
+                        Err("No PersonCreated event emitted".to_string())
+                    },
+                    |result| match result {
+                        Ok((person_id, name, email, org_id, role)) => {
+                            Message::PersonAdded(Ok((person_id, name, email, org_id, role)))
+                        }
+                        Err(e) => Message::PersonAdded(Err(e)),
+                    }
+                )
+            }
+
+            Message::PersonAdded(result) => {
                 match result {
-                    Ok(command) => {
-                        // Validation passed - create Person from validated command
+                    Ok((person_id, name, email, org_id, role)) => {
+                        // Create Person and add to graph for visualization
                         let person = Person {
-                            id: BootstrapPersonId::from_uuid(command.person_id),
-                            name: command.name.clone(),
-                            email: command.email.clone(),
-                            organization_id: BootstrapOrgId::from_uuid(org_uuid),
+                            id: BootstrapPersonId::from_uuid(person_id),
+                            name: name.clone(),
+                            email: email.clone(),
+                            organization_id: BootstrapOrgId::from_uuid(org_id),
                             unit_ids: vec![],
                             roles: vec![],
                             nats_permissions: None,
@@ -3813,44 +3885,29 @@ impl CimKeysApp {
                             owner_id: None,
                         };
 
-                        let role = self.new_person_role.unwrap_or(KeyOwnerRole::Developer);
-
                         // Add to graph for visualization
                         self.org_graph.add_node(person.clone(), role);
 
                         // Persist to projection
                         let projection = self.projection.clone();
-                        let person_id = command.person_id;
-                        let person_name = command.name.clone();
-                        let person_email = command.email.clone();
-                        let role_string = command.title.unwrap_or_else(|| format!("{:?}", role));
+                        let role_string = format!("{:?}", role);
 
-                        // Clear form fields on success
-                        self.new_person_name.clear();
-                        self.new_person_email.clear();
-                        self.new_person_role = None;
-                        self.error_message = None;
+                        self.status_message = format!("Added {} to organization", name);
 
                         Task::perform(
                             async move {
                                 let mut proj = projection.write().await;
-                                proj.add_person(person_id, person_name.clone(), person_email, role_string, org_uuid)
-                                    .map(|_| format!("Added {} to organization", person_name))
-                                    .map_err(|e| format!("Failed to add person: {}", e))
+                                proj.add_person(person_id, name, email, role_string, org_id)
+                                    .map_err(|e| format!("Failed to persist: {}", e))
                             },
                             |result| match result {
-                                Ok(msg) => Message::UpdateStatus(msg),
+                                Ok(_) => Message::UpdateStatus("Person saved to projection".to_string()),
                                 Err(e) => Message::ShowError(e),
                             }
                         )
                     }
-                    Err(validation_errors) => {
-                        // Validation failed - format errors for GUI display
-                        let error_messages: Vec<String> = validation_errors
-                            .iter()
-                            .map(|e| format!("{}: {}", e.field, e.message))
-                            .collect();
-                        self.error_message = Some(error_messages.join("\n"));
+                    Err(e) => {
+                        self.error_message = Some(format!("Failed to add person: {}", e));
                         Task::none()
                     }
                 }
@@ -3910,7 +3967,9 @@ impl CimKeysApp {
             }
 
             Message::AddLocation => {
-                // Validate domain is created (precondition, not domain validation)
+                // Sprint 75: Use CQRS through aggregate
+
+                // Validate domain is created (precondition)
                 let org_id = match self.organization_id {
                     Some(id) => id,
                     None => {
@@ -3919,53 +3978,102 @@ impl CimKeysApp {
                     }
                 };
 
-                // Build form from GUI state (presentation → ViewModel)
-                let mut form = NewLocationForm::new()
-                    .with_name(self.new_location_name.clone())
-                    .with_street(self.new_location_street.clone())
-                    .with_city(self.new_location_city.clone())
-                    .with_region(self.new_location_region.clone())
-                    .with_country(self.new_location_country.clone())
-                    .with_postal(self.new_location_postal.clone());
-
-                if !self.new_location_url.is_empty() {
-                    form = form.with_url(self.new_location_url.clone());
+                // GUI-level validation for immediate feedback
+                if self.new_location_name.trim().is_empty() {
+                    self.error_message = Some("Location name is required".to_string());
+                    return Task::none();
                 }
 
-                if let Some(ref location_type) = self.new_location_type {
-                    form = form.with_location_type(location_type.clone());
-                }
+                // Build CQRS command
+                use crate::commands::{KeyCommand, organization::CreateLocation};
 
-                let correlation_id = Uuid::now_v7();
+                let location_type = self.new_location_type.clone()
+                    .map(|t| format!("{:?}", t))
+                    .unwrap_or_else(|| "Physical".to_string());
 
-                // Use curried command factory (ACL validation + command creation)
-                let result: LocationResult = location_factory::create(correlation_id)(Some(org_id))(&form);
+                // Build address from form fields
+                let address = if !self.new_location_street.is_empty() {
+                    Some(format!("{}, {}, {} {} {}",
+                        self.new_location_street,
+                        self.new_location_city,
+                        self.new_location_region,
+                        self.new_location_postal,
+                        self.new_location_country
+                    ))
+                } else {
+                    None
+                };
+
+                let cmd = CreateLocation {
+                    command_id: Uuid::now_v7(),
+                    location_id: Uuid::now_v7(),
+                    name: self.new_location_name.clone(),
+                    location_type: location_type.clone(),
+                    address,
+                    coordinates: None,
+                    organization_id: Some(org_id),
+                    correlation_id: Uuid::now_v7(),
+                    causation_id: None,
+                    timestamp: chrono::Utc::now(),
+                };
+
+                // Clone for async
+                let aggregate = self.aggregate.clone();
+                let projection = self.projection.clone();
+                let location_name = self.new_location_name.clone();
+
+                // Clear form fields optimistically
+                self.new_location_name.clear();
+                self.new_location_type = None;
+                self.new_location_street.clear();
+                self.new_location_city.clear();
+                self.new_location_region.clear();
+                self.new_location_country.clear();
+                self.new_location_postal.clear();
+                self.new_location_url.clear();
+                self.error_message = None;
+
+                // Process command through aggregate (CQRS pattern - Sprint 75)
+                Task::perform(
+                    async move {
+                        let aggregate_read = aggregate.read().await;
+                        let projection_read = projection.read().await;
+
+                        let events = aggregate_read.handle_command(
+                            KeyCommand::CreateLocation(cmd),
+                            &projection_read,
+                            None, // No NATS port in offline mode
+                            #[cfg(feature = "policy")]
+                            None  // No policy engine in GUI yet
+                        ).await
+                        .map_err(|e| e.to_string())?;
+
+                        // Extract location info from emitted event
+                        for event in &events {
+                            if let crate::events::DomainEvent::Location(
+                                crate::events::LocationEvents::LocationCreated(evt)
+                            ) = event {
+                                return Ok((
+                                    evt.location_id,
+                                    evt.name.clone(),
+                                    evt.location_type.clone(),
+                                    org_id,
+                                ));
+                            }
+                        }
+
+                        Err("No LocationCreated event emitted".to_string())
+                    },
+                    |result| Message::LocationAdded(result)
+                )
+            }
+
+            Message::LocationAdded(result) => {
                 match result {
-                    Ok(command) => {
-                        // Extract validated data from command
-                        let location_id = command.location_id;
-                        let location_name = command.name.clone();
-                        let location_type = command.location_type.clone();
+                    Ok((location_id, name, location_type, org_id)) => {
+                        self.status_message = format!("Added location: {}", name);
 
-                        // Clone address values for the async task
-                        let street = self.new_location_street.clone();
-                        let city = self.new_location_city.clone();
-                        let region = self.new_location_region.clone();
-                        let country = self.new_location_country.clone();
-                        let postal = self.new_location_postal.clone();
-                        let url = self.new_location_url.clone();
-
-                        // Clear form fields immediately
-                        self.new_location_name.clear();
-                        self.new_location_type = None;
-                        self.new_location_street.clear();
-                        self.new_location_city.clear();
-                        self.new_location_region.clear();
-                        self.new_location_country.clear();
-                        self.new_location_postal.clear();
-                        self.new_location_url.clear();
-
-                        // Persist to projection with full address details
+                        // Persist to projection
                         let projection = self.projection.clone();
 
                         Task::perform(
@@ -3973,32 +4081,21 @@ impl CimKeysApp {
                                 let mut proj = projection.write().await;
                                 proj.add_location(
                                     location_id,
-                                    location_name.clone(),
+                                    name.clone(),
                                     location_type,
                                     org_id,
-                                    Some(street),
-                                    Some(city),
-                                    Some(region),
-                                    Some(country),
-                                    Some(postal),
-                                    if url.is_empty() { None } else { Some(url) },
+                                    None, None, None, None, None, None, // Address details are in the event
                                 )
-                                .map(|_| format!("Added location: {}", location_name))
-                                .map_err(|e| format!("Failed to add location: {}", e))
+                                .map_err(|e| format!("Failed to persist: {}", e))
                             },
                             |result| match result {
-                                Ok(msg) => Message::UpdateStatus(msg),
+                                Ok(_) => Message::UpdateStatus("Location saved to projection".to_string()),
                                 Err(e) => Message::ShowError(e),
                             }
                         )
                     }
-                    Err(validation_errors) => {
-                        // Format errors for GUI display (FRP: accumulate all errors)
-                        let error_messages: Vec<String> = validation_errors
-                            .iter()
-                            .map(|e| format!("{}: {}", e.field, e.message))
-                            .collect();
-                        self.error_message = Some(error_messages.join("\n"));
+                    Err(e) => {
+                        self.error_message = Some(format!("Failed to add location: {}", e));
                         Task::none()
                     }
                 }
