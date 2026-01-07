@@ -252,6 +252,66 @@ pub async fn handle_create_organization(
     Ok(vec![event])
 }
 
+/// Handle CreateOrganizationalUnit command
+pub async fn handle_create_organizational_unit(
+    cmd: CreateOrganizationalUnit,
+) -> Result<Vec<DomainEvent>, crate::aggregate::KeyManagementError> {
+    // Validate command
+    if cmd.name.is_empty() {
+        return Err(crate::aggregate::KeyManagementError::InvalidCommand(
+            "Unit name cannot be empty".to_string(),
+        ));
+    }
+
+    // Emit OrganizationalUnitCreated event
+    let event = DomainEvent::Organization(crate::events::OrganizationEvents::OrganizationalUnitCreated(
+        crate::events::organization::OrganizationalUnitCreatedEvent {
+            unit_id: cmd.unit_id,
+            name: cmd.name,
+            parent_id: cmd.parent_id,
+            organization_id: cmd.parent_id.unwrap_or_else(Uuid::now_v7), // Use parent or generate
+            created_by: ActorId::system("organization-cmd"),
+            correlation_id: cmd.correlation_id,
+            causation_id: Some(cmd.command_id),
+        }
+    ));
+
+    Ok(vec![event])
+}
+
+/// Handle CreateServiceAccount command
+pub async fn handle_create_service_account(
+    cmd: CreateServiceAccount,
+) -> Result<Vec<DomainEvent>, crate::aggregate::KeyManagementError> {
+    // Validate command
+    if cmd.name.is_empty() {
+        return Err(crate::aggregate::KeyManagementError::InvalidCommand(
+            "Service account name cannot be empty".to_string(),
+        ));
+    }
+
+    if cmd.purpose.is_empty() {
+        return Err(crate::aggregate::KeyManagementError::InvalidCommand(
+            "Service account purpose is required".to_string(),
+        ));
+    }
+
+    // Emit ServiceAccountCreated event (under NatsUser aggregate)
+    let event = DomainEvent::NatsUser(crate::events::NatsUserEvents::ServiceAccountCreated(
+        crate::events::nats_user::ServiceAccountCreatedEvent {
+            service_account_id: cmd.service_account_id,
+            name: cmd.name,
+            purpose: cmd.purpose,
+            owning_unit_id: cmd.owning_unit_id,
+            responsible_person_id: cmd.responsible_person_id,
+            correlation_id: Some(cmd.correlation_id),
+            causation_id: Some(cmd.command_id),
+        }
+    ));
+
+    Ok(vec![event])
+}
+
 /// Handle EstablishRelationship command
 pub async fn handle_establish_relationship(
     cmd: EstablishRelationship,

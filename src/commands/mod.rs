@@ -72,6 +72,8 @@ pub enum KeyCommand {
     CreateOrganization(organization::CreateOrganization),
     CreatePerson(organization::CreatePerson),
     CreateLocation(organization::CreateLocation),
+    CreateOrganizationalUnit(organization::CreateOrganizationalUnit),
+    CreateServiceAccount(organization::CreateServiceAccount),
 
     // Delegation operations
     CreateDelegation(delegation::CreateDelegation),

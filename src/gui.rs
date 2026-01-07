@@ -5293,92 +5293,107 @@ impl CimKeysApp {
             }
 
             Message::CreateOrganizationUnit => {
+                // Sprint 76: Use CQRS through aggregate
                 use crate::domain::ids::UnitId;
 
-                // Build form from GUI state (presentation → ViewModel)
-                let mut form = NewOrgUnitForm::new()
-                    .with_name(self.new_unit_name.clone());
-
-                if let Some(ref unit_type) = self.new_unit_type {
-                    form = form.with_unit_type(unit_type.clone());
+                // GUI-level validation for immediate feedback
+                if self.new_unit_name.trim().is_empty() {
+                    self.error_message = Some("Unit name is required".to_string());
+                    return Task::none();
                 }
 
-                if let Some(ref parent_name) = self.new_unit_parent {
-                    // Convert parent name to UUID if it exists
-                    if let Some(parent) = self.created_units.iter().find(|u| &u.name == parent_name) {
-                        form = form.with_parent(parent.id.as_uuid().to_string());
+                let unit_type = match &self.new_unit_type {
+                    Some(t) => t.clone(),
+                    None => {
+                        self.error_message = Some("Please select a unit type".to_string());
+                        return Task::none();
                     }
-                }
+                };
 
-                if !self.new_unit_nats_account.is_empty() {
-                    form = form.with_nats_account(self.new_unit_nats_account.clone());
-                }
+                // Build CQRS command
+                use crate::commands::{KeyCommand, organization::CreateOrganizationalUnit};
 
-                if let Some(person_id) = self.new_unit_responsible_person {
-                    form = form.with_responsible_person(person_id);
-                }
+                // Find parent ID if parent name is set
+                let parent_id = self.new_unit_parent.as_ref().and_then(|parent_name| {
+                    self.created_units.iter()
+                        .find(|u| &u.name == parent_name)
+                        .map(|p| p.id.as_uuid().clone())
+                });
 
-                let correlation_id = Uuid::now_v7();
+                let cmd = CreateOrganizationalUnit {
+                    command_id: Uuid::now_v7(),
+                    unit_id: Uuid::now_v7(),
+                    name: self.new_unit_name.clone(),
+                    parent_id,
+                    correlation_id: Uuid::now_v7(),
+                    causation_id: None,
+                    timestamp: chrono::Utc::now(),
+                };
 
-                // Use curried command factory (ACL validation + command creation)
-                let result: OrgUnitResult = org_unit_factory::create(correlation_id)(&form);
-                match result {
-                    Ok(command) => {
-                        // Unit type is required for domain entity but optional in command
-                        let unit_type = match &self.new_unit_type {
-                            Some(t) => t.clone(),
-                            None => {
-                                self.error_message = Some("Please select a unit type".to_string());
-                                return Task::none();
+                // Clone for async
+                let aggregate = self.aggregate.clone();
+                let projection = self.projection.clone();
+                let responsible_person_id = self.new_unit_responsible_person;
+                let nats_account_name = if self.new_unit_nats_account.is_empty() {
+                    None
+                } else {
+                    Some(self.new_unit_nats_account.clone())
+                };
+
+                // Clear form fields optimistically
+                self.new_unit_name.clear();
+                self.new_unit_type = None;
+                self.new_unit_parent = None;
+                self.new_unit_nats_account.clear();
+                self.new_unit_responsible_person = None;
+                self.error_message = None;
+
+                // Process command through aggregate (CQRS pattern - Sprint 76)
+                Task::perform(
+                    async move {
+                        let aggregate_read = aggregate.read().await;
+                        let projection_read = projection.read().await;
+
+                        let events = aggregate_read.handle_command(
+                            KeyCommand::CreateOrganizationalUnit(cmd),
+                            &projection_read,
+                            None, // No NATS port in offline mode
+                            #[cfg(feature = "policy")]
+                            None  // No policy engine in GUI yet
+                        ).await
+                        .map_err(|e| e.to_string())?;
+
+                        // Extract unit info from emitted event
+                        for event in &events {
+                            if let crate::events::DomainEvent::Organization(
+                                crate::events::OrganizationEvents::OrganizationalUnitCreated(evt)
+                            ) = event {
+                                // Reconstruct OrganizationUnit from event + GUI context
+                                let unit = crate::domain::OrganizationUnit {
+                                    id: UnitId::from_uuid(evt.unit_id),
+                                    name: evt.name.clone(),
+                                    unit_type: unit_type.clone(),
+                                    parent_unit_id: evt.parent_id.map(UnitId::from_uuid),
+                                    responsible_person_id,
+                                    nats_account_name: nats_account_name.clone(),
+                                };
+                                return Ok(unit);
                             }
-                        };
+                        }
 
-                        // Create domain entity using validated command data
-                        let unit = crate::domain::OrganizationUnit {
-                            id: UnitId::from_uuid(command.unit_id),
-                            name: command.name,
-                            unit_type,
-                            parent_unit_id: command.parent_id.map(UnitId::from_uuid),
-                            responsible_person_id: self.new_unit_responsible_person,
-                            nats_account_name: if self.new_unit_nats_account.is_empty() {
-                                None
-                            } else {
-                                Some(self.new_unit_nats_account.clone())
-                            },
-                        };
-
-                        // Add to created units list
-                        self.created_units.push(unit.clone());
-
-                        // Also add to loaded_units for CA selection
-                        self.loaded_units.push(unit.clone());
-
-                        // Clear the form
-                        self.new_unit_name.clear();
-                        self.new_unit_type = None;
-                        self.new_unit_parent = None;
-                        self.new_unit_nats_account.clear();
-                        self.new_unit_responsible_person = None;
-
-                        self.status_message = format!("Created organization unit: {}", unit.name);
-
-                        Task::done(Message::OrganizationUnitCreated(Ok(unit)))
-                    }
-                    Err(validation_errors) => {
-                        // Format errors for GUI display (FRP: accumulate all errors)
-                        let error_messages: Vec<String> = validation_errors
-                            .iter()
-                            .map(|e| format!("{}: {}", e.field, e.message))
-                            .collect();
-                        self.error_message = Some(error_messages.join("\n"));
-                        Task::none()
-                    }
-                }
+                        Err("No OrganizationalUnitCreated event emitted".to_string())
+                    },
+                    Message::OrganizationUnitCreated
+                )
             }
 
             Message::OrganizationUnitCreated(result) => {
                 match result {
                     Ok(unit) => {
+                        // Add to created units list
+                        self.created_units.push(unit.clone());
+                        // Also add to loaded_units for CA selection
+                        self.loaded_units.push(unit.clone());
                         self.status_message = format!("✅ Organization unit '{}' created successfully", unit.name);
                     }
                     Err(e) => {
@@ -5427,63 +5442,104 @@ impl CimKeysApp {
             }
 
             Message::CreateServiceAccount => {
-                // Build form from GUI state (presentation → ViewModel)
-                let mut form = NewServiceAccountForm::new()
-                    .with_name(self.new_service_account_name.clone())
-                    .with_purpose(self.new_service_account_purpose.clone());
+                // Sprint 76: Use CQRS through aggregate
 
-                if let Some(unit_id) = self.new_service_account_owning_unit {
-                    form = form.with_owning_unit(unit_id);
+                // GUI-level validation for immediate feedback
+                if self.new_service_account_name.trim().is_empty() {
+                    self.error_message = Some("Service account name is required".to_string());
+                    return Task::none();
                 }
 
-                if let Some(person_id) = self.new_service_account_responsible_person {
-                    form = form.with_responsible_person(person_id);
+                if self.new_service_account_purpose.trim().is_empty() {
+                    self.error_message = Some("Service account purpose is required".to_string());
+                    return Task::none();
                 }
 
-                let correlation_id = Uuid::now_v7();
-
-                // Use curried command factory (ACL validation + command creation)
-                let result: ServiceAccountResult = sa_factory::create(correlation_id)(&form);
-                match result {
-                    Ok(command) => {
-                        // Create domain entity using validated command data
-                        let service_account = crate::domain::ServiceAccount {
-                            id: command.service_account_id,
-                            name: command.name,
-                            purpose: command.purpose,
-                            owning_unit_id: command.owning_unit_id,
-                            responsible_person_id: command.responsible_person_id,
-                            active: true,
-                        };
-
-                        // Add to created list
-                        self.created_service_accounts.push(service_account.clone());
-
-                        // Clear form
-                        self.new_service_account_name.clear();
-                        self.new_service_account_purpose.clear();
-                        self.new_service_account_owning_unit = None;
-                        self.new_service_account_responsible_person = None;
-
-                        self.status_message = format!("Created service account: {}", service_account.name);
-
-                        Task::done(Message::ServiceAccountCreated(Ok(service_account)))
+                let owning_unit_id = match self.new_service_account_owning_unit {
+                    Some(id) => id,
+                    None => {
+                        self.error_message = Some("Owning unit is required".to_string());
+                        return Task::none();
                     }
-                    Err(validation_errors) => {
-                        // Format errors for GUI display (FRP: accumulate all errors)
-                        let error_messages: Vec<String> = validation_errors
-                            .iter()
-                            .map(|e| format!("{}: {}", e.field, e.message))
-                            .collect();
-                        self.error_message = Some(error_messages.join("\n"));
-                        Task::none()
+                };
+
+                let responsible_person_id = match self.new_service_account_responsible_person {
+                    Some(id) => id,
+                    None => {
+                        self.error_message = Some("Responsible person is required".to_string());
+                        return Task::none();
                     }
-                }
+                };
+
+                // Build CQRS command
+                use crate::commands::{KeyCommand, organization::CreateServiceAccount as CreateServiceAccountCmd};
+
+                let cmd = CreateServiceAccountCmd {
+                    command_id: Uuid::now_v7(),
+                    service_account_id: Uuid::now_v7(),
+                    name: self.new_service_account_name.clone(),
+                    purpose: self.new_service_account_purpose.clone(),
+                    owning_unit_id,
+                    responsible_person_id,
+                    correlation_id: Uuid::now_v7(),
+                    causation_id: None,
+                    timestamp: chrono::Utc::now(),
+                };
+
+                // Clone for async
+                let aggregate = self.aggregate.clone();
+                let projection = self.projection.clone();
+
+                // Clear form fields optimistically
+                self.new_service_account_name.clear();
+                self.new_service_account_purpose.clear();
+                self.new_service_account_owning_unit = None;
+                self.new_service_account_responsible_person = None;
+                self.error_message = None;
+
+                // Process command through aggregate (CQRS pattern - Sprint 76)
+                Task::perform(
+                    async move {
+                        let aggregate_read = aggregate.read().await;
+                        let projection_read = projection.read().await;
+
+                        let events = aggregate_read.handle_command(
+                            KeyCommand::CreateServiceAccount(cmd),
+                            &projection_read,
+                            None, // No NATS port in offline mode
+                            #[cfg(feature = "policy")]
+                            None  // No policy engine in GUI yet
+                        ).await
+                        .map_err(|e| e.to_string())?;
+
+                        // Extract service account info from emitted event
+                        for event in &events {
+                            if let crate::events::DomainEvent::NatsUser(
+                                crate::events::NatsUserEvents::ServiceAccountCreated(evt)
+                            ) = event {
+                                let sa = crate::domain::ServiceAccount {
+                                    id: evt.service_account_id,
+                                    name: evt.name.clone(),
+                                    purpose: evt.purpose.clone(),
+                                    owning_unit_id: evt.owning_unit_id,
+                                    responsible_person_id: evt.responsible_person_id,
+                                    active: true,
+                                };
+                                return Ok(sa);
+                            }
+                        }
+
+                        Err("No ServiceAccountCreated event emitted".to_string())
+                    },
+                    Message::ServiceAccountCreated
+                )
             }
 
             Message::ServiceAccountCreated(result) => {
                 match result {
                     Ok(sa) => {
+                        // Add to created list
+                        self.created_service_accounts.push(sa.clone());
                         self.status_message = format!("Service account '{}' created successfully", sa.name);
                     }
                     Err(e) => {

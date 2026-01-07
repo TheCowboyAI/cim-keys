@@ -174,6 +174,12 @@ impl KeyManagementAggregate {
             KeyCommand::CreateLocation(cmd) => {
                 crate::commands::organization::handle_create_location(cmd).await
             }
+            KeyCommand::CreateOrganizationalUnit(cmd) => {
+                crate::commands::organization::handle_create_organizational_unit(cmd).await
+            }
+            KeyCommand::CreateServiceAccount(cmd) => {
+                crate::commands::organization::handle_create_service_account(cmd).await
+            }
             KeyCommand::CreateDelegation(cmd) => {
                 crate::commands::delegation::handle_create_delegation(cmd).await
             }
