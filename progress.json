@@ -3053,6 +3053,65 @@
         "Pure translation functions for domain ValueObjects - ACHIEVED",
         "All 48 ACL tests pass - ACHIEVED"
       ]
+    },
+    "sprint_65": {
+      "name": "ACL-Command Integration - Complete ViewModel\u2192Command Pipeline",
+      "status": "completed",
+      "started": "2026-01-07",
+      "completed": "2026-01-07",
+      "retrospective": "retrospectives/sprint_65.md",
+      "description": "Integrate ACL validators/translators with command generation. Complete pipeline: ViewModel \u2192 validate \u2192 ValueObjects \u2192 Command \u2192 Aggregate",
+      "tasks": [
+        {
+          "id": "65.1",
+          "description": "Create command_factory module with ACL integration",
+          "status": "completed"
+        },
+        {
+          "id": "65.2",
+          "description": "Implement CreateOrganization command factory",
+          "status": "completed"
+        },
+        {
+          "id": "65.3",
+          "description": "Implement AddPerson command factory",
+          "status": "completed"
+        },
+        {
+          "id": "65.4",
+          "description": "Add CID generation for command payloads",
+          "status": "completed"
+        },
+        {
+          "id": "65.5",
+          "description": "Integration tests for full pipeline",
+          "status": "completed"
+        },
+        {
+          "id": "65.6",
+          "description": "Write retrospective",
+          "status": "completed"
+        }
+      ],
+      "architecture": {
+        "flow": "ViewModel \u2192 ACL.validate() \u2192 ValidatedForm \u2192 ACL.translate() \u2192 ValueObjects \u2192 CommandFactory \u2192 Command",
+        "cid_generation": "ValueObjects get CID on command creation for content-addressed persistence",
+        "aggregate_integration": "Commands carry ValueObjects to aggregate for entity creation"
+      },
+      "acceptance_criteria": [
+        "CommandFactory uses ACL validators before command creation - ACHIEVED",
+        "Validation errors returned to GUI for user feedback - ACHIEVED",
+        "ValueObjects created through ACL translators - ACHIEVED",
+        "UUID v7 for all entity IDs - ACHIEVED",
+        "14 command_factory tests pass - ACHIEVED"
+      ],
+      "results": {
+        "files_created": 3,
+        "lines_added": 400,
+        "factory_functions": 6,
+        "tests_added": 14,
+        "total_acl_factory_tests": 62
+      }
     }
   }
 }

@@ -119,6 +119,11 @@ pub mod value_objects;
 // Pure validation and translation functions following DDD ACL pattern
 pub mod acl;
 
+// Command Factory - ViewModel → Command with ACL integration (Sprint 65)
+// Factory functions that validate ViewModels and create domain Commands
+#[cfg(feature = "gui")]
+pub mod command_factory;
+
 // Policy types for authorization and governance
 pub mod policy_types;
 
