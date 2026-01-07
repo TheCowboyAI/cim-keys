@@ -49,6 +49,7 @@
 //! - **Correlation Tracking**: Commands include correlation/causation IDs
 //! - **UUID v7**: Entity IDs use time-ordered UUIDs
 
+pub mod cid_support;
 pub mod organization;
 pub mod person;
 
@@ -61,6 +62,9 @@ pub use person::{create_person_command, PersonCommandResult};
 
 // Re-export error types from ACL
 pub use crate::acl::{NonEmptyVec, ValidationError};
+
+// Re-export CID support types
+pub use cid_support::{generate_command_cid, commands_equal, CommandWithCid, ContentAddressable};
 
 #[cfg(test)]
 mod tests {

@@ -3112,6 +3112,64 @@
         "tests_added": 14,
         "total_acl_factory_tests": 62
       }
+    },
+    "sprint_66": {
+      "name": "CID Generation for Command Payloads",
+      "status": "completed",
+      "started": "2026-01-07",
+      "completed": "2026-01-07",
+      "retrospective": "retrospectives/sprint_66.md",
+      "description": "Add content-addressed identity (CID) generation using cim_domain::cid infrastructure",
+      "tasks": [
+        {
+          "id": "66.1",
+          "description": "Review cim-domain CID infrastructure",
+          "status": "completed"
+        },
+        {
+          "id": "66.2",
+          "description": "Create cid_support module with CommandWithCid wrapper",
+          "status": "completed"
+        },
+        {
+          "id": "66.3",
+          "description": "Implement ContentAddressable trait with blanket impl",
+          "status": "completed"
+        },
+        {
+          "id": "66.4",
+          "description": "Add generate_command_cid() and commands_equal() functions",
+          "status": "completed"
+        },
+        {
+          "id": "66.5",
+          "description": "Add 7 CID support tests",
+          "status": "completed"
+        },
+        {
+          "id": "66.6",
+          "description": "Write retrospective",
+          "status": "completed"
+        }
+      ],
+      "architecture": {
+        "cid_flow": "Command → serde_json::to_vec() → blake3::hash() → DomainCid",
+        "trait": "ContentAddressable - blanket impl for all Serialize types",
+        "wrapper": "CommandWithCid<C> - pairs command with its CID"
+      },
+      "acceptance_criteria": [
+        "CID generation uses cim_domain::cid infrastructure - ACHIEVED",
+        "Same content produces same CID (deterministic) - ACHIEVED",
+        "ContentAddressable trait with blanket impl - ACHIEVED",
+        "All 21 command_factory tests pass - ACHIEVED"
+      ],
+      "results": {
+        "files_created": 1,
+        "lines_added": 120,
+        "functions_added": 5,
+        "tests_added": 7,
+        "total_command_factory_tests": 21
+      }
     }
   }
 }
