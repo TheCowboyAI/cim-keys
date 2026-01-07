@@ -50,6 +50,7 @@
 //! - **UUID v7**: Entity IDs use time-ordered UUIDs
 
 pub mod cid_support;
+pub mod curried;
 pub mod location;
 pub mod organization;
 pub mod person;
