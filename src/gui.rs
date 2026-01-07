@@ -222,6 +222,10 @@ pub struct CimKeysApp {
     // PKI Bootstrap State Machine (Sprint 77)
     pki_state: crate::state_machines::workflows::PKIBootstrapState,
 
+    // YubiKey Provisioning State Machine (Sprint 78)
+    // Maps YubiKey serial -> provisioning state
+    yubikey_states: std::collections::HashMap<String, crate::state_machines::workflows::YubiKeyProvisioningState>,
+
     // Certificate generation fields
     intermediate_ca_name_input: String,
     server_cert_cn_input: String,
@@ -1172,6 +1176,44 @@ pub enum Message {
         root_ca_key_id: Uuid,
     },
 
+    // IntermediateCA State Machine Transitions (Sprint 78)
+    PkiPlanIntermediateCA {
+        subject: crate::state_machines::workflows::CertificateSubject,
+        validity_years: u32,
+        path_len: Option<u32>,
+    },
+    PkiExecuteIntermediateCAGeneration,
+    PkiIntermediateCAGenerationComplete {
+        intermediate_ca_id: Uuid,
+    },
+
+    // LeafCert State Machine Transitions (Sprint 78)
+    PkiPlanLeafCert {
+        subject: crate::state_machines::workflows::CertificateSubject,
+        validity_years: u32,
+        person_id: Option<Uuid>,
+    },
+    PkiExecuteLeafCertGeneration,
+    PkiLeafCertGenerationComplete {
+        leaf_cert_id: Uuid,
+    },
+
+    // YubiKey State Machine Transitions (Sprint 78)
+    YubiKeyDetected {
+        serial: String,
+        firmware_version: String,
+    },
+    YubiKeyAuthenticated {
+        serial: String,
+        pin_retries: u8,
+    },
+    YubiKeyPINChanged {
+        serial: String,
+    },
+    YubiKeyProvisioningComplete {
+        serial: String,
+    },
+
     // YubiKey operations
     YubiKeyDataLoaded(Vec<crate::projections::YubiKeyEntry>, Vec<crate::projections::PersonEntry>),
     ProvisionYubiKeysFromGraph,  // Graph-first YubiKey provisioning
@@ -1749,6 +1791,7 @@ impl CimKeysApp {
                 total_keys_to_generate: 0,
                 _certificates_generated: 0,
                 pki_state: crate::state_machines::workflows::PKIBootstrapState::Uninitialized,
+                yubikey_states: std::collections::HashMap::new(),
                 intermediate_ca_name_input: String::new(),
                 server_cert_cn_input: String::new(),
                 server_cert_sans_input: String::new(),
@@ -9537,6 +9580,332 @@ impl CimKeysApp {
 
                 tracing::info!(
                     "PKI state machine: Root CA generation complete. State: {:?}",
+                    self.pki_state
+                );
+
+                Task::none()
+            }
+
+            // IntermediateCA State Machine Handlers (Sprint 78)
+            Message::PkiPlanIntermediateCA { subject, validity_years, path_len } => {
+                use crate::state_machines::workflows::PKIBootstrapState;
+
+                // Validate state transition using state machine guard
+                if !self.pki_state.can_plan_intermediate_ca() {
+                    self.error_message = Some(format!(
+                        "Cannot plan Intermediate CA in current state: {:?}. Generate Root CA first.",
+                        self.pki_state
+                    ));
+                    return Task::none();
+                }
+
+                // Transition to IntermediateCAPlanned state
+                self.pki_state = PKIBootstrapState::IntermediateCAPlanned {
+                    subject,
+                    validity_years,
+                    path_len,
+                };
+
+                self.status_message = "Intermediate CA planned. Ready for generation.".to_string();
+
+                tracing::info!(
+                    "PKI state machine: Intermediate CA planned. State: {:?}",
+                    self.pki_state
+                );
+
+                Task::none()
+            }
+
+            Message::PkiExecuteIntermediateCAGeneration => {
+                use crate::state_machines::workflows::PKIBootstrapState;
+
+                // Validate state transition using state machine guard
+                if !self.pki_state.can_generate_intermediate_ca() {
+                    self.error_message = Some(format!(
+                        "Cannot generate Intermediate CA in current state: {:?}. Plan Intermediate CA first.",
+                        self.pki_state
+                    ));
+                    return Task::none();
+                }
+
+                self.status_message = "Generating Intermediate CA (state machine driven)...".to_string();
+
+                // Show passphrase dialog for seed derivation
+                self.passphrase_dialog.show(passphrase_dialog::PassphrasePurpose::IntermediateCA);
+
+                tracing::info!(
+                    "PKI state machine: Executing Intermediate CA generation. Current state: {:?}",
+                    self.pki_state
+                );
+
+                Task::none()
+            }
+
+            Message::PkiIntermediateCAGenerationComplete { intermediate_ca_id } => {
+                use crate::state_machines::workflows::PKIBootstrapState;
+
+                // Transition to IntermediateCAGenerated state
+                // Note: We track multiple intermediate CAs in a Vec
+                let intermediate_ca_ids = match &self.pki_state {
+                    PKIBootstrapState::IntermediateCAGenerated { intermediate_ca_ids } => {
+                        let mut ids = intermediate_ca_ids.clone();
+                        ids.push(intermediate_ca_id);
+                        ids
+                    }
+                    _ => vec![intermediate_ca_id],
+                };
+
+                self.pki_state = PKIBootstrapState::IntermediateCAGenerated {
+                    intermediate_ca_ids,
+                };
+
+                self.status_message = format!(
+                    "Intermediate CA generated successfully! ID: {}",
+                    intermediate_ca_id
+                );
+
+                tracing::info!(
+                    "PKI state machine: Intermediate CA generation complete. State: {:?}",
+                    self.pki_state
+                );
+
+                Task::none()
+            }
+
+            // LeafCert State Machine Handlers (Sprint 78)
+            Message::PkiPlanLeafCert { subject, validity_years, person_id } => {
+                use crate::state_machines::workflows::PKIBootstrapState;
+
+                // Validate state transition using state machine guard
+                if !self.pki_state.can_generate_leaf_cert() {
+                    self.error_message = Some(format!(
+                        "Cannot plan Leaf Cert in current state: {:?}. Generate Intermediate CA first.",
+                        self.pki_state
+                    ));
+                    return Task::none();
+                }
+
+                // Note: LeafCerts don't have a "planned" state in the current state machine
+                // They go directly from IntermediateCAGenerated to LeafCertsGenerated
+                // For now, just log and proceed
+                self.status_message = format!(
+                    "Leaf certificate planned for: {}",
+                    subject.common_name
+                );
+
+                tracing::info!(
+                    "PKI state machine: Leaf cert planned. Subject: {}, Person: {:?}",
+                    subject.common_name,
+                    person_id
+                );
+
+                Task::none()
+            }
+
+            Message::PkiExecuteLeafCertGeneration => {
+                use crate::state_machines::workflows::PKIBootstrapState;
+
+                // Validate state transition using state machine guard
+                if !self.pki_state.can_generate_leaf_cert() {
+                    self.error_message = Some(format!(
+                        "Cannot generate Leaf Cert in current state: {:?}. Generate Intermediate CA first.",
+                        self.pki_state
+                    ));
+                    return Task::none();
+                }
+
+                self.status_message = "Generating Leaf Certificate (state machine driven)...".to_string();
+
+                // Show passphrase dialog for personal keys
+                self.passphrase_dialog.show(passphrase_dialog::PassphrasePurpose::PersonalKeys);
+
+                tracing::info!(
+                    "PKI state machine: Executing Leaf Cert generation. Current state: {:?}",
+                    self.pki_state
+                );
+
+                Task::none()
+            }
+
+            Message::PkiLeafCertGenerationComplete { leaf_cert_id } => {
+                use crate::state_machines::workflows::PKIBootstrapState;
+
+                // Transition to LeafCertsGenerated state
+                // Note: We track multiple leaf certs in a Vec
+                let leaf_cert_ids = match &self.pki_state {
+                    PKIBootstrapState::LeafCertsGenerated { leaf_cert_ids } => {
+                        let mut ids = leaf_cert_ids.clone();
+                        ids.push(leaf_cert_id);
+                        ids
+                    }
+                    _ => vec![leaf_cert_id],
+                };
+
+                self.pki_state = PKIBootstrapState::LeafCertsGenerated {
+                    leaf_cert_ids,
+                };
+
+                self.status_message = format!(
+                    "Leaf certificate generated successfully! ID: {}",
+                    leaf_cert_id
+                );
+
+                tracing::info!(
+                    "PKI state machine: Leaf cert generation complete. State: {:?}",
+                    self.pki_state
+                );
+
+                Task::none()
+            }
+
+            // YubiKey State Machine Handlers (Sprint 78)
+            Message::YubiKeyDetected { serial, firmware_version } => {
+                use crate::state_machines::workflows::YubiKeyProvisioningState;
+
+                // First check if PKI state allows YubiKey provisioning
+                if !self.pki_state.can_provision_yubikey() {
+                    self.error_message = Some(format!(
+                        "Cannot provision YubiKey in current PKI state: {:?}. Generate leaf certificates first.",
+                        self.pki_state
+                    ));
+                    return Task::none();
+                }
+
+                // Initialize YubiKey in Detected state
+                self.yubikey_states.insert(
+                    serial.clone(),
+                    YubiKeyProvisioningState::Detected {
+                        serial: serial.clone(),
+                        firmware_version: firmware_version.clone(),
+                    },
+                );
+
+                self.status_message = format!(
+                    "YubiKey {} detected (firmware: {}). Ready for authentication.",
+                    serial,
+                    firmware_version
+                );
+
+                tracing::info!(
+                    "YubiKey state machine: {} detected. Firmware: {}",
+                    serial,
+                    firmware_version
+                );
+
+                Task::none()
+            }
+
+            Message::YubiKeyAuthenticated { serial, pin_retries } => {
+                use crate::state_machines::workflows::YubiKeyProvisioningState;
+
+                // Get current state and validate transition
+                let current_state = self.yubikey_states.get(&serial);
+                match current_state {
+                    Some(state) if state.can_authenticate() => {
+                        self.yubikey_states.insert(
+                            serial.clone(),
+                            YubiKeyProvisioningState::Authenticated {
+                                pin_retries_remaining: pin_retries,
+                            },
+                        );
+                        self.status_message = format!(
+                            "YubiKey {} authenticated. {} PIN retries remaining.",
+                            serial,
+                            pin_retries
+                        );
+                        tracing::info!("YubiKey {} authenticated", serial);
+                    }
+                    Some(state) => {
+                        self.error_message = Some(format!(
+                            "Cannot authenticate YubiKey {} in state: {:?}",
+                            serial,
+                            state
+                        ));
+                    }
+                    None => {
+                        self.error_message = Some(format!(
+                            "YubiKey {} not detected. Detect first.",
+                            serial
+                        ));
+                    }
+                }
+
+                Task::none()
+            }
+
+            Message::YubiKeyPINChanged { serial } => {
+                use crate::state_machines::workflows::YubiKeyProvisioningState;
+
+                // Get current state and validate transition
+                let current_state = self.yubikey_states.get(&serial);
+                match current_state {
+                    Some(state) if state.can_change_pin() => {
+                        self.yubikey_states.insert(
+                            serial.clone(),
+                            YubiKeyProvisioningState::PINChanged {
+                                new_pin_hash: "sha256:redacted".to_string(), // Actual hash in real impl
+                            },
+                        );
+                        self.status_message = format!(
+                            "YubiKey {} PIN changed successfully.",
+                            serial
+                        );
+                        tracing::info!("YubiKey {} PIN changed", serial);
+                    }
+                    Some(state) => {
+                        self.error_message = Some(format!(
+                            "Cannot change PIN for YubiKey {} in state: {:?}. Authenticate first.",
+                            serial,
+                            state
+                        ));
+                    }
+                    None => {
+                        self.error_message = Some(format!(
+                            "YubiKey {} not in provisioning workflow.",
+                            serial
+                        ));
+                    }
+                }
+
+                Task::none()
+            }
+
+            Message::YubiKeyProvisioningComplete { serial } => {
+                use crate::state_machines::workflows::PKIBootstrapState;
+
+                // Update PKI state to include this YubiKey as provisioned
+                let yubikey_serials = match &self.pki_state {
+                    PKIBootstrapState::YubiKeysProvisioned { yubikey_serials } => {
+                        let mut serials = yubikey_serials.clone();
+                        if !serials.contains(&serial) {
+                            serials.push(serial.clone());
+                        }
+                        serials
+                    }
+                    PKIBootstrapState::LeafCertsGenerated { .. } => {
+                        vec![serial.clone()]
+                    }
+                    _ => {
+                        self.error_message = Some(format!(
+                            "Cannot complete YubiKey provisioning in PKI state: {:?}",
+                            self.pki_state
+                        ));
+                        return Task::none();
+                    }
+                };
+
+                self.pki_state = PKIBootstrapState::YubiKeysProvisioned {
+                    yubikey_serials,
+                };
+
+                self.status_message = format!(
+                    "YubiKey {} provisioning complete! PKI state updated.",
+                    serial
+                );
+
+                tracing::info!(
+                    "YubiKey {} provisioning complete. PKI state: {:?}",
+                    serial,
                     self.pki_state
                 );
 
