@@ -2,21 +2,18 @@
 
 //! Organization Unit Domain Module
 //!
-//! This module handles the Organization Unit bounded context:
-//! - Create and manage organizational units (divisions, departments, teams)
-//! - Unit hierarchy (parent-child relationships)
-//! - NATS account mapping for units
-//! - Responsible person assignment
+//! This module defines the Organization Unit bounded context messages.
+//! Handlers are implemented in gui.rs.
 //!
 //! ## Message Flow
 //!
 //! ```text
-//! User Action → OrgUnitMessage → update() → Task<Message>
-//!                                          ↓
-//!                                  OrgUnitState mutated
+//! User Action → OrgUnitMessage → update() in gui.rs
+//!                                        ↓
+//!                                CimKeysApp fields mutated
 //! ```
 
 pub mod management;
 
 // Re-export primary types
-pub use management::{OrgUnitMessage, OrgUnitState};
+pub use management::OrgUnitMessage;

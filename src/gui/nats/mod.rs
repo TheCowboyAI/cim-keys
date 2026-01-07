@@ -2,21 +2,10 @@
 
 //! NATS Infrastructure Domain Module
 //!
-//! This module handles the NATS bounded context:
-//! - Hierarchy generation and bootstrap
-//! - Operator, account, and user management
-//! - Visualization state (expanded nodes, selections)
-//! - NATS configuration export
-//!
-//! ## Message Flow
-//!
-//! ```text
-//! User Action → NatsMessage → update() → Task<Message>
-//!                                     ↓
-//!                             NatsState mutated
-//! ```
+//! This module defines the NATS bounded context messages.
+//! Handlers are implemented in gui.rs.
 
 pub mod infrastructure;
 
 // Re-export primary types
-pub use infrastructure::{NatsMessage, NatsState};
+pub use infrastructure::NatsMessage;

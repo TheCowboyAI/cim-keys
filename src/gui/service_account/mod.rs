@@ -2,21 +2,10 @@
 
 //! Service Account Domain Module
 //!
-//! This module handles the Service Account bounded context:
-//! - Automated system account creation and management
-//! - Service account lifecycle (create, deactivate, remove)
-//! - Key generation for service accounts
-//! - Ownership and responsibility tracking
-//!
-//! ## Message Flow
-//!
-//! ```text
-//! User Action → ServiceAccountMessage → update() → Task<Message>
-//!                                                 ↓
-//!                                         ServiceAccountState mutated
-//! ```
+//! This module defines the Service Account bounded context messages.
+//! Handlers are implemented in gui.rs.
 
 pub mod management;
 
 // Re-export primary types
-pub use management::{ServiceAccountMessage, ServiceAccountState};
+pub use management::ServiceAccountMessage;

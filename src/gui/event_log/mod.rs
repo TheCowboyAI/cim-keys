@@ -2,20 +2,18 @@
 
 //! Event Log Domain Module
 //!
-//! This module handles the Event Log bounded context:
-//! - Load events from CID-based event store
-//! - Select events for replay
-//! - Replay selected events for state reconstruction
+//! This module defines the Event Log bounded context messages.
+//! Handlers are implemented in gui.rs.
 //!
 //! ## Message Flow
 //!
 //! ```text
-//! User Action → EventLogMessage → update() → Task<Message>
-//!                                            ↓
-//!                                    EventLogState mutated
+//! User Action → EventLogMessage → update() in gui.rs
+//!                                         ↓
+//!                                 CimKeysApp fields mutated
 //! ```
 
 pub mod replay;
 
 // Re-export primary types
-pub use replay::{EventLogMessage, EventLogState};
+pub use replay::EventLogMessage;

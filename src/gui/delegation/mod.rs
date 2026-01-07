@@ -2,22 +2,10 @@
 
 //! Delegation Domain Module
 //!
-//! This module handles the Delegation bounded context:
-//! - Permission delegation between people
-//! - Grantor (from) and grantee (to) selection
-//! - Permission set management
-//! - Delegation expiration
-//! - Active delegation tracking
-//!
-//! ## Message Flow
-//!
-//! ```text
-//! User Action → DelegationMessage → update() → Task<Message>
-//!                                            ↓
-//!                                    DelegationState mutated
-//! ```
+//! This module defines the Delegation bounded context messages.
+//! Handlers are implemented in gui.rs.
 
 pub mod authorization;
 
 // Re-export primary types
-pub use authorization::{DelegationMessage, DelegationState, DelegationEntry};
+pub use authorization::{DelegationEntry, DelegationMessage};

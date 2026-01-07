@@ -2,22 +2,18 @@
 
 //! Certificate Domain Module
 //!
-//! This module handles the Certificate bounded context:
-//! - X.509 certificate metadata (organization, locality, validity)
-//! - Intermediate CA generation and selection
-//! - Server certificate generation with SANs
-//! - mTLS client certificate generation
-//! - Certificate chain viewing
+//! This module defines the Certificate bounded context messages.
+//! Handlers are implemented in gui.rs.
 //!
 //! ## Message Flow
 //!
 //! ```text
-//! User Action → CertificateMessage → update() → Task<Message>
-//!                                               ↓
-//!                                       CertificateState mutated
+//! User Action → CertificateMessage → update() in gui.rs
+//!                                            ↓
+//!                                    CimKeysApp fields mutated
 //! ```
 
 pub mod management;
 
 // Re-export primary types
-pub use management::{CertificateMessage, CertificateState};
+pub use management::CertificateMessage;

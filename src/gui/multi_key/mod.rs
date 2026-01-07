@@ -2,20 +2,18 @@
 
 //! Multi-Purpose Key Domain Module
 //!
-//! This module handles the Multi-Purpose Key bounded context:
-//! - Generate multiple keys for a single person
-//! - Select key purposes (Authentication, Signing, Encryption, KeyAgreement)
-//! - Batch key generation workflow
+//! This module defines the Multi-Purpose Key bounded context messages.
+//! Handlers are implemented in gui.rs.
 //!
 //! ## Message Flow
 //!
 //! ```text
-//! User Action → MultiKeyMessage → update() → Task<Message>
-//!                                            ↓
-//!                                    MultiKeyState mutated
+//! User Action → MultiKeyMessage → update() in gui.rs
+//!                                         ↓
+//!                                 CimKeysApp fields mutated
 //! ```
 
 pub mod generation;
 
 // Re-export primary types
-pub use generation::{MultiKeyMessage, MultiKeyState};
+pub use generation::{MultiKeyMessage, GenerationResult, available_purposes, purpose_display_name};

@@ -2,21 +2,10 @@
 
 //! TrustChain Domain Module
 //!
-//! This module handles the TrustChain bounded context:
-//! - Certificate trust chain verification
-//! - Chain traversal from leaf to root
-//! - Verification status tracking
-//! - Expired/self-signed/missing issuer detection
-//!
-//! ## Message Flow
-//!
-//! ```text
-//! User Action → TrustChainMessage → update() → Task<Message>
-//!                                            ↓
-//!                                    TrustChainState mutated
-//! ```
+//! This module defines the TrustChain bounded context messages.
+//! Handlers are implemented in gui.rs.
 
 pub mod verification;
 
 // Re-export primary types
-pub use verification::{TrustChainMessage, TrustChainState, TrustChainStatus};
+pub use verification::{TrustChainMessage, TrustChainStatus};

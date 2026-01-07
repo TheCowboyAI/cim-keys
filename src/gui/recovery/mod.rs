@@ -2,21 +2,10 @@
 
 //! Key Recovery Domain Module
 //!
-//! This module handles the Key Recovery bounded context:
-//! - BIP-39 seed phrase verification
-//! - Passphrase-based key recovery
-//! - Deterministic key regeneration
-//! - Organization-scoped recovery
-//!
-//! ## Message Flow
-//!
-//! ```text
-//! User Action → RecoveryMessage → update() → Task<Message>
-//!                                           ↓
-//!                                   RecoveryState mutated
-//! ```
+//! This module defines the Key Recovery bounded context messages.
+//! Handlers are implemented in gui.rs.
 
 pub mod seed;
 
 // Re-export primary types
-pub use seed::{RecoveryMessage, RecoveryState};
+pub use seed::RecoveryMessage;

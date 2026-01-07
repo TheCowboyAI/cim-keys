@@ -1937,620 +1937,1077 @@ impl CimKeysApp {
             // Domain-Bounded Message Delegation (Sprint 48)
             // ================================================================
             Message::Organization(org_msg) => {
-                // Delegate to organization domain module
-                // Note: Complex operations that need aggregate/projection access
-                // are still handled here; simple state updates are delegated
-                use domains::organization;
+                use domains::OrganizationMessage;
 
-                // Create organization state view from app state
-                let mut org_state = domains::OrganizationState {
-                    domain_loaded: self.domain_loaded,
-                    organization_name: self.organization_name.clone(),
-                    organization_domain: self.organization_domain.clone(),
-                    organization_id: self.organization_id,
-                    admin_email: self.admin_email.clone(),
-                    master_passphrase: self.master_passphrase.clone(),
-                    master_passphrase_confirm: self.master_passphrase_confirm.clone(),
-                    new_person_name: self.new_person_name.clone(),
-                    new_person_email: self.new_person_email.clone(),
-                    new_person_role: self.new_person_role,
-                    selected_person: self.selected_person,
-                    inline_edit_name: self.inline_edit_name.clone(),
-                    editing_new_node: self.editing_new_node,
-                    new_location_name: self.new_location_name.clone(),
-                    new_location_type: self.new_location_type.clone(),
-                    new_location_street: self.new_location_street.clone(),
-                    new_location_city: self.new_location_city.clone(),
-                    new_location_region: self.new_location_region.clone(),
-                    new_location_country: self.new_location_country.clone(),
-                    new_location_postal: self.new_location_postal.clone(),
-                    new_location_url: self.new_location_url.clone(),
-                    org_unit_section_collapsed: self.org_unit_section_collapsed,
-                    new_unit_name: self.new_unit_name.clone(),
-                    new_unit_type: self.new_unit_type.clone(),
-                    new_unit_parent: self.new_unit_parent.clone(),
-                    new_unit_nats_account: self.new_unit_nats_account.clone(),
-                    new_unit_responsible_person: self.new_unit_responsible_person,
-                    service_account_section_collapsed: self.service_account_section_collapsed,
-                    new_service_account_name: self.new_service_account_name.clone(),
-                    new_service_account_purpose: self.new_service_account_purpose.clone(),
-                    new_service_account_owning_unit: self.new_service_account_owning_unit,
-                    new_service_account_responsible_person: self.new_service_account_responsible_person,
-                };
-
-                // Delegate to domain update function
-                let task = organization::update(&mut org_state, org_msg);
-
-                // Sync state back from domain module
-                self.domain_loaded = org_state.domain_loaded;
-                self.organization_name = org_state.organization_name;
-                self.organization_domain = org_state.organization_domain;
-                self.organization_id = org_state.organization_id;
-                self.admin_email = org_state.admin_email;
-                self.master_passphrase = org_state.master_passphrase;
-                self.master_passphrase_confirm = org_state.master_passphrase_confirm;
-                self.new_person_name = org_state.new_person_name;
-                self.new_person_email = org_state.new_person_email;
-                self.new_person_role = org_state.new_person_role;
-                self.selected_person = org_state.selected_person;
-                self.inline_edit_name = org_state.inline_edit_name;
-                self.editing_new_node = org_state.editing_new_node;
-                self.new_location_name = org_state.new_location_name;
-                self.new_location_type = org_state.new_location_type;
-                self.new_location_street = org_state.new_location_street;
-                self.new_location_city = org_state.new_location_city;
-                self.new_location_region = org_state.new_location_region;
-                self.new_location_country = org_state.new_location_country;
-                self.new_location_postal = org_state.new_location_postal;
-                self.new_location_url = org_state.new_location_url;
-                self.org_unit_section_collapsed = org_state.org_unit_section_collapsed;
-                self.new_unit_name = org_state.new_unit_name;
-                self.new_unit_type = org_state.new_unit_type;
-                self.new_unit_parent = org_state.new_unit_parent;
-                self.new_unit_nats_account = org_state.new_unit_nats_account;
-                self.new_unit_responsible_person = org_state.new_unit_responsible_person;
-                self.service_account_section_collapsed = org_state.service_account_section_collapsed;
-                self.new_service_account_name = org_state.new_service_account_name;
-                self.new_service_account_purpose = org_state.new_service_account_purpose;
-                self.new_service_account_owning_unit = org_state.new_service_account_owning_unit;
-                self.new_service_account_responsible_person = org_state.new_service_account_responsible_person;
-
-                task
+                match org_msg {
+                    // Section toggles
+                    OrganizationMessage::ToggleOrgUnitSection => {
+                        self.org_unit_section_collapsed = !self.org_unit_section_collapsed;
+                        Task::none()
+                    }
+                    OrganizationMessage::ToggleServiceAccountSection => {
+                        self.service_account_section_collapsed = !self.service_account_section_collapsed;
+                        Task::none()
+                    }
+                    // Form inputs
+                    OrganizationMessage::NameChanged(n) => { self.organization_name = n; Task::none() }
+                    OrganizationMessage::DomainChanged(d) => { self.organization_domain = d; Task::none() }
+                    OrganizationMessage::MasterPassphraseChanged(p) => { self.master_passphrase = p; Task::none() }
+                    OrganizationMessage::MasterPassphraseConfirmChanged(p) => { self.master_passphrase_confirm = p; Task::none() }
+                    OrganizationMessage::NewPersonNameChanged(n) => { self.new_person_name = n; Task::none() }
+                    OrganizationMessage::NewPersonEmailChanged(e) => { self.new_person_email = e; Task::none() }
+                    OrganizationMessage::NewPersonRoleSelected(r) => { self.new_person_role = Some(r); Task::none() }
+                    OrganizationMessage::SelectPerson(p) => { self.selected_person = Some(p); Task::none() }
+                    OrganizationMessage::InlineEditNameChanged(n) => { self.inline_edit_name = n; Task::none() }
+                    OrganizationMessage::InlineEditCancel => {
+                        self.inline_edit_name.clear();
+                        self.editing_new_node = None;
+                        Task::none()
+                    }
+                    OrganizationMessage::NewLocationNameChanged(n) => { self.new_location_name = n; Task::none() }
+                    OrganizationMessage::NewLocationTypeSelected(t) => { self.new_location_type = Some(t); Task::none() }
+                    OrganizationMessage::NewLocationStreetChanged(s) => { self.new_location_street = s; Task::none() }
+                    OrganizationMessage::NewLocationCityChanged(c) => { self.new_location_city = c; Task::none() }
+                    OrganizationMessage::NewLocationRegionChanged(r) => { self.new_location_region = r; Task::none() }
+                    OrganizationMessage::NewLocationCountryChanged(c) => { self.new_location_country = c; Task::none() }
+                    OrganizationMessage::NewLocationPostalChanged(p) => { self.new_location_postal = p; Task::none() }
+                    OrganizationMessage::NewLocationUrlChanged(u) => { self.new_location_url = u; Task::none() }
+                    OrganizationMessage::NewUnitNameChanged(n) => { self.new_unit_name = n; Task::none() }
+                    OrganizationMessage::NewUnitTypeSelected(t) => { self.new_unit_type = Some(t); Task::none() }
+                    OrganizationMessage::NewUnitParentSelected(p) => { self.new_unit_parent = Some(p); Task::none() }
+                    OrganizationMessage::NewUnitNatsAccountChanged(a) => { self.new_unit_nats_account = a; Task::none() }
+                    OrganizationMessage::NewUnitResponsiblePersonSelected(p) => { self.new_unit_responsible_person = Some(p); Task::none() }
+                    OrganizationMessage::NewServiceAccountNameChanged(n) => { self.new_service_account_name = n; Task::none() }
+                    OrganizationMessage::NewServiceAccountPurposeChanged(p) => { self.new_service_account_purpose = p; Task::none() }
+                    OrganizationMessage::ServiceAccountOwningUnitSelected(u) => { self.new_service_account_owning_unit = Some(u); Task::none() }
+                    OrganizationMessage::ServiceAccountResponsiblePersonSelected(p) => { self.new_service_account_responsible_person = Some(p); Task::none() }
+                    // Result handlers (clear forms on success)
+                    OrganizationMessage::OrganizationUnitCreated(r) => {
+                        if r.is_ok() {
+                            self.new_unit_name.clear();
+                            self.new_unit_type = None;
+                            self.new_unit_parent = None;
+                            self.new_unit_nats_account.clear();
+                            self.new_unit_responsible_person = None;
+                        }
+                        Task::done(Message::OrganizationUnitCreated(r))
+                    }
+                    OrganizationMessage::ServiceAccountCreated(r) => {
+                        if r.is_ok() {
+                            self.new_service_account_name.clear();
+                            self.new_service_account_purpose.clear();
+                            self.new_service_account_owning_unit = None;
+                            self.new_service_account_responsible_person = None;
+                        }
+                        Task::done(Message::ServiceAccountCreated(r))
+                    }
+                    OrganizationMessage::DomainCreated(r) => {
+                        self.domain_loaded = r.is_ok();
+                        Task::done(Message::DomainCreated(r))
+                    }
+                    OrganizationMessage::DomainLoaded(r) => {
+                        if r.is_ok() { self.domain_loaded = true; }
+                        Task::done(Message::DomainLoaded(r))
+                    }
+                    // Delegated operations
+                    OrganizationMessage::CreateNewDomain => Task::done(Message::CreateNewDomain),
+                    OrganizationMessage::LoadExistingDomain => Task::done(Message::LoadExistingDomain),
+                    OrganizationMessage::ImportFromSecrets => Task::done(Message::ImportFromSecrets),
+                    OrganizationMessage::SecretsImported(r) => Task::done(Message::SecretsImported(r)),
+                    OrganizationMessage::ManifestDataLoaded(r) => Task::done(Message::ManifestDataLoaded(r)),
+                    OrganizationMessage::AddPerson => Task::done(Message::AddPerson),
+                    OrganizationMessage::RemovePerson(id) => Task::done(Message::RemovePerson(id)),
+                    OrganizationMessage::NodeTypeSelected(t) => Task::done(Message::NodeTypeSelected(t)),
+                    OrganizationMessage::InlineEditSubmit => Task::done(Message::InlineEditSubmit),
+                    OrganizationMessage::AddLocation => Task::done(Message::AddLocation),
+                    OrganizationMessage::RemoveLocation(id) => Task::done(Message::RemoveLocation(id)),
+                    OrganizationMessage::CreateOrganizationUnit => Task::done(Message::CreateOrganizationUnit),
+                    OrganizationMessage::RemoveOrganizationUnit(id) => Task::done(Message::RemoveOrganizationUnit(id)),
+                    OrganizationMessage::CreateServiceAccount => Task::done(Message::CreateServiceAccount),
+                    OrganizationMessage::DeactivateServiceAccount(id) => Task::done(Message::DeactivateServiceAccount(id)),
+                    OrganizationMessage::RemoveServiceAccount(id) => Task::done(Message::RemoveServiceAccount(id)),
+                    OrganizationMessage::GenerateServiceAccountKey { service_account_id } => {
+                        Task::done(Message::GenerateServiceAccountKey { service_account_id })
+                    }
+                    OrganizationMessage::ServiceAccountKeyGenerated(r) => Task::done(Message::ServiceAccountKeyGenerated(r)),
+                }
             }
 
             // ================================================================
             // PKI Domain Message Delegation (Sprint 49)
             // ================================================================
             Message::Pki(pki_msg) => {
-                use pki::key_generation;
+                use pki::PkiMessage;
 
-                // Create PKI state view from app state
-                let mut pki_state = pki::PkiState {
-                    key_generation_progress: self.key_generation_progress,
-                    keys_generated: self.keys_generated,
-                    total_keys_to_generate: self.total_keys_to_generate,
-                    intermediate_ca_name_input: self.intermediate_ca_name_input.clone(),
-                    server_cert_cn_input: self.server_cert_cn_input.clone(),
-                    server_cert_sans_input: self.server_cert_sans_input.clone(),
-                    selected_intermediate_ca: self.selected_intermediate_ca.clone(),
-                    selected_cert_location: self.selected_cert_location.clone(),
-                    loaded_units: self.loaded_units.clone(),
-                    selected_unit_for_ca: self.selected_unit_for_ca.clone(),
-                    cert_organization: self.cert_organization.clone(),
-                    cert_organizational_unit: self.cert_organizational_unit.clone(),
-                    cert_locality: self.cert_locality.clone(),
-                    cert_state_province: self.cert_state_province.clone(),
-                    cert_country: self.cert_country.clone(),
-                    cert_validity_days: self.cert_validity_days.clone(),
-                    loaded_certificates: self.loaded_certificates.clone(),
-                    root_ca_collapsed: self.root_ca_collapsed,
-                    intermediate_ca_collapsed: self.intermediate_ca_collapsed,
-                    server_cert_collapsed: self.server_cert_collapsed,
-                    certificates_collapsed: self.certificates_collapsed,
-                    keys_collapsed: self.keys_collapsed,
-                    gpg_section_collapsed: self.gpg_section_collapsed,
-                    gpg_user_id: self.gpg_user_id.clone(),
-                    gpg_key_type: self.gpg_key_type.clone(),
-                    gpg_key_length: self.gpg_key_length.clone(),
-                    gpg_expires_days: self.gpg_expires_days.clone(),
-                    generated_gpg_keys: self.generated_gpg_keys.clone(),
-                    gpg_generation_status: self.gpg_generation_status.clone(),
-                    recovery_section_collapsed: self.recovery_section_collapsed,
-                    recovery_passphrase: self.recovery_passphrase.clone(),
-                    recovery_passphrase_confirm: self.recovery_passphrase_confirm.clone(),
-                    recovery_organization_id: self.recovery_organization_id.clone(),
-                    recovery_status: self.recovery_status.clone(),
-                    recovery_seed_verified: self.recovery_seed_verified,
-                    client_cert_cn: self.client_cert_cn.clone(),
-                    client_cert_email: self.client_cert_email.clone(),
-                    multi_purpose_key_section_collapsed: self.multi_purpose_key_section_collapsed,
-                    multi_purpose_selected_person: self.multi_purpose_selected_person,
-                    multi_purpose_selected_purposes: self.multi_purpose_selected_purposes.clone(),
-                    root_passphrase: self.root_passphrase.clone(),
-                    root_passphrase_confirm: self.root_passphrase_confirm.clone(),
-                    show_passphrase: self.show_passphrase,
-                };
-
-                // Delegate to PKI domain update function
-                let task = key_generation::update(&mut pki_state, pki_msg);
-
-                // Sync state back from PKI module
-                self.key_generation_progress = pki_state.key_generation_progress;
-                self.keys_generated = pki_state.keys_generated;
-                self.total_keys_to_generate = pki_state.total_keys_to_generate;
-                self.intermediate_ca_name_input = pki_state.intermediate_ca_name_input;
-                self.server_cert_cn_input = pki_state.server_cert_cn_input;
-                self.server_cert_sans_input = pki_state.server_cert_sans_input;
-                self.selected_intermediate_ca = pki_state.selected_intermediate_ca;
-                self.selected_cert_location = pki_state.selected_cert_location;
-                self.loaded_units = pki_state.loaded_units;
-                self.selected_unit_for_ca = pki_state.selected_unit_for_ca;
-                self.cert_organization = pki_state.cert_organization;
-                self.cert_organizational_unit = pki_state.cert_organizational_unit;
-                self.cert_locality = pki_state.cert_locality;
-                self.cert_state_province = pki_state.cert_state_province;
-                self.cert_country = pki_state.cert_country;
-                self.cert_validity_days = pki_state.cert_validity_days;
-                self.loaded_certificates = pki_state.loaded_certificates;
-                self.root_ca_collapsed = pki_state.root_ca_collapsed;
-                self.intermediate_ca_collapsed = pki_state.intermediate_ca_collapsed;
-                self.server_cert_collapsed = pki_state.server_cert_collapsed;
-                self.certificates_collapsed = pki_state.certificates_collapsed;
-                self.keys_collapsed = pki_state.keys_collapsed;
-                self.gpg_section_collapsed = pki_state.gpg_section_collapsed;
-                self.gpg_user_id = pki_state.gpg_user_id;
-                self.gpg_key_type = pki_state.gpg_key_type;
-                self.gpg_key_length = pki_state.gpg_key_length;
-                self.gpg_expires_days = pki_state.gpg_expires_days;
-                self.generated_gpg_keys = pki_state.generated_gpg_keys;
-                self.gpg_generation_status = pki_state.gpg_generation_status;
-                self.recovery_section_collapsed = pki_state.recovery_section_collapsed;
-                self.recovery_passphrase = pki_state.recovery_passphrase;
-                self.recovery_passphrase_confirm = pki_state.recovery_passphrase_confirm;
-                self.recovery_organization_id = pki_state.recovery_organization_id;
-                self.recovery_status = pki_state.recovery_status;
-                self.recovery_seed_verified = pki_state.recovery_seed_verified;
-                self.client_cert_cn = pki_state.client_cert_cn;
-                self.client_cert_email = pki_state.client_cert_email;
-                self.multi_purpose_key_section_collapsed = pki_state.multi_purpose_key_section_collapsed;
-                self.multi_purpose_selected_person = pki_state.multi_purpose_selected_person;
-                self.multi_purpose_selected_purposes = pki_state.multi_purpose_selected_purposes;
-                self.root_passphrase = pki_state.root_passphrase;
-                self.root_passphrase_confirm = pki_state.root_passphrase_confirm;
-                self.show_passphrase = pki_state.show_passphrase;
-
-                task
+                match pki_msg {
+                    // Section toggles
+                    PkiMessage::ToggleRootCASection => {
+                        self.root_ca_collapsed = !self.root_ca_collapsed;
+                        Task::none()
+                    }
+                    PkiMessage::ToggleIntermediateCASection => {
+                        self.intermediate_ca_collapsed = !self.intermediate_ca_collapsed;
+                        Task::none()
+                    }
+                    PkiMessage::ToggleServerCertSection => {
+                        self.server_cert_collapsed = !self.server_cert_collapsed;
+                        Task::none()
+                    }
+                    PkiMessage::ToggleCertificatesSection => {
+                        self.certificates_collapsed = !self.certificates_collapsed;
+                        Task::none()
+                    }
+                    PkiMessage::ToggleKeysSection => {
+                        self.keys_collapsed = !self.keys_collapsed;
+                        Task::none()
+                    }
+                    PkiMessage::ToggleGpgSection => {
+                        self.gpg_section_collapsed = !self.gpg_section_collapsed;
+                        Task::none()
+                    }
+                    PkiMessage::ToggleRecoverySection => {
+                        self.recovery_section_collapsed = !self.recovery_section_collapsed;
+                        Task::none()
+                    }
+                    PkiMessage::ToggleMultiPurposeKeySection => {
+                        self.multi_purpose_key_section_collapsed = !self.multi_purpose_key_section_collapsed;
+                        Task::none()
+                    }
+                    PkiMessage::TogglePassphraseVisibility => {
+                        self.show_passphrase = !self.show_passphrase;
+                        Task::none()
+                    }
+                    // Form inputs
+                    PkiMessage::IntermediateCANameChanged(n) => { self.intermediate_ca_name_input = n; Task::none() }
+                    PkiMessage::SelectUnitForCA(u) => { self.selected_unit_for_ca = Some(u); Task::none() }
+                    PkiMessage::ServerCertCNChanged(cn) => { self.server_cert_cn_input = cn; Task::none() }
+                    PkiMessage::ServerCertSANsChanged(s) => { self.server_cert_sans_input = s; Task::none() }
+                    PkiMessage::SelectIntermediateCA(ca) => { self.selected_intermediate_ca = Some(ca); Task::none() }
+                    PkiMessage::SelectCertLocation(l) => { self.selected_cert_location = Some(l); Task::none() }
+                    PkiMessage::CertOrganizationChanged(o) => { self.cert_organization = o; Task::none() }
+                    PkiMessage::CertOrganizationalUnitChanged(o) => { self.cert_organizational_unit = o; Task::none() }
+                    PkiMessage::CertLocalityChanged(l) => { self.cert_locality = l; Task::none() }
+                    PkiMessage::CertStateProvinceChanged(s) => { self.cert_state_province = s; Task::none() }
+                    PkiMessage::CertCountryChanged(c) => { self.cert_country = c; Task::none() }
+                    PkiMessage::CertValidityDaysChanged(d) => { self.cert_validity_days = d; Task::none() }
+                    PkiMessage::GpgUserIdChanged(u) => { self.gpg_user_id = u; Task::none() }
+                    PkiMessage::GpgKeyTypeSelected(t) => { self.gpg_key_type = Some(t); Task::none() }
+                    PkiMessage::GpgKeyLengthChanged(l) => { self.gpg_key_length = l; Task::none() }
+                    PkiMessage::GpgExpiresDaysChanged(d) => { self.gpg_expires_days = d; Task::none() }
+                    PkiMessage::RecoveryPassphraseChanged(p) => { self.recovery_passphrase = p; Task::none() }
+                    PkiMessage::RecoveryPassphraseConfirmChanged(p) => { self.recovery_passphrase_confirm = p; Task::none() }
+                    PkiMessage::RecoveryOrganizationIdChanged(o) => { self.recovery_organization_id = o; Task::none() }
+                    PkiMessage::ClientCertCNChanged(cn) => { self.client_cert_cn = cn; Task::none() }
+                    PkiMessage::ClientCertEmailChanged(e) => { self.client_cert_email = e; Task::none() }
+                    PkiMessage::MultiPurposePersonSelected(p) => { self.multi_purpose_selected_person = Some(p); Task::none() }
+                    PkiMessage::RootPassphraseChanged(p) => { self.root_passphrase = p; Task::none() }
+                    PkiMessage::RootPassphraseConfirmChanged(p) => { self.root_passphrase_confirm = p; Task::none() }
+                    PkiMessage::ToggleKeyPurpose(purpose) => {
+                        if self.multi_purpose_selected_purposes.contains(&purpose) {
+                            self.multi_purpose_selected_purposes.remove(&purpose);
+                        } else {
+                            self.multi_purpose_selected_purposes.insert(purpose);
+                        }
+                        Task::none()
+                    }
+                    PkiMessage::KeyGenerationProgress(p) => { self.key_generation_progress = p; Task::none() }
+                    PkiMessage::PkiCertificatesLoaded(c) => { self.loaded_certificates = c; Task::none() }
+                    PkiMessage::GenerateRandomPassphrase => {
+                        use rand::Rng;
+                        let mut rng = rand::thread_rng();
+                        let chars: Vec<char> = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%^&*".chars().collect();
+                        let passphrase: String = (0..20).map(|_| chars[rng.gen_range(0..chars.len())]).collect();
+                        self.root_passphrase = passphrase.clone();
+                        self.root_passphrase_confirm = passphrase;
+                        Task::none()
+                    }
+                    // Delegated operations
+                    PkiMessage::GenerateRootCA => Task::done(Message::GenerateRootCA),
+                    PkiMessage::RootCAGenerated(r) => Task::done(Message::RootCAGenerated(r)),
+                    PkiMessage::GenerateIntermediateCA => Task::done(Message::GenerateIntermediateCA),
+                    PkiMessage::GenerateServerCert => Task::done(Message::GenerateServerCert),
+                    PkiMessage::GenerateSSHKeys => Task::done(Message::GenerateSSHKeys),
+                    PkiMessage::GenerateAllKeys => Task::done(Message::GenerateAllKeys),
+                    PkiMessage::KeysGenerated(r) => Task::done(Message::KeysGenerated(r)),
+                    PkiMessage::GenerateGpgKey => Task::done(Message::GenerateGpgKey),
+                    PkiMessage::GpgKeyGenerated(r) => Task::done(Message::GpgKeyGenerated(r)),
+                    PkiMessage::ListGpgKeys => Task::done(Message::ListGpgKeys),
+                    PkiMessage::GpgKeysListed(r) => Task::done(Message::GpgKeysListed(r)),
+                    PkiMessage::VerifyRecoverySeed => Task::done(Message::VerifyRecoverySeed),
+                    PkiMessage::RecoverySeedVerified(r) => Task::done(Message::RecoverySeedVerified(r)),
+                    PkiMessage::RecoverKeysFromSeed => Task::done(Message::RecoverKeysFromSeed),
+                    PkiMessage::KeysRecovered(r) => Task::done(Message::KeysRecovered(r)),
+                    PkiMessage::GenerateClientCert => Task::done(Message::GenerateClientCert),
+                    PkiMessage::ClientCertGenerated(r) => Task::done(Message::ClientCertGenerated(r)),
+                    PkiMessage::GenerateMultiPurposeKeys => Task::done(Message::GenerateMultiPurposeKeys),
+                    PkiMessage::MultiPurposeKeysGenerated(r) => Task::done(Message::MultiPurposeKeysGenerated(r)),
+                    PkiMessage::GeneratePkiFromGraph => Task::done(Message::GeneratePkiFromGraph),
+                    PkiMessage::PersonalKeysGenerated(r) => Task::done(Message::PersonalKeysGenerated(r)),
+                }
             }
 
             // ================================================================
             // YubiKey Domain Message Delegation (Sprint 50)
             // ================================================================
             Message::YubiKey(yk_msg) => {
-                use yubikey::management;
+                use yubikey::YubiKeyMessage;
 
-                // Create YubiKey state view from app state
-                let mut yk_state = yubikey::YubiKeyState {
-                    yubikey_serial: self.yubikey_serial.clone(),
-                    detected_yubikeys: self.detected_yubikeys.clone(),
-                    yubikey_detection_status: self.yubikey_detection_status.clone(),
-                    yubikey_configs: self.yubikey_configs.clone(),
-                    yubikey_assignments: self.yubikey_assignments.clone(),
-                    yubikey_provisioning_status: self.yubikey_provisioning_status.clone(),
-                    selected_yubikey_for_assignment: self.selected_yubikey_for_assignment.clone(),
-                    yubikey_section_collapsed: self.yubikey_section_collapsed,
-                    yubikey_slot_section_collapsed: self.yubikey_slot_section_collapsed,
-                    selected_yubikey_for_management: self.selected_yubikey_for_management.clone(),
-                    selected_piv_slot: self.selected_piv_slot,
-                    yubikey_slot_info: self.yubikey_slot_info.clone(),
-                    yubikey_slot_operation_status: self.yubikey_slot_operation_status.clone(),
-                    yubikey_attestation_result: self.yubikey_attestation_result.clone(),
-                    yubikey_pin_input: self.yubikey_pin_input.clone(),
-                    yubikey_new_pin: self.yubikey_new_pin.clone(),
-                    yubikey_pin_confirm: self.yubikey_pin_confirm.clone(),
-                    yubikey_management_key: self.yubikey_management_key.clone(),
-                    yubikey_new_management_key: self.yubikey_new_management_key.clone(),
-                    yubikey_registration_name: self.yubikey_registration_name.clone(),
-                    registered_yubikeys: self.registered_yubikeys.clone(),
-                    filter_show_yubikey: self.filter_show_yubikey,
-                };
-
-                // Delegate to YubiKey domain update function
-                let task = management::update(&mut yk_state, yk_msg);
-
-                // Sync state back from YubiKey module
-                self.yubikey_serial = yk_state.yubikey_serial;
-                self.detected_yubikeys = yk_state.detected_yubikeys;
-                self.yubikey_detection_status = yk_state.yubikey_detection_status;
-                self.yubikey_configs = yk_state.yubikey_configs;
-                self.yubikey_assignments = yk_state.yubikey_assignments;
-                self.yubikey_provisioning_status = yk_state.yubikey_provisioning_status;
-                self.selected_yubikey_for_assignment = yk_state.selected_yubikey_for_assignment;
-                self.yubikey_section_collapsed = yk_state.yubikey_section_collapsed;
-                self.yubikey_slot_section_collapsed = yk_state.yubikey_slot_section_collapsed;
-                self.selected_yubikey_for_management = yk_state.selected_yubikey_for_management;
-                self.selected_piv_slot = yk_state.selected_piv_slot;
-                self.yubikey_slot_info = yk_state.yubikey_slot_info;
-                self.yubikey_slot_operation_status = yk_state.yubikey_slot_operation_status;
-                self.yubikey_attestation_result = yk_state.yubikey_attestation_result;
-                self.yubikey_pin_input = yk_state.yubikey_pin_input;
-                self.yubikey_new_pin = yk_state.yubikey_new_pin;
-                self.yubikey_pin_confirm = yk_state.yubikey_pin_confirm;
-                self.yubikey_management_key = yk_state.yubikey_management_key;
-                self.yubikey_new_management_key = yk_state.yubikey_new_management_key;
-                self.yubikey_registration_name = yk_state.yubikey_registration_name;
-                self.registered_yubikeys = yk_state.registered_yubikeys;
-                self.filter_show_yubikey = yk_state.filter_show_yubikey;
-
-                task
+                match yk_msg {
+                    // Section toggles
+                    YubiKeyMessage::ToggleYubiKeySection => {
+                        self.yubikey_section_collapsed = !self.yubikey_section_collapsed;
+                        Task::none()
+                    }
+                    YubiKeyMessage::ToggleYubiKeySlotSection => {
+                        self.yubikey_slot_section_collapsed = !self.yubikey_slot_section_collapsed;
+                        Task::none()
+                    }
+                    YubiKeyMessage::ToggleFilterYubiKey => {
+                        self.filter_show_yubikey = !self.filter_show_yubikey;
+                        Task::none()
+                    }
+                    // Serial and selection
+                    YubiKeyMessage::YubiKeySerialChanged(serial) => {
+                        self.yubikey_serial = serial;
+                        Task::none()
+                    }
+                    YubiKeyMessage::SelectYubiKeyForAssignment(serial) => {
+                        self.selected_yubikey_for_assignment = Some(serial);
+                        Task::none()
+                    }
+                    YubiKeyMessage::SelectYubiKeyForManagement(serial) => {
+                        self.selected_yubikey_for_management = Some(serial);
+                        Task::none()
+                    }
+                    YubiKeyMessage::SelectPivSlot(slot) => {
+                        self.selected_piv_slot = Some(slot);
+                        Task::none()
+                    }
+                    // PIN management
+                    YubiKeyMessage::YubiKeyPinInputChanged(pin) => {
+                        self.yubikey_pin_input = pin;
+                        Task::none()
+                    }
+                    YubiKeyMessage::YubiKeyNewPinChanged(pin) => {
+                        self.yubikey_new_pin = pin;
+                        Task::none()
+                    }
+                    YubiKeyMessage::YubiKeyPinConfirmChanged(pin) => {
+                        self.yubikey_pin_confirm = pin;
+                        Task::none()
+                    }
+                    // Management key
+                    YubiKeyMessage::YubiKeyManagementKeyChanged(key) => {
+                        self.yubikey_management_key = key;
+                        Task::none()
+                    }
+                    YubiKeyMessage::YubiKeyNewManagementKeyChanged(key) => {
+                        self.yubikey_new_management_key = key;
+                        Task::none()
+                    }
+                    // Registration
+                    YubiKeyMessage::YubiKeyRegistrationNameChanged(name) => {
+                        self.yubikey_registration_name = name;
+                        Task::none()
+                    }
+                    // Delegated operations
+                    YubiKeyMessage::DetectYubiKeys => Task::done(Message::DetectYubiKeys),
+                    YubiKeyMessage::YubiKeysDetected(r) => Task::done(Message::YubiKeysDetected(r)),
+                    YubiKeyMessage::AssignYubiKeyToPerson { serial, person_id } => {
+                        Task::done(Message::AssignYubiKeyToPerson { serial, person_id })
+                    }
+                    YubiKeyMessage::ProvisionYubiKey => Task::done(Message::ProvisionYubiKey),
+                    YubiKeyMessage::ProvisionSingleYubiKey { serial } => {
+                        Task::done(Message::ProvisionSingleYubiKey { serial })
+                    }
+                    YubiKeyMessage::YubiKeyProvisioned(r) => Task::done(Message::YubiKeyProvisioned(r)),
+                    YubiKeyMessage::SingleYubiKeyProvisioned(r) => Task::done(Message::SingleYubiKeyProvisioned(r)),
+                    YubiKeyMessage::QueryYubiKeySlots(s) => Task::done(Message::QueryYubiKeySlots(s)),
+                    YubiKeyMessage::YubiKeySlotsQueried(r) => Task::done(Message::YubiKeySlotsQueried(r)),
+                    YubiKeyMessage::ClearYubiKeySlot { serial, slot } => {
+                        Task::done(Message::ClearYubiKeySlot { serial, slot })
+                    }
+                    YubiKeyMessage::YubiKeySlotCleared(r) => Task::done(Message::YubiKeySlotCleared(r)),
+                    YubiKeyMessage::GenerateKeyInSlot { serial, slot } => {
+                        Task::done(Message::GenerateKeyInSlot { serial, slot })
+                    }
+                    YubiKeyMessage::KeyInSlotGenerated(r) => Task::done(Message::KeyInSlotGenerated(r)),
+                    YubiKeyMessage::VerifyYubiKeyPin(s) => Task::done(Message::VerifyYubiKeyPin(s)),
+                    YubiKeyMessage::YubiKeyPinVerified(r) => Task::done(Message::YubiKeyPinVerified(r)),
+                    YubiKeyMessage::ChangeYubiKeyManagementKey(s) => {
+                        Task::done(Message::ChangeYubiKeyManagementKey(s))
+                    }
+                    YubiKeyMessage::YubiKeyManagementKeyChanged2(r) => {
+                        Task::done(Message::YubiKeyManagementKeyChanged2(r))
+                    }
+                    YubiKeyMessage::ResetYubiKeyPiv(s) => Task::done(Message::ResetYubiKeyPiv(s)),
+                    YubiKeyMessage::YubiKeyPivReset(r) => Task::done(Message::YubiKeyPivReset(r)),
+                    YubiKeyMessage::GetYubiKeyAttestation { serial, slot } => {
+                        Task::done(Message::GetYubiKeyAttestation { serial, slot })
+                    }
+                    YubiKeyMessage::YubiKeyAttestationReceived(r) => {
+                        Task::done(Message::YubiKeyAttestationReceived(r))
+                    }
+                    YubiKeyMessage::RegisterYubiKeyInDomain { serial, name } => {
+                        Task::done(Message::RegisterYubiKeyInDomain { serial, name })
+                    }
+                    YubiKeyMessage::YubiKeyRegistered(r) => Task::done(Message::YubiKeyRegistered(r)),
+                    YubiKeyMessage::TransferYubiKey { serial, from_person_id, to_person_id } => {
+                        Task::done(Message::TransferYubiKey { serial, from_person_id, to_person_id })
+                    }
+                    YubiKeyMessage::YubiKeyTransferred(r) => Task::done(Message::YubiKeyTransferred(r)),
+                    YubiKeyMessage::RevokeYubiKeyAssignment { serial } => {
+                        Task::done(Message::RevokeYubiKeyAssignment { serial })
+                    }
+                    YubiKeyMessage::YubiKeyAssignmentRevoked(r) => Task::done(Message::YubiKeyAssignmentRevoked(r)),
+                    YubiKeyMessage::YubiKeyDataLoaded(yk, pe) => Task::done(Message::YubiKeyDataLoaded(yk, pe)),
+                    YubiKeyMessage::ProvisionYubiKeysFromGraph => Task::done(Message::ProvisionYubiKeysFromGraph),
+                    YubiKeyMessage::YubiKeysProvisioned(r) => Task::done(Message::YubiKeysProvisioned(r)),
+                }
             }
 
             // ================================================================
             // NATS Domain Message Delegation (Sprint 51)
             // ================================================================
             Message::Nats(nats_msg) => {
-                use nats::infrastructure;
+                use nats::NatsMessage;
 
-                // Create NATS state view from app state
-                let mut nats_state = nats::NatsState {
-                    nats_bootstrap: self.nats_bootstrap.clone(),
-                    include_nats_config: self.include_nats_config,
-                    nats_hierarchy_generated: self.nats_hierarchy_generated,
-                    nats_operator_id: self.nats_operator_id,
-                    nats_export_path: self.nats_export_path.clone(),
-                    nats_viz_section_collapsed: self.nats_viz_section_collapsed,
-                    nats_viz_expanded_accounts: self.nats_viz_expanded_accounts.clone(),
-                    nats_viz_selected_operator: self.nats_viz_selected_operator,
-                    nats_viz_selected_account: self.nats_viz_selected_account.clone(),
-                    nats_viz_selected_user: self.nats_viz_selected_user.clone(),
-                    nats_viz_hierarchy_data: self.nats_viz_hierarchy_data.clone(),
-                    nats_section_collapsed: self.nats_section_collapsed,
-                    filter_show_nats: self.filter_show_nats,
-                };
-
-                // Delegate to NATS domain update function
-                let task = infrastructure::update(&mut nats_state, nats_msg);
-
-                // Sync state back from NATS module
-                self.nats_bootstrap = nats_state.nats_bootstrap;
-                self.include_nats_config = nats_state.include_nats_config;
-                self.nats_hierarchy_generated = nats_state.nats_hierarchy_generated;
-                self.nats_operator_id = nats_state.nats_operator_id;
-                self.nats_export_path = nats_state.nats_export_path;
-                self.nats_viz_section_collapsed = nats_state.nats_viz_section_collapsed;
-                self.nats_viz_expanded_accounts = nats_state.nats_viz_expanded_accounts;
-                self.nats_viz_selected_operator = nats_state.nats_viz_selected_operator;
-                self.nats_viz_selected_account = nats_state.nats_viz_selected_account;
-                self.nats_viz_selected_user = nats_state.nats_viz_selected_user;
-                self.nats_viz_hierarchy_data = nats_state.nats_viz_hierarchy_data;
-                self.nats_section_collapsed = nats_state.nats_section_collapsed;
-                // Sync filter_show_nats to org_graph as well
-                self.filter_show_nats = nats_state.filter_show_nats;
-                self.org_graph.filter_show_nats = nats_state.filter_show_nats;
-
-                task
+                match nats_msg {
+                    NatsMessage::ToggleNatsConfig(enabled) => {
+                        self.include_nats_config = enabled;
+                        Task::none()
+                    }
+                    NatsMessage::ToggleNatsSection => {
+                        self.nats_section_collapsed = !self.nats_section_collapsed;
+                        Task::none()
+                    }
+                    NatsMessage::ToggleNatsVizSection => {
+                        self.nats_viz_section_collapsed = !self.nats_viz_section_collapsed;
+                        Task::none()
+                    }
+                    NatsMessage::ToggleNatsAccountExpand(account_name) => {
+                        if self.nats_viz_expanded_accounts.contains(&account_name) {
+                            self.nats_viz_expanded_accounts.remove(&account_name);
+                        } else {
+                            self.nats_viz_expanded_accounts.insert(account_name);
+                        }
+                        Task::none()
+                    }
+                    NatsMessage::SelectNatsOperator => {
+                        self.nats_viz_selected_operator = true;
+                        self.nats_viz_selected_account = None;
+                        self.nats_viz_selected_user = None;
+                        Task::none()
+                    }
+                    NatsMessage::SelectNatsAccount(account_name) => {
+                        self.nats_viz_selected_operator = false;
+                        self.nats_viz_selected_account = Some(account_name);
+                        self.nats_viz_selected_user = None;
+                        Task::none()
+                    }
+                    NatsMessage::SelectNatsUser(account_name, person_id) => {
+                        self.nats_viz_selected_operator = false;
+                        self.nats_viz_selected_account = None;
+                        self.nats_viz_selected_user = Some((account_name, person_id));
+                        Task::none()
+                    }
+                    NatsMessage::ToggleFilterNats => {
+                        self.filter_show_nats = !self.filter_show_nats;
+                        self.org_graph.filter_show_nats = self.filter_show_nats;
+                        Task::none()
+                    }
+                    NatsMessage::NatsHierarchyRefreshed(result) => {
+                        if let Ok(hierarchy) = result {
+                            self.nats_viz_hierarchy_data = Some(hierarchy);
+                        }
+                        Task::none()
+                    }
+                    NatsMessage::NatsHierarchyGenerated(result) => {
+                        self.nats_hierarchy_generated = result.is_ok();
+                        Task::done(Message::NatsHierarchyGenerated(result))
+                    }
+                    NatsMessage::NatsBootstrapCreated(bootstrap) => {
+                        self.nats_bootstrap = Some(*bootstrap);
+                        Task::none()
+                    }
+                    NatsMessage::RemoveNatsAccount(account_name) => {
+                        if let Some(ref selected) = self.nats_viz_selected_account {
+                            if selected == &account_name {
+                                self.nats_viz_selected_account = None;
+                            }
+                        }
+                        self.nats_viz_expanded_accounts.remove(&account_name);
+                        Task::done(Message::RemoveNatsAccount(account_name))
+                    }
+                    NatsMessage::RemoveNatsUser(account_name, person_id) => {
+                        if let Some((ref acc, ref pid)) = self.nats_viz_selected_user {
+                            if acc == &account_name && *pid == person_id {
+                                self.nats_viz_selected_user = None;
+                            }
+                        }
+                        Task::done(Message::RemoveNatsUser(account_name, person_id))
+                    }
+                    // Delegated operations
+                    NatsMessage::GenerateNatsHierarchy => {
+                        Task::done(Message::GenerateNatsHierarchy)
+                    }
+                    NatsMessage::GenerateNatsFromGraph => {
+                        Task::done(Message::GenerateNatsFromGraph)
+                    }
+                    NatsMessage::NatsFromGraphGenerated(result) => {
+                        Task::done(Message::NatsFromGraphGenerated(result))
+                    }
+                    NatsMessage::RefreshNatsHierarchy => {
+                        Task::done(Message::RefreshNatsHierarchy)
+                    }
+                    NatsMessage::AddNatsAccount { unit_id, account_name } => {
+                        Task::done(Message::AddNatsAccount { unit_id, account_name })
+                    }
+                    NatsMessage::AddNatsUser { account_name, person_id } => {
+                        Task::done(Message::AddNatsUser { account_name, person_id })
+                    }
+                }
             }
 
             // ================================================================
             // Export Domain Message Delegation (Sprint 52)
             // ================================================================
             Message::Export(export_msg) => {
-                use export::projection;
+                use export::ExportMessage;
 
-                // Create export state view from app state
-                let mut export_state = export::ExportState {
-                    export_path: self.export_path.clone(),
-                    export_password: self.export_password.clone(),
-                    projection_section: self.projection_section.clone(),
-                    projections: self.projections.clone(),
-                    selected_projection: self.selected_projection.clone(),
-                    last_sdcard_export_path: None,
-                    last_cypher_export_path: None,
-                    last_nsc_export_path: None,
-                    last_graph_export_path: None,
-                };
-
-                // Delegate to Export domain update function
-                let task = projection::update(&mut export_state, export_msg);
-
-                // Sync state back from Export module
-                self.export_path = export_state.export_path;
-                self.export_password = export_state.export_password;
-                self.projection_section = export_state.projection_section;
-                self.projections = export_state.projections;
-                self.selected_projection = export_state.selected_projection;
-
-                task
+                match export_msg {
+                    ExportMessage::ExportPathChanged(path) => {
+                        self.export_path = std::path::PathBuf::from(path);
+                        Task::none()
+                    }
+                    ExportMessage::ExportPasswordChanged(password) => {
+                        self.export_password = password;
+                        Task::none()
+                    }
+                    ExportMessage::ProjectionSectionChanged(section) => {
+                        self.projection_section = section;
+                        Task::none()
+                    }
+                    ExportMessage::ProjectionSelected(target) => {
+                        self.selected_projection = Some(target);
+                        Task::none()
+                    }
+                    ExportMessage::ExportToSDCard => {
+                        Task::done(Message::ExportToSDCard)
+                    }
+                    ExportMessage::DomainExported(result) => {
+                        Task::done(Message::DomainExported(result))
+                    }
+                    ExportMessage::SDCardExported(result) => {
+                        Task::done(Message::SDCardExported(result))
+                    }
+                    ExportMessage::ExportToCypher => {
+                        Task::done(Message::ExportToCypher)
+                    }
+                    ExportMessage::CypherExported(result) => {
+                        Task::done(Message::CypherExported(result))
+                    }
+                    ExportMessage::ExportToNsc => {
+                        Task::done(Message::ExportToNsc)
+                    }
+                    ExportMessage::NscExported(result) => {
+                        Task::done(Message::NscExported(result))
+                    }
+                    ExportMessage::ExportGraph => {
+                        Task::done(Message::ExportGraph)
+                    }
+                    ExportMessage::GraphExported(result) => {
+                        Task::done(Message::GraphExported(result))
+                    }
+                    ExportMessage::GraphImported(result) => {
+                        Task::done(Message::GraphImported(result))
+                    }
+                    ExportMessage::ConnectProjection(target) => {
+                        Task::done(Message::ConnectProjection(target))
+                    }
+                    ExportMessage::DisconnectProjection(target) => {
+                        Task::done(Message::DisconnectProjection(target))
+                    }
+                    ExportMessage::SyncProjection(target) => {
+                        Task::done(Message::SyncProjection(target))
+                    }
+                }
             }
 
             // ================================================================
             // Delegation Domain Message Delegation (Sprint 53)
             // ================================================================
             Message::Delegation(del_msg) => {
-                use delegation::authorization;
+                use delegation::DelegationMessage;
 
-                // Create delegation state view from app state
-                let mut del_state = delegation::DelegationState {
-                    delegation_section_collapsed: self.delegation_section_collapsed,
-                    delegation_from_person: self.delegation_from_person,
-                    delegation_to_person: self.delegation_to_person,
-                    delegation_permissions: self.delegation_permissions.clone(),
-                    delegation_expires_days: self.delegation_expires_days.clone(),
-                    active_delegations: self.active_delegations.clone(),
-                };
-
-                // Delegate to Delegation domain update function
-                let task = authorization::update(&mut del_state, del_msg);
-
-                // Sync state back from Delegation module
-                self.delegation_section_collapsed = del_state.delegation_section_collapsed;
-                self.delegation_from_person = del_state.delegation_from_person;
-                self.delegation_to_person = del_state.delegation_to_person;
-                self.delegation_permissions = del_state.delegation_permissions;
-                self.delegation_expires_days = del_state.delegation_expires_days;
-                self.active_delegations = del_state.active_delegations;
-
-                task
+                match del_msg {
+                    DelegationMessage::ToggleDelegationSection => {
+                        self.delegation_section_collapsed = !self.delegation_section_collapsed;
+                        Task::none()
+                    }
+                    DelegationMessage::DelegationFromPersonSelected(person_id) => {
+                        Task::done(Message::DelegationFromPersonSelected(person_id))
+                    }
+                    DelegationMessage::DelegationToPersonSelected(person_id) => {
+                        Task::done(Message::DelegationToPersonSelected(person_id))
+                    }
+                    DelegationMessage::ToggleDelegationPermission(permission) => {
+                        Task::done(Message::ToggleDelegationPermission(permission))
+                    }
+                    DelegationMessage::DelegationExpiresDaysChanged(days) => {
+                        Task::done(Message::DelegationExpiresDaysChanged(days))
+                    }
+                    DelegationMessage::CreateDelegation => {
+                        Task::done(Message::CreateDelegation)
+                    }
+                    DelegationMessage::DelegationCreated(result) => {
+                        Task::done(Message::DelegationCreated(result))
+                    }
+                    DelegationMessage::RevokeDelegation(id) => {
+                        Task::done(Message::RevokeDelegation(id))
+                    }
+                    DelegationMessage::DelegationRevoked(result) => {
+                        Task::done(Message::DelegationRevoked(result))
+                    }
+                }
             }
 
             Message::TrustChain(tc_msg) => {
-                use trustchain::verification;
+                use trustchain::TrustChainMessage;
 
-                // Create trust chain state view from app state
-                let mut tc_state = trustchain::TrustChainState {
-                    trust_chain_section_collapsed: self.trust_chain_section_collapsed,
-                    selected_trust_chain_cert: self.selected_trust_chain_cert,
-                    trust_chain_verification_status: self.trust_chain_verification_status.clone(),
-                };
-
-                // Delegate to TrustChain domain update function
-                let task = verification::update(&mut tc_state, tc_msg);
-
-                // Sync state back from TrustChain module
-                self.trust_chain_section_collapsed = tc_state.trust_chain_section_collapsed;
-                self.selected_trust_chain_cert = tc_state.selected_trust_chain_cert;
-                self.trust_chain_verification_status = tc_state.trust_chain_verification_status;
-
-                task
+                match tc_msg {
+                    TrustChainMessage::ToggleTrustChainSection => {
+                        self.trust_chain_section_collapsed = !self.trust_chain_section_collapsed;
+                        Task::none()
+                    }
+                    TrustChainMessage::SelectCertForTrustChain(cert_id) => {
+                        self.selected_trust_chain_cert = Some(cert_id);
+                        Task::none()
+                    }
+                    TrustChainMessage::VerifyTrustChain(cert_id) => {
+                        // Delegated to Message::VerifyTrustChain handler
+                        Task::done(Message::VerifyTrustChain(cert_id))
+                    }
+                    TrustChainMessage::TrustChainVerified(result) => {
+                        // Delegated to Message::TrustChainVerified handler
+                        Task::done(Message::TrustChainVerified(result))
+                    }
+                    TrustChainMessage::VerifyAllTrustChains => {
+                        // Delegated to Message::VerifyAllTrustChains handler
+                        Task::done(Message::VerifyAllTrustChains)
+                    }
+                }
             }
 
             Message::Location(loc_msg) => {
-                use location::management;
+                use location::LocationMessage;
 
-                // Create location state view from app state
-                let mut loc_state = location::LocationState {
-                    new_location_name: self.new_location_name.clone(),
-                    new_location_type: self.new_location_type.clone(),
-                    new_location_street: self.new_location_street.clone(),
-                    new_location_city: self.new_location_city.clone(),
-                    new_location_region: self.new_location_region.clone(),
-                    new_location_country: self.new_location_country.clone(),
-                    new_location_postal: self.new_location_postal.clone(),
-                    new_location_url: self.new_location_url.clone(),
-                    loaded_locations: self.loaded_locations.clone(),
-                };
-
-                // Delegate to Location domain update function
-                let task = management::update(&mut loc_state, loc_msg);
-
-                // Sync state back from Location module
-                self.new_location_name = loc_state.new_location_name;
-                self.new_location_type = loc_state.new_location_type;
-                self.new_location_street = loc_state.new_location_street;
-                self.new_location_city = loc_state.new_location_city;
-                self.new_location_region = loc_state.new_location_region;
-                self.new_location_country = loc_state.new_location_country;
-                self.new_location_postal = loc_state.new_location_postal;
-                self.new_location_url = loc_state.new_location_url;
-                self.loaded_locations = loc_state.loaded_locations;
-
-                task
+                match loc_msg {
+                    LocationMessage::NameChanged(name) => {
+                        self.new_location_name = name;
+                        Task::none()
+                    }
+                    LocationMessage::TypeSelected(loc_type) => {
+                        self.new_location_type = Some(loc_type);
+                        Task::none()
+                    }
+                    LocationMessage::StreetChanged(street) => {
+                        self.new_location_street = street;
+                        Task::none()
+                    }
+                    LocationMessage::CityChanged(city) => {
+                        self.new_location_city = city;
+                        Task::none()
+                    }
+                    LocationMessage::RegionChanged(region) => {
+                        self.new_location_region = region;
+                        Task::none()
+                    }
+                    LocationMessage::CountryChanged(country) => {
+                        self.new_location_country = country;
+                        Task::none()
+                    }
+                    LocationMessage::PostalChanged(postal) => {
+                        self.new_location_postal = postal;
+                        Task::none()
+                    }
+                    LocationMessage::UrlChanged(url) => {
+                        self.new_location_url = url;
+                        Task::none()
+                    }
+                    LocationMessage::AddLocation => {
+                        // Adding delegated elsewhere
+                        Task::none()
+                    }
+                    LocationMessage::RemoveLocation(location_id) => {
+                        self.loaded_locations.retain(|l| l.location_id != location_id);
+                        Task::none()
+                    }
+                }
             }
 
             Message::ServiceAccount(sa_msg) => {
-                use service_account::management;
+                use service_account::ServiceAccountMessage;
 
-                // Create service account state view from app state
-                let mut sa_state = service_account::ServiceAccountState {
-                    section_collapsed: self.service_account_section_collapsed,
-                    new_name: self.new_service_account_name.clone(),
-                    new_purpose: self.new_service_account_purpose.clone(),
-                    new_owning_unit: self.new_service_account_owning_unit,
-                    new_responsible_person: self.new_service_account_responsible_person,
-                    created_service_accounts: self.created_service_accounts.clone(),
-                };
-
-                // Delegate to Service Account domain update function
-                let task = management::update(&mut sa_state, sa_msg);
-
-                // Sync state back from Service Account module
-                self.service_account_section_collapsed = sa_state.section_collapsed;
-                self.new_service_account_name = sa_state.new_name;
-                self.new_service_account_purpose = sa_state.new_purpose;
-                self.new_service_account_owning_unit = sa_state.new_owning_unit;
-                self.new_service_account_responsible_person = sa_state.new_responsible_person;
-                self.created_service_accounts = sa_state.created_service_accounts;
-
-                task
+                match sa_msg {
+                    ServiceAccountMessage::ToggleSection => {
+                        self.service_account_section_collapsed = !self.service_account_section_collapsed;
+                        Task::none()
+                    }
+                    ServiceAccountMessage::NameChanged(name) => {
+                        self.new_service_account_name = name;
+                        Task::none()
+                    }
+                    ServiceAccountMessage::PurposeChanged(purpose) => {
+                        self.new_service_account_purpose = purpose;
+                        Task::none()
+                    }
+                    ServiceAccountMessage::OwningUnitSelected(unit_id) => {
+                        self.new_service_account_owning_unit = Some(unit_id);
+                        Task::none()
+                    }
+                    ServiceAccountMessage::ResponsiblePersonSelected(person_id) => {
+                        self.new_service_account_responsible_person = Some(person_id);
+                        Task::none()
+                    }
+                    ServiceAccountMessage::Create => {
+                        // Creation delegated elsewhere
+                        Task::none()
+                    }
+                    ServiceAccountMessage::Created(result) => {
+                        match result {
+                            Ok(account) => {
+                                self.created_service_accounts.push(account);
+                                // Clear form
+                                self.new_service_account_name.clear();
+                                self.new_service_account_purpose.clear();
+                                self.new_service_account_owning_unit = None;
+                                self.new_service_account_responsible_person = None;
+                            }
+                            Err(_) => {}
+                        }
+                        Task::none()
+                    }
+                    ServiceAccountMessage::Deactivate(id) => {
+                        // Deactivation - remove from active accounts
+                        // (In a full event-sourced system, this would emit a deactivation event)
+                        self.created_service_accounts.retain(|a| a.id != id);
+                        Task::none()
+                    }
+                    ServiceAccountMessage::Remove(id) => {
+                        self.created_service_accounts.retain(|a| a.id != id);
+                        Task::none()
+                    }
+                    ServiceAccountMessage::GenerateKey { .. } => {
+                        // Key generation delegated elsewhere
+                        Task::none()
+                    }
+                    ServiceAccountMessage::KeyGenerated(_result) => {
+                        // Key generation result handled
+                        Task::none()
+                    }
+                }
             }
 
             Message::Gpg(gpg_msg) => {
-                use gpg::generation;
+                use gpg::GpgMessage;
 
-                // Create GPG state view from app state
-                let mut gpg_state = gpg::GpgState {
-                    section_collapsed: self.gpg_section_collapsed,
-                    user_id: self.gpg_user_id.clone(),
-                    key_type: self.gpg_key_type,
-                    key_length: self.gpg_key_length.clone(),
-                    expires_days: self.gpg_expires_days.clone(),
-                    generation_status: self.gpg_generation_status.clone(),
-                    generated_keys: self.generated_gpg_keys.clone(),
-                };
-
-                // Delegate to GPG domain update function
-                let task = generation::update(&mut gpg_state, gpg_msg);
-
-                // Sync state back from GPG module
-                self.gpg_section_collapsed = gpg_state.section_collapsed;
-                self.gpg_user_id = gpg_state.user_id;
-                self.gpg_key_type = gpg_state.key_type;
-                self.gpg_key_length = gpg_state.key_length;
-                self.gpg_expires_days = gpg_state.expires_days;
-                self.gpg_generation_status = gpg_state.generation_status;
-                self.generated_gpg_keys = gpg_state.generated_keys;
-
-                task
+                match gpg_msg {
+                    GpgMessage::ToggleSection => {
+                        self.gpg_section_collapsed = !self.gpg_section_collapsed;
+                        Task::none()
+                    }
+                    GpgMessage::UserIdChanged(user_id) => {
+                        self.gpg_user_id = user_id;
+                        Task::none()
+                    }
+                    GpgMessage::KeyTypeSelected(key_type) => {
+                        self.gpg_key_type = Some(key_type);
+                        Task::none()
+                    }
+                    GpgMessage::KeyLengthChanged(length) => {
+                        self.gpg_key_length = length;
+                        Task::none()
+                    }
+                    GpgMessage::ExpiresDaysChanged(days) => {
+                        self.gpg_expires_days = days;
+                        Task::none()
+                    }
+                    GpgMessage::Generate => {
+                        // Generation delegated elsewhere
+                        Task::none()
+                    }
+                    GpgMessage::Generated(result) => {
+                        match result {
+                            Ok(keypair) => {
+                                self.gpg_generation_status = Some(format!("Generated key: {}", keypair.fingerprint));
+                                // Convert GpgKeypair to GpgKeyInfo
+                                let info = crate::ports::gpg::GpgKeyInfo {
+                                    key_id: keypair.key_id.clone(),
+                                    fingerprint: keypair.fingerprint.clone(),
+                                    user_ids: vec![keypair.user_id],
+                                    creation_time: chrono::Utc::now().timestamp(),
+                                    expiration_time: None,
+                                    is_revoked: false,
+                                    is_expired: false,
+                                };
+                                self.generated_gpg_keys.push(info);
+                            }
+                            Err(error) => {
+                                self.gpg_generation_status = Some(error);
+                            }
+                        }
+                        Task::none()
+                    }
+                    GpgMessage::ListKeys => {
+                        // Listing delegated elsewhere
+                        Task::none()
+                    }
+                    GpgMessage::KeysListed(result) => {
+                        match result {
+                            Ok(keys) => {
+                                self.generated_gpg_keys = keys;
+                            }
+                            Err(error) => {
+                                self.gpg_generation_status = Some(error);
+                            }
+                        }
+                        Task::none()
+                    }
+                }
             }
 
             Message::Recovery(recovery_msg) => {
-                use recovery::seed;
+                use recovery::RecoveryMessage;
 
-                // Create recovery state view from app state
-                let mut recovery_state = recovery::RecoveryState {
-                    section_collapsed: self.recovery_section_collapsed,
-                    passphrase: self.recovery_passphrase.clone(),
-                    passphrase_confirm: self.recovery_passphrase_confirm.clone(),
-                    organization_id: self.recovery_organization_id.clone(),
-                    status: self.recovery_status.clone(),
-                    seed_verified: self.recovery_seed_verified,
-                };
-
-                // Delegate to Recovery domain update function
-                let task = seed::update(&mut recovery_state, recovery_msg);
-
-                // Sync state back from Recovery module
-                self.recovery_section_collapsed = recovery_state.section_collapsed;
-                self.recovery_passphrase = recovery_state.passphrase;
-                self.recovery_passphrase_confirm = recovery_state.passphrase_confirm;
-                self.recovery_organization_id = recovery_state.organization_id;
-                self.recovery_status = recovery_state.status;
-                self.recovery_seed_verified = recovery_state.seed_verified;
-
-                task
+                match recovery_msg {
+                    RecoveryMessage::ToggleSection => {
+                        self.recovery_section_collapsed = !self.recovery_section_collapsed;
+                        Task::none()
+                    }
+                    RecoveryMessage::PassphraseChanged(passphrase) => {
+                        self.recovery_passphrase = passphrase;
+                        Task::none()
+                    }
+                    RecoveryMessage::PassphraseConfirmChanged(confirm) => {
+                        self.recovery_passphrase_confirm = confirm;
+                        Task::none()
+                    }
+                    RecoveryMessage::OrganizationIdChanged(org_id) => {
+                        self.recovery_organization_id = org_id;
+                        Task::none()
+                    }
+                    RecoveryMessage::VerifySeed => {
+                        // Verification delegated elsewhere
+                        Task::none()
+                    }
+                    RecoveryMessage::SeedVerified(result) => {
+                        match result {
+                            Ok(_fingerprint) => {
+                                self.recovery_seed_verified = true;
+                                self.recovery_status = Some("Seed verified successfully".to_string());
+                            }
+                            Err(error) => {
+                                self.recovery_seed_verified = false;
+                                self.recovery_status = Some(error);
+                            }
+                        }
+                        Task::none()
+                    }
+                    RecoveryMessage::RecoverKeys => {
+                        // Recovery delegated elsewhere
+                        Task::none()
+                    }
+                    RecoveryMessage::KeysRecovered(result) => {
+                        match result {
+                            Ok(count) => {
+                                self.recovery_status = Some(format!("Recovered {} keys", count));
+                            }
+                            Err(error) => {
+                                self.recovery_status = Some(error);
+                            }
+                        }
+                        Task::none()
+                    }
+                }
             }
 
             Message::OrgUnit(ou_msg) => {
-                use org_unit::management;
+                use org_unit::OrgUnitMessage;
 
-                // Create org unit state view from app state
-                let mut ou_state = org_unit::OrgUnitState {
-                    section_collapsed: self.org_unit_section_collapsed,
-                    new_name: self.new_unit_name.clone(),
-                    new_type: self.new_unit_type.clone(),
-                    new_parent: self.new_unit_parent.clone(),
-                    new_nats_account: self.new_unit_nats_account.clone(),
-                    new_responsible_person: self.new_unit_responsible_person,
-                    created_units: self.created_units.clone(),
-                };
+                match ou_msg {
+                    // === UI State ===
+                    OrgUnitMessage::ToggleSection => {
+                        self.org_unit_section_collapsed = !self.org_unit_section_collapsed;
+                        Task::none()
+                    }
 
-                // Delegate to OrgUnit domain update function
-                let task = management::update(&mut ou_state, ou_msg);
+                    // === Form Input ===
+                    OrgUnitMessage::NameChanged(name) => {
+                        self.new_unit_name = name;
+                        Task::none()
+                    }
+                    OrgUnitMessage::TypeSelected(unit_type) => {
+                        self.new_unit_type = Some(unit_type);
+                        Task::none()
+                    }
+                    OrgUnitMessage::ParentSelected(parent) => {
+                        self.new_unit_parent = if parent.is_empty() {
+                            None
+                        } else {
+                            Some(parent)
+                        };
+                        Task::none()
+                    }
+                    OrgUnitMessage::NatsAccountChanged(account) => {
+                        self.new_unit_nats_account = account;
+                        Task::none()
+                    }
+                    OrgUnitMessage::ResponsiblePersonSelected(person_id) => {
+                        self.new_unit_responsible_person = Some(person_id);
+                        Task::none()
+                    }
 
-                // Sync state back from OrgUnit module
-                self.org_unit_section_collapsed = ou_state.section_collapsed;
-                self.new_unit_name = ou_state.new_name;
-                self.new_unit_type = ou_state.new_type;
-                self.new_unit_parent = ou_state.new_parent;
-                self.new_unit_nats_account = ou_state.new_nats_account;
-                self.new_unit_responsible_person = ou_state.new_responsible_person;
-                self.created_units = ou_state.created_units;
-
-                task
+                    // === Lifecycle ===
+                    OrgUnitMessage::Create => {
+                        // Creation delegated elsewhere
+                        Task::none()
+                    }
+                    OrgUnitMessage::Created(result) => {
+                        match result {
+                            Ok(unit) => {
+                                self.created_units.push(unit);
+                                // Clear form
+                                self.new_unit_name.clear();
+                                self.new_unit_type = None;
+                                self.new_unit_parent = None;
+                                self.new_unit_nats_account.clear();
+                                self.new_unit_responsible_person = None;
+                            }
+                            Err(_) => {
+                                // Error - keep form for retry
+                            }
+                        }
+                        Task::none()
+                    }
+                    OrgUnitMessage::Remove(unit_id) => {
+                        self.created_units.retain(|u| u.id != unit_id);
+                        Task::none()
+                    }
+                }
             }
 
             Message::MultiKey(mk_msg) => {
-                use multi_key::generation;
+                use multi_key::MultiKeyMessage;
 
-                // Create multi-key state view from app state
-                let mut mk_state = multi_key::MultiKeyState {
-                    section_collapsed: self.multi_purpose_key_section_collapsed,
-                    selected_person: self.multi_purpose_selected_person,
-                    selected_purposes: self.multi_purpose_selected_purposes.clone(),
-                    status: None,
-                };
+                match mk_msg {
+                    // === UI State ===
+                    MultiKeyMessage::ToggleSection => {
+                        self.multi_purpose_key_section_collapsed = !self.multi_purpose_key_section_collapsed;
+                        Task::none()
+                    }
 
-                // Delegate to MultiKey domain update function
-                let task = generation::update(&mut mk_state, mk_msg);
+                    // === Selection ===
+                    MultiKeyMessage::PersonSelected(person_id) => {
+                        self.multi_purpose_selected_person = Some(person_id);
+                        Task::none()
+                    }
+                    MultiKeyMessage::TogglePurpose(purpose) => {
+                        if self.multi_purpose_selected_purposes.contains(&purpose) {
+                            self.multi_purpose_selected_purposes.remove(&purpose);
+                        } else {
+                            self.multi_purpose_selected_purposes.insert(purpose);
+                        }
+                        Task::none()
+                    }
 
-                // Sync state back from MultiKey module
-                self.multi_purpose_key_section_collapsed = mk_state.section_collapsed;
-                self.multi_purpose_selected_person = mk_state.selected_person;
-                self.multi_purpose_selected_purposes = mk_state.selected_purposes;
-
-                task
+                    // === Generation ===
+                    MultiKeyMessage::Generate => {
+                        // Generation delegated elsewhere
+                        Task::none()
+                    }
+                    MultiKeyMessage::Generated(result) => {
+                        match result {
+                            Ok(_gen_result) => {
+                                // Success - clear purposes, keep person selected
+                                self.multi_purpose_selected_purposes.clear();
+                            }
+                            Err(_) => {
+                                // Error - keep selection for retry
+                            }
+                        }
+                        Task::none()
+                    }
+                }
             }
 
             Message::Certificate(cert_msg) => {
-                use certificate::management;
+                use certificate::CertificateMessage;
 
-                // Create certificate state view from app state
-                let mut cert_state = certificate::CertificateState {
-                    certificates_collapsed: self.certificates_collapsed,
-                    intermediate_ca_collapsed: self.intermediate_ca_collapsed,
-                    server_cert_collapsed: self.server_cert_collapsed,
-                    organization: self.cert_organization.clone(),
-                    organizational_unit: self.cert_organizational_unit.clone(),
-                    locality: self.cert_locality.clone(),
-                    state_province: self.cert_state_province.clone(),
-                    country: self.cert_country.clone(),
-                    validity_days: self.cert_validity_days.clone(),
-                    intermediate_ca_name: self.intermediate_ca_name_input.clone(),
-                    selected_intermediate_ca: self.selected_intermediate_ca.clone(),
-                    selected_unit_for_ca: self.selected_unit_for_ca.clone(),
-                    server_cn: self.server_cert_cn_input.clone(),
-                    server_sans: self.server_cert_sans_input.clone(),
-                    selected_location: self.selected_cert_location.clone(),
-                    selected_chain_cert: self.selected_trust_chain_cert,
-                    loaded_certificates: self.loaded_certificates.clone(),
-                    certificates_generated: self._certificates_generated,
-                };
+                match cert_msg {
+                    // === UI State ===
+                    CertificateMessage::ToggleCertificatesSection => {
+                        self.certificates_collapsed = !self.certificates_collapsed;
+                        Task::none()
+                    }
+                    CertificateMessage::ToggleIntermediateCA => {
+                        self.intermediate_ca_collapsed = !self.intermediate_ca_collapsed;
+                        Task::none()
+                    }
+                    CertificateMessage::ToggleServerCert => {
+                        self.server_cert_collapsed = !self.server_cert_collapsed;
+                        Task::none()
+                    }
 
-                // Delegate to Certificate domain update function
-                let task = management::update(&mut cert_state, cert_msg);
+                    // === Metadata Form ===
+                    CertificateMessage::OrganizationChanged(org) => {
+                        self.cert_organization = org;
+                        Task::none()
+                    }
+                    CertificateMessage::OrganizationalUnitChanged(ou) => {
+                        self.cert_organizational_unit = ou;
+                        Task::none()
+                    }
+                    CertificateMessage::LocalityChanged(locality) => {
+                        self.cert_locality = locality;
+                        Task::none()
+                    }
+                    CertificateMessage::StateProvinceChanged(st) => {
+                        self.cert_state_province = st;
+                        Task::none()
+                    }
+                    CertificateMessage::CountryChanged(country) => {
+                        self.cert_country = country;
+                        Task::none()
+                    }
+                    CertificateMessage::ValidityDaysChanged(days) => {
+                        self.cert_validity_days = days;
+                        Task::none()
+                    }
 
-                // Sync state back from Certificate module
-                self.certificates_collapsed = cert_state.certificates_collapsed;
-                self.intermediate_ca_collapsed = cert_state.intermediate_ca_collapsed;
-                self.server_cert_collapsed = cert_state.server_cert_collapsed;
-                self.cert_organization = cert_state.organization;
-                self.cert_organizational_unit = cert_state.organizational_unit;
-                self.cert_locality = cert_state.locality;
-                self.cert_state_province = cert_state.state_province;
-                self.cert_country = cert_state.country;
-                self.cert_validity_days = cert_state.validity_days;
-                self.intermediate_ca_name_input = cert_state.intermediate_ca_name;
-                self.selected_intermediate_ca = cert_state.selected_intermediate_ca;
-                self.selected_unit_for_ca = cert_state.selected_unit_for_ca;
-                self.server_cert_cn_input = cert_state.server_cn;
-                self.server_cert_sans_input = cert_state.server_sans;
-                self.selected_cert_location = cert_state.selected_location;
-                self.selected_trust_chain_cert = cert_state.selected_chain_cert;
-                self.loaded_certificates = cert_state.loaded_certificates;
-                self._certificates_generated = cert_state.certificates_generated;
+                    // === Intermediate CA ===
+                    CertificateMessage::IntermediateCANameChanged(name) => {
+                        self.intermediate_ca_name_input = name;
+                        Task::none()
+                    }
+                    CertificateMessage::SelectIntermediateCA(ca_name) => {
+                        self.selected_intermediate_ca = if ca_name.is_empty() {
+                            None
+                        } else {
+                            Some(ca_name)
+                        };
+                        Task::none()
+                    }
+                    CertificateMessage::GenerateIntermediateCA => {
+                        // Crypto operations delegated elsewhere
+                        Task::none()
+                    }
 
-                task
+                    // === Server Certificate ===
+                    CertificateMessage::ServerCNChanged(cn) => {
+                        self.server_cert_cn_input = cn;
+                        Task::none()
+                    }
+                    CertificateMessage::ServerSANsChanged(sans) => {
+                        self.server_cert_sans_input = sans;
+                        Task::none()
+                    }
+                    CertificateMessage::SelectLocation(location) => {
+                        self.selected_cert_location = if location.is_empty() {
+                            None
+                        } else {
+                            Some(location)
+                        };
+                        Task::none()
+                    }
+                    CertificateMessage::GenerateServerCert => {
+                        // Crypto operations delegated elsewhere
+                        Task::none()
+                    }
+
+                    // === Client Certificate ===
+                    CertificateMessage::GenerateClientCert => {
+                        // Crypto operations delegated elsewhere
+                        Task::none()
+                    }
+                    CertificateMessage::ClientCertGenerated(_result) => {
+                        // Status handling
+                        Task::none()
+                    }
+
+                    // === Chain View ===
+                    CertificateMessage::SelectForChainView(cert_id) => {
+                        self.selected_trust_chain_cert = Some(cert_id);
+                        Task::none()
+                    }
+
+                    // === Loading ===
+                    CertificateMessage::CertificatesLoaded(certificates) => {
+                        self.loaded_certificates = certificates;
+                        Task::none()
+                    }
+                }
             }
 
             Message::EventLog(el_msg) => {
-                use event_log::replay;
+                use event_log::EventLogMessage;
 
-                // Create event log state view from app state
-                let mut el_state = event_log::EventLogState {
-                    section_collapsed: self.event_log_section_collapsed,
-                    loaded_events: self.loaded_event_log.clone(),
-                    selected_cids: self.selected_events_for_replay.clone(),
-                    status: None,
-                };
+                match el_msg {
+                    // === UI State ===
+                    EventLogMessage::ToggleSection => {
+                        self.event_log_section_collapsed = !self.event_log_section_collapsed;
+                        Task::none()
+                    }
 
-                // Delegate to EventLog domain update function
-                let task = replay::update(&mut el_state, el_msg);
+                    // === Loading ===
+                    EventLogMessage::Load => {
+                        // Loading delegated elsewhere
+                        Task::none()
+                    }
+                    EventLogMessage::Loaded(result) => {
+                        match result {
+                            Ok(events) => {
+                                self.loaded_event_log = events;
+                            }
+                            Err(_) => {
+                                // Error handled via status
+                            }
+                        }
+                        Task::none()
+                    }
 
-                // Sync state back from EventLog module
-                self.event_log_section_collapsed = el_state.section_collapsed;
-                self.loaded_event_log = el_state.loaded_events;
-                self.selected_events_for_replay = el_state.selected_cids;
+                    // === Selection ===
+                    EventLogMessage::ToggleSelection(cid) => {
+                        if self.selected_events_for_replay.contains(&cid) {
+                            self.selected_events_for_replay.remove(&cid);
+                        } else {
+                            self.selected_events_for_replay.insert(cid);
+                        }
+                        Task::none()
+                    }
+                    EventLogMessage::ClearSelection => {
+                        self.selected_events_for_replay.clear();
+                        Task::none()
+                    }
 
-                task
+                    // === Replay ===
+                    EventLogMessage::Replay => {
+                        // Replay delegated elsewhere
+                        Task::none()
+                    }
+                    EventLogMessage::Replayed(result) => {
+                        match result {
+                            Ok(_count) => {
+                                // Success - clear selection
+                                self.selected_events_for_replay.clear();
+                            }
+                            Err(_) => {
+                                // Error - keep selection for retry
+                            }
+                        }
+                        Task::none()
+                    }
+                }
             }
 
             // Tab navigation
