@@ -86,6 +86,7 @@ pub mod nats;
 pub mod export;
 pub mod delegation;
 pub mod trustchain;
+pub mod location;
 
 #[cfg(test)]
 mod graph_integration_tests;
@@ -99,6 +100,7 @@ use nats::NatsMessage;
 use export::ExportMessage;
 use delegation::DelegationMessage;
 use trustchain::TrustChainMessage;
+use location::LocationMessage;
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
 use view_model::ViewModel;
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
@@ -846,6 +848,8 @@ pub enum Message {
     Delegation(DelegationMessage),
     /// Delegation to TrustChain bounded context (certificate verification)
     TrustChain(TrustChainMessage),
+    /// Delegation to Location bounded context (physical/virtual locations)
+    Location(LocationMessage),
 
     // ============================================================================
     // Tab Navigation
@@ -2277,6 +2281,39 @@ impl CimKeysApp {
                 self.trust_chain_section_collapsed = tc_state.trust_chain_section_collapsed;
                 self.selected_trust_chain_cert = tc_state.selected_trust_chain_cert;
                 self.trust_chain_verification_status = tc_state.trust_chain_verification_status;
+
+                task
+            }
+
+            Message::Location(loc_msg) => {
+                use location::management;
+
+                // Create location state view from app state
+                let mut loc_state = location::LocationState {
+                    new_location_name: self.new_location_name.clone(),
+                    new_location_type: self.new_location_type.clone(),
+                    new_location_street: self.new_location_street.clone(),
+                    new_location_city: self.new_location_city.clone(),
+                    new_location_region: self.new_location_region.clone(),
+                    new_location_country: self.new_location_country.clone(),
+                    new_location_postal: self.new_location_postal.clone(),
+                    new_location_url: self.new_location_url.clone(),
+                    loaded_locations: self.loaded_locations.clone(),
+                };
+
+                // Delegate to Location domain update function
+                let task = management::update(&mut loc_state, loc_msg);
+
+                // Sync state back from Location module
+                self.new_location_name = loc_state.new_location_name;
+                self.new_location_type = loc_state.new_location_type;
+                self.new_location_street = loc_state.new_location_street;
+                self.new_location_city = loc_state.new_location_city;
+                self.new_location_region = loc_state.new_location_region;
+                self.new_location_country = loc_state.new_location_country;
+                self.new_location_postal = loc_state.new_location_postal;
+                self.new_location_url = loc_state.new_location_url;
+                self.loaded_locations = loc_state.loaded_locations;
 
                 task
             }
