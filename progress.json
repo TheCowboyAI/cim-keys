@@ -1391,6 +1391,60 @@
         "Cargo.toml - async-nats, futures dependencies with nats-client feature"
       ],
       "notes": "Complete JetStream infrastructure for durable event streaming. Supports correlation/causation tracking, deduplication, batch publishing. Ready for integration tests with real NATS server."
+    },
+    "sprint_69": {
+      "name": "Extended Command Factory Coverage",
+      "status": "completed",
+      "started": "2026-01-07",
+      "completed": "2026-01-07",
+      "retrospective": "retrospectives/sprint_69.md",
+      "description": "Apply command factory pattern to remaining GUI create operations",
+      "tasks": [
+        {
+          "id": "69.1",
+          "description": "Create Location command factory",
+          "status": "completed"
+        },
+        {
+          "id": "69.2",
+          "description": "Wire OrgUnit handler to existing factory",
+          "status": "completed"
+        },
+        {
+          "id": "69.3",
+          "description": "Wire Location handler to factory",
+          "status": "completed"
+        },
+        {
+          "id": "69.4",
+          "description": "Note ServiceAccount needs command first",
+          "status": "completed"
+        },
+        {
+          "id": "69.5",
+          "description": "Write retrospective",
+          "status": "completed"
+        }
+      ],
+      "architecture": {
+        "flow": "GUI State \u2192 ViewModel Form \u2192 Command Factory \u2192 ACL Validation \u2192 Command \u2192 Domain Entity \u2192 Projection",
+        "handlers_pattern": "Form \u2192 Factory \u2192 Result with error accumulation"
+      },
+      "acceptance_criteria": [
+        "Location command factory created - ACHIEVED",
+        "OrgUnit handler uses factory - ACHIEVED",
+        "Location handler uses factory - ACHIEVED",
+        "All 1073 library tests pass - ACHIEVED"
+      ],
+      "results": {
+        "factory_files_created": 1,
+        "handlers_updated": 2,
+        "lines_modified": 120,
+        "manual_validation_removed": 35,
+        "factory_tests_added": 4,
+        "total_factory_tests": 25,
+        "tests_passing": 1073
+      }
     }
   },
   "retrospectives": {},
@@ -3153,7 +3207,7 @@
         }
       ],
       "architecture": {
-        "cid_flow": "Command → serde_json::to_vec() → blake3::hash() → DomainCid",
+        "cid_flow": "Command \u2192 serde_json::to_vec() \u2192 blake3::hash() \u2192 DomainCid",
         "trait": "ContentAddressable - blanket impl for all Serialize types",
         "wrapper": "CommandWithCid<C> - pairs command with its CID"
       },
@@ -3264,8 +3318,8 @@
         }
       ],
       "architecture": {
-        "before": "GUI State → Manual Validation → Direct Struct Creation → Projection",
-        "after": "GUI State → ViewModel Form → Command Factory → ACL Validation → Command → Projection",
+        "before": "GUI State \u2192 Manual Validation \u2192 Direct Struct Creation \u2192 Projection",
+        "after": "GUI State \u2192 ViewModel Form \u2192 Command Factory \u2192 ACL Validation \u2192 Command \u2192 Projection",
         "correlation": "Every command gets UUID v7 correlation_id for event tracing"
       },
       "acceptance_criteria": [

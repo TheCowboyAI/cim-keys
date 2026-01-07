@@ -50,10 +50,12 @@
 //! - **UUID v7**: Entity IDs use time-ordered UUIDs
 
 pub mod cid_support;
+pub mod location;
 pub mod organization;
 pub mod person;
 
 // Re-export factory functions
+pub use location::{create_location_command, LocationCommandResult};
 pub use organization::{
     create_organization_command, create_organizational_unit_command, OrganizationCommandResult,
     OrgUnitCommandResult,

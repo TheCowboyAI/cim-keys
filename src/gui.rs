@@ -118,10 +118,13 @@ use certificate::CertificateMessage;
 use event_log::EventLogMessage;
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
 use view_model::ViewModel;
-use view_state::{OrganizationForm, NewPersonForm};
+use view_state::{NewLocationForm, NewOrgUnitForm, NewPersonForm, OrganizationForm};
 
 // Command factory for FRP-compliant command creation (Sprint 68)
-use crate::command_factory::{create_organization_command, create_person_command};
+use crate::command_factory::{
+    create_location_command, create_organization_command, create_organizational_unit_command,
+    create_person_command,
+};
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
 // use kuramoto_firefly_shader::KuramotoFireflyShader;
 // use debug_firefly_shader::DebugFireflyShader;
@@ -3903,35 +3906,7 @@ impl CimKeysApp {
             }
 
             Message::AddLocation => {
-                // Validate inputs
-                if self.new_location_name.is_empty() {
-                    self.error_message = Some("Location name is required".to_string());
-                    return Task::none();
-                }
-
-                // Validate address fields for physical location
-                if self.new_location_street.is_empty() {
-                    self.error_message = Some("Street address is required".to_string());
-                    return Task::none();
-                }
-                if self.new_location_city.is_empty() {
-                    self.error_message = Some("City is required".to_string());
-                    return Task::none();
-                }
-                if self.new_location_region.is_empty() {
-                    self.error_message = Some("State/Region is required".to_string());
-                    return Task::none();
-                }
-                if self.new_location_country.is_empty() {
-                    self.error_message = Some("Country is required".to_string());
-                    return Task::none();
-                }
-                if self.new_location_postal.is_empty() {
-                    self.error_message = Some("Postal code is required".to_string());
-                    return Task::none();
-                }
-
-                // Validate domain is created
+                // Validate domain is created (precondition, not domain validation)
                 let org_id = match self.organization_id {
                     Some(id) => id,
                     None => {
@@ -3940,54 +3915,88 @@ impl CimKeysApp {
                     }
                 };
 
-                let location_id = Uuid::now_v7();
-                let location_name = self.new_location_name.clone();
-                let location_type = "Physical".to_string();
+                // Build form from GUI state (presentation → ViewModel)
+                let mut form = NewLocationForm::new()
+                    .with_name(self.new_location_name.clone())
+                    .with_street(self.new_location_street.clone())
+                    .with_city(self.new_location_city.clone())
+                    .with_region(self.new_location_region.clone())
+                    .with_country(self.new_location_country.clone())
+                    .with_postal(self.new_location_postal.clone());
 
-                // Clone address values for the async task
-                let street = self.new_location_street.clone();
-                let city = self.new_location_city.clone();
-                let region = self.new_location_region.clone();
-                let country = self.new_location_country.clone();
-                let postal = self.new_location_postal.clone();
-                let url = self.new_location_url.clone();
+                if !self.new_location_url.is_empty() {
+                    form = form.with_url(self.new_location_url.clone());
+                }
 
-                // Clear form fields immediately
-                self.new_location_name.clear();
-                self.new_location_type = None;
-                self.new_location_street.clear();
-                self.new_location_city.clear();
-                self.new_location_region.clear();
-                self.new_location_country.clear();
-                self.new_location_postal.clear();
-                self.new_location_url.clear();
+                if let Some(ref location_type) = self.new_location_type {
+                    form = form.with_location_type(location_type.clone());
+                }
 
-                // Persist to projection with full address details
-                let projection = self.projection.clone();
+                let correlation_id = Uuid::now_v7();
 
-                Task::perform(
-                    async move {
-                        let mut proj = projection.write().await;
-                        proj.add_location(
-                            location_id,
-                            location_name.clone(),
-                            location_type,
-                            org_id,
-                            Some(street),
-                            Some(city),
-                            Some(region),
-                            Some(country),
-                            Some(postal),
-                            if url.is_empty() { None } else { Some(url) },
+                // Use command factory (ACL validation + command creation)
+                match create_location_command(&form, Some(org_id), correlation_id) {
+                    Ok(command) => {
+                        // Extract validated data from command
+                        let location_id = command.location_id;
+                        let location_name = command.name.clone();
+                        let location_type = command.location_type.clone();
+
+                        // Clone address values for the async task
+                        let street = self.new_location_street.clone();
+                        let city = self.new_location_city.clone();
+                        let region = self.new_location_region.clone();
+                        let country = self.new_location_country.clone();
+                        let postal = self.new_location_postal.clone();
+                        let url = self.new_location_url.clone();
+
+                        // Clear form fields immediately
+                        self.new_location_name.clear();
+                        self.new_location_type = None;
+                        self.new_location_street.clear();
+                        self.new_location_city.clear();
+                        self.new_location_region.clear();
+                        self.new_location_country.clear();
+                        self.new_location_postal.clear();
+                        self.new_location_url.clear();
+
+                        // Persist to projection with full address details
+                        let projection = self.projection.clone();
+
+                        Task::perform(
+                            async move {
+                                let mut proj = projection.write().await;
+                                proj.add_location(
+                                    location_id,
+                                    location_name.clone(),
+                                    location_type,
+                                    org_id,
+                                    Some(street),
+                                    Some(city),
+                                    Some(region),
+                                    Some(country),
+                                    Some(postal),
+                                    if url.is_empty() { None } else { Some(url) },
+                                )
+                                .map(|_| format!("Added location: {}", location_name))
+                                .map_err(|e| format!("Failed to add location: {}", e))
+                            },
+                            |result| match result {
+                                Ok(msg) => Message::UpdateStatus(msg),
+                                Err(e) => Message::ShowError(e),
+                            }
                         )
-                        .map(|_| format!("Added location: {}", location_name))
-                        .map_err(|e| format!("Failed to add location: {}", e))
-                    },
-                    |result| match result {
-                        Ok(msg) => Message::UpdateStatus(msg),
-                        Err(e) => Message::ShowError(e),
                     }
-                )
+                    Err(validation_errors) => {
+                        // Format errors for GUI display (FRP: accumulate all errors)
+                        let error_messages: Vec<String> = validation_errors
+                            .iter()
+                            .map(|e| format!("{}: {}", e.field, e.message))
+                            .collect();
+                        self.error_message = Some(error_messages.join("\n"));
+                        Task::none()
+                    }
+                }
             }
 
             Message::RemoveLocation(location_id) => {
@@ -5182,58 +5191,86 @@ impl CimKeysApp {
             }
 
             Message::CreateOrganizationUnit => {
-                // Validate inputs
-                if self.new_unit_name.is_empty() {
-                    self.error_message = Some("Unit name is required".to_string());
-                    return Task::none();
+                use crate::domain::ids::UnitId;
+
+                // Build form from GUI state (presentation → ViewModel)
+                let mut form = NewOrgUnitForm::new()
+                    .with_name(self.new_unit_name.clone());
+
+                if let Some(ref unit_type) = self.new_unit_type {
+                    form = form.with_unit_type(unit_type.clone());
                 }
 
-                let unit_type = match &self.new_unit_type {
-                    Some(t) => t.clone(),
-                    None => {
-                        self.error_message = Some("Please select a unit type".to_string());
-                        return Task::none();
+                if let Some(ref parent_name) = self.new_unit_parent {
+                    // Convert parent name to UUID if it exists
+                    if let Some(parent) = self.created_units.iter().find(|u| &u.name == parent_name) {
+                        form = form.with_parent(parent.id.as_uuid().to_string());
                     }
-                };
+                }
 
-                // Create the organization unit
-                let mut unit = crate::domain::OrganizationUnit::new(
-                    self.new_unit_name.clone(),
-                    unit_type,
-                );
-
-                // Set optional fields
                 if !self.new_unit_nats_account.is_empty() {
-                    unit = unit.with_nats_account(&self.new_unit_nats_account);
+                    form = form.with_nats_account(self.new_unit_nats_account.clone());
                 }
 
                 if let Some(person_id) = self.new_unit_responsible_person {
-                    unit = unit.with_responsible_person(person_id);
+                    form = form.with_responsible_person(person_id);
                 }
 
-                // Find parent unit if specified
-                if let Some(ref parent_name) = self.new_unit_parent {
-                    if let Some(parent) = self.created_units.iter().find(|u| &u.name == parent_name) {
-                        unit = unit.with_parent(parent.id);
+                let correlation_id = Uuid::now_v7();
+
+                // Use command factory (ACL validation + command creation)
+                match create_organizational_unit_command(&form, correlation_id) {
+                    Ok(command) => {
+                        // Unit type is required for domain entity but optional in command
+                        let unit_type = match &self.new_unit_type {
+                            Some(t) => t.clone(),
+                            None => {
+                                self.error_message = Some("Please select a unit type".to_string());
+                                return Task::none();
+                            }
+                        };
+
+                        // Create domain entity using validated command data
+                        let unit = crate::domain::OrganizationUnit {
+                            id: UnitId::from_uuid(command.unit_id),
+                            name: command.name,
+                            unit_type,
+                            parent_unit_id: command.parent_id.map(UnitId::from_uuid),
+                            responsible_person_id: self.new_unit_responsible_person,
+                            nats_account_name: if self.new_unit_nats_account.is_empty() {
+                                None
+                            } else {
+                                Some(self.new_unit_nats_account.clone())
+                            },
+                        };
+
+                        // Add to created units list
+                        self.created_units.push(unit.clone());
+
+                        // Also add to loaded_units for CA selection
+                        self.loaded_units.push(unit.clone());
+
+                        // Clear the form
+                        self.new_unit_name.clear();
+                        self.new_unit_type = None;
+                        self.new_unit_parent = None;
+                        self.new_unit_nats_account.clear();
+                        self.new_unit_responsible_person = None;
+
+                        self.status_message = format!("Created organization unit: {}", unit.name);
+
+                        Task::done(Message::OrganizationUnitCreated(Ok(unit)))
+                    }
+                    Err(validation_errors) => {
+                        // Format errors for GUI display (FRP: accumulate all errors)
+                        let error_messages: Vec<String> = validation_errors
+                            .iter()
+                            .map(|e| format!("{}: {}", e.field, e.message))
+                            .collect();
+                        self.error_message = Some(error_messages.join("\n"));
+                        Task::none()
                     }
                 }
-
-                // Add to created units list
-                self.created_units.push(unit.clone());
-
-                // Also add to loaded_units for CA selection
-                self.loaded_units.push(unit.clone());
-
-                // Clear the form
-                self.new_unit_name.clear();
-                self.new_unit_type = None;
-                self.new_unit_parent = None;
-                self.new_unit_nats_account.clear();
-                self.new_unit_responsible_person = None;
-
-                self.status_message = format!("✅ Created organization unit: {}", unit.name);
-
-                Task::done(Message::OrganizationUnitCreated(Ok(unit)))
             }
 
             Message::OrganizationUnitCreated(result) => {
