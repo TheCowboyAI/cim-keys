@@ -88,6 +88,7 @@ pub mod delegation;
 pub mod trustchain;
 pub mod location;
 pub mod service_account;
+pub mod gpg;
 
 #[cfg(test)]
 mod graph_integration_tests;
@@ -103,6 +104,7 @@ use delegation::DelegationMessage;
 use trustchain::TrustChainMessage;
 use location::LocationMessage;
 use service_account::ServiceAccountMessage;
+use gpg::GpgMessage;
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
 use view_model::ViewModel;
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
@@ -854,6 +856,8 @@ pub enum Message {
     Location(LocationMessage),
     /// Delegation to Service Account bounded context (automated systems)
     ServiceAccount(ServiceAccountMessage),
+    /// Delegation to GPG Keys bounded context (GPG/PGP key generation)
+    Gpg(GpgMessage),
 
     // ============================================================================
     // Tab Navigation
@@ -2345,6 +2349,35 @@ impl CimKeysApp {
                 self.new_service_account_owning_unit = sa_state.new_owning_unit;
                 self.new_service_account_responsible_person = sa_state.new_responsible_person;
                 self.created_service_accounts = sa_state.created_service_accounts;
+
+                task
+            }
+
+            Message::Gpg(gpg_msg) => {
+                use gpg::generation;
+
+                // Create GPG state view from app state
+                let mut gpg_state = gpg::GpgState {
+                    section_collapsed: self.gpg_section_collapsed,
+                    user_id: self.gpg_user_id.clone(),
+                    key_type: self.gpg_key_type,
+                    key_length: self.gpg_key_length.clone(),
+                    expires_days: self.gpg_expires_days.clone(),
+                    generation_status: self.gpg_generation_status.clone(),
+                    generated_keys: self.generated_gpg_keys.clone(),
+                };
+
+                // Delegate to GPG domain update function
+                let task = generation::update(&mut gpg_state, gpg_msg);
+
+                // Sync state back from GPG module
+                self.gpg_section_collapsed = gpg_state.section_collapsed;
+                self.gpg_user_id = gpg_state.user_id;
+                self.gpg_key_type = gpg_state.key_type;
+                self.gpg_key_length = gpg_state.key_length;
+                self.gpg_expires_days = gpg_state.expires_days;
+                self.gpg_generation_status = gpg_state.generation_status;
+                self.generated_gpg_keys = gpg_state.generated_keys;
 
                 task
             }
