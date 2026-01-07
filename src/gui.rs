@@ -5484,7 +5484,7 @@ impl CimKeysApp {
             }
 
             Message::CreateDelegation => {
-                // Validate inputs
+                // Validate inputs (GUI-level validation for immediate feedback)
                 let from_person_id = match self.delegation_from_person {
                     Some(id) => id,
                     None => {
@@ -5506,7 +5506,7 @@ impl CimKeysApp {
                     return Task::none();
                 }
 
-                // Find person names
+                // Find person names for display
                 let from_name = self.loaded_people.iter()
                     .find(|p| p.person_id == from_person_id)
                     .map(|p| p.name.clone())
@@ -5517,35 +5517,67 @@ impl CimKeysApp {
                     .map(|p| p.name.clone())
                     .unwrap_or_else(|| "Unknown".to_string());
 
-                // Parse expiration days
-                let expires_at = if self.delegation_expires_days.is_empty() {
-                    None
-                } else {
+                // Build CQRS command using builder pattern (Sprint 73)
+                use crate::commands::{KeyCommand, CreateDelegation as CreateDelegationCmd};
+
+                let permissions: Vec<_> = self.delegation_permissions.iter().cloned().collect();
+                let mut cmd = CreateDelegationCmd::new(from_person_id, to_person_id, permissions);
+
+                // Set expiration if specified
+                if !self.delegation_expires_days.is_empty() {
                     match self.delegation_expires_days.parse::<i64>() {
                         Ok(days) if days > 0 => {
-                            Some(chrono::Utc::now() + chrono::Duration::days(days))
+                            cmd = cmd.with_expiration_days(days);
                         }
                         _ => {
                             self.error_message = Some("Invalid expiration days (must be positive number or empty)".to_string());
                             return Task::none();
                         }
                     }
-                };
+                }
 
-                // Create the delegation entry
-                let entry = DelegationEntry {
-                    id: uuid::Uuid::now_v7(),
-                    from_person_id,
-                    from_person_name: from_name.clone(),
-                    to_person_id,
-                    to_person_name: to_name.clone(),
-                    permissions: self.delegation_permissions.iter().cloned().collect(),
-                    created_at: chrono::Utc::now(),
-                    expires_at,
-                    is_active: true,
-                };
+                // Clone Arc references for async task
+                let aggregate = self.aggregate.clone();
+                let projection = self.projection.clone();
 
-                Task::done(Message::DelegationCreated(Ok(entry)))
+                // Process command through aggregate (CQRS pattern)
+                Task::perform(
+                    async move {
+                        let aggregate_read = aggregate.read().await;
+                        let projection_read = projection.read().await;
+
+                        let events = aggregate_read.handle_command(
+                            KeyCommand::CreateDelegation(cmd.clone()),
+                            &projection_read,
+                            None, // No NATS port in offline mode
+                            #[cfg(feature = "policy")]
+                            None  // No policy engine in GUI yet
+                        ).await
+                        .map_err(|e| e.to_string())?;
+
+                        // Extract delegation info from emitted event
+                        for event in &events {
+                            if let crate::events::DomainEvent::Delegation(
+                                crate::events::DelegationEvents::DelegationCreated(evt)
+                            ) = event {
+                                return Ok(DelegationEntry {
+                                    id: evt.delegation_id,
+                                    from_person_id: evt.delegator_id,
+                                    from_person_name: from_name,
+                                    to_person_id: evt.delegate_id,
+                                    to_person_name: to_name,
+                                    permissions: evt.permissions.clone(),
+                                    created_at: evt.created_at,
+                                    expires_at: evt.valid_until,
+                                    is_active: true,
+                                });
+                            }
+                        }
+
+                        Err("No DelegationCreated event emitted".to_string())
+                    },
+                    Message::DelegationCreated
+                )
             }
 
             Message::DelegationCreated(result) => {
@@ -5573,19 +5605,56 @@ impl CimKeysApp {
             }
 
             Message::RevokeDelegation(delegation_id) => {
-                // Find and deactivate the delegation
-                if let Some(delegation) = self.active_delegations.iter_mut().find(|d| d.id == delegation_id) {
-                    delegation.is_active = false;
-                    Task::done(Message::DelegationRevoked(Ok(delegation_id)))
-                } else {
-                    Task::done(Message::DelegationRevoked(Err("Delegation not found".to_string())))
-                }
+                // Build CQRS command for revocation (Sprint 74)
+                use crate::commands::{KeyCommand, RevokeDelegation as RevokeDelegationCmd, RevocationReason};
+
+                // Find the delegation to get revoker info
+                let revoker_id = self.active_delegations.iter()
+                    .find(|d| d.id == delegation_id)
+                    .map(|d| d.from_person_id) // Delegator revokes by default
+                    .unwrap_or_else(uuid::Uuid::now_v7);
+
+                let cmd = RevokeDelegationCmd {
+                    command_id: uuid::Uuid::now_v7(),
+                    delegation_id,
+                    revoked_by: revoker_id,
+                    reason: RevocationReason::DelegatorRevoked,
+                    correlation_id: uuid::Uuid::now_v7(),
+                    causation_id: None,
+                    timestamp: chrono::Utc::now(),
+                };
+
+                // Clone Arc references for async task
+                let aggregate = self.aggregate.clone();
+                let projection = self.projection.clone();
+
+                // Process command through aggregate (CQRS pattern)
+                Task::perform(
+                    async move {
+                        let aggregate_read = aggregate.read().await;
+                        let projection_read = projection.read().await;
+
+                        aggregate_read.handle_command(
+                            KeyCommand::RevokeDelegation(cmd),
+                            &projection_read,
+                            None, // No NATS port in offline mode
+                            #[cfg(feature = "policy")]
+                            None  // No policy engine in GUI yet
+                        ).await
+                        .map_err(|e| e.to_string())?;
+
+                        Ok(delegation_id)
+                    },
+                    Message::DelegationRevoked
+                )
             }
 
             Message::DelegationRevoked(result) => {
                 match result {
                     Ok(delegation_id) => {
-                        if let Some(delegation) = self.active_delegations.iter().find(|d| d.id == delegation_id) {
+                        // Find and mark delegation as inactive in GUI state
+                        if let Some(delegation) = self.active_delegations.iter_mut().find(|d| d.id == delegation_id) {
+                            delegation.is_active = false;
                             self.status_message = format!(
                                 "Delegation revoked: {} -> {}",
                                 delegation.from_person_name,
