@@ -1507,8 +1507,8 @@
         "persistence_layer": "CID → NATS JetStream - content-addressed message storage"
       },
       "tasks": [
-        { "id": "64.1", "description": "Consult DDD expert on ViewModel → ValueObject composition pattern", "status": "pending" },
-        { "id": "64.2", "description": "Consult FRP expert on UI Element → ViewModel binding", "status": "pending" },
+        { "id": "64.1", "description": "Consult DDD expert on ViewModel → ValueObject composition pattern", "status": "completed" },
+        { "id": "64.2", "description": "Consult FRP expert on UI Element → ViewModel binding", "status": "completed" },
         { "id": "64.3", "description": "Review cim-domain formal_domain traits", "status": "pending" },
         { "id": "64.4", "description": "Define which gui/view_state structs compose into which ValueObjects", "status": "pending" },
         { "id": "64.5", "description": "Implement ValueObject trait for domain types", "status": "pending" },
