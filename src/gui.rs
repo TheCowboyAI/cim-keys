@@ -78,10 +78,11 @@ pub mod state_machine_svg;
 pub mod state_machine_view;
 pub mod graph_buttons;
 
-// Domain-bounded modules (Sprint 48-50 refactoring)
+// Domain-bounded modules (Sprint 48-51 refactoring)
 pub mod domains;
 pub mod pki;
 pub mod yubikey;
+pub mod nats;
 
 #[cfg(test)]
 mod graph_integration_tests;
@@ -91,6 +92,7 @@ use crate::lifting::Injection;
 use domains::OrganizationMessage;
 use pki::PkiMessage;
 use yubikey::YubiKeyMessage;
+use nats::NatsMessage;
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
 use view_model::ViewModel;
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
@@ -830,6 +832,8 @@ pub enum Message {
     Pki(PkiMessage),
     /// Delegation to YubiKey bounded context
     YubiKey(YubiKeyMessage),
+    /// Delegation to NATS bounded context
+    Nats(NatsMessage),
 
     // ============================================================================
     // Tab Navigation
@@ -2172,6 +2176,52 @@ impl CimKeysApp {
                 self.yubikey_registration_name = yk_state.yubikey_registration_name;
                 self.registered_yubikeys = yk_state.registered_yubikeys;
                 self.filter_show_yubikey = yk_state.filter_show_yubikey;
+
+                task
+            }
+
+            // ================================================================
+            // NATS Domain Message Delegation (Sprint 51)
+            // ================================================================
+            Message::Nats(nats_msg) => {
+                use nats::infrastructure;
+
+                // Create NATS state view from app state
+                let mut nats_state = nats::NatsState {
+                    nats_bootstrap: self.nats_bootstrap.clone(),
+                    include_nats_config: self.include_nats_config,
+                    nats_hierarchy_generated: self.nats_hierarchy_generated,
+                    nats_operator_id: self.nats_operator_id,
+                    nats_export_path: self.nats_export_path.clone(),
+                    nats_viz_section_collapsed: self.nats_viz_section_collapsed,
+                    nats_viz_expanded_accounts: self.nats_viz_expanded_accounts.clone(),
+                    nats_viz_selected_operator: self.nats_viz_selected_operator,
+                    nats_viz_selected_account: self.nats_viz_selected_account.clone(),
+                    nats_viz_selected_user: self.nats_viz_selected_user.clone(),
+                    nats_viz_hierarchy_data: self.nats_viz_hierarchy_data.clone(),
+                    nats_section_collapsed: self.nats_section_collapsed,
+                    filter_show_nats: self.filter_show_nats,
+                };
+
+                // Delegate to NATS domain update function
+                let task = infrastructure::update(&mut nats_state, nats_msg);
+
+                // Sync state back from NATS module
+                self.nats_bootstrap = nats_state.nats_bootstrap;
+                self.include_nats_config = nats_state.include_nats_config;
+                self.nats_hierarchy_generated = nats_state.nats_hierarchy_generated;
+                self.nats_operator_id = nats_state.nats_operator_id;
+                self.nats_export_path = nats_state.nats_export_path;
+                self.nats_viz_section_collapsed = nats_state.nats_viz_section_collapsed;
+                self.nats_viz_expanded_accounts = nats_state.nats_viz_expanded_accounts;
+                self.nats_viz_selected_operator = nats_state.nats_viz_selected_operator;
+                self.nats_viz_selected_account = nats_state.nats_viz_selected_account;
+                self.nats_viz_selected_user = nats_state.nats_viz_selected_user;
+                self.nats_viz_hierarchy_data = nats_state.nats_viz_hierarchy_data;
+                self.nats_section_collapsed = nats_state.nats_section_collapsed;
+                // Sync filter_show_nats to org_graph as well
+                self.filter_show_nats = nats_state.filter_show_nats;
+                self.org_graph.filter_show_nats = nats_state.filter_show_nats;
 
                 task
             }
