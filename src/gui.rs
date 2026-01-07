@@ -78,13 +78,14 @@ pub mod state_machine_svg;
 pub mod state_machine_view;
 pub mod graph_buttons;
 
-// Domain-bounded modules (Sprint 48-53 refactoring)
+// Domain-bounded modules (Sprint 48-54 refactoring)
 pub mod domains;
 pub mod pki;
 pub mod yubikey;
 pub mod nats;
 pub mod export;
 pub mod delegation;
+pub mod trustchain;
 
 #[cfg(test)]
 mod graph_integration_tests;
@@ -97,6 +98,7 @@ use yubikey::YubiKeyMessage;
 use nats::NatsMessage;
 use export::ExportMessage;
 use delegation::DelegationMessage;
+use trustchain::TrustChainMessage;
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
 use view_model::ViewModel;
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
@@ -842,6 +844,8 @@ pub enum Message {
     Export(ExportMessage),
     /// Delegation to Delegation bounded context (authorization)
     Delegation(DelegationMessage),
+    /// Delegation to TrustChain bounded context (certificate verification)
+    TrustChain(TrustChainMessage),
 
     // ============================================================================
     // Tab Navigation
@@ -1467,40 +1471,11 @@ impl SlotInfo {
     }
 }
 
-/// Status of a certificate in the trust chain verification
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum TrustChainStatus {
-    /// Not yet verified
-    Pending,
-    /// Chain verified successfully to a trusted root
-    Verified {
-        chain_length: usize,
-        root_subject: String,
-    },
-    /// Chain verification failed
-    Failed {
-        reason: String,
-    },
-    /// Certificate is expired
-    Expired {
-        expired_at: chrono::DateTime<chrono::Utc>,
-    },
-    /// Certificate is self-signed (root)
-    SelfSigned,
-    /// Issuer certificate not found
-    IssuerNotFound {
-        expected_issuer: String,
-    },
-}
-
-impl Default for TrustChainStatus {
-    fn default() -> Self {
-        TrustChainStatus::Pending
-    }
-}
-
 // DelegationEntry moved to delegation::authorization module (Sprint 53)
 pub use delegation::DelegationEntry;
+
+// TrustChainStatus moved to trustchain::verification module (Sprint 54)
+pub use trustchain::TrustChainStatus;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NatsHierarchy {
@@ -2281,6 +2256,27 @@ impl CimKeysApp {
                 self.delegation_permissions = del_state.delegation_permissions;
                 self.delegation_expires_days = del_state.delegation_expires_days;
                 self.active_delegations = del_state.active_delegations;
+
+                task
+            }
+
+            Message::TrustChain(tc_msg) => {
+                use trustchain::verification;
+
+                // Create trust chain state view from app state
+                let mut tc_state = trustchain::TrustChainState {
+                    trust_chain_section_collapsed: self.trust_chain_section_collapsed,
+                    selected_trust_chain_cert: self.selected_trust_chain_cert,
+                    trust_chain_verification_status: self.trust_chain_verification_status.clone(),
+                };
+
+                // Delegate to TrustChain domain update function
+                let task = verification::update(&mut tc_state, tc_msg);
+
+                // Sync state back from TrustChain module
+                self.trust_chain_section_collapsed = tc_state.trust_chain_section_collapsed;
+                self.selected_trust_chain_cert = tc_state.selected_trust_chain_cert;
+                self.trust_chain_verification_status = tc_state.trust_chain_verification_status;
 
                 task
             }
