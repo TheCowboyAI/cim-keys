@@ -118,12 +118,12 @@ use certificate::CertificateMessage;
 use event_log::EventLogMessage;
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
 use view_model::ViewModel;
-use view_state::{NewLocationForm, NewOrgUnitForm, NewPersonForm, OrganizationForm};
+use view_state::{NewLocationForm, NewOrgUnitForm, NewPersonForm, NewServiceAccountForm, OrganizationForm};
 
 // Command factory for FRP-compliant command creation (Sprint 68)
 use crate::command_factory::{
     create_location_command, create_organization_command, create_organizational_unit_command,
-    create_person_command,
+    create_person_command, create_service_account_command,
 };
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
 // use kuramoto_firefly_shader::KuramotoFireflyShader;
@@ -5324,53 +5324,57 @@ impl CimKeysApp {
             }
 
             Message::CreateServiceAccount => {
-                // Validate inputs
-                if self.new_service_account_name.is_empty() {
-                    self.error_message = Some("Service account name is required".to_string());
-                    return Task::none();
+                // Build form from GUI state (presentation → ViewModel)
+                let mut form = NewServiceAccountForm::new()
+                    .with_name(self.new_service_account_name.clone())
+                    .with_purpose(self.new_service_account_purpose.clone());
+
+                if let Some(unit_id) = self.new_service_account_owning_unit {
+                    form = form.with_owning_unit(unit_id);
                 }
 
-                if self.new_service_account_purpose.is_empty() {
-                    self.error_message = Some("Service account purpose is required".to_string());
-                    return Task::none();
+                if let Some(person_id) = self.new_service_account_responsible_person {
+                    form = form.with_responsible_person(person_id);
                 }
 
-                let owning_unit_id = match &self.new_service_account_owning_unit {
-                    Some(id) => *id,
-                    None => {
-                        self.error_message = Some("Please select an owning organizational unit".to_string());
-                        return Task::none();
+                let correlation_id = Uuid::now_v7();
+
+                // Use command factory (ACL validation + command creation)
+                match create_service_account_command(&form, correlation_id) {
+                    Ok(command) => {
+                        // Create domain entity using validated command data
+                        let service_account = crate::domain::ServiceAccount {
+                            id: command.service_account_id,
+                            name: command.name,
+                            purpose: command.purpose,
+                            owning_unit_id: command.owning_unit_id,
+                            responsible_person_id: command.responsible_person_id,
+                            active: true,
+                        };
+
+                        // Add to created list
+                        self.created_service_accounts.push(service_account.clone());
+
+                        // Clear form
+                        self.new_service_account_name.clear();
+                        self.new_service_account_purpose.clear();
+                        self.new_service_account_owning_unit = None;
+                        self.new_service_account_responsible_person = None;
+
+                        self.status_message = format!("Created service account: {}", service_account.name);
+
+                        Task::done(Message::ServiceAccountCreated(Ok(service_account)))
                     }
-                };
-
-                let responsible_person_id = match &self.new_service_account_responsible_person {
-                    Some(id) => *id,
-                    None => {
-                        self.error_message = Some("A responsible person is required for service accounts".to_string());
-                        return Task::none();
+                    Err(validation_errors) => {
+                        // Format errors for GUI display (FRP: accumulate all errors)
+                        let error_messages: Vec<String> = validation_errors
+                            .iter()
+                            .map(|e| format!("{}: {}", e.field, e.message))
+                            .collect();
+                        self.error_message = Some(error_messages.join("\n"));
+                        Task::none()
                     }
-                };
-
-                // Create the service account
-                let service_account = crate::domain::ServiceAccount::new(
-                    self.new_service_account_name.clone(),
-                    self.new_service_account_purpose.clone(),
-                    owning_unit_id,
-                    responsible_person_id,
-                );
-
-                // Add to created list
-                self.created_service_accounts.push(service_account.clone());
-
-                // Clear form
-                self.new_service_account_name.clear();
-                self.new_service_account_purpose.clear();
-                self.new_service_account_owning_unit = None;
-                self.new_service_account_responsible_person = None;
-
-                self.status_message = format!("Created service account: {}", service_account.name);
-
-                Task::done(Message::ServiceAccountCreated(Ok(service_account)))
+                }
             }
 
             Message::ServiceAccountCreated(result) => {

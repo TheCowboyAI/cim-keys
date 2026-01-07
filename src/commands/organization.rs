@@ -75,6 +75,23 @@ pub struct CreateOrganizationalUnit {
     pub timestamp: DateTime<Utc>,
 }
 
+/// Command to create a service account
+///
+/// Service accounts require accountability: every service account must have
+/// a responsible person who is accountable for its operations and security.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateServiceAccount {
+    pub command_id: Uuid,
+    pub service_account_id: Uuid,
+    pub name: String,
+    pub purpose: String,
+    pub owning_unit_id: Uuid,
+    pub responsible_person_id: Uuid,
+    pub correlation_id: Uuid,
+    pub causation_id: Option<Uuid>,
+    pub timestamp: DateTime<Utc>,
+}
+
 /// Command to create a role
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateRole {

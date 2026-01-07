@@ -53,6 +53,7 @@ pub mod cid_support;
 pub mod location;
 pub mod organization;
 pub mod person;
+pub mod service_account;
 
 // Re-export factory functions
 pub use location::{create_location_command, LocationCommandResult};
@@ -61,6 +62,7 @@ pub use organization::{
     OrgUnitCommandResult,
 };
 pub use person::{create_person_command, PersonCommandResult};
+pub use service_account::{create_service_account_command, ServiceAccountCommandResult};
 
 // Re-export error types from ACL
 pub use crate::acl::{NonEmptyVec, ValidationError};

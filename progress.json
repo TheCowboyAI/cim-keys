@@ -1445,6 +1445,55 @@
         "total_factory_tests": 25,
         "tests_passing": 1073
       }
+    },
+    "sprint_70": {
+      "name": "ServiceAccount Command Factory",
+      "status": "completed",
+      "started": "2026-01-07",
+      "completed": "2026-01-07",
+      "retrospective": "retrospectives/sprint_70.md",
+      "description": "Complete command factory coverage with ServiceAccount command and factory",
+      "tasks": [
+        {
+          "id": "70.1",
+          "description": "Create CreateServiceAccount command",
+          "status": "completed"
+        },
+        {
+          "id": "70.2",
+          "description": "Create ServiceAccount command factory",
+          "status": "completed"
+        },
+        {
+          "id": "70.3",
+          "description": "Wire GUI handler to factory",
+          "status": "completed"
+        },
+        {
+          "id": "70.4",
+          "description": "Write retrospective",
+          "status": "completed"
+        }
+      ],
+      "architecture": {
+        "accountability": "Every ServiceAccount requires owning_unit_id and responsible_person_id",
+        "validation": "4 required fields: name, purpose, owning_unit, responsible_person"
+      },
+      "acceptance_criteria": [
+        "CreateServiceAccount command created - ACHIEVED",
+        "ServiceAccount factory with accountability validation - ACHIEVED",
+        "GUI handler uses factory - ACHIEVED",
+        "All 1078 library tests pass - ACHIEVED"
+      ],
+      "results": {
+        "commands_added": 1,
+        "factory_files_created": 1,
+        "handlers_updated": 1,
+        "lines_modified": 150,
+        "factory_tests_added": 5,
+        "total_factory_tests": 30,
+        "tests_passing": 1078
+      }
     }
   },
   "retrospectives": {},
