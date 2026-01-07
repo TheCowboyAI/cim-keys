@@ -1214,6 +1214,19 @@ pub enum Message {
         serial: String,
     },
 
+    // Export State Machine Transitions (Sprint 79)
+    PkiPrepareExport,
+    PkiExportReady {
+        manifest_id: Uuid,
+    },
+    PkiExecuteExport {
+        export_path: std::path::PathBuf,
+    },
+    PkiBootstrapComplete {
+        export_location: Uuid,
+        export_checksum: String,
+    },
+
     // YubiKey operations
     YubiKeyDataLoaded(Vec<crate::projections::YubiKeyEntry>, Vec<crate::projections::PersonEntry>),
     ProvisionYubiKeysFromGraph,  // Graph-first YubiKey provisioning
@@ -6517,6 +6530,26 @@ impl CimKeysApp {
 
             Message::ExportToSDCard => {
                 use crate::projection::{Projection, manifest_to_export, ExportToFilesystemProjection};
+                use crate::state_machines::workflows::PKIBootstrapState;
+
+                // Sprint 79: Check PKI state machine (warn if not ready)
+                match &self.pki_state {
+                    PKIBootstrapState::ExportReady { .. } | PKIBootstrapState::Bootstrapped { .. } => {
+                        // Ideal state - export is ready
+                        tracing::info!("PKI state machine: Export initiated from valid state");
+                    }
+                    PKIBootstrapState::YubiKeysProvisioned { .. } => {
+                        // Valid but should prepare first
+                        tracing::warn!("PKI state machine: Exporting before PkiPrepareExport called");
+                    }
+                    _ => {
+                        // Not in export-ready state, warn but allow
+                        tracing::warn!(
+                            "PKI state machine: Exporting in early state {:?}. Full PKI chain not complete.",
+                            self.pki_state
+                        );
+                    }
+                }
 
                 self.status_message = "Building SD Card export package...".to_string();
 
@@ -9906,6 +9939,115 @@ impl CimKeysApp {
                 tracing::info!(
                     "YubiKey {} provisioning complete. PKI state: {:?}",
                     serial,
+                    self.pki_state
+                );
+
+                Task::none()
+            }
+
+            // Export State Machine Handlers (Sprint 79)
+            Message::PkiPrepareExport => {
+                use crate::state_machines::workflows::PKIBootstrapState;
+
+                // Validate state transition using state machine guard
+                if !self.pki_state.can_prepare_export() {
+                    self.error_message = Some(format!(
+                        "Cannot prepare export in current state: {:?}. Provision YubiKeys first.",
+                        self.pki_state
+                    ));
+                    return Task::none();
+                }
+
+                // Generate manifest ID
+                let manifest_id = Uuid::now_v7();
+
+                self.status_message = format!(
+                    "Preparing export manifest (ID: {})...",
+                    manifest_id
+                );
+
+                tracing::info!(
+                    "PKI state machine: Preparing export. Manifest ID: {}",
+                    manifest_id
+                );
+
+                // Emit the ExportReady message to transition state
+                Task::done(Message::PkiExportReady { manifest_id })
+            }
+
+            Message::PkiExportReady { manifest_id } => {
+                use crate::state_machines::workflows::PKIBootstrapState;
+
+                // Transition to ExportReady state
+                self.pki_state = PKIBootstrapState::ExportReady {
+                    manifest_id,
+                };
+
+                self.status_message = format!(
+                    "Export manifest ready! ID: {}. Ready for export.",
+                    manifest_id
+                );
+
+                tracing::info!(
+                    "PKI state machine: Export ready. State: {:?}",
+                    self.pki_state
+                );
+
+                Task::none()
+            }
+
+            Message::PkiExecuteExport { export_path } => {
+                use crate::state_machines::workflows::PKIBootstrapState;
+
+                // Validate state transition using state machine guard
+                if !self.pki_state.can_export() {
+                    self.error_message = Some(format!(
+                        "Cannot execute export in current state: {:?}. Prepare export first.",
+                        self.pki_state
+                    ));
+                    return Task::none();
+                }
+
+                self.status_message = format!(
+                    "Executing export to: {}...",
+                    export_path.display()
+                );
+
+                tracing::info!(
+                    "PKI state machine: Executing export to {}",
+                    export_path.display()
+                );
+
+                // Generate export location ID and checksum
+                let export_location = Uuid::now_v7();
+                let export_checksum = format!("sha256:{}", Uuid::now_v7()); // Placeholder
+
+                // Emit completion message
+                Task::done(Message::PkiBootstrapComplete {
+                    export_location,
+                    export_checksum,
+                })
+            }
+
+            Message::PkiBootstrapComplete { export_location, export_checksum } => {
+                use crate::state_machines::workflows::PKIBootstrapState;
+                use chrono::Utc;
+
+                // Transition to Bootstrapped state - FINAL STATE
+                self.pki_state = PKIBootstrapState::Bootstrapped {
+                    export_location,
+                    export_checksum: export_checksum.clone(),
+                    bootstrapped_at: Utc::now(),
+                };
+
+                self.status_message = format!(
+                    "PKI Bootstrap COMPLETE! Export location: {}, Checksum: {}",
+                    export_location,
+                    &export_checksum[..20]
+                );
+
+                tracing::info!(
+                    "PKI state machine: Bootstrap complete! Final state: {:?}",
                     self.pki_state
                 );
 
