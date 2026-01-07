@@ -3170,6 +3170,64 @@
         "tests_added": 7,
         "total_command_factory_tests": 21
       }
+    },
+    "sprint_67": {
+      "name": "Unified Event CID Support",
+      "status": "completed",
+      "started": "2026-01-07",
+      "completed": "2026-01-07",
+      "retrospective": "retrospectives/sprint_67.md",
+      "description": "Add cim_domain::cid (Blake3) support to EventEnvelope for unified content addressing",
+      "tasks": [
+        {
+          "id": "67.1",
+          "description": "Review existing event CID infrastructure (ipld_support)",
+          "status": "completed"
+        },
+        {
+          "id": "67.2",
+          "description": "Add domain_cid field to EventEnvelope",
+          "status": "completed"
+        },
+        {
+          "id": "67.3",
+          "description": "Implement with_domain_cid() using cim_domain::cid",
+          "status": "completed"
+        },
+        {
+          "id": "67.4",
+          "description": "Add message_id() convenience method",
+          "status": "completed"
+        },
+        {
+          "id": "67.5",
+          "description": "Add 6 tests for event domain CID",
+          "status": "completed"
+        },
+        {
+          "id": "67.6",
+          "description": "Write retrospective",
+          "status": "completed"
+        }
+      ],
+      "architecture": {
+        "dual_cid": "IPLD CID (SHA2-256) for external, Domain CID (Blake3) for internal",
+        "message_id": "Prefers domain_cid, falls back to ipld cid",
+        "cid_target": "CID generated from inner event, not envelope metadata"
+      },
+      "acceptance_criteria": [
+        "Domain CID uses cim_domain::cid infrastructure - ACHIEVED",
+        "Same event content produces same CID - ACHIEVED",
+        "message_id() returns preferred CID for NATS - ACHIEVED",
+        "All 12 event tests pass - ACHIEVED"
+      ],
+      "results": {
+        "lines_modified": 80,
+        "new_methods": 4,
+        "new_fields": 1,
+        "tests_added": 6,
+        "total_event_tests": 12
+      }
     }
   }
 }

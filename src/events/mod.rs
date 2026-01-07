@@ -161,6 +161,12 @@ pub struct EventEnvelope {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cid: Option<String>,
 
+    /// Domain CID for fast content addressing using Blake3
+    /// Generated from the event content using cim_domain::cid infrastructure.
+    /// Use this for NATS JetStream deduplication and internal operations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain_cid: Option<String>,
+
     /// The wrapped domain event
     #[serde(flatten)]
     pub event: DomainEvent,
@@ -180,6 +186,7 @@ impl EventEnvelope {
             nats_subject: Self::default_subject(&event),
             timestamp: chrono::Utc::now(),
             cid: None,
+            domain_cid: None,
             event,
         }
     }
@@ -241,6 +248,39 @@ impl EventEnvelope {
     /// Get the CID string if present
     pub fn cid_string(&self) -> Option<&str> {
         self.cid.as_deref()
+    }
+
+    /// Generate and attach a Domain CID using cim_domain::cid infrastructure
+    ///
+    /// Uses Blake3 hashing for fast content addressing. This is optimized for:
+    /// - NATS JetStream message deduplication
+    /// - Internal event deduplication
+    /// - Fast integrity checks
+    ///
+    /// For standard IPLD compatibility (IPFS ecosystem), use `with_cid()` instead.
+    pub fn with_domain_cid(mut self) -> Result<Self, String> {
+        use cim_domain::cid::{generate_cid, ContentType};
+        let cid = generate_cid(&self.event, ContentType::Event)?;
+        self.domain_cid = Some(cid.to_string());
+        Ok(self)
+    }
+
+    /// Check if this envelope has a Domain CID attached
+    pub fn has_domain_cid(&self) -> bool {
+        self.domain_cid.is_some()
+    }
+
+    /// Get the Domain CID string if present
+    pub fn domain_cid_string(&self) -> Option<&str> {
+        self.domain_cid.as_deref()
+    }
+
+    /// Get the preferred CID for NATS message ID (domain CID if present, else IPLD CID)
+    ///
+    /// Returns the domain CID (Blake3) if available, falling back to IPLD CID.
+    /// Domain CID is preferred for NATS because it's faster to compute.
+    pub fn message_id(&self) -> Option<&str> {
+        self.domain_cid.as_deref().or(self.cid.as_deref())
     }
 
     /// Set a custom NATS subject for this event
@@ -365,5 +405,130 @@ impl EventChainBuilder {
 impl Default for EventChainBuilder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uuid::Uuid;
+
+    fn make_test_event() -> DomainEvent {
+        use organization::OrganizationCreatedEvent;
+        DomainEvent::Organization(OrganizationEvents::OrganizationCreated(OrganizationCreatedEvent {
+            organization_id: Uuid::parse_str("019447d8-1234-7000-8000-000000000001").unwrap(),
+            name: "Test Org".to_string(),
+            domain: Some("testorg.com".to_string()),
+            correlation_id: Uuid::now_v7(),
+            causation_id: None,
+        }))
+    }
+
+    #[test]
+    fn test_event_envelope_new() {
+        let event = make_test_event();
+        let correlation_id = Uuid::now_v7();
+        let envelope = EventEnvelope::new(event, correlation_id, None);
+
+        assert_eq!(envelope.correlation_id, correlation_id);
+        assert!(envelope.causation_id.is_none());
+        assert!(!envelope.has_cid());
+        assert!(!envelope.has_domain_cid());
+    }
+
+    #[test]
+    fn test_domain_cid_generation() {
+        let event = make_test_event();
+        let correlation_id = Uuid::now_v7();
+        let envelope = EventEnvelope::new(event, correlation_id, None)
+            .with_domain_cid()
+            .expect("Domain CID generation should succeed");
+
+        assert!(envelope.has_domain_cid());
+        assert!(envelope.domain_cid_string().is_some());
+        let cid = envelope.domain_cid_string().unwrap();
+        assert!(!cid.is_empty());
+    }
+
+    #[test]
+    fn test_same_event_same_domain_cid() {
+        // Create two identical events with deterministic IDs
+        let fixed_correlation = Uuid::parse_str("019447d8-5678-7000-8000-000000000099").unwrap();
+        let event1 = DomainEvent::Organization(OrganizationEvents::OrganizationCreated(
+            organization::OrganizationCreatedEvent {
+                organization_id: Uuid::parse_str("019447d8-1234-7000-8000-000000000001").unwrap(),
+                name: "Test Org".to_string(),
+                domain: Some("testorg.com".to_string()),
+                correlation_id: fixed_correlation,
+                causation_id: None,
+            },
+        ));
+        let event2 = DomainEvent::Organization(OrganizationEvents::OrganizationCreated(
+            organization::OrganizationCreatedEvent {
+                organization_id: Uuid::parse_str("019447d8-1234-7000-8000-000000000001").unwrap(),
+                name: "Test Org".to_string(),
+                domain: Some("testorg.com".to_string()),
+                correlation_id: fixed_correlation,
+                causation_id: None,
+            },
+        ));
+
+        // Generate CIDs directly from events (not envelopes)
+        use cim_domain::cid::{generate_cid, ContentType};
+        let cid1 = generate_cid(&event1, ContentType::Event).unwrap();
+        let cid2 = generate_cid(&event2, ContentType::Event).unwrap();
+
+        // Same event content = same CID (deterministic)
+        assert_eq!(cid1, cid2);
+    }
+
+    #[test]
+    fn test_message_id_prefers_domain_cid() {
+        let event = make_test_event();
+        let correlation_id = Uuid::now_v7();
+
+        // Without any CID
+        let envelope = EventEnvelope::new(event.clone(), correlation_id, None);
+        assert!(envelope.message_id().is_none());
+
+        // With domain CID
+        let envelope_with_cid = EventEnvelope::new(event, correlation_id, None)
+            .with_domain_cid()
+            .unwrap();
+        assert!(envelope_with_cid.message_id().is_some());
+        assert_eq!(
+            envelope_with_cid.message_id(),
+            envelope_with_cid.domain_cid_string()
+        );
+    }
+
+    #[test]
+    fn test_event_chain_builder() {
+        let mut builder = EventChainBuilder::new();
+        let event1 = make_test_event();
+        let event2 = make_test_event();
+
+        let env1 = builder.envelope(event1);
+        let env2 = builder.envelope(event2);
+
+        // Events should be correlated
+        assert!(env1.is_correlated_with(&env2));
+
+        // Second event should be caused by first
+        assert!(env2.is_caused_by(&env1));
+    }
+
+    #[test]
+    fn test_event_chain_with_domain_cid() {
+        let mut builder = EventChainBuilder::new();
+        let event = make_test_event();
+
+        let envelope = builder
+            .envelope(event)
+            .with_domain_cid()
+            .expect("CID generation should succeed");
+
+        assert!(envelope.has_domain_cid());
+        assert!(envelope.message_id().is_some());
     }
 }
