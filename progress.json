@@ -1487,6 +1487,57 @@
         "Backward compatibility maintained via serde defaults - ACHIEVED",
         "All 63 organization/event tests pass - ACHIEVED"
       ]
+    },
+    "sprint_64": {
+      "name": "CIM Architecture Foundation - ViewModel/ValueObject/CID Pipeline",
+      "status": "in_progress",
+      "started": "2026-01-07",
+      "completed": null,
+      "retrospective": null,
+      "description": "Establish proper CIM architecture: UI Elements → ViewModel (FRP) → ValueObject → CID → NATS JetStream. Use cim-domain traits, not custom abstractions.",
+      "methodology": {
+        "no_oop_fallback": true,
+        "use_experts": ["ddd-expert", "frp-expert", "fp-expert", "cim-expert"],
+        "patterns": ["DDD", "FP", "FRP", "ACT"]
+      },
+      "architecture": {
+        "ui_layer": "UI Elements (TextBox, Button, etc.) - just UI, not domain",
+        "viewmodel_layer": "ViewModel - FRP-bound to UI, composes ValueObjects",
+        "valueobject_layer": "ValueObject - immutable, CID identity, implements cim_domain::formal_domain::ValueObject",
+        "persistence_layer": "CID → NATS JetStream - content-addressed message storage"
+      },
+      "tasks": [
+        { "id": "64.1", "description": "Consult DDD expert on ViewModel → ValueObject composition pattern", "status": "pending" },
+        { "id": "64.2", "description": "Consult FRP expert on UI Element → ViewModel binding", "status": "pending" },
+        { "id": "64.3", "description": "Review cim-domain formal_domain traits", "status": "pending" },
+        { "id": "64.4", "description": "Define which gui/view_state structs compose into which ValueObjects", "status": "pending" },
+        { "id": "64.5", "description": "Implement ValueObject trait for domain types", "status": "pending" },
+        { "id": "64.6", "description": "Implement ViewModel → ValueObject composition functions", "status": "pending" },
+        { "id": "64.7", "description": "Add CID generation on ValueObject persistence", "status": "pending" },
+        { "id": "64.8", "description": "Run all tests and verify", "status": "pending" },
+        { "id": "64.9", "description": "Write retrospective", "status": "pending" }
+      ],
+      "key_principles": [
+        "ValueObject: Immutable, CID identity, compared by value (cim_domain::formal_domain::ValueObject)",
+        "Entity: Collection of ValueObjects with EntityId (cim_domain::formal_domain::FormalDomainEntity)",
+        "Aggregate: Collection of Entities, consistency boundary, Mealy State Machine",
+        "Saga: Collection of Aggregates, long-running transactions",
+        "ViewModel: FRP-bound to UI, ephemeral, composes into ValueObjects for persistence",
+        "CID: Content-addressed identity for persistence/NATS, not for ephemeral ViewModels"
+      ],
+      "results": {
+        "expert_consultations": [],
+        "valueobjects_implemented": 0,
+        "viewmodel_compositions": 0,
+        "total_tests": null
+      },
+      "acceptance_criteria": [
+        "DDD/FRP expert consultations documented",
+        "ViewModel → ValueObject mapping defined",
+        "ValueObject trait implemented for domain types",
+        "CID generation on persistence",
+        "All tests pass"
+      ]
     }
   }
 }
