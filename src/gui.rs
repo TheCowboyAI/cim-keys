@@ -92,6 +92,7 @@ pub mod gpg;
 pub mod recovery;
 pub mod org_unit;
 pub mod multi_key;
+pub mod certificate;
 
 #[cfg(test)]
 mod graph_integration_tests;
@@ -111,6 +112,7 @@ use gpg::GpgMessage;
 use recovery::RecoveryMessage;
 use org_unit::OrgUnitMessage;
 use multi_key::MultiKeyMessage;
+use certificate::CertificateMessage;
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
 use view_model::ViewModel;
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
@@ -870,6 +872,8 @@ pub enum Message {
     OrgUnit(OrgUnitMessage),
     /// Delegation to Multi-Purpose Key bounded context (batch key generation)
     MultiKey(MultiKeyMessage),
+    /// Delegation to Certificate bounded context (X.509 certificate management)
+    Certificate(CertificateMessage),
 
     // ============================================================================
     // Tab Navigation
@@ -2468,6 +2472,57 @@ impl CimKeysApp {
                 self.multi_purpose_key_section_collapsed = mk_state.section_collapsed;
                 self.multi_purpose_selected_person = mk_state.selected_person;
                 self.multi_purpose_selected_purposes = mk_state.selected_purposes;
+
+                task
+            }
+
+            Message::Certificate(cert_msg) => {
+                use certificate::management;
+
+                // Create certificate state view from app state
+                let mut cert_state = certificate::CertificateState {
+                    certificates_collapsed: self.certificates_collapsed,
+                    intermediate_ca_collapsed: self.intermediate_ca_collapsed,
+                    server_cert_collapsed: self.server_cert_collapsed,
+                    organization: self.cert_organization.clone(),
+                    organizational_unit: self.cert_organizational_unit.clone(),
+                    locality: self.cert_locality.clone(),
+                    state_province: self.cert_state_province.clone(),
+                    country: self.cert_country.clone(),
+                    validity_days: self.cert_validity_days.clone(),
+                    intermediate_ca_name: self.intermediate_ca_name_input.clone(),
+                    selected_intermediate_ca: self.selected_intermediate_ca.clone(),
+                    selected_unit_for_ca: self.selected_unit_for_ca.clone(),
+                    server_cn: self.server_cert_cn_input.clone(),
+                    server_sans: self.server_cert_sans_input.clone(),
+                    selected_location: self.selected_cert_location.clone(),
+                    selected_chain_cert: self.selected_trust_chain_cert,
+                    loaded_certificates: self.loaded_certificates.clone(),
+                    certificates_generated: self._certificates_generated,
+                };
+
+                // Delegate to Certificate domain update function
+                let task = management::update(&mut cert_state, cert_msg);
+
+                // Sync state back from Certificate module
+                self.certificates_collapsed = cert_state.certificates_collapsed;
+                self.intermediate_ca_collapsed = cert_state.intermediate_ca_collapsed;
+                self.server_cert_collapsed = cert_state.server_cert_collapsed;
+                self.cert_organization = cert_state.organization;
+                self.cert_organizational_unit = cert_state.organizational_unit;
+                self.cert_locality = cert_state.locality;
+                self.cert_state_province = cert_state.state_province;
+                self.cert_country = cert_state.country;
+                self.cert_validity_days = cert_state.validity_days;
+                self.intermediate_ca_name_input = cert_state.intermediate_ca_name;
+                self.selected_intermediate_ca = cert_state.selected_intermediate_ca;
+                self.selected_unit_for_ca = cert_state.selected_unit_for_ca;
+                self.server_cert_cn_input = cert_state.server_cn;
+                self.server_cert_sans_input = cert_state.server_sans;
+                self.selected_cert_location = cert_state.selected_location;
+                self.selected_trust_chain_cert = cert_state.selected_chain_cert;
+                self.loaded_certificates = cert_state.loaded_certificates;
+                self._certificates_generated = cert_state.certificates_generated;
 
                 task
             }
