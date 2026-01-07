@@ -1,69 +1,50 @@
 // Copyright (c) 2025 - Cowboy AI, LLC.
 
-//! Command Factory Module
+//! Command Factory Module (Curried FP)
 //!
-//! This module provides factory functions for creating domain commands from
-//! GUI ViewModels. It integrates with the ACL (Anti-Corruption Layer) to:
+//! This module provides curried factory functions for creating domain commands
+//! from GUI ViewModels. Following true functional programming principles:
 //!
-//! 1. Validate ViewModels using pure validation functions
-//! 2. Translate to domain ValueObjects on successful validation
-//! 3. Create properly formed Commands with correlation/causation tracking
+//! - **Currying**: Functions return functions for partial application
+//! - **Composition**: Chain factories in pipelines
+//! - **Reusability**: Fix context once, apply to many forms
 //!
 //! ## Architecture Flow
 //!
 //! ```text
-//! ViewModel (GUI) → validate() → ValidatedForm → translate() → ValueObjects → create_command() → Command
+//! correlation_id → org_id → &form → Result<Command, ValidationErrors>
 //! ```
 //!
 //! ## Usage
 //!
 //! ```rust,ignore
-//! use crate::command_factory::{create_organization_command, create_person_command};
-//! use crate::gui::view_state::{OrganizationForm, NewPersonForm};
+//! use crate::command_factory::curried::{person, organization};
 //!
-//! // Create organization command from GUI form
-//! let form = OrganizationForm::new()
-//!     .with_name("Cowboy AI".to_string())
-//!     .with_domain("cowboyai.dev".to_string())
-//!     .with_admin_email("admin@cowboyai.dev".to_string());
+//! // Full curried application
+//! let cmd = organization::create(correlation_id)(&form)?;
 //!
-//! match create_organization_command(&form, correlation_id) {
-//!     Ok(command) => {
-//!         // Command is ready to be sent to aggregate
-//!         aggregate.handle(command)?;
-//!     }
-//!     Err(errors) => {
-//!         // Return validation errors to GUI for user feedback
-//!         for error in errors.iter() {
-//!             show_error(error.field, error.message);
-//!         }
-//!     }
-//! }
+//! // Partial application - reusable factory
+//! let for_org = person::create(correlation_id)(Some(org_id));
+//! let cmd1 = for_org(&form1)?;
+//! let cmd2 = for_org(&form2)?;
 //! ```
 //!
 //! ## Key Properties
 //!
 //! - **Pure Functions**: All factory functions are pure (no side effects)
-//! - **Validation First**: Commands only created after validation passes
+//! - **Curried**: Each function returns a function until fully applied
 //! - **Error Accumulation**: All validation errors returned, not just first
 //! - **Correlation Tracking**: Commands include correlation/causation IDs
 //! - **UUID v7**: Entity IDs use time-ordered UUIDs
 
 pub mod cid_support;
 pub mod curried;
-pub mod location;
-pub mod organization;
-pub mod person;
-pub mod service_account;
 
-// Re-export factory functions
-pub use location::{create_location_command, LocationCommandResult};
-pub use organization::{
-    create_organization_command, create_organizational_unit_command, OrganizationCommandResult,
-    OrgUnitCommandResult,
+// Re-export curried factories for convenience
+pub use curried::{
+    person, organization, org_unit, location, service_account,
+    PersonResult, OrganizationResult, OrgUnitResult, LocationResult, ServiceAccountResult,
 };
-pub use person::{create_person_command, PersonCommandResult};
-pub use service_account::{create_service_account_command, ServiceAccountCommandResult};
 
 // Re-export error types from ACL
 pub use crate::acl::{NonEmptyVec, ValidationError};
@@ -73,7 +54,7 @@ pub use cid_support::{generate_command_cid, commands_equal, CommandWithCid, Cont
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::curried::{person, organization};
     use crate::gui::view_state::{NewPersonForm, OrganizationForm};
     use crate::domain::KeyOwnerRole;
     use uuid::Uuid;
@@ -86,7 +67,7 @@ mod tests {
             .with_admin_email("admin@testorg.com".to_string());
 
         let correlation_id = Uuid::now_v7();
-        let result = create_organization_command(&form, correlation_id);
+        let result = organization::create(correlation_id)(&form);
 
         assert!(result.is_ok());
         let cmd = result.unwrap();
@@ -103,7 +84,7 @@ mod tests {
             .with_admin_email("not-an-email".to_string()); // Invalid email
 
         let correlation_id = Uuid::now_v7();
-        let result = create_organization_command(&form, correlation_id);
+        let result = organization::create(correlation_id)(&form);
 
         assert!(result.is_err());
         let errors = result.unwrap_err();
@@ -120,7 +101,7 @@ mod tests {
 
         let correlation_id = Uuid::now_v7();
         let organization_id = Some(Uuid::now_v7());
-        let result = create_person_command(&form, organization_id, correlation_id);
+        let result = person::create(correlation_id)(organization_id)(&form);
 
         assert!(result.is_ok());
         let cmd = result.unwrap();
@@ -136,7 +117,7 @@ mod tests {
             .with_email("bad-email".to_string()); // No @ - invalid
 
         let correlation_id = Uuid::now_v7();
-        let result = create_person_command(&form, None, correlation_id);
+        let result = person::create(correlation_id)(None)(&form);
 
         assert!(result.is_err());
         let errors = result.unwrap_err();

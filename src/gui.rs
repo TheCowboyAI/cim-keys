@@ -120,10 +120,12 @@ use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
 use view_model::ViewModel;
 use view_state::{NewLocationForm, NewOrgUnitForm, NewPersonForm, NewServiceAccountForm, OrganizationForm};
 
-// Command factory for FRP-compliant command creation (Sprint 68)
+// Command factory for FRP-compliant command creation (Curried FP - Sprint 72)
 use crate::command_factory::{
-    create_location_command, create_organization_command, create_organizational_unit_command,
-    create_person_command, create_service_account_command,
+    person as person_factory, organization as org_factory,
+    org_unit as org_unit_factory, location as location_factory,
+    service_account as sa_factory,
+    PersonResult, OrganizationResult, OrgUnitResult, LocationResult, ServiceAccountResult,
 };
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
 // use kuramoto_firefly_shader::KuramotoFireflyShader;
@@ -3106,8 +3108,9 @@ impl CimKeysApp {
                 // Create correlation ID for event tracing
                 let correlation_id = Uuid::now_v7();
 
-                // Use command factory (ACL validation + command creation)
-                match create_organization_command(&form, correlation_id) {
+                // Use curried command factory (ACL validation + command creation)
+                let result: OrganizationResult = org_factory::create(correlation_id)(&form);
+                match result {
                     Ok(command) => {
                         // Validation passed - use command data
                         let org_id = command.organization_id;
@@ -3793,8 +3796,9 @@ impl CimKeysApp {
                 // Create correlation ID for event tracing
                 let correlation_id = Uuid::now_v7();
 
-                // Use command factory (ACL validation + command creation)
-                match create_person_command(&form, Some(org_uuid), correlation_id) {
+                // Use curried command factory (ACL validation + command creation)
+                let result: PersonResult = person_factory::create(correlation_id)(Some(org_uuid))(&form);
+                match result {
                     Ok(command) => {
                         // Validation passed - create Person from validated command
                         let person = Person {
@@ -3934,8 +3938,9 @@ impl CimKeysApp {
 
                 let correlation_id = Uuid::now_v7();
 
-                // Use command factory (ACL validation + command creation)
-                match create_location_command(&form, Some(org_id), correlation_id) {
+                // Use curried command factory (ACL validation + command creation)
+                let result: LocationResult = location_factory::create(correlation_id)(Some(org_id))(&form);
+                match result {
                     Ok(command) => {
                         // Extract validated data from command
                         let location_id = command.location_id;
@@ -5218,8 +5223,9 @@ impl CimKeysApp {
 
                 let correlation_id = Uuid::now_v7();
 
-                // Use command factory (ACL validation + command creation)
-                match create_organizational_unit_command(&form, correlation_id) {
+                // Use curried command factory (ACL validation + command creation)
+                let result: OrgUnitResult = org_unit_factory::create(correlation_id)(&form);
+                match result {
                     Ok(command) => {
                         // Unit type is required for domain entity but optional in command
                         let unit_type = match &self.new_unit_type {
@@ -5339,8 +5345,9 @@ impl CimKeysApp {
 
                 let correlation_id = Uuid::now_v7();
 
-                // Use command factory (ACL validation + command creation)
-                match create_service_account_command(&form, correlation_id) {
+                // Use curried command factory (ACL validation + command creation)
+                let result: ServiceAccountResult = sa_factory::create(correlation_id)(&form);
+                match result {
                     Ok(command) => {
                         // Create domain entity using validated command data
                         let service_account = crate::domain::ServiceAccount {
