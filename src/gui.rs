@@ -87,6 +87,7 @@ pub mod export;
 pub mod delegation;
 pub mod trustchain;
 pub mod location;
+pub mod service_account;
 
 #[cfg(test)]
 mod graph_integration_tests;
@@ -101,6 +102,7 @@ use export::ExportMessage;
 use delegation::DelegationMessage;
 use trustchain::TrustChainMessage;
 use location::LocationMessage;
+use service_account::ServiceAccountMessage;
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
 use view_model::ViewModel;
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
@@ -850,6 +852,8 @@ pub enum Message {
     TrustChain(TrustChainMessage),
     /// Delegation to Location bounded context (physical/virtual locations)
     Location(LocationMessage),
+    /// Delegation to Service Account bounded context (automated systems)
+    ServiceAccount(ServiceAccountMessage),
 
     // ============================================================================
     // Tab Navigation
@@ -2314,6 +2318,33 @@ impl CimKeysApp {
                 self.new_location_postal = loc_state.new_location_postal;
                 self.new_location_url = loc_state.new_location_url;
                 self.loaded_locations = loc_state.loaded_locations;
+
+                task
+            }
+
+            Message::ServiceAccount(sa_msg) => {
+                use service_account::management;
+
+                // Create service account state view from app state
+                let mut sa_state = service_account::ServiceAccountState {
+                    section_collapsed: self.service_account_section_collapsed,
+                    new_name: self.new_service_account_name.clone(),
+                    new_purpose: self.new_service_account_purpose.clone(),
+                    new_owning_unit: self.new_service_account_owning_unit,
+                    new_responsible_person: self.new_service_account_responsible_person,
+                    created_service_accounts: self.created_service_accounts.clone(),
+                };
+
+                // Delegate to Service Account domain update function
+                let task = management::update(&mut sa_state, sa_msg);
+
+                // Sync state back from Service Account module
+                self.service_account_section_collapsed = sa_state.section_collapsed;
+                self.new_service_account_name = sa_state.new_name;
+                self.new_service_account_purpose = sa_state.new_purpose;
+                self.new_service_account_owning_unit = sa_state.new_owning_unit;
+                self.new_service_account_responsible_person = sa_state.new_responsible_person;
+                self.created_service_accounts = sa_state.created_service_accounts;
 
                 task
             }
