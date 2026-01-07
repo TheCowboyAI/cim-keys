@@ -135,13 +135,46 @@ impl YubiKeyPort for YubiKeyCliAdapter {
 
     async fn import_certificate(
         &self,
-        _serial: &str,
-        _slot: PivSlot,
-        _certificate: &[u8],
-        _pin: &SecureString,
+        serial: &str,
+        slot: PivSlot,
+        certificate: &[u8],
+        pin: &SecureString,
     ) -> Result<(), YubiKeyError> {
-        // TODO: Implement certificate import
-        Err(YubiKeyError::NotSupported("Certificate import not yet implemented".to_string()))
+        let slot_id = match slot {
+            PivSlot::Authentication => "9a",
+            PivSlot::Signature => "9c",
+            PivSlot::KeyManagement => "9d",
+            PivSlot::CardAuth => "9e",
+            PivSlot::Retired(n) => return Err(YubiKeyError::NotSupported(format!("Retired slot {} not yet implemented", n))),
+        };
+
+        // Write certificate to temporary file (ykman requires file input)
+        let temp_dir = std::env::temp_dir();
+        let cert_path = temp_dir.join(format!("yubikey_cert_{}.pem", uuid::Uuid::now_v7()));
+        std::fs::write(&cert_path, certificate)
+            .map_err(|e| YubiKeyError::OperationError(format!("Failed to write temp cert: {}", e)))?;
+
+        let pin_str = String::from_utf8_lossy(pin.as_bytes());
+
+        let output = Command::new("ykman")
+            .args(["--device", serial])
+            .args(["piv", "certificates", "import"])
+            .args(["--pin", pin_str.as_ref()])
+            .args(["--verify"])
+            .arg(slot_id)
+            .arg(&cert_path)
+            .output()
+            .map_err(|e| YubiKeyError::OperationError(format!("Failed to import certificate: {}", e)))?;
+
+        // Clean up temp file
+        let _ = std::fs::remove_file(&cert_path);
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(YubiKeyError::CertificateImportFailed(format!("{}", stderr)));
+        }
+
+        Ok(())
     }
 
     async fn sign_with_slot(
@@ -224,10 +257,31 @@ impl YubiKeyPort for YubiKeyCliAdapter {
 
     async fn get_attestation(
         &self,
-        _serial: &str,
-        _slot: PivSlot,
+        serial: &str,
+        slot: PivSlot,
     ) -> Result<Vec<u8>, YubiKeyError> {
-        Err(YubiKeyError::NotSupported("Attestation not yet implemented".to_string()))
+        let slot_id = match slot {
+            PivSlot::Authentication => "9a",
+            PivSlot::Signature => "9c",
+            PivSlot::KeyManagement => "9d",
+            PivSlot::CardAuth => "9e",
+            PivSlot::Retired(n) => return Err(YubiKeyError::NotSupported(format!("Retired slot {} attestation not yet implemented", n))),
+        };
+
+        let output = Command::new("ykman")
+            .args(["--device", serial])
+            .args(["piv", "keys", "attest"])
+            .arg(slot_id)
+            .arg("-")  // Output to stdout
+            .output()
+            .map_err(|e| YubiKeyError::OperationError(format!("Failed to get attestation: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(YubiKeyError::AttestationFailed(format!("{}", stderr)));
+        }
+
+        Ok(output.stdout)
     }
 
     async fn set_chuid(
