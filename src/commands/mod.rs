@@ -29,6 +29,7 @@ pub mod nats_account;
 pub mod nats_user;
 pub mod relationship;
 pub mod manifest;
+pub mod delegation;
 
 // Re-export command types
 pub use nats_identity::{
@@ -52,6 +53,11 @@ pub use nsc_export::{
     ExportToNscStore, NscExportCompleted, NscAccountCredentials, NscUserCredentials,
 };
 
+pub use delegation::{
+    CreateDelegation, RevokeDelegation, RevocationReason,
+    handle_create_delegation, handle_revoke_delegation,
+};
+
 // Legacy command wrapper for backward compatibility with GUI and tests
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum KeyCommand {
@@ -66,6 +72,10 @@ pub enum KeyCommand {
     CreateOrganization(organization::CreateOrganization),
     CreatePerson(organization::CreatePerson),
     CreateLocation(organization::CreateLocation),
+
+    // Delegation operations
+    CreateDelegation(delegation::CreateDelegation),
+    RevokeDelegation(delegation::RevokeDelegation),
 }
 
 // Legacy command structures for backward compatibility
