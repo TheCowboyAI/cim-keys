@@ -118,6 +118,10 @@ use certificate::CertificateMessage;
 use event_log::EventLogMessage;
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
 use view_model::ViewModel;
+use view_state::{OrganizationForm, NewPersonForm};
+
+// Command factory for FRP-compliant command creation (Sprint 68)
+use crate::command_factory::{create_organization_command, create_person_command};
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
 // use kuramoto_firefly_shader::KuramotoFireflyShader;
 // use debug_firefly_shader::DebugFireflyShader;
@@ -3055,22 +3059,12 @@ impl CimKeysApp {
 
             // Domain operations
             Message::CreateNewDomain => {
-                // Validate inputs
-                if self.organization_name.is_empty() {
-                    self.error_message = Some("Organization name is required".to_string());
-                    return Task::none();
-                }
-                if self.organization_domain.is_empty() {
-                    self.error_message = Some("Domain is required".to_string());
-                    return Task::none();
-                }
+                // Sprint 68: Use command factory for FRP-compliant validation
 
-                // Check for duplicate organization (if one already exists)
-                // Use try_read to avoid blocking - if we can't get lock, skip check
+                // Check for duplicate organization (precondition - not part of domain validation)
                 if let Ok(proj) = self.projection.try_read() {
                     let existing_org = proj.get_organization();
                     if !existing_org.name.is_empty() {
-                        // Organization already exists - warn user
                         self.error_message = Some(format!(
                             "An organization '{}' already exists. Load or import existing domain instead, or clear data first.",
                             existing_org.name
@@ -3079,7 +3073,7 @@ impl CimKeysApp {
                     }
                 }
 
-                // Validate passphrase
+                // Validate passphrase (security concern, separate from organization domain)
                 let passphrase_matches = self.master_passphrase == self.master_passphrase_confirm;
                 let long_enough = self.master_passphrase.len() >= 12;
                 let has_upper = self.master_passphrase.chars().any(|c| c.is_uppercase());
@@ -3100,32 +3094,56 @@ impl CimKeysApp {
                     return Task::none();
                 }
 
-                // Create organization in projection
-                let projection = self.projection.clone();
-                let org_name = self.organization_name.clone();
-                let org_domain = self.organization_domain.clone();
-                let org_id = Uuid::now_v7();  // Generate organization ID
+                // Build form from GUI state (presentation → ViewModel)
+                let form = OrganizationForm::new()
+                    .with_name(self.organization_name.clone())
+                    .with_domain(self.organization_domain.clone())
+                    .with_admin_email(self.admin_email.clone());
 
-                // Store the org_id for use in person creation
-                self.organization_id = Some(org_id);
+                // Create correlation ID for event tracing
+                let correlation_id = Uuid::now_v7();
 
-                let country = self.cert_country.clone();
-                let admin_email = self.admin_email.clone();
+                // Use command factory (ACL validation + command creation)
+                match create_organization_command(&form, correlation_id) {
+                    Ok(command) => {
+                        // Validation passed - use command data
+                        let org_id = command.organization_id;
+                        let org_name = command.name.clone();
+                        let org_domain = command.domain.clone().unwrap_or_default();
 
-                Task::perform(
-                    async move {
-                        let mut proj = projection.write().await;
-                        proj.set_organization(
-                            org_name.clone(),
-                            org_domain.clone(),
-                            country,
-                            admin_email,
+                        // Store the org_id for use in person creation
+                        self.organization_id = Some(org_id);
+                        self.error_message = None;
+
+                        let projection = self.projection.clone();
+                        let country = self.cert_country.clone();
+                        let admin_email = self.admin_email.clone();
+
+                        Task::perform(
+                            async move {
+                                let mut proj = projection.write().await;
+                                proj.set_organization(
+                                    org_name.clone(),
+                                    org_domain,
+                                    country,
+                                    admin_email,
+                                )
+                                .map(|_| format!("Created domain: {}", org_name))
+                                .map_err(|e| format!("Failed to create domain: {}", e))
+                            },
+                            Message::DomainCreated
                         )
-                        .map(|_| format!("Created domain: {}", org_name))
-                        .map_err(|e| format!("Failed to create domain: {}", e))
-                    },
-                    Message::DomainCreated
-                )
+                    }
+                    Err(validation_errors) => {
+                        // Validation failed - format errors for GUI display
+                        let error_messages: Vec<String> = validation_errors
+                            .iter()
+                            .map(|e| format!("{}: {}", e.field, e.message))
+                            .collect();
+                        self.error_message = Some(error_messages.join("\n"));
+                        Task::none()
+                    }
+                }
             }
 
             Message::LoadExistingDomain => {
@@ -3750,19 +3768,9 @@ impl CimKeysApp {
             }
 
             Message::AddPerson => {
-                // Validate inputs
-                if self.new_person_name.is_empty() || self.new_person_email.is_empty() {
-                    self.error_message = Some("Please enter name and email".to_string());
-                    return Task::none();
-                }
+                // Sprint 68: Use command factory for FRP-compliant validation
 
-                // Validate role is selected
-                if self.new_person_role.is_none() {
-                    self.error_message = Some("Please select a role".to_string());
-                    return Task::none();
-                }
-
-                // Validate domain is created
+                // Validate domain is created first (precondition)
                 let org_uuid = match self.organization_id {
                     Some(id) => id,
                     None => {
@@ -3771,48 +3779,74 @@ impl CimKeysApp {
                     }
                 };
 
-                let person = Person {
-                    id: BootstrapPersonId::new(),
-                    name: self.new_person_name.clone(),
-                    email: self.new_person_email.clone(),
-                    organization_id: BootstrapOrgId::from_uuid(org_uuid),
-                    unit_ids: vec![],
-                    roles: vec![],
-                    nats_permissions: None,
-                    active: true,
-                    owner_id: None,
-                };
+                // Build form from GUI state (presentation → ViewModel)
+                let mut form = NewPersonForm::new()
+                    .with_name(self.new_person_name.clone())
+                    .with_email(self.new_person_email.clone());
+                if let Some(role) = self.new_person_role {
+                    form = form.with_role(role);
+                }
 
-                let role = self.new_person_role.unwrap();
+                // Create correlation ID for event tracing
+                let correlation_id = Uuid::now_v7();
 
-                // Add to graph for visualization
-                self.org_graph.add_node(person.clone(), role);
+                // Use command factory (ACL validation + command creation)
+                match create_person_command(&form, Some(org_uuid), correlation_id) {
+                    Ok(command) => {
+                        // Validation passed - create Person from validated command
+                        let person = Person {
+                            id: BootstrapPersonId::from_uuid(command.person_id),
+                            name: command.name.clone(),
+                            email: command.email.clone(),
+                            organization_id: BootstrapOrgId::from_uuid(org_uuid),
+                            unit_ids: vec![],
+                            roles: vec![],
+                            nats_permissions: None,
+                            active: true,
+                            owner_id: None,
+                        };
 
-                // Persist to projection - capture ids as Uuid for projection interface
-                let projection = self.projection.clone();
-                let person_id = person.id.as_uuid();
-                let org_id = person.organization_id.as_uuid();
-                let person_name = person.name.clone();
-                let person_email = person.email.clone();
-                let role_string = format!("{:?}", role);
+                        let role = self.new_person_role.unwrap_or(KeyOwnerRole::Developer);
 
-                // Clear form fields immediately
-                self.new_person_name.clear();
-                self.new_person_email.clear();
-                self.new_person_role = None;
+                        // Add to graph for visualization
+                        self.org_graph.add_node(person.clone(), role);
 
-                Task::perform(
-                    async move {
-                        let mut proj = projection.write().await;
-                        proj.add_person(person_id, person_name.clone(), person_email, role_string, org_id)
-                            .map(|_| format!("Added {} to organization", person_name))
-                            .map_err(|e| format!("Failed to add person: {}", e))
-                    },
-                    |result| match result {
-                        Ok(msg) => Message::UpdateStatus(msg),
-                        Err(e) => Message::ShowError(e),
+                        // Persist to projection
+                        let projection = self.projection.clone();
+                        let person_id = command.person_id;
+                        let person_name = command.name.clone();
+                        let person_email = command.email.clone();
+                        let role_string = command.title.unwrap_or_else(|| format!("{:?}", role));
+
+                        // Clear form fields on success
+                        self.new_person_name.clear();
+                        self.new_person_email.clear();
+                        self.new_person_role = None;
+                        self.error_message = None;
+
+                        Task::perform(
+                            async move {
+                                let mut proj = projection.write().await;
+                                proj.add_person(person_id, person_name.clone(), person_email, role_string, org_uuid)
+                                    .map(|_| format!("Added {} to organization", person_name))
+                                    .map_err(|e| format!("Failed to add person: {}", e))
+                            },
+                            |result| match result {
+                                Ok(msg) => Message::UpdateStatus(msg),
+                                Err(e) => Message::ShowError(e),
+                            }
+                        )
                     }
-                )
+                    Err(validation_errors) => {
+                        // Validation failed - format errors for GUI display
+                        let error_messages: Vec<String> = validation_errors
+                            .iter()
+                            .map(|e| format!("{}: {}", e.field, e.message))
+                            .collect();
+                        self.error_message = Some(error_messages.join("\n"));
+                        Task::none()
+                    }
+                }
             }
 
             Message::RemovePerson(person_id) => {
