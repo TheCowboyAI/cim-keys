@@ -90,6 +90,7 @@ pub mod location;
 pub mod service_account;
 pub mod gpg;
 pub mod recovery;
+pub mod org_unit;
 
 #[cfg(test)]
 mod graph_integration_tests;
@@ -107,6 +108,7 @@ use location::LocationMessage;
 use service_account::ServiceAccountMessage;
 use gpg::GpgMessage;
 use recovery::RecoveryMessage;
+use org_unit::OrgUnitMessage;
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
 use view_model::ViewModel;
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
@@ -862,6 +864,8 @@ pub enum Message {
     Gpg(GpgMessage),
     /// Delegation to Key Recovery bounded context (seed-based recovery)
     Recovery(RecoveryMessage),
+    /// Delegation to Organization Unit bounded context (departments, teams)
+    OrgUnit(OrgUnitMessage),
 
     // ============================================================================
     // Tab Navigation
@@ -2409,6 +2413,35 @@ impl CimKeysApp {
                 self.recovery_organization_id = recovery_state.organization_id;
                 self.recovery_status = recovery_state.status;
                 self.recovery_seed_verified = recovery_state.seed_verified;
+
+                task
+            }
+
+            Message::OrgUnit(ou_msg) => {
+                use org_unit::management;
+
+                // Create org unit state view from app state
+                let mut ou_state = org_unit::OrgUnitState {
+                    section_collapsed: self.org_unit_section_collapsed,
+                    new_name: self.new_unit_name.clone(),
+                    new_type: self.new_unit_type.clone(),
+                    new_parent: self.new_unit_parent.clone(),
+                    new_nats_account: self.new_unit_nats_account.clone(),
+                    new_responsible_person: self.new_unit_responsible_person,
+                    created_units: self.created_units.clone(),
+                };
+
+                // Delegate to OrgUnit domain update function
+                let task = management::update(&mut ou_state, ou_msg);
+
+                // Sync state back from OrgUnit module
+                self.org_unit_section_collapsed = ou_state.section_collapsed;
+                self.new_unit_name = ou_state.new_name;
+                self.new_unit_type = ou_state.new_type;
+                self.new_unit_parent = ou_state.new_parent;
+                self.new_unit_nats_account = ou_state.new_nats_account;
+                self.new_unit_responsible_person = ou_state.new_responsible_person;
+                self.created_units = ou_state.created_units;
 
                 task
             }
