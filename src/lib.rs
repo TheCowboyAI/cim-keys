@@ -115,6 +115,10 @@ pub mod workflow;
 // Value objects for cryptographic artifacts
 pub mod value_objects;
 
+// Anti-Corruption Layer - ViewModel → ValueObject translation (Sprint 64)
+// Pure validation and translation functions following DDD ACL pattern
+pub mod acl;
+
 // Policy types for authorization and governance
 pub mod policy_types;
 

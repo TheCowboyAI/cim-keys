@@ -5,29 +5,27 @@
   "last_updated": "2026-01-02T11:30:00Z",
   "backward_compatibility": false,
   "notes": "User confirmed: NO backward compatibility required. Overwrite existing APIs freely.",
-
   "previous_work": {
     "phase": "GUI Domain Import Fix",
     "status": "completed",
     "summary": "Fixed Import from Secrets to build full graph with org, units, people, and edges",
     "completed_date": "2025-12-29"
   },
-
   "expert_consultations": {
     "prior_consultations": {
       "elm-architecture-expert": {
         "key_points": [
           "Intent types prefixed by origin: Ui*, Port*, Domain*, Error*",
           "Model must have pure with_* update methods",
-          "Update function: (Model, Intent) → (Model, Command)",
+          "Update function: (Model, Intent) \u2192 (Model, Command)",
           "Graph building is pure function - no I/O"
         ]
       },
       "iced-ui-expert": {
         "key_points": [
-          "File I/O is async → use Task::perform",
+          "File I/O is async \u2192 use Task::perform",
           "Graph building is synchronous in update()",
-          "Order matters: Orgs → Units → Locations → People → Edges"
+          "Order matters: Orgs \u2192 Units \u2192 Locations \u2192 People \u2192 Edges"
         ]
       },
       "cim-expert-prior": {
@@ -43,10 +41,10 @@
         "agent_id": "a996ff8",
         "date": "2025-12-29",
         "critical_findings": [
-          "OrganizationGraph → OrganizationConcept (Graph is implementation, not domain)",
-          "GraphNode → ConceptEntity (Technical term, not ubiquitous language)",
+          "OrganizationGraph \u2192 OrganizationConcept (Graph is implementation, not domain)",
+          "GraphNode \u2192 ConceptEntity (Technical term, not ubiquitous language)",
           "NodeType enum violates DDD - Person IS a Person, not 'type of node'",
-          "GraphMessage → OrganizationIntent (conflates UI events with domain ops)"
+          "GraphMessage \u2192 OrganizationIntent (conflates UI events with domain ops)"
         ],
         "validation_checklist": {
           "uses_ubiquitous_language": false,
@@ -122,9 +120,16 @@
           "Domain composition via natural transformations between functors"
         ],
         "categorical_laws": {
-          "functor_laws": ["F(id_A) = id_{F(A)}", "F(g ∘ f) = F(g) ∘ F(f)"],
-          "coproduct_universal_property": "[f,g] ∘ ι_A = f, [f,g] ∘ ι_B = g",
-          "monad_laws": ["unit(a).bind(f) = f(a)", "m.bind(unit) = m", "associativity"]
+          "functor_laws": [
+            "F(id_A) = id_{F(A)}",
+            "F(g \u2218 f) = F(g) \u2218 F(f)"
+          ],
+          "coproduct_universal_property": "[f,g] \u2218 \u03b9_A = f, [f,g] \u2218 \u03b9_B = g",
+          "monad_laws": [
+            "unit(a).bind(f) = f(a)",
+            "m.bind(unit) = m",
+            "associativity"
+          ]
         },
         "key_traits": {
           "DomainEntity": "Object in Domain Category - id(), type",
@@ -136,7 +141,6 @@
       }
     }
   },
-
   "metrics": {
     "baseline": {
       "date": "2025-12-29",
@@ -153,8 +157,19 @@
       "nodetype_variants": 21,
       "gui_rs_lines": 8058,
       "cim_domain_crates": {
-        "in_cargo_toml": ["cim-domain", "cim-domain-location", "cim-domain-person", "cim-domain-organization", "cim-domain-policy", "cim-domain-agent", "cim-graph"],
-        "missing_from_cargo_toml": ["cim-domain-spaces", "cim-domain-relationship"],
+        "in_cargo_toml": [
+          "cim-domain",
+          "cim-domain-location",
+          "cim-domain-person",
+          "cim-domain-organization",
+          "cim-domain-policy",
+          "cim-domain-agent",
+          "cim-graph"
+        ],
+        "missing_from_cargo_toml": [
+          "cim-domain-spaces",
+          "cim-domain-relationship"
+        ],
         "actually_used": false,
         "note": "Dependencies listed but code defines own inline versions. Need to add: cim-domain-spaces (Sprint 6), cim-domain-relationship (Sprint 1)"
       },
@@ -221,7 +236,6 @@
       "commits_total": 17
     }
   },
-
   "sprints": {
     "sprint_0": {
       "name": "Foundation & Analysis",
@@ -230,14 +244,48 @@
       "completed": "2025-12-29",
       "retrospective": "retrospectives/sprint_0.md",
       "tasks": [
-        { "id": "0.1", "description": "Create progress.json tracking file", "status": "completed" },
-        { "id": "0.2", "description": "Create REFACTORING_PLAN.md", "status": "completed" },
-        { "id": "0.3", "description": "Document current state metrics", "status": "completed" },
-        { "id": "0.4", "description": "Verify all cim-domain-* crates are accessible", "status": "completed", "note": "All 7 crates verified: cim-domain, cim-domain-location, cim-domain-person, cim-domain-organization, cim-domain-policy, cim-domain-agent, cim-domain-relationship (needs adding)" },
-        { "id": "0.5", "description": "Commit planning documents", "status": "completed" },
-        { "id": "0.6", "description": "Get user approval for Sprint 0", "status": "completed" },
-        { "id": "0.7", "description": "Consult ACT expert for categorical foundations", "status": "completed", "note": "Added coproduct, functor, Kan extension, monad structures" },
-        { "id": "0.8", "description": "Write Sprint 0 retrospective", "status": "completed" }
+        {
+          "id": "0.1",
+          "description": "Create progress.json tracking file",
+          "status": "completed"
+        },
+        {
+          "id": "0.2",
+          "description": "Create REFACTORING_PLAN.md",
+          "status": "completed"
+        },
+        {
+          "id": "0.3",
+          "description": "Document current state metrics",
+          "status": "completed"
+        },
+        {
+          "id": "0.4",
+          "description": "Verify all cim-domain-* crates are accessible",
+          "status": "completed",
+          "note": "All 7 crates verified: cim-domain, cim-domain-location, cim-domain-person, cim-domain-organization, cim-domain-policy, cim-domain-agent, cim-domain-relationship (needs adding)"
+        },
+        {
+          "id": "0.5",
+          "description": "Commit planning documents",
+          "status": "completed"
+        },
+        {
+          "id": "0.6",
+          "description": "Get user approval for Sprint 0",
+          "status": "completed"
+        },
+        {
+          "id": "0.7",
+          "description": "Consult ACT expert for categorical foundations",
+          "status": "completed",
+          "note": "Added coproduct, functor, Kan extension, monad structures"
+        },
+        {
+          "id": "0.8",
+          "description": "Write Sprint 0 retrospective",
+          "status": "completed"
+        }
       ],
       "deliverables": [
         "progress.json initialized",
@@ -254,46 +302,142 @@
       "completed": "2025-12-29",
       "retrospective": "retrospectives/sprint_1.md",
       "tasks": [
-        { "id": "1.1", "description": "Add cim-domain-relationship to Cargo.toml", "status": "completed" },
-        { "id": "1.2", "description": "Enable cim-domain-person feature by default", "status": "completed" },
-        { "id": "1.3", "description": "Enable cim-domain-organization feature by default", "status": "completed" },
-        { "id": "1.4", "description": "Enable cim-domain-policy feature by default", "status": "completed" },
-        { "id": "1.5", "description": "Enable cim-domain-agent feature by default", "status": "completed" },
-        { "id": "1.6", "description": "Delete domain_stubs.rs (unused)", "status": "completed" },
-        { "id": "1.7", "description": "Import Organization types from cim-domain-organization", "status": "completed" },
-        { "id": "1.8", "description": "Import Person types from cim-domain-person", "status": "completed" },
-        { "id": "1.9", "description": "Import Relationship types from cim-domain-relationship", "status": "completed" },
-        { "id": "1.10", "description": "Add Organization.to_domain() conversion", "status": "completed" },
-        { "id": "1.11", "description": "Add Organization.units_to_domain() conversion", "status": "completed" },
-        { "id": "1.12", "description": "Add Person.to_domain_person() conversion", "status": "completed" },
-        { "id": "1.13", "description": "Add Person.to_employment() conversion", "status": "completed" },
-        { "id": "1.14", "description": "Update lib.rs exports", "status": "completed" },
-        { "id": "1.15", "description": "Verify compilation (269 tests pass)", "status": "completed" }
+        {
+          "id": "1.1",
+          "description": "Add cim-domain-relationship to Cargo.toml",
+          "status": "completed"
+        },
+        {
+          "id": "1.2",
+          "description": "Enable cim-domain-person feature by default",
+          "status": "completed"
+        },
+        {
+          "id": "1.3",
+          "description": "Enable cim-domain-organization feature by default",
+          "status": "completed"
+        },
+        {
+          "id": "1.4",
+          "description": "Enable cim-domain-policy feature by default",
+          "status": "completed"
+        },
+        {
+          "id": "1.5",
+          "description": "Enable cim-domain-agent feature by default",
+          "status": "completed"
+        },
+        {
+          "id": "1.6",
+          "description": "Delete domain_stubs.rs (unused)",
+          "status": "completed"
+        },
+        {
+          "id": "1.7",
+          "description": "Import Organization types from cim-domain-organization",
+          "status": "completed"
+        },
+        {
+          "id": "1.8",
+          "description": "Import Person types from cim-domain-person",
+          "status": "completed"
+        },
+        {
+          "id": "1.9",
+          "description": "Import Relationship types from cim-domain-relationship",
+          "status": "completed"
+        },
+        {
+          "id": "1.10",
+          "description": "Add Organization.to_domain() conversion",
+          "status": "completed"
+        },
+        {
+          "id": "1.11",
+          "description": "Add Organization.units_to_domain() conversion",
+          "status": "completed"
+        },
+        {
+          "id": "1.12",
+          "description": "Add Person.to_domain_person() conversion",
+          "status": "completed"
+        },
+        {
+          "id": "1.13",
+          "description": "Add Person.to_employment() conversion",
+          "status": "completed"
+        },
+        {
+          "id": "1.14",
+          "description": "Update lib.rs exports",
+          "status": "completed"
+        },
+        {
+          "id": "1.15",
+          "description": "Verify compilation (269 tests pass)",
+          "status": "completed"
+        }
       ],
       "acceptance_criteria": [
         "Domain types imported from cim-domain-* crates - ACHIEVED",
         "Bootstrap types documented for JSON loading - ACHIEVED",
-        "Conversion functions for bootstrap → domain - ACHIEVED",
+        "Conversion functions for bootstrap \u2192 domain - ACHIEVED",
         "All 269 tests pass - ACHIEVED",
         "Compilation successful - ACHIEVED"
       ],
       "notes": "Changed approach: instead of removing bootstrap types entirely, we: 1) Import canonical domain types as DomainX, 2) Keep bootstrap types for JSON loading, 3) Add conversion functions. This allows incremental migration without breaking existing functionality."
     },
     "sprint_2": {
-      "name": "Rename Graph → Concept",
+      "name": "Rename Graph \u2192 Concept",
       "status": "completed",
       "started": "2025-12-29",
       "completed": "2025-12-29",
       "retrospective": "retrospectives/sprint_2.md",
       "tasks": [
-        { "id": "2.1", "description": "Rename OrganizationGraph → OrganizationConcept", "status": "completed", "count": 146 },
-        { "id": "2.2", "description": "Rename GraphNode → ConceptEntity", "status": "completed", "count": 93 },
-        { "id": "2.3", "description": "Rename GraphEdge → ConceptRelation", "status": "completed", "count": 21 },
-        { "id": "2.4", "description": "Rename GraphMessage → OrganizationIntent", "status": "completed", "count": 107 },
-        { "id": "2.5", "description": "Update all imports and references (367 total)", "status": "completed" },
-        { "id": "2.6", "description": "Update markdown documentation", "status": "completed" },
-        { "id": "2.7", "description": "Verify compilation", "status": "completed" },
-        { "id": "2.8", "description": "Run tests (269 pass)", "status": "completed" }
+        {
+          "id": "2.1",
+          "description": "Rename OrganizationGraph \u2192 OrganizationConcept",
+          "status": "completed",
+          "count": 146
+        },
+        {
+          "id": "2.2",
+          "description": "Rename GraphNode \u2192 ConceptEntity",
+          "status": "completed",
+          "count": 93
+        },
+        {
+          "id": "2.3",
+          "description": "Rename GraphEdge \u2192 ConceptRelation",
+          "status": "completed",
+          "count": 21
+        },
+        {
+          "id": "2.4",
+          "description": "Rename GraphMessage \u2192 OrganizationIntent",
+          "status": "completed",
+          "count": 107
+        },
+        {
+          "id": "2.5",
+          "description": "Update all imports and references (367 total)",
+          "status": "completed"
+        },
+        {
+          "id": "2.6",
+          "description": "Update markdown documentation",
+          "status": "completed"
+        },
+        {
+          "id": "2.7",
+          "description": "Verify compilation",
+          "status": "completed"
+        },
+        {
+          "id": "2.8",
+          "description": "Run tests (269 pass)",
+          "status": "completed"
+        }
       ],
       "acceptance_criteria": [
         "No 'OrganizationGraph' in code - ACHIEVED (0 occurrences)",
@@ -302,7 +446,7 @@
         "No 'GraphMessage' in code - ACHIEVED (0 occurrences)",
         "All tests pass - ACHIEVED (269 tests)"
       ],
-      "notes": "File renaming (graph.rs → concept.rs, graph_*.rs → concept_*.rs) deferred to avoid breaking imports. Current approach renames types while keeping file names for stability."
+      "notes": "File renaming (graph.rs \u2192 concept.rs, graph_*.rs \u2192 concept_*.rs) deferred to avoid breaking imports. Current approach renames types while keeping file names for stability."
     },
     "sprint_3": {
       "name": "Remove NodeType Enum",
@@ -311,16 +455,58 @@
       "completed": "2025-12-30",
       "retrospective": "retrospectives/sprint_3.md",
       "tasks": [
-        { "id": "3.1", "description": "Analyze all NodeType usages", "status": "completed", "note": "Found OrganizationalNodeType (6 variants) only used in add-node menu" },
-        { "id": "3.2", "description": "Add Injection::creatable() method", "status": "completed", "note": "Changed approach: use existing Injection enum instead of new ConceptMember" },
-        { "id": "3.3", "description": "Replace OrganizationalNodeType with Injection in Message enum", "status": "completed" },
-        { "id": "3.4", "description": "Update menu navigation to use Injection::creatable()", "status": "completed" },
-        { "id": "3.5", "description": "Update node creation match arms to use Injection variants", "status": "completed" },
-        { "id": "3.6", "description": "Add wildcard arm for non-creatable injection types", "status": "completed" },
-        { "id": "3.7", "description": "Import Injection at module level in gui.rs", "status": "completed" },
-        { "id": "3.8", "description": "Remove OrganizationalNodeType enum", "status": "completed" },
-        { "id": "3.9", "description": "Verify compilation", "status": "completed" },
-        { "id": "3.10", "description": "Run tests (331 passed)", "status": "completed" }
+        {
+          "id": "3.1",
+          "description": "Analyze all NodeType usages",
+          "status": "completed",
+          "note": "Found OrganizationalNodeType (6 variants) only used in add-node menu"
+        },
+        {
+          "id": "3.2",
+          "description": "Add Injection::creatable() method",
+          "status": "completed",
+          "note": "Changed approach: use existing Injection enum instead of new ConceptMember"
+        },
+        {
+          "id": "3.3",
+          "description": "Replace OrganizationalNodeType with Injection in Message enum",
+          "status": "completed"
+        },
+        {
+          "id": "3.4",
+          "description": "Update menu navigation to use Injection::creatable()",
+          "status": "completed"
+        },
+        {
+          "id": "3.5",
+          "description": "Update node creation match arms to use Injection variants",
+          "status": "completed"
+        },
+        {
+          "id": "3.6",
+          "description": "Add wildcard arm for non-creatable injection types",
+          "status": "completed"
+        },
+        {
+          "id": "3.7",
+          "description": "Import Injection at module level in gui.rs",
+          "status": "completed"
+        },
+        {
+          "id": "3.8",
+          "description": "Remove OrganizationalNodeType enum",
+          "status": "completed"
+        },
+        {
+          "id": "3.9",
+          "description": "Verify compilation",
+          "status": "completed"
+        },
+        {
+          "id": "3.10",
+          "description": "Run tests (331 passed)",
+          "status": "completed"
+        }
       ],
       "acceptance_criteria": [
         "NodeType enum removed - ACHIEVED (OrganizationalNodeType deleted)",
@@ -336,17 +522,52 @@
       "completed": "2025-12-30",
       "retrospective": "retrospectives/sprint_4.md",
       "tasks": [
-        { "id": "4.1", "description": "MVI module exists (src/mvi/)", "status": "completed", "note": "Already implemented in previous session" },
-        { "id": "4.2", "description": "Intent enum with Ui/Port/Domain/System categories", "status": "completed", "note": "79 variants with prefix naming" },
-        { "id": "4.3", "description": "Message→Intent bridge (to_intent method)", "status": "completed", "note": "10 conversions implemented" },
-        { "id": "4.4", "description": "Update function integration", "status": "completed", "note": "mvi::update() called from gui.rs" },
-        { "id": "4.5", "description": "Intent routing in handlers", "status": "completed", "note": "Match arms route by prefix" },
-        { "id": "4.6", "description": "Compilation verified", "status": "completed", "note": "0 errors" },
-        { "id": "4.7", "description": "Tests pass", "status": "completed", "note": "1126 tests" }
+        {
+          "id": "4.1",
+          "description": "MVI module exists (src/mvi/)",
+          "status": "completed",
+          "note": "Already implemented in previous session"
+        },
+        {
+          "id": "4.2",
+          "description": "Intent enum with Ui/Port/Domain/System categories",
+          "status": "completed",
+          "note": "79 variants with prefix naming"
+        },
+        {
+          "id": "4.3",
+          "description": "Message\u2192Intent bridge (to_intent method)",
+          "status": "completed",
+          "note": "10 conversions implemented"
+        },
+        {
+          "id": "4.4",
+          "description": "Update function integration",
+          "status": "completed",
+          "note": "mvi::update() called from gui.rs"
+        },
+        {
+          "id": "4.5",
+          "description": "Intent routing in handlers",
+          "status": "completed",
+          "note": "Match arms route by prefix"
+        },
+        {
+          "id": "4.6",
+          "description": "Compilation verified",
+          "status": "completed",
+          "note": "0 errors"
+        },
+        {
+          "id": "4.7",
+          "description": "Tests pass",
+          "status": "completed",
+          "note": "1126 tests"
+        }
       ],
       "acceptance_criteria": [
         "Intent enum properly categorized - ACHIEVED (Ui*/Domain*/Port*/System* prefixes)",
-        "Message→Intent bridge implemented - ACHIEVED (to_intent(), origin_category())",
+        "Message\u2192Intent bridge implemented - ACHIEVED (to_intent(), origin_category())",
         "Clear separation of concerns - ACHIEVED (Message for Iced, Intent for MVI)"
       ],
       "notes": "Sprint 4 was discovered to be already complete from previous session. Verified compilation (0 errors) and tests (1126 passed)."
@@ -358,13 +579,48 @@
       "completed": "2025-12-30",
       "retrospective": "retrospectives/sprint_5.md",
       "tasks": [
-        { "id": "5.1", "description": "Pure update function exists (mvi::update)", "status": "completed", "note": "(Model, Intent) -> (Model, Task<Intent>)" },
-        { "id": "5.2", "description": "Model uses with_* methods", "status": "completed", "note": "30+ immutable transformations" },
-        { "id": "5.3", "description": "Ports injected not called directly", "status": "completed", "note": "Ports passed in, used in Task::perform" },
-        { "id": "5.4", "description": "Commands via Task<Intent>", "status": "completed", "note": "Iced Task abstraction" },
-        { "id": "5.5", "description": "Model Clone derives for immutability", "status": "completed", "note": "#[derive(Clone)]" },
-        { "id": "5.6", "description": "Compilation verified", "status": "completed", "note": "0 errors" },
-        { "id": "5.7", "description": "Tests pass", "status": "completed", "note": "1126 tests" }
+        {
+          "id": "5.1",
+          "description": "Pure update function exists (mvi::update)",
+          "status": "completed",
+          "note": "(Model, Intent) -> (Model, Task<Intent>)"
+        },
+        {
+          "id": "5.2",
+          "description": "Model uses with_* methods",
+          "status": "completed",
+          "note": "30+ immutable transformations"
+        },
+        {
+          "id": "5.3",
+          "description": "Ports injected not called directly",
+          "status": "completed",
+          "note": "Ports passed in, used in Task::perform"
+        },
+        {
+          "id": "5.4",
+          "description": "Commands via Task<Intent>",
+          "status": "completed",
+          "note": "Iced Task abstraction"
+        },
+        {
+          "id": "5.5",
+          "description": "Model Clone derives for immutability",
+          "status": "completed",
+          "note": "#[derive(Clone)]"
+        },
+        {
+          "id": "5.6",
+          "description": "Compilation verified",
+          "status": "completed",
+          "note": "0 errors"
+        },
+        {
+          "id": "5.7",
+          "description": "Tests pass",
+          "status": "completed",
+          "note": "1126 tests"
+        }
       ],
       "acceptance_criteria": [
         "Update function is pure - ACHIEVED (returns Model + Task, no mutations)",
@@ -380,16 +636,66 @@
       "completed": "2025-12-30",
       "retrospective": "retrospectives/sprint_6.md",
       "tasks": [
-        { "id": "6.1", "description": "Enable conceptual-spaces feature by default", "status": "completed", "note": "Added to default features in Cargo.toml" },
-        { "id": "6.2", "description": "Add semantic_position: Option<Point3<f64>> to NodeView", "status": "completed", "note": "3D position for semantic similarity" },
-        { "id": "6.3", "description": "Implement stereographic_projection() function", "status": "completed", "note": "Projects unit sphere to 2D plane" },
-        { "id": "6.4", "description": "Add knowledge_level: Option<KnowledgeLevel> to NodeView", "status": "completed", "note": "Four-level epistemic state" },
-        { "id": "6.5", "description": "Add evidence_score: Option<EvidenceScore> to NodeView", "status": "completed", "note": "Confidence visualization" },
-        { "id": "6.6", "description": "Add knowledge_opacity() helper", "status": "completed", "note": "Maps KnowledgeLevel to visual opacity" },
-        { "id": "6.7", "description": "Add knowledge_border_style() helper", "status": "completed", "note": "Maps KnowledgeLevel to border style" },
-        { "id": "6.8", "description": "Add with_semantic_position() constructor", "status": "completed", "note": "Creates NodeView from 3D position" },
-        { "id": "6.9", "description": "Compilation verified", "status": "completed", "note": "0 errors" },
-        { "id": "6.10", "description": "Tests pass", "status": "completed", "note": "All tests passing" }
+        {
+          "id": "6.1",
+          "description": "Enable conceptual-spaces feature by default",
+          "status": "completed",
+          "note": "Added to default features in Cargo.toml"
+        },
+        {
+          "id": "6.2",
+          "description": "Add semantic_position: Option<Point3<f64>> to NodeView",
+          "status": "completed",
+          "note": "3D position for semantic similarity"
+        },
+        {
+          "id": "6.3",
+          "description": "Implement stereographic_projection() function",
+          "status": "completed",
+          "note": "Projects unit sphere to 2D plane"
+        },
+        {
+          "id": "6.4",
+          "description": "Add knowledge_level: Option<KnowledgeLevel> to NodeView",
+          "status": "completed",
+          "note": "Four-level epistemic state"
+        },
+        {
+          "id": "6.5",
+          "description": "Add evidence_score: Option<EvidenceScore> to NodeView",
+          "status": "completed",
+          "note": "Confidence visualization"
+        },
+        {
+          "id": "6.6",
+          "description": "Add knowledge_opacity() helper",
+          "status": "completed",
+          "note": "Maps KnowledgeLevel to visual opacity"
+        },
+        {
+          "id": "6.7",
+          "description": "Add knowledge_border_style() helper",
+          "status": "completed",
+          "note": "Maps KnowledgeLevel to border style"
+        },
+        {
+          "id": "6.8",
+          "description": "Add with_semantic_position() constructor",
+          "status": "completed",
+          "note": "Creates NodeView from 3D position"
+        },
+        {
+          "id": "6.9",
+          "description": "Compilation verified",
+          "status": "completed",
+          "note": "0 errors"
+        },
+        {
+          "id": "6.10",
+          "description": "Tests pass",
+          "status": "completed",
+          "note": "All tests passing"
+        }
       ],
       "acceptance_criteria": [
         "3D semantic positions supported - ACHIEVED (semantic_position: Option<Point3<f64>>)",
@@ -405,13 +711,48 @@
       "completed": "2025-12-29",
       "retrospective": "retrospectives/sprint_7.md",
       "tasks": [
-        { "id": "7.1", "description": "Define LiftableDomain trait", "status": "completed", "note": "Faithful functor with lift(), unlift(), injection(), entity_id()" },
-        { "id": "7.2", "description": "Implement LiftableDomain for Organization", "status": "completed", "note": "Uses Injection::Organization" },
-        { "id": "7.3", "description": "Entity monad already exists in cim-domain", "status": "completed", "note": "Entity<T> has pure(), bind(), map() - reused" },
-        { "id": "7.4", "description": "Implement lifting for Person, OrganizationUnit, Location", "status": "completed", "note": "All 4 domain types implemented" },
-        { "id": "7.5", "description": "Create unified graph from lifted domains", "status": "completed", "note": "LiftedGraph with merge(), unlift_all(), nodes_by_type()" },
-        { "id": "7.6", "description": "Test composition with domain types", "status": "completed", "note": "10 tests including faithfulness verification" },
-        { "id": "7.7", "description": "Document composition pattern", "status": "completed", "note": "In retrospectives/sprint_7.md" }
+        {
+          "id": "7.1",
+          "description": "Define LiftableDomain trait",
+          "status": "completed",
+          "note": "Faithful functor with lift(), unlift(), injection(), entity_id()"
+        },
+        {
+          "id": "7.2",
+          "description": "Implement LiftableDomain for Organization",
+          "status": "completed",
+          "note": "Uses Injection::Organization"
+        },
+        {
+          "id": "7.3",
+          "description": "Entity monad already exists in cim-domain",
+          "status": "completed",
+          "note": "Entity<T> has pure(), bind(), map() - reused"
+        },
+        {
+          "id": "7.4",
+          "description": "Implement lifting for Person, OrganizationUnit, Location",
+          "status": "completed",
+          "note": "All 4 domain types implemented"
+        },
+        {
+          "id": "7.5",
+          "description": "Create unified graph from lifted domains",
+          "status": "completed",
+          "note": "LiftedGraph with merge(), unlift_all(), nodes_by_type()"
+        },
+        {
+          "id": "7.6",
+          "description": "Test composition with domain types",
+          "status": "completed",
+          "note": "10 tests including faithfulness verification"
+        },
+        {
+          "id": "7.7",
+          "description": "Document composition pattern",
+          "status": "completed",
+          "note": "In retrospectives/sprint_7.md"
+        }
       ],
       "acceptance_criteria": [
         "LiftableDomain trait implemented - ACHIEVED (faithful functor with lift/unlift)",
@@ -427,13 +768,48 @@
       "completed": "2025-12-30",
       "retrospective": "retrospectives/sprint_8.md",
       "tasks": [
-        { "id": "8.1", "description": "Create tests/mvi_tests.rs file structure", "status": "completed", "note": "5 test modules created" },
-        { "id": "8.2", "description": "Add property-based testing with proptest", "status": "completed", "note": "7 proptest-based tests" },
-        { "id": "8.3", "description": "Write pure update function tests", "status": "completed", "note": "5 tests verifying (Model, Intent) → (Model, Task)" },
-        { "id": "8.4", "description": "Write model immutability tests", "status": "completed", "note": "11 tests for with_* methods" },
-        { "id": "8.5", "description": "Write event sourcing property tests", "status": "completed", "note": "Intent event log test (A7)" },
-        { "id": "8.6", "description": "Write FRP axiom compliance tests", "status": "completed", "note": "6 tests for A3, A5, A7, A9" },
-        { "id": "8.7", "description": "Achieve comprehensive MVI coverage", "status": "completed", "note": "33 MVI tests, ~40% GUI coverage" }
+        {
+          "id": "8.1",
+          "description": "Create tests/mvi_tests.rs file structure",
+          "status": "completed",
+          "note": "5 test modules created"
+        },
+        {
+          "id": "8.2",
+          "description": "Add property-based testing with proptest",
+          "status": "completed",
+          "note": "7 proptest-based tests"
+        },
+        {
+          "id": "8.3",
+          "description": "Write pure update function tests",
+          "status": "completed",
+          "note": "5 tests verifying (Model, Intent) \u2192 (Model, Task)"
+        },
+        {
+          "id": "8.4",
+          "description": "Write model immutability tests",
+          "status": "completed",
+          "note": "11 tests for with_* methods"
+        },
+        {
+          "id": "8.5",
+          "description": "Write event sourcing property tests",
+          "status": "completed",
+          "note": "Intent event log test (A7)"
+        },
+        {
+          "id": "8.6",
+          "description": "Write FRP axiom compliance tests",
+          "status": "completed",
+          "note": "6 tests for A3, A5, A7, A9"
+        },
+        {
+          "id": "8.7",
+          "description": "Achieve comprehensive MVI coverage",
+          "status": "completed",
+          "note": "33 MVI tests, ~40% GUI coverage"
+        }
       ],
       "acceptance_criteria": [
         "Property tests for update purity - ACHIEVED (7 proptest tests)",
@@ -449,15 +825,59 @@
       "completed": "2025-12-30",
       "retrospective": "retrospectives/sprint_9.md",
       "tasks": [
-        { "id": "9.1", "description": "Create doc/qa/features/ directory", "status": "completed" },
-        { "id": "9.2", "description": "Write domain_bootstrap.feature", "status": "completed", "note": "15 scenarios" },
-        { "id": "9.3", "description": "Write person_management.feature", "status": "completed", "note": "18 scenarios" },
-        { "id": "9.4", "description": "Write key_generation.feature", "status": "completed", "note": "20 scenarios" },
-        { "id": "9.5", "description": "Write yubikey_provisioning.feature", "status": "completed", "note": "22 scenarios" },
-        { "id": "9.6", "description": "Write nats_security_bootstrap.feature", "status": "completed", "note": "19 scenarios" },
-        { "id": "9.7", "description": "Write export_manifest.feature", "status": "completed", "note": "18 scenarios" },
-        { "id": "9.8", "description": "Implement step definitions in tests/bdd/", "status": "completed", "note": "4 modules with 18 tests" },
-        { "id": "9.9", "description": "Verify all scenarios pass", "status": "completed", "note": "18/18 BDD tests pass" }
+        {
+          "id": "9.1",
+          "description": "Create doc/qa/features/ directory",
+          "status": "completed"
+        },
+        {
+          "id": "9.2",
+          "description": "Write domain_bootstrap.feature",
+          "status": "completed",
+          "note": "15 scenarios"
+        },
+        {
+          "id": "9.3",
+          "description": "Write person_management.feature",
+          "status": "completed",
+          "note": "18 scenarios"
+        },
+        {
+          "id": "9.4",
+          "description": "Write key_generation.feature",
+          "status": "completed",
+          "note": "20 scenarios"
+        },
+        {
+          "id": "9.5",
+          "description": "Write yubikey_provisioning.feature",
+          "status": "completed",
+          "note": "22 scenarios"
+        },
+        {
+          "id": "9.6",
+          "description": "Write nats_security_bootstrap.feature",
+          "status": "completed",
+          "note": "19 scenarios"
+        },
+        {
+          "id": "9.7",
+          "description": "Write export_manifest.feature",
+          "status": "completed",
+          "note": "18 scenarios"
+        },
+        {
+          "id": "9.8",
+          "description": "Implement step definitions in tests/bdd/",
+          "status": "completed",
+          "note": "4 modules with 18 tests"
+        },
+        {
+          "id": "9.9",
+          "description": "Verify all scenarios pass",
+          "status": "completed",
+          "note": "18/18 BDD tests pass"
+        }
       ],
       "acceptance_criteria": [
         "Feature files created - ACHIEVED (6 files, 112 scenarios)",
@@ -473,12 +893,42 @@
       "completed": "2025-12-30",
       "retrospective": "retrospectives/sprint_10.md",
       "tasks": [
-        { "id": "10.1", "description": "Final code review", "status": "completed", "note": "392 tests pass, warnings reviewed" },
-        { "id": "10.2", "description": "Update CLAUDE.md with new patterns", "status": "completed", "note": "Added 8 new best practices, 5 new sections" },
-        { "id": "10.3", "description": "Update README.md", "status": "completed", "note": "Complete rewrite with ~240 lines" },
-        { "id": "10.4", "description": "Create architecture diagram", "status": "completed", "note": "ARCHITECTURE.md with 8 Mermaid diagrams" },
-        { "id": "10.5", "description": "Write migration guide for other cim-* modules", "status": "completed", "note": "MIGRATION_GUIDE.md with step-by-step instructions" },
-        { "id": "10.6", "description": "Final retrospective", "status": "completed", "note": "retrospectives/sprint_10.md" }
+        {
+          "id": "10.1",
+          "description": "Final code review",
+          "status": "completed",
+          "note": "392 tests pass, warnings reviewed"
+        },
+        {
+          "id": "10.2",
+          "description": "Update CLAUDE.md with new patterns",
+          "status": "completed",
+          "note": "Added 8 new best practices, 5 new sections"
+        },
+        {
+          "id": "10.3",
+          "description": "Update README.md",
+          "status": "completed",
+          "note": "Complete rewrite with ~240 lines"
+        },
+        {
+          "id": "10.4",
+          "description": "Create architecture diagram",
+          "status": "completed",
+          "note": "ARCHITECTURE.md with 8 Mermaid diagrams"
+        },
+        {
+          "id": "10.5",
+          "description": "Write migration guide for other cim-* modules",
+          "status": "completed",
+          "note": "MIGRATION_GUIDE.md with step-by-step instructions"
+        },
+        {
+          "id": "10.6",
+          "description": "Final retrospective",
+          "status": "completed",
+          "note": "retrospectives/sprint_10.md"
+        }
       ],
       "acceptance_criteria": [
         "All documentation updated - ACHIEVED",
@@ -494,16 +944,56 @@
       "completed": "2025-12-31",
       "retrospective": "retrospectives/sprint_21.md",
       "tasks": [
-        { "id": "21.1", "description": "Create per-context coproduct modules in src/domains/", "status": "completed" },
-        { "id": "21.2", "description": "Implement Organization context coproduct", "status": "completed" },
-        { "id": "21.3", "description": "Implement PKI context coproduct", "status": "completed" },
-        { "id": "21.4", "description": "Implement NATS context coproduct", "status": "completed" },
-        { "id": "21.5", "description": "Implement YubiKey context coproduct", "status": "completed" },
-        { "id": "21.6", "description": "Implement Visualization context coproduct", "status": "completed" },
-        { "id": "21.7", "description": "Create fold structure in src/gui/folds/", "status": "completed" },
-        { "id": "21.8", "description": "Implement FoldVisualization", "status": "completed" },
-        { "id": "21.9", "description": "Implement FoldSearchableText", "status": "completed" },
-        { "id": "21.10", "description": "Create ADR-001 documentation", "status": "completed" }
+        {
+          "id": "21.1",
+          "description": "Create per-context coproduct modules in src/domains/",
+          "status": "completed"
+        },
+        {
+          "id": "21.2",
+          "description": "Implement Organization context coproduct",
+          "status": "completed"
+        },
+        {
+          "id": "21.3",
+          "description": "Implement PKI context coproduct",
+          "status": "completed"
+        },
+        {
+          "id": "21.4",
+          "description": "Implement NATS context coproduct",
+          "status": "completed"
+        },
+        {
+          "id": "21.5",
+          "description": "Implement YubiKey context coproduct",
+          "status": "completed"
+        },
+        {
+          "id": "21.6",
+          "description": "Implement Visualization context coproduct",
+          "status": "completed"
+        },
+        {
+          "id": "21.7",
+          "description": "Create fold structure in src/gui/folds/",
+          "status": "completed"
+        },
+        {
+          "id": "21.8",
+          "description": "Implement FoldVisualization",
+          "status": "completed"
+        },
+        {
+          "id": "21.9",
+          "description": "Implement FoldSearchableText",
+          "status": "completed"
+        },
+        {
+          "id": "21.10",
+          "description": "Create ADR-001 documentation",
+          "status": "completed"
+        }
       ],
       "acceptance_criteria": [
         "Per-context coproducts created - ACHIEVED (5 modules)",
@@ -519,14 +1009,46 @@
       "completed": "2025-12-31",
       "retrospective": "retrospectives/sprint_22.md",
       "tasks": [
-        { "id": "22.1", "description": "Create Typography bounded context (13 files)", "status": "completed" },
-        { "id": "22.2", "description": "Implement VerifiedTheme aggregate root", "status": "completed" },
-        { "id": "22.3", "description": "Implement IconChain with fallback (emoji→material→symbol→text)", "status": "completed" },
-        { "id": "22.4", "description": "Implement LabelledElement output type", "status": "completed" },
-        { "id": "22.5", "description": "Create ThemedVisualizationFold", "status": "completed" },
-        { "id": "22.6", "description": "Add LiftableDomain for Role and Policy", "status": "completed" },
-        { "id": "22.7", "description": "Add color constants for NATS/PKI/YubiKey", "status": "completed" },
-        { "id": "22.8", "description": "Add documentation to domain_node.rs (not deprecation)", "status": "completed" }
+        {
+          "id": "22.1",
+          "description": "Create Typography bounded context (13 files)",
+          "status": "completed"
+        },
+        {
+          "id": "22.2",
+          "description": "Implement VerifiedTheme aggregate root",
+          "status": "completed"
+        },
+        {
+          "id": "22.3",
+          "description": "Implement IconChain with fallback (emoji\u2192material\u2192symbol\u2192text)",
+          "status": "completed"
+        },
+        {
+          "id": "22.4",
+          "description": "Implement LabelledElement output type",
+          "status": "completed"
+        },
+        {
+          "id": "22.5",
+          "description": "Create ThemedVisualizationFold",
+          "status": "completed"
+        },
+        {
+          "id": "22.6",
+          "description": "Add LiftableDomain for Role and Policy",
+          "status": "completed"
+        },
+        {
+          "id": "22.7",
+          "description": "Add color constants for NATS/PKI/YubiKey",
+          "status": "completed"
+        },
+        {
+          "id": "22.8",
+          "description": "Add documentation to domain_node.rs (not deprecation)",
+          "status": "completed"
+        }
       ],
       "acceptance_criteria": [
         "Typography bounded context complete - ACHIEVED (13 files, 28 tests)",
@@ -543,12 +1065,36 @@
       "completed": "2025-12-31",
       "retrospective": "retrospectives/sprint_22.md",
       "tasks": [
-        { "id": "22.7.1", "description": "Add 12 new icons to CimIconSetBuilder", "status": "completed" },
-        { "id": "22.7.2", "description": "Add text_muted and disabled to ColorPalette", "status": "completed" },
-        { "id": "22.7.3", "description": "Create verified module in icons.rs", "status": "completed" },
-        { "id": "22.7.4", "description": "Update mvi/view.rs with verified icons and theme colors", "status": "completed" },
-        { "id": "22.7.5", "description": "Update property_card.rs with verified icons", "status": "completed" },
-        { "id": "22.7.6", "description": "Update gui.rs with verified icons", "status": "completed" }
+        {
+          "id": "22.7.1",
+          "description": "Add 12 new icons to CimIconSetBuilder",
+          "status": "completed"
+        },
+        {
+          "id": "22.7.2",
+          "description": "Add text_muted and disabled to ColorPalette",
+          "status": "completed"
+        },
+        {
+          "id": "22.7.3",
+          "description": "Create verified module in icons.rs",
+          "status": "completed"
+        },
+        {
+          "id": "22.7.4",
+          "description": "Update mvi/view.rs with verified icons and theme colors",
+          "status": "completed"
+        },
+        {
+          "id": "22.7.5",
+          "description": "Update property_card.rs with verified icons",
+          "status": "completed"
+        },
+        {
+          "id": "22.7.6",
+          "description": "Update gui.rs with verified icons",
+          "status": "completed"
+        }
       ],
       "acceptance_criteria": [
         "All icon usages migrated to verified system - ACHIEVED",
@@ -564,17 +1110,72 @@
       "completed": "2026-01-01",
       "description": "Migrate hardcoded colors to centralized ColorPalette in view_model.rs",
       "tasks": [
-        { "id": "23.1", "description": "Add EdgeType colors (38 colors) to ColorPalette", "status": "completed", "commit": "f34da17" },
-        { "id": "23.2", "description": "Migrate graph.rs colors (81→0)", "status": "completed", "commit": "f34da17" },
-        { "id": "23.3", "description": "Migrate graph_projection.rs colors (9→0)", "status": "completed", "commit": "f34da17" },
-        { "id": "23.4", "description": "Migrate animation colors (fireflies, background)", "status": "completed", "commit": "f34da17" },
-        { "id": "23.5", "description": "Add NATS/PKI/YubiKey node colors to ColorPalette", "status": "completed", "commit": "e13e982" },
-        { "id": "23.6", "description": "Sync lifting.rs constants with ColorPalette", "status": "completed", "commit": "e13e982" },
-        { "id": "23.7", "description": "Add status/certificate colors to ColorPalette", "status": "completed", "commit": "559c62c" },
-        { "id": "23.8", "description": "Migrate gui.rs node creation colors (6 colors)", "status": "completed", "commit": "559c62c" },
-        { "id": "23.9", "description": "Migrate gui.rs status/severity colors (16 colors)", "status": "completed", "commit": "559c62c" },
-        { "id": "23.10", "description": "Implement FoldDomainNode for ThemedVisualizationFold (Phase 4)", "status": "completed", "commit": "5dbb46b" },
-        { "id": "23.11", "description": "Add themed_visualization() to ConceptEntity using proper fold pattern", "status": "completed", "commit": "5dbb46b" }
+        {
+          "id": "23.1",
+          "description": "Add EdgeType colors (38 colors) to ColorPalette",
+          "status": "completed",
+          "commit": "f34da17"
+        },
+        {
+          "id": "23.2",
+          "description": "Migrate graph.rs colors (81\u21920)",
+          "status": "completed",
+          "commit": "f34da17"
+        },
+        {
+          "id": "23.3",
+          "description": "Migrate graph_projection.rs colors (9\u21920)",
+          "status": "completed",
+          "commit": "f34da17"
+        },
+        {
+          "id": "23.4",
+          "description": "Migrate animation colors (fireflies, background)",
+          "status": "completed",
+          "commit": "f34da17"
+        },
+        {
+          "id": "23.5",
+          "description": "Add NATS/PKI/YubiKey node colors to ColorPalette",
+          "status": "completed",
+          "commit": "e13e982"
+        },
+        {
+          "id": "23.6",
+          "description": "Sync lifting.rs constants with ColorPalette",
+          "status": "completed",
+          "commit": "e13e982"
+        },
+        {
+          "id": "23.7",
+          "description": "Add status/certificate colors to ColorPalette",
+          "status": "completed",
+          "commit": "559c62c"
+        },
+        {
+          "id": "23.8",
+          "description": "Migrate gui.rs node creation colors (6 colors)",
+          "status": "completed",
+          "commit": "559c62c"
+        },
+        {
+          "id": "23.9",
+          "description": "Migrate gui.rs status/severity colors (16 colors)",
+          "status": "completed",
+          "commit": "559c62c"
+        },
+        {
+          "id": "23.10",
+          "description": "Implement FoldDomainNode for ThemedVisualizationFold (Phase 4)",
+          "status": "completed",
+          "commit": "5dbb46b"
+        },
+        {
+          "id": "23.11",
+          "description": "Add themed_visualization() to ConceptEntity using proper fold pattern",
+          "status": "completed",
+          "commit": "5dbb46b"
+        }
       ],
       "acceptance_criteria": [
         "ColorPalette has 50+ semantic color fields - ACHIEVED",
@@ -592,12 +1193,40 @@
       "completed": "2026-01-01",
       "description": "Migrate from DomainNodeData pattern matching to fold-based extraction and deprecate old types",
       "tasks": [
-        { "id": "24.1", "description": "Create FoldEditFields for property_card data extraction", "status": "completed", "commit": "bbcbc05" },
-        { "id": "24.2", "description": "Implement all 29 FoldDomainNode methods for FoldEditFields", "status": "completed" },
-        { "id": "24.3", "description": "Add EntityType enum for UI categorization", "status": "completed" },
-        { "id": "24.4", "description": "Migrate property_card.rs set_node() to use FoldEditFields", "status": "completed", "note": "Already using domain_node.fold(&FoldEditFields)" },
-        { "id": "24.5", "description": "Add #[deprecated] to Injection, DomainNodeData, DomainNode, FoldDomainNode", "status": "completed", "commit": "33c9a6c" },
-        { "id": "24.6", "description": "926 deprecation warnings signal migration path", "status": "completed", "note": "Warnings guide future migration to per-context types in src/domains/" }
+        {
+          "id": "24.1",
+          "description": "Create FoldEditFields for property_card data extraction",
+          "status": "completed",
+          "commit": "bbcbc05"
+        },
+        {
+          "id": "24.2",
+          "description": "Implement all 29 FoldDomainNode methods for FoldEditFields",
+          "status": "completed"
+        },
+        {
+          "id": "24.3",
+          "description": "Add EntityType enum for UI categorization",
+          "status": "completed"
+        },
+        {
+          "id": "24.4",
+          "description": "Migrate property_card.rs set_node() to use FoldEditFields",
+          "status": "completed",
+          "note": "Already using domain_node.fold(&FoldEditFields)"
+        },
+        {
+          "id": "24.5",
+          "description": "Add #[deprecated] to Injection, DomainNodeData, DomainNode, FoldDomainNode",
+          "status": "completed",
+          "commit": "33c9a6c"
+        },
+        {
+          "id": "24.6",
+          "description": "926 deprecation warnings signal migration path",
+          "status": "completed",
+          "note": "Warnings guide future migration to per-context types in src/domains/"
+        }
       ],
       "acceptance_criteria": [
         "FoldEditFields created - ACHIEVED",
@@ -615,19 +1244,79 @@
       "completed": "2026-01-03",
       "description": "Actually migrate from domain_node.rs to per-context coproducts and fix tofu problem",
       "tasks": [
-        { "id": "25.1", "description": "Fix plan to reflect actual state (was claiming DONE)", "status": "completed" },
-        { "id": "25.2", "description": "Fix GlyphCoverage::emoji() - was claiming Dingbats/MiscSymbols", "status": "completed", "note": "Noto Color Emoji doesn't have these blocks" },
-        { "id": "25.3", "description": "Add GlyphCoverage::symbols() for dingbats that body font renders", "status": "completed" },
-        { "id": "25.4", "description": "Change icons::verified::default_theme() to use cim_default() not text_only_fallback()", "status": "completed" },
-        { "id": "25.5", "description": "Add cim_fonts_loaded() to font_set.rs", "status": "completed" },
-        { "id": "25.6", "description": "Add cim_default() to verified_theme.rs", "status": "completed" },
-        { "id": "25.7", "description": "Build and test tofu fix", "status": "completed", "note": "333 tests pass" },
-        { "id": "25.8", "description": "Migrate graph_*.rs files from DomainNode to lifted_node", "status": "completed", "note": "Migrated 6 files: graph_person.rs, graph_key.rs, graph_location.rs, graph_manifest.rs, graph_certificate.rs, graph_organization.rs, graph_integration_tests.rs" },
-        { "id": "25.9", "description": "Add LiftedNode accessor methods for typed downcast", "status": "completed", "note": "Added person_with_role(), person(), organization(), organization_unit(), location(), key(), certificate(), manifest(), yubikey(), yubikey_status()" },
-        { "id": "25.10", "description": "graph.rs fold-based usages migrated to LiftedNode methods", "status": "completed", "note": "Added themed_visualization() and detail_panel() to LiftedNode. graph.rs now uses lifted_node.themed_visualization() and lifted_node.detail_panel()" },
-        { "id": "25.11", "description": "property_card.rs verified - no FoldDomainNode usages", "status": "completed", "note": "Grep confirmed no domain_node usages" },
-        { "id": "25.12", "description": "Fix yubikey_status() accessor for DomainNodeData bridge path", "status": "completed", "note": "Updated accessor to try direct downcast first, then DomainNodeData wrapper extraction" },
-        { "id": "25.13", "description": "Delete domain_node.rs when migration complete", "status": "completed", "note": "Verified deleted - file no longer exists, FoldDomainNode only in comments" }
+        {
+          "id": "25.1",
+          "description": "Fix plan to reflect actual state (was claiming DONE)",
+          "status": "completed"
+        },
+        {
+          "id": "25.2",
+          "description": "Fix GlyphCoverage::emoji() - was claiming Dingbats/MiscSymbols",
+          "status": "completed",
+          "note": "Noto Color Emoji doesn't have these blocks"
+        },
+        {
+          "id": "25.3",
+          "description": "Add GlyphCoverage::symbols() for dingbats that body font renders",
+          "status": "completed"
+        },
+        {
+          "id": "25.4",
+          "description": "Change icons::verified::default_theme() to use cim_default() not text_only_fallback()",
+          "status": "completed"
+        },
+        {
+          "id": "25.5",
+          "description": "Add cim_fonts_loaded() to font_set.rs",
+          "status": "completed"
+        },
+        {
+          "id": "25.6",
+          "description": "Add cim_default() to verified_theme.rs",
+          "status": "completed"
+        },
+        {
+          "id": "25.7",
+          "description": "Build and test tofu fix",
+          "status": "completed",
+          "note": "333 tests pass"
+        },
+        {
+          "id": "25.8",
+          "description": "Migrate graph_*.rs files from DomainNode to lifted_node",
+          "status": "completed",
+          "note": "Migrated 6 files: graph_person.rs, graph_key.rs, graph_location.rs, graph_manifest.rs, graph_certificate.rs, graph_organization.rs, graph_integration_tests.rs"
+        },
+        {
+          "id": "25.9",
+          "description": "Add LiftedNode accessor methods for typed downcast",
+          "status": "completed",
+          "note": "Added person_with_role(), person(), organization(), organization_unit(), location(), key(), certificate(), manifest(), yubikey(), yubikey_status()"
+        },
+        {
+          "id": "25.10",
+          "description": "graph.rs fold-based usages migrated to LiftedNode methods",
+          "status": "completed",
+          "note": "Added themed_visualization() and detail_panel() to LiftedNode. graph.rs now uses lifted_node.themed_visualization() and lifted_node.detail_panel()"
+        },
+        {
+          "id": "25.11",
+          "description": "property_card.rs verified - no FoldDomainNode usages",
+          "status": "completed",
+          "note": "Grep confirmed no domain_node usages"
+        },
+        {
+          "id": "25.12",
+          "description": "Fix yubikey_status() accessor for DomainNodeData bridge path",
+          "status": "completed",
+          "note": "Updated accessor to try direct downcast first, then DomainNodeData wrapper extraction"
+        },
+        {
+          "id": "25.13",
+          "description": "Delete domain_node.rs when migration complete",
+          "status": "completed",
+          "note": "Verified deleted - file no longer exists, FoldDomainNode only in comments"
+        }
       ],
       "acceptance_criteria": [
         "Tofu boxes eliminated - COMPLETE (verification.rs fixed, cim_default() icons)",
@@ -647,14 +1336,46 @@
       "retrospective": "retrospectives/sprint_26.md",
       "description": "Complete NATS JetStream integration for domain event publishing with CIM header specifications",
       "tasks": [
-        { "id": "26.1", "description": "Add async-nats dependency with nats-client feature flag", "status": "completed" },
-        { "id": "26.2", "description": "Create CIM header specification (src/domain/nats/headers.rs)", "status": "completed" },
-        { "id": "26.3", "description": "Define subject hierarchy constants (src/domain/nats/jetstream.rs)", "status": "completed" },
-        { "id": "26.4", "description": "Implement JetStreamPort trait (src/ports/nats.rs)", "status": "completed" },
-        { "id": "26.5", "description": "Implement JetStreamAdapter (src/adapters/nats_client.rs)", "status": "completed" },
-        { "id": "26.6", "description": "Configure KEYS_EVENTS and KEYS_COMMANDS streams", "status": "completed" },
-        { "id": "26.7", "description": "Create EventPublisher (src/domain/nats/publisher.rs)", "status": "completed" },
-        { "id": "26.8", "description": "Create durable consumer configurations", "status": "completed" }
+        {
+          "id": "26.1",
+          "description": "Add async-nats dependency with nats-client feature flag",
+          "status": "completed"
+        },
+        {
+          "id": "26.2",
+          "description": "Create CIM header specification (src/domain/nats/headers.rs)",
+          "status": "completed"
+        },
+        {
+          "id": "26.3",
+          "description": "Define subject hierarchy constants (src/domain/nats/jetstream.rs)",
+          "status": "completed"
+        },
+        {
+          "id": "26.4",
+          "description": "Implement JetStreamPort trait (src/ports/nats.rs)",
+          "status": "completed"
+        },
+        {
+          "id": "26.5",
+          "description": "Implement JetStreamAdapter (src/adapters/nats_client.rs)",
+          "status": "completed"
+        },
+        {
+          "id": "26.6",
+          "description": "Configure KEYS_EVENTS and KEYS_COMMANDS streams",
+          "status": "completed"
+        },
+        {
+          "id": "26.7",
+          "description": "Create EventPublisher (src/domain/nats/publisher.rs)",
+          "status": "completed"
+        },
+        {
+          "id": "26.8",
+          "description": "Create durable consumer configurations",
+          "status": "completed"
+        }
       ],
       "acceptance_criteria": [
         "JetStreamPort trait with publish/subscribe/stream management - ACHIEVED",
@@ -672,9 +1393,7 @@
       "notes": "Complete JetStream infrastructure for durable event streaming. Supports correlation/causation tracking, deduplication, batch publishing. Ready for integration tests with real NATS server."
     }
   },
-
   "retrospectives": {},
-
   "gui_scaling_refactor": {
     "objective": "Make all GUI elements scale uniformly via Ctrl+/- by replacing hardcoded sizes with ViewModel values",
     "started": "2025-12-31",
@@ -693,13 +1412,41 @@
         "description": "Refactor property_card.rs: 69 .size(), 54 .spacing(), 10 .padding() calls",
         "retrospective": "retrospectives/sprint_11.md",
         "tasks": [
-          { "id": "11.1", "description": "Add ViewModel parameter to public view() function", "status": "completed" },
-          { "id": "11.2", "description": "Thread ViewModel through all internal view functions", "status": "completed" },
-          { "id": "11.3", "description": "Replace all .size(N) calls with vm.text_* values", "status": "completed" },
-          { "id": "11.4", "description": "Replace all .spacing(N) calls with vm.spacing_* values", "status": "completed" },
-          { "id": "11.5", "description": "Replace all .padding(N) calls with vm.padding_* values", "status": "completed" },
-          { "id": "11.6", "description": "Update callers in gui.rs to pass ViewModel", "status": "completed" },
-          { "id": "11.7", "description": "Verify compilation", "status": "completed" }
+          {
+            "id": "11.1",
+            "description": "Add ViewModel parameter to public view() function",
+            "status": "completed"
+          },
+          {
+            "id": "11.2",
+            "description": "Thread ViewModel through all internal view functions",
+            "status": "completed"
+          },
+          {
+            "id": "11.3",
+            "description": "Replace all .size(N) calls with vm.text_* values",
+            "status": "completed"
+          },
+          {
+            "id": "11.4",
+            "description": "Replace all .spacing(N) calls with vm.spacing_* values",
+            "status": "completed"
+          },
+          {
+            "id": "11.5",
+            "description": "Replace all .padding(N) calls with vm.padding_* values",
+            "status": "completed"
+          },
+          {
+            "id": "11.6",
+            "description": "Update callers in gui.rs to pass ViewModel",
+            "status": "completed"
+          },
+          {
+            "id": "11.7",
+            "description": "Verify compilation",
+            "status": "completed"
+          }
         ],
         "acceptance_criteria": [
           "All .size() calls use vm.text_* - ACHIEVED (69 calls)",
@@ -718,11 +1465,31 @@
         "description": "Refactor graph.rs: 15 .size(), 3 .spacing(), 11 .padding() calls",
         "retrospective": "retrospectives/sprint_12.md",
         "tasks": [
-          { "id": "12.1", "description": "Add ViewModel import and parameter to view_graph", "status": "completed" },
-          { "id": "12.2", "description": "Add explicit lifetime parameters", "status": "completed" },
-          { "id": "12.3", "description": "Replace hardcoded sizes in buttons and text labels", "status": "completed" },
-          { "id": "12.4", "description": "Update 7 callers in gui.rs to pass ViewModel", "status": "completed" },
-          { "id": "12.5", "description": "Verify compilation", "status": "completed" }
+          {
+            "id": "12.1",
+            "description": "Add ViewModel import and parameter to view_graph",
+            "status": "completed"
+          },
+          {
+            "id": "12.2",
+            "description": "Add explicit lifetime parameters",
+            "status": "completed"
+          },
+          {
+            "id": "12.3",
+            "description": "Replace hardcoded sizes in buttons and text labels",
+            "status": "completed"
+          },
+          {
+            "id": "12.4",
+            "description": "Update 7 callers in gui.rs to pass ViewModel",
+            "status": "completed"
+          },
+          {
+            "id": "12.5",
+            "description": "Verify compilation",
+            "status": "completed"
+          }
         ],
         "acceptance_criteria": [
           "All .size() calls use vm.text_* - ACHIEVED (15 calls)",
@@ -741,12 +1508,36 @@
         "description": "Refactor role_palette.rs: 13 .size(), 4 .spacing(), 3 .padding() calls",
         "retrospective": "retrospectives/sprint_13.md",
         "tasks": [
-          { "id": "13.1", "description": "Add ViewModel import and parameter to view function", "status": "completed" },
-          { "id": "13.2", "description": "Update role_badge helper to accept vm", "status": "completed" },
-          { "id": "13.3", "description": "Update category_header helper to accept vm", "status": "completed" },
-          { "id": "13.4", "description": "Replace hardcoded sizes in all functions", "status": "completed" },
-          { "id": "13.5", "description": "Update gui.rs caller to pass ViewModel", "status": "completed" },
-          { "id": "13.6", "description": "Verify compilation", "status": "completed" }
+          {
+            "id": "13.1",
+            "description": "Add ViewModel import and parameter to view function",
+            "status": "completed"
+          },
+          {
+            "id": "13.2",
+            "description": "Update role_badge helper to accept vm",
+            "status": "completed"
+          },
+          {
+            "id": "13.3",
+            "description": "Update category_header helper to accept vm",
+            "status": "completed"
+          },
+          {
+            "id": "13.4",
+            "description": "Replace hardcoded sizes in all functions",
+            "status": "completed"
+          },
+          {
+            "id": "13.5",
+            "description": "Update gui.rs caller to pass ViewModel",
+            "status": "completed"
+          },
+          {
+            "id": "13.6",
+            "description": "Verify compilation",
+            "status": "completed"
+          }
         ],
         "acceptance_criteria": [
           "All .size() calls use vm.text_* - ACHIEVED (13 calls)",
@@ -765,11 +1556,31 @@
         "description": "Refactor passphrase_dialog.rs: 12 .size(), 7 .spacing(), 1 .padding() calls",
         "retrospective": "retrospectives/sprint_14.md",
         "tasks": [
-          { "id": "14.1", "description": "Add ViewModel import and parameter to view function", "status": "completed" },
-          { "id": "14.2", "description": "Replace hardcoded sizes in input fields and buttons", "status": "completed" },
-          { "id": "14.3", "description": "Use local variable capture for closures", "status": "completed" },
-          { "id": "14.4", "description": "Update gui.rs caller to pass ViewModel", "status": "completed" },
-          { "id": "14.5", "description": "Verify compilation", "status": "completed" }
+          {
+            "id": "14.1",
+            "description": "Add ViewModel import and parameter to view function",
+            "status": "completed"
+          },
+          {
+            "id": "14.2",
+            "description": "Replace hardcoded sizes in input fields and buttons",
+            "status": "completed"
+          },
+          {
+            "id": "14.3",
+            "description": "Use local variable capture for closures",
+            "status": "completed"
+          },
+          {
+            "id": "14.4",
+            "description": "Update gui.rs caller to pass ViewModel",
+            "status": "completed"
+          },
+          {
+            "id": "14.5",
+            "description": "Verify compilation",
+            "status": "completed"
+          }
         ],
         "acceptance_criteria": [
           "All .size() calls use vm.text_* - ACHIEVED (12 calls)",
@@ -788,11 +1599,31 @@
         "description": "Refactor context_menu.rs: 11 .size(), 1 .spacing(), 1 .padding() calls",
         "retrospective": "retrospectives/sprint_15.md",
         "tasks": [
-          { "id": "15.1", "description": "Add ViewModel import and parameter to view function", "status": "completed" },
-          { "id": "15.2", "description": "Replace manual scaling with ViewModel values", "status": "completed" },
-          { "id": "15.3", "description": "Use vm.scale for menu width", "status": "completed" },
-          { "id": "15.4", "description": "Update gui.rs caller to pass ViewModel", "status": "completed" },
-          { "id": "15.5", "description": "Verify compilation", "status": "completed" }
+          {
+            "id": "15.1",
+            "description": "Add ViewModel import and parameter to view function",
+            "status": "completed"
+          },
+          {
+            "id": "15.2",
+            "description": "Replace manual scaling with ViewModel values",
+            "status": "completed"
+          },
+          {
+            "id": "15.3",
+            "description": "Use vm.scale for menu width",
+            "status": "completed"
+          },
+          {
+            "id": "15.4",
+            "description": "Update gui.rs caller to pass ViewModel",
+            "status": "completed"
+          },
+          {
+            "id": "15.5",
+            "description": "Verify compilation",
+            "status": "completed"
+          }
         ],
         "acceptance_criteria": [
           "All .size() calls use vm.text_* - ACHIEVED (11 calls)",
@@ -810,10 +1641,27 @@
         "completed": null,
         "description": "Final integration testing and SD card deployment",
         "tasks": [
-          { "id": "16.1", "description": "Full cargo build --release", "status": "completed" },
-          { "id": "16.2", "description": "Test Ctrl+/- scaling with all components", "status": "completed" },
-          { "id": "16.3", "description": "Rebuild SD card image with updated binary", "status": "completed" },
-          { "id": "16.4", "description": "Flash to SD card and test on target hardware", "status": "pending", "notes": "Requires physical hardware" }
+          {
+            "id": "16.1",
+            "description": "Full cargo build --release",
+            "status": "completed"
+          },
+          {
+            "id": "16.2",
+            "description": "Test Ctrl+/- scaling with all components",
+            "status": "completed"
+          },
+          {
+            "id": "16.3",
+            "description": "Rebuild SD card image with updated binary",
+            "status": "completed"
+          },
+          {
+            "id": "16.4",
+            "description": "Flash to SD card and test on target hardware",
+            "status": "pending",
+            "notes": "Requires physical hardware"
+          }
         ],
         "notes": "Tasks 16.1-16.3 completed. Task 16.4 requires physical SD card and target hardware."
       },
@@ -824,14 +1672,46 @@
         "completed": "2026-01-02",
         "description": "Suppress deprecation warnings for FoldDomainNode and DomainNode during gradual migration",
         "tasks": [
-          { "id": "17.1", "description": "Remove domain_node field from ConceptEntity struct", "status": "completed" },
-          { "id": "17.2", "description": "Fix from_domain_node method to not reference removed field", "status": "completed" },
-          { "id": "17.3", "description": "Add #[allow(deprecated)] to FoldDomainNode impl blocks", "status": "completed" },
-          { "id": "17.4", "description": "Add #[allow(deprecated)] to FoldDomainNode imports in fold modules", "status": "completed" },
-          { "id": "17.5", "description": "Add module-level #![allow(deprecated)] to graph_projection.rs", "status": "completed" },
-          { "id": "17.6", "description": "Remove unused DomainNodeData import from graph.rs", "status": "completed" },
-          { "id": "17.7", "description": "Add #[allow(deprecated)] to test modules using deprecated types", "status": "completed" },
-          { "id": "17.8", "description": "Fix unused issuer variable warning", "status": "completed" }
+          {
+            "id": "17.1",
+            "description": "Remove domain_node field from ConceptEntity struct",
+            "status": "completed"
+          },
+          {
+            "id": "17.2",
+            "description": "Fix from_domain_node method to not reference removed field",
+            "status": "completed"
+          },
+          {
+            "id": "17.3",
+            "description": "Add #[allow(deprecated)] to FoldDomainNode impl blocks",
+            "status": "completed"
+          },
+          {
+            "id": "17.4",
+            "description": "Add #[allow(deprecated)] to FoldDomainNode imports in fold modules",
+            "status": "completed"
+          },
+          {
+            "id": "17.5",
+            "description": "Add module-level #![allow(deprecated)] to graph_projection.rs",
+            "status": "completed"
+          },
+          {
+            "id": "17.6",
+            "description": "Remove unused DomainNodeData import from graph.rs",
+            "status": "completed"
+          },
+          {
+            "id": "17.7",
+            "description": "Add #[allow(deprecated)] to test modules using deprecated types",
+            "status": "completed"
+          },
+          {
+            "id": "17.8",
+            "description": "Fix unused issuer variable warning",
+            "status": "completed"
+          }
         ],
         "acceptance_criteria": [
           "Zero deprecation warnings in cim-keys - ACHIEVED",
@@ -849,7 +1729,6 @@
       }
     }
   },
-
   "corrective_sprints": {
     "sprint_11": {
       "name": "Categorical Foundations",
@@ -858,11 +1737,36 @@
       "completed": "2026-01-02",
       "description": "Restore coproduct universal property and functor laws",
       "tasks": [
-        { "id": "11.1", "description": "Implement Coproduct trait with fold", "status": "completed", "note": "Added Coproduct trait and CoproductFolder trait in fold.rs" },
-        { "id": "11.2", "description": "Add arr identity arrow to fold.rs", "status": "completed", "note": "Added Arr struct and arr() function with arrow laws" },
-        { "id": "11.3", "description": "Implement functor law witnesses in LiftableDomain", "status": "completed", "note": "Added FunctorLawWitness with verify_identity_law and verify_composition_law" },
-        { "id": "11.4", "description": "Add Event Monoid implementation", "status": "completed", "note": "Added Monoid and Semigroup traits with Vec, String, Option, () implementations" },
-        { "id": "11.5", "description": "Property tests for arrow laws", "status": "completed", "note": "Added 16 new tests for arr, monoid laws, semigroup, option monoid" }
+        {
+          "id": "11.1",
+          "description": "Implement Coproduct trait with fold",
+          "status": "completed",
+          "note": "Added Coproduct trait and CoproductFolder trait in fold.rs"
+        },
+        {
+          "id": "11.2",
+          "description": "Add arr identity arrow to fold.rs",
+          "status": "completed",
+          "note": "Added Arr struct and arr() function with arrow laws"
+        },
+        {
+          "id": "11.3",
+          "description": "Implement functor law witnesses in LiftableDomain",
+          "status": "completed",
+          "note": "Added FunctorLawWitness with verify_identity_law and verify_composition_law"
+        },
+        {
+          "id": "11.4",
+          "description": "Add Event Monoid implementation",
+          "status": "completed",
+          "note": "Added Monoid and Semigroup traits with Vec, String, Option, () implementations"
+        },
+        {
+          "id": "11.5",
+          "description": "Property tests for arrow laws",
+          "status": "completed",
+          "note": "Added 16 new tests for arr, monoid laws, semigroup, option monoid"
+        }
       ],
       "acceptance_criteria": [
         "fold is the unique morphism satisfying universal property - ACHIEVED (Coproduct trait)",
@@ -892,20 +1796,90 @@
       "completed": "2026-01-02",
       "description": "Replace 1000+ line update.rs match with compositional routing (FRP A6)",
       "tasks": [
-        { "id": "12.1", "description": "Create src/routing/subject.rs with SubjectIntent", "status": "completed", "note": "Added IntentCategory, SubjectPattern, SubjectIntent" },
-        { "id": "12.2", "description": "Implement arrow-based RouteArrow trait", "status": "completed", "note": "Already exists in routing/primitives.rs as Route" },
-        { "id": "12.3", "description": "Implement SubjectRouter with pattern matching", "status": "completed", "note": "SubjectRouter with wildcard patterns (*, >)" },
-        { "id": "12.4", "description": "Implement HierarchicalRouter for category dispatch", "status": "completed", "note": "Routes by IntentCategory (Ui, Domain, Port, System, Error)" },
-        { "id": "12.5", "description": "Extract UI handlers to handlers/ui.rs", "status": "completed", "note": "Created src/mvi/handlers/ui.rs with 15 handler functions" },
-        { "id": "12.6", "description": "Extract Domain handlers to handlers/domain.rs", "status": "completed", "note": "Created src/mvi/handlers/domain.rs with 17 handler functions" },
-        { "id": "12.7", "description": "Extract Port handlers to handlers/port.rs", "status": "completed", "note": "Created src/mvi/handlers/port.rs with 18 handler functions" },
-        { "id": "12.8", "description": "Extract System handlers to handlers/system.rs", "status": "completed", "note": "Created src/mvi/handlers/system.rs with 4 handler functions" },
-        { "id": "12.9", "description": "Extract Error handlers to handlers/error.rs", "status": "completed", "note": "Created src/mvi/handlers/error.rs with 2 handler functions" },
-        { "id": "12.10", "description": "Extract Graph handlers to handlers/graph.rs", "status": "completed", "note": "Created src/mvi/handlers/graph.rs with 12 handler functions" },
-        { "id": "12.11", "description": "Create handlers/mod.rs with Ports struct", "status": "completed", "note": "Module exports and Ports context type" },
-        { "id": "12.12", "description": "Add to_subject() method to Intent enum", "status": "completed", "note": "NATS-style subject strings for all 79 intents" },
-        { "id": "12.13", "description": "Create route_intent() function in handlers/router.rs", "status": "completed", "note": "Category-based dispatch with 5 routing functions" },
-        { "id": "12.14", "description": "Replace update() match with route_intent() call", "status": "completed", "note": "update.rs reduced from 1067 to 59 lines (94% reduction)" }
+        {
+          "id": "12.1",
+          "description": "Create src/routing/subject.rs with SubjectIntent",
+          "status": "completed",
+          "note": "Added IntentCategory, SubjectPattern, SubjectIntent"
+        },
+        {
+          "id": "12.2",
+          "description": "Implement arrow-based RouteArrow trait",
+          "status": "completed",
+          "note": "Already exists in routing/primitives.rs as Route"
+        },
+        {
+          "id": "12.3",
+          "description": "Implement SubjectRouter with pattern matching",
+          "status": "completed",
+          "note": "SubjectRouter with wildcard patterns (*, >)"
+        },
+        {
+          "id": "12.4",
+          "description": "Implement HierarchicalRouter for category dispatch",
+          "status": "completed",
+          "note": "Routes by IntentCategory (Ui, Domain, Port, System, Error)"
+        },
+        {
+          "id": "12.5",
+          "description": "Extract UI handlers to handlers/ui.rs",
+          "status": "completed",
+          "note": "Created src/mvi/handlers/ui.rs with 15 handler functions"
+        },
+        {
+          "id": "12.6",
+          "description": "Extract Domain handlers to handlers/domain.rs",
+          "status": "completed",
+          "note": "Created src/mvi/handlers/domain.rs with 17 handler functions"
+        },
+        {
+          "id": "12.7",
+          "description": "Extract Port handlers to handlers/port.rs",
+          "status": "completed",
+          "note": "Created src/mvi/handlers/port.rs with 18 handler functions"
+        },
+        {
+          "id": "12.8",
+          "description": "Extract System handlers to handlers/system.rs",
+          "status": "completed",
+          "note": "Created src/mvi/handlers/system.rs with 4 handler functions"
+        },
+        {
+          "id": "12.9",
+          "description": "Extract Error handlers to handlers/error.rs",
+          "status": "completed",
+          "note": "Created src/mvi/handlers/error.rs with 2 handler functions"
+        },
+        {
+          "id": "12.10",
+          "description": "Extract Graph handlers to handlers/graph.rs",
+          "status": "completed",
+          "note": "Created src/mvi/handlers/graph.rs with 12 handler functions"
+        },
+        {
+          "id": "12.11",
+          "description": "Create handlers/mod.rs with Ports struct",
+          "status": "completed",
+          "note": "Module exports and Ports context type"
+        },
+        {
+          "id": "12.12",
+          "description": "Add to_subject() method to Intent enum",
+          "status": "completed",
+          "note": "NATS-style subject strings for all 79 intents"
+        },
+        {
+          "id": "12.13",
+          "description": "Create route_intent() function in handlers/router.rs",
+          "status": "completed",
+          "note": "Category-based dispatch with 5 routing functions"
+        },
+        {
+          "id": "12.14",
+          "description": "Replace update() match with route_intent() call",
+          "status": "completed",
+          "note": "update.rs reduced from 1067 to 59 lines (94% reduction)"
+        }
       ],
       "acceptance_criteria": [
         "No match statement > 20 arms - ACHIEVED (update.rs now 59 lines, no match)",
@@ -959,11 +1933,36 @@
       "completed": "2026-01-02",
       "description": "Establish proper aggregate boundaries and value objects",
       "tasks": [
-        { "id": "13.1", "description": "Create phantom-typed EntityId in domain/ids.rs", "status": "completed", "note": "Already exists with 15 marker types and tests" },
-        { "id": "13.2", "description": "Migrate all Uuid to phantom-typed IDs", "status": "deferred", "note": "Incremental migration - aggregates already use typed IDs" },
-        { "id": "13.3", "description": "Create value objects (OperatorName, AccountName, etc.)", "status": "completed", "note": "Created src/domain/value_objects.rs with 6 value objects" },
-        { "id": "13.4", "description": "Extract CertificateAggregate", "status": "completed", "note": "PkiCertificateChainAggregate already exists with validation logic" },
-        { "id": "13.5", "description": "Extract IdentityAggregate", "status": "completed", "note": "Person identity via cross-aggregate references (owner_person_id)" }
+        {
+          "id": "13.1",
+          "description": "Create phantom-typed EntityId in domain/ids.rs",
+          "status": "completed",
+          "note": "Already exists with 15 marker types and tests"
+        },
+        {
+          "id": "13.2",
+          "description": "Migrate all Uuid to phantom-typed IDs",
+          "status": "deferred",
+          "note": "Incremental migration - aggregates already use typed IDs"
+        },
+        {
+          "id": "13.3",
+          "description": "Create value objects (OperatorName, AccountName, etc.)",
+          "status": "completed",
+          "note": "Created src/domain/value_objects.rs with 6 value objects"
+        },
+        {
+          "id": "13.4",
+          "description": "Extract CertificateAggregate",
+          "status": "completed",
+          "note": "PkiCertificateChainAggregate already exists with validation logic"
+        },
+        {
+          "id": "13.5",
+          "description": "Extract IdentityAggregate",
+          "status": "completed",
+          "note": "Person identity via cross-aggregate references (owner_person_id)"
+        }
       ],
       "acceptance_criteria": [
         "Phantom-typed EntityId - ACHIEVED (15 marker types)",
@@ -987,7 +1986,6 @@
       }
     }
   },
-
   "expert_evaluations": {
     "sprint_30": {
       "name": "Comprehensive Expert Evaluations",
@@ -1007,15 +2005,42 @@
         "fp-expert"
       ],
       "compliance_scores": {
-        "frp-expert": { "score": "55%", "critical_issue": "A6 violation: 1000+ line match statement in update.rs" },
-        "act-expert": { "score": "45%", "critical_issue": "Coproduct universal property violated, downcast chains" },
-        "ddd-expert": { "score": "55%", "critical_issue": "Anemic domain model, missing aggregate boundaries" },
-        "domain-expert": { "score": "N/A", "critical_issue": "Context leakage between PKI/NATS and Organization" },
-        "cim-expert": { "score": "65%", "critical_issue": "Missing IPLD content addressing for events" },
-        "graph-expert": { "score": "45%", "critical_issue": "Embedded collections instead of graph edges" },
-        "nats-expert": { "score": "40%", "critical_issue": "No JetStream, no CIM headers, CLI-based NSC" },
-        "subject-expert": { "score": "N/A", "critical_issue": "Pattern matching instead of subject algebra routing" },
-        "fp-expert": { "score": "72%", "critical_issue": "Projection mutation, loop-with-accumulator patterns, effect isolation" }
+        "frp-expert": {
+          "score": "55%",
+          "critical_issue": "A6 violation: 1000+ line match statement in update.rs"
+        },
+        "act-expert": {
+          "score": "45%",
+          "critical_issue": "Coproduct universal property violated, downcast chains"
+        },
+        "ddd-expert": {
+          "score": "55%",
+          "critical_issue": "Anemic domain model, missing aggregate boundaries"
+        },
+        "domain-expert": {
+          "score": "N/A",
+          "critical_issue": "Context leakage between PKI/NATS and Organization"
+        },
+        "cim-expert": {
+          "score": "65%",
+          "critical_issue": "Missing IPLD content addressing for events"
+        },
+        "graph-expert": {
+          "score": "45%",
+          "critical_issue": "Embedded collections instead of graph edges"
+        },
+        "nats-expert": {
+          "score": "40%",
+          "critical_issue": "No JetStream, no CIM headers, CLI-based NSC"
+        },
+        "subject-expert": {
+          "score": "N/A",
+          "critical_issue": "Pattern matching instead of subject algebra routing"
+        },
+        "fp-expert": {
+          "score": "72%",
+          "critical_issue": "Projection mutation, loop-with-accumulator patterns, effect isolation"
+        }
       },
       "evaluation_files": [
         "doc/evaluations/01-frp-expert-evaluation.md",
@@ -1032,14 +2057,38 @@
       "corrective_sprints_planned": {
         "total_sprints": 8,
         "total_story_points": 120,
-        "sprint_11": { "name": "Categorical Foundations", "points": 13 },
-        "sprint_12": { "name": "Routing Refactor", "points": 16 },
-        "sprint_13": { "name": "DDD Foundations", "points": 13 },
-        "sprint_14": { "name": "Bounded Context ACLs", "points": 16 },
-        "sprint_15": { "name": "Graph Structure", "points": 15 },
-        "sprint_16": { "name": "NATS Integration", "points": 21 },
-        "sprint_17": { "name": "Event Hardening", "points": 14 },
-        "sprint_18": { "name": "Verification & Docs", "points": 12 }
+        "sprint_11": {
+          "name": "Categorical Foundations",
+          "points": 13
+        },
+        "sprint_12": {
+          "name": "Routing Refactor",
+          "points": 16
+        },
+        "sprint_13": {
+          "name": "DDD Foundations",
+          "points": 13
+        },
+        "sprint_14": {
+          "name": "Bounded Context ACLs",
+          "points": 16
+        },
+        "sprint_15": {
+          "name": "Graph Structure",
+          "points": 15
+        },
+        "sprint_16": {
+          "name": "NATS Integration",
+          "points": 21
+        },
+        "sprint_17": {
+          "name": "Event Hardening",
+          "points": 14
+        },
+        "sprint_18": {
+          "name": "Verification & Docs",
+          "points": 12
+        }
       },
       "priority_0_critical": "Replace 1000+ line update.rs match with compositional routing",
       "target_compliance": {
@@ -1113,7 +2162,6 @@
       }
     }
   },
-
   "graph_refactoring_sprints": {
     "sprint_27": {
       "name": "Event Replay & Query Infrastructure",
@@ -1122,9 +2170,21 @@
       "completed": "2026-01-03",
       "retrospective": "retrospectives/sprint_27.md",
       "tasks": [
-        { "id": "27.1", "description": "Create EventReplayer for aggregate reconstruction", "status": "completed" },
-        { "id": "27.2", "description": "Create ProjectionQuery for state queries", "status": "completed" },
-        { "id": "27.3", "description": "Add replay tests", "status": "completed" }
+        {
+          "id": "27.1",
+          "description": "Create EventReplayer for aggregate reconstruction",
+          "status": "completed"
+        },
+        {
+          "id": "27.2",
+          "description": "Create ProjectionQuery for state queries",
+          "status": "completed"
+        },
+        {
+          "id": "27.3",
+          "description": "Add replay tests",
+          "status": "completed"
+        }
       ]
     },
     "sprint_28": {
@@ -1134,9 +2194,21 @@
       "completed": "2026-01-03",
       "retrospective": "retrospectives/sprint_28.md",
       "tasks": [
-        { "id": "28.1", "description": "Create JetStreamSagaExecutor", "status": "completed" },
-        { "id": "28.2", "description": "Implement KV-based saga state persistence", "status": "completed" },
-        { "id": "28.3", "description": "Add saga executor tests", "status": "completed" }
+        {
+          "id": "28.1",
+          "description": "Create JetStreamSagaExecutor",
+          "status": "completed"
+        },
+        {
+          "id": "28.2",
+          "description": "Implement KV-based saga state persistence",
+          "status": "completed"
+        },
+        {
+          "id": "28.3",
+          "description": "Add saga executor tests",
+          "status": "completed"
+        }
       ]
     },
     "sprint_29": {
@@ -1146,9 +2218,21 @@
       "completed": "2026-01-03",
       "retrospective": "retrospectives/sprint_29.md",
       "tasks": [
-        { "id": "29.1", "description": "Create SagaCommandHandler", "status": "completed" },
-        { "id": "29.2", "description": "Bridge commands with saga execution", "status": "completed" },
-        { "id": "29.3", "description": "Add command handler tests", "status": "completed" }
+        {
+          "id": "29.1",
+          "description": "Create SagaCommandHandler",
+          "status": "completed"
+        },
+        {
+          "id": "29.2",
+          "description": "Bridge commands with saga execution",
+          "status": "completed"
+        },
+        {
+          "id": "29.3",
+          "description": "Add command handler tests",
+          "status": "completed"
+        }
       ]
     },
     "sprint_30": {
@@ -1158,10 +2242,26 @@
       "completed": "2026-01-03",
       "retrospective": "retrospectives/sprint_30.md",
       "tasks": [
-        { "id": "30.1", "description": "Create SagaEvents with 11 lifecycle events", "status": "completed" },
-        { "id": "30.2", "description": "Add Saga variant to DomainEvent enum", "status": "completed" },
-        { "id": "30.3", "description": "Integrate with EventPublisher routing", "status": "completed" },
-        { "id": "30.4", "description": "Add saga event tests (8 new tests)", "status": "completed" }
+        {
+          "id": "30.1",
+          "description": "Create SagaEvents with 11 lifecycle events",
+          "status": "completed"
+        },
+        {
+          "id": "30.2",
+          "description": "Add Saga variant to DomainEvent enum",
+          "status": "completed"
+        },
+        {
+          "id": "30.3",
+          "description": "Integrate with EventPublisher routing",
+          "status": "completed"
+        },
+        {
+          "id": "30.4",
+          "description": "Add saga event tests (8 new tests)",
+          "status": "completed"
+        }
       ],
       "test_count": "550 tests passing"
     },
@@ -1172,19 +2272,60 @@
       "completed": "2026-01-03",
       "description": "Replace 29-arm FoldDomainNode with MorphismRegistry pattern",
       "retrospective": "retrospectives/sprint_31.md",
-      "commits": ["80e8913", "61b14df", "39bb8e0"],
+      "commits": [
+        "80e8913",
+        "61b14df",
+        "39bb8e0"
+      ],
       "tests_added": 11,
       "test_count": "561 tests passing",
       "tasks": [
-        { "id": "31.1", "description": "Create src/graph/morphism.rs with MorphismRegistry type", "status": "completed" },
-        { "id": "31.2", "description": "Define Morphism trait for type-safe transformations", "status": "completed" },
-        { "id": "31.3", "description": "Implement registration of morphisms as DATA entries", "status": "completed" },
-        { "id": "31.4", "description": "Create single fold() operation that looks up morphisms by injection tag", "status": "completed" },
-        { "id": "31.5", "description": "Migrate visualization morphisms from FoldDomainNode to registry", "status": "completed" },
-        { "id": "31.6", "description": "Migrate search/query morphisms to registry", "status": "completed" },
-        { "id": "31.7", "description": "Add #[deprecated] to FoldDomainNode trait", "status": "completed", "notes": "Already removed in prior work" },
-        { "id": "31.8", "description": "Verify compilation and tests pass", "status": "completed" },
-        { "id": "31.9", "description": "Write retrospective", "status": "completed" }
+        {
+          "id": "31.1",
+          "description": "Create src/graph/morphism.rs with MorphismRegistry type",
+          "status": "completed"
+        },
+        {
+          "id": "31.2",
+          "description": "Define Morphism trait for type-safe transformations",
+          "status": "completed"
+        },
+        {
+          "id": "31.3",
+          "description": "Implement registration of morphisms as DATA entries",
+          "status": "completed"
+        },
+        {
+          "id": "31.4",
+          "description": "Create single fold() operation that looks up morphisms by injection tag",
+          "status": "completed"
+        },
+        {
+          "id": "31.5",
+          "description": "Migrate visualization morphisms from FoldDomainNode to registry",
+          "status": "completed"
+        },
+        {
+          "id": "31.6",
+          "description": "Migrate search/query morphisms to registry",
+          "status": "completed"
+        },
+        {
+          "id": "31.7",
+          "description": "Add #[deprecated] to FoldDomainNode trait",
+          "status": "completed",
+          "notes": "Already removed in prior work"
+        },
+        {
+          "id": "31.8",
+          "description": "Verify compilation and tests pass",
+          "status": "completed"
+        },
+        {
+          "id": "31.9",
+          "description": "Write retrospective",
+          "status": "completed"
+        }
       ],
       "acceptance_criteria": [
         "MorphismRegistry stores morphisms as DATA, not code",
@@ -1200,16 +2341,56 @@
       "completed": "2026-01-03",
       "description": "Graph operations work on UUIDs, never lift during traversal",
       "tasks": [
-        { "id": "32.1", "description": "Create src/graph/abstract_ops.rs with AbstractGraphOps", "status": "completed" },
-        { "id": "32.2", "description": "Implement reachable_from(id) -> HashSet<Uuid>", "status": "completed" },
-        { "id": "32.3", "description": "Implement shortest_path(from, to) -> Option<Vec<Uuid>>", "status": "completed" },
-        { "id": "32.4", "description": "Implement find_roots() -> Vec<Uuid>", "status": "completed" },
-        { "id": "32.5", "description": "Implement find_leaves() -> Vec<Uuid>", "status": "completed" },
-        { "id": "32.6", "description": "Implement neighbors(id) -> Vec<Uuid>", "status": "completed" },
-        { "id": "32.7", "description": "Implement topological_sort() and find_cycles()", "status": "completed" },
-        { "id": "32.8", "description": "Implement strongly_connected_components()", "status": "completed" },
-        { "id": "32.9", "description": "Verify no lifting during graph traversal (type signature proof)", "status": "completed" },
-        { "id": "32.10", "description": "Write retrospective", "status": "completed" }
+        {
+          "id": "32.1",
+          "description": "Create src/graph/abstract_ops.rs with AbstractGraphOps",
+          "status": "completed"
+        },
+        {
+          "id": "32.2",
+          "description": "Implement reachable_from(id) -> HashSet<Uuid>",
+          "status": "completed"
+        },
+        {
+          "id": "32.3",
+          "description": "Implement shortest_path(from, to) -> Option<Vec<Uuid>>",
+          "status": "completed"
+        },
+        {
+          "id": "32.4",
+          "description": "Implement find_roots() -> Vec<Uuid>",
+          "status": "completed"
+        },
+        {
+          "id": "32.5",
+          "description": "Implement find_leaves() -> Vec<Uuid>",
+          "status": "completed"
+        },
+        {
+          "id": "32.6",
+          "description": "Implement neighbors(id) -> Vec<Uuid>",
+          "status": "completed"
+        },
+        {
+          "id": "32.7",
+          "description": "Implement topological_sort() and find_cycles()",
+          "status": "completed"
+        },
+        {
+          "id": "32.8",
+          "description": "Implement strongly_connected_components()",
+          "status": "completed"
+        },
+        {
+          "id": "32.9",
+          "description": "Verify no lifting during graph traversal (type signature proof)",
+          "status": "completed"
+        },
+        {
+          "id": "32.10",
+          "description": "Write retrospective",
+          "status": "completed"
+        }
       ],
       "commits": [
         "57b4d23 - feat(graph): add AbstractGraphOps for UUID-only graph algorithms"
@@ -1233,16 +2414,56 @@
       "completed": "2026-01-03",
       "description": "Clear separation between graph layer and domain layer",
       "tasks": [
-        { "id": "33.1", "description": "Define explicit lift boundary in architecture", "status": "completed" },
-        { "id": "33.2", "description": "Create src/graph/lift.rs with lifting utilities", "status": "completed" },
-        { "id": "33.3", "description": "Implement DeferredLift for lazy lifting", "status": "completed" },
-        { "id": "33.4", "description": "Implement BatchLift for efficient multi-node lifting", "status": "completed" },
-        { "id": "33.5", "description": "Document Kan extension pattern in module docs", "status": "completed" },
-        { "id": "33.6", "description": "Add 10 tests verifying lift boundary behavior", "status": "completed" },
-        { "id": "33.7", "description": "Verify FoldDomainNode already removed", "status": "completed" },
-        { "id": "33.8", "description": "Audit lift() calls - all at documented boundaries", "status": "completed" },
-        { "id": "33.9", "description": "Final verification - 591 tests pass", "status": "completed" },
-        { "id": "33.10", "description": "Write retrospective", "status": "completed" }
+        {
+          "id": "33.1",
+          "description": "Define explicit lift boundary in architecture",
+          "status": "completed"
+        },
+        {
+          "id": "33.2",
+          "description": "Create src/graph/lift.rs with lifting utilities",
+          "status": "completed"
+        },
+        {
+          "id": "33.3",
+          "description": "Implement DeferredLift for lazy lifting",
+          "status": "completed"
+        },
+        {
+          "id": "33.4",
+          "description": "Implement BatchLift for efficient multi-node lifting",
+          "status": "completed"
+        },
+        {
+          "id": "33.5",
+          "description": "Document Kan extension pattern in module docs",
+          "status": "completed"
+        },
+        {
+          "id": "33.6",
+          "description": "Add 10 tests verifying lift boundary behavior",
+          "status": "completed"
+        },
+        {
+          "id": "33.7",
+          "description": "Verify FoldDomainNode already removed",
+          "status": "completed"
+        },
+        {
+          "id": "33.8",
+          "description": "Audit lift() calls - all at documented boundaries",
+          "status": "completed"
+        },
+        {
+          "id": "33.9",
+          "description": "Final verification - 591 tests pass",
+          "status": "completed"
+        },
+        {
+          "id": "33.10",
+          "description": "Write retrospective",
+          "status": "completed"
+        }
       ],
       "commits": [
         "fcbd65d - feat(graph): add lift boundary utilities for Kan extension"
@@ -1269,14 +2490,46 @@
       "retrospective": "retrospectives/sprint_34.md",
       "description": "Integrate MorphismRegistry pattern into GUI, replacing match arms with registry lookups",
       "tasks": [
-        { "id": "34.1", "description": "Extend VisualizationRegistry with all domain types (22 types)", "status": "completed" },
-        { "id": "34.2", "description": "Replace LiftedNode::themed_visualization() to use registry", "status": "completed" },
-        { "id": "34.3", "description": "Extend DetailPanelRegistry with all domain types (22 types)", "status": "completed" },
-        { "id": "34.4", "description": "Replace LiftedNode::detail_panel() to use registry", "status": "completed" },
-        { "id": "34.5", "description": "Update GUI to use registry.fold() pattern (already done)", "status": "completed" },
-        { "id": "34.6", "description": "Verify GUI renders correctly (release build + 606 tests)", "status": "completed" },
-        { "id": "34.7", "description": "Run full test suite", "status": "completed" },
-        { "id": "34.8", "description": "Write retrospective", "status": "completed" }
+        {
+          "id": "34.1",
+          "description": "Extend VisualizationRegistry with all domain types (22 types)",
+          "status": "completed"
+        },
+        {
+          "id": "34.2",
+          "description": "Replace LiftedNode::themed_visualization() to use registry",
+          "status": "completed"
+        },
+        {
+          "id": "34.3",
+          "description": "Extend DetailPanelRegistry with all domain types (22 types)",
+          "status": "completed"
+        },
+        {
+          "id": "34.4",
+          "description": "Replace LiftedNode::detail_panel() to use registry",
+          "status": "completed"
+        },
+        {
+          "id": "34.5",
+          "description": "Update GUI to use registry.fold() pattern (already done)",
+          "status": "completed"
+        },
+        {
+          "id": "34.6",
+          "description": "Verify GUI renders correctly (release build + 606 tests)",
+          "status": "completed"
+        },
+        {
+          "id": "34.7",
+          "description": "Run full test suite",
+          "status": "completed"
+        },
+        {
+          "id": "34.8",
+          "description": "Write retrospective",
+          "status": "completed"
+        }
       ],
       "phase1_results": {
         "visualization_types": 22,
@@ -1305,13 +2558,41 @@
       "retrospective": "retrospectives/sprint_35.md",
       "description": "Eliminate context leakage with Anti-Corruption Layers and Published Language types",
       "tasks": [
-        { "id": "35.1", "description": "Analyze current cross-context dependencies", "status": "completed" },
-        { "id": "35.2", "description": "Create Published Language types (9 types)", "status": "completed" },
-        { "id": "35.3", "description": "Implement PKI ACL (OrgContextAdapter)", "status": "completed" },
-        { "id": "35.4", "description": "Implement NATS ACL (PersonContextAdapter)", "status": "completed" },
-        { "id": "35.5", "description": "Minimize shared kernel", "status": "completed" },
-        { "id": "35.6", "description": "Add context boundary tests (12 tests)", "status": "completed" },
-        { "id": "35.7", "description": "Write retrospective", "status": "completed" }
+        {
+          "id": "35.1",
+          "description": "Analyze current cross-context dependencies",
+          "status": "completed"
+        },
+        {
+          "id": "35.2",
+          "description": "Create Published Language types (9 types)",
+          "status": "completed"
+        },
+        {
+          "id": "35.3",
+          "description": "Implement PKI ACL (OrgContextAdapter)",
+          "status": "completed"
+        },
+        {
+          "id": "35.4",
+          "description": "Implement NATS ACL (PersonContextAdapter)",
+          "status": "completed"
+        },
+        {
+          "id": "35.5",
+          "description": "Minimize shared kernel",
+          "status": "completed"
+        },
+        {
+          "id": "35.6",
+          "description": "Add context boundary tests (12 tests)",
+          "status": "completed"
+        },
+        {
+          "id": "35.7",
+          "description": "Write retrospective",
+          "status": "completed"
+        }
       ],
       "results": {
         "published_language_types": 9,
@@ -1335,12 +2616,36 @@
       "retrospective": "retrospectives/sprint_36.md",
       "description": "Document bounded context architecture and verify context boundaries",
       "tasks": [
-        { "id": "36.1", "description": "Create doc/architecture/context-map.md", "status": "completed" },
-        { "id": "36.2", "description": "Document Published Language API", "status": "completed" },
-        { "id": "36.3", "description": "Create domain glossary", "status": "completed" },
-        { "id": "36.4", "description": "Update CLAUDE.md with ACL patterns", "status": "completed" },
-        { "id": "36.5", "description": "Run final verification tests", "status": "completed" },
-        { "id": "36.6", "description": "Write retrospective", "status": "completed" }
+        {
+          "id": "36.1",
+          "description": "Create doc/architecture/context-map.md",
+          "status": "completed"
+        },
+        {
+          "id": "36.2",
+          "description": "Document Published Language API",
+          "status": "completed"
+        },
+        {
+          "id": "36.3",
+          "description": "Create domain glossary",
+          "status": "completed"
+        },
+        {
+          "id": "36.4",
+          "description": "Update CLAUDE.md with ACL patterns",
+          "status": "completed"
+        },
+        {
+          "id": "36.5",
+          "description": "Run final verification tests",
+          "status": "completed"
+        },
+        {
+          "id": "36.6",
+          "description": "Write retrospective",
+          "status": "completed"
+        }
       ],
       "results": {
         "context_map_created": true,
@@ -1363,12 +2668,36 @@
       "retrospective": "retrospectives/sprint_37.md",
       "description": "Harden event infrastructure with content addressing, non-exhaustive enums, and pure projections",
       "tasks": [
-        { "id": "37.1", "description": "Analyze current event/projection structure", "status": "completed" },
-        { "id": "37.2", "description": "Add #[non_exhaustive] to DomainEvent and EventEnvelope", "status": "completed" },
-        { "id": "37.3", "description": "Integrate CID into EventEnvelope", "status": "completed" },
-        { "id": "37.4", "description": "Add pure projection functions", "status": "completed" },
-        { "id": "37.5", "description": "Write tests for content-addressed events", "status": "completed" },
-        { "id": "37.6", "description": "Write retrospective", "status": "completed" }
+        {
+          "id": "37.1",
+          "description": "Analyze current event/projection structure",
+          "status": "completed"
+        },
+        {
+          "id": "37.2",
+          "description": "Add #[non_exhaustive] to DomainEvent and EventEnvelope",
+          "status": "completed"
+        },
+        {
+          "id": "37.3",
+          "description": "Integrate CID into EventEnvelope",
+          "status": "completed"
+        },
+        {
+          "id": "37.4",
+          "description": "Add pure projection functions",
+          "status": "completed"
+        },
+        {
+          "id": "37.5",
+          "description": "Write tests for content-addressed events",
+          "status": "completed"
+        },
+        {
+          "id": "37.6",
+          "description": "Write retrospective",
+          "status": "completed"
+        }
       ],
       "results": {
         "non_exhaustive_added": true,
@@ -1393,12 +2722,36 @@
       "retrospective": "retrospectives/sprint_38.md",
       "description": "Content-addressed event storage using IPLD CIDs with automatic deduplication",
       "tasks": [
-        { "id": "38.1", "description": "Analyze current event storage structure", "status": "completed" },
-        { "id": "38.2", "description": "Create CID-indexed event store interface", "status": "completed" },
-        { "id": "38.3", "description": "Implement CID-based file storage", "status": "completed" },
-        { "id": "38.4", "description": "Add event deduplication by CID", "status": "completed" },
-        { "id": "38.5", "description": "Write tests for CID storage", "status": "completed" },
-        { "id": "38.6", "description": "Write retrospective", "status": "completed" }
+        {
+          "id": "38.1",
+          "description": "Analyze current event storage structure",
+          "status": "completed"
+        },
+        {
+          "id": "38.2",
+          "description": "Create CID-indexed event store interface",
+          "status": "completed"
+        },
+        {
+          "id": "38.3",
+          "description": "Implement CID-based file storage",
+          "status": "completed"
+        },
+        {
+          "id": "38.4",
+          "description": "Add event deduplication by CID",
+          "status": "completed"
+        },
+        {
+          "id": "38.5",
+          "description": "Write tests for CID storage",
+          "status": "completed"
+        },
+        {
+          "id": "38.6",
+          "description": "Write retrospective",
+          "status": "completed"
+        }
       ],
       "results": {
         "cid_event_store_created": true,
@@ -1422,24 +2775,86 @@
       "retrospective": "retrospectives/sprint_42.md",
       "description": "Implement NodeContributor pattern for ValueObjects to contribute Labels, Properties, and Relationships to graph Nodes",
       "tasks": [
-        { "id": "42.1", "description": "Create traits.rs with Label, PropertyKey, PropertyValue, ValueRelationship types", "status": "completed" },
-        { "id": "42.2", "description": "Define NodeContributor trait with as_labels(), as_properties(), as_relationships()", "status": "completed" },
-        { "id": "42.3", "description": "Define AggregateContributions trait for entities", "status": "completed" },
-        { "id": "42.4", "description": "Extend LiftedNode with node_labels, node_properties, node_relationships fields", "status": "completed" },
-        { "id": "42.5", "description": "Add builder methods: with_labels(), with_properties(), with_aggregate_contributions()", "status": "completed" },
-        { "id": "42.6", "description": "Implement NodeContributor for CertificateValidity", "status": "completed" },
-        { "id": "42.7", "description": "Implement NodeContributor for KeyUsage", "status": "completed" },
-        { "id": "42.8", "description": "Implement NodeContributor for ExtendedKeyUsage", "status": "completed" },
-        { "id": "42.9", "description": "Implement NodeContributor for SubjectAlternativeName", "status": "completed" },
-        { "id": "42.10", "description": "Implement NodeContributor for BasicConstraints", "status": "completed" },
-        { "id": "42.11", "description": "Implement NodeContributor for SubjectName", "status": "completed" },
-        { "id": "42.12", "description": "Add aggregate_labels(), aggregate_properties(), aggregate_relationships() to Certificate", "status": "completed" },
-        { "id": "42.13", "description": "Implement AggregateContributions trait for Certificate", "status": "completed" },
-        { "id": "42.14", "description": "Verify all 985 tests pass", "status": "completed" },
-        { "id": "42.15", "description": "Write retrospective", "status": "completed" }
+        {
+          "id": "42.1",
+          "description": "Create traits.rs with Label, PropertyKey, PropertyValue, ValueRelationship types",
+          "status": "completed"
+        },
+        {
+          "id": "42.2",
+          "description": "Define NodeContributor trait with as_labels(), as_properties(), as_relationships()",
+          "status": "completed"
+        },
+        {
+          "id": "42.3",
+          "description": "Define AggregateContributions trait for entities",
+          "status": "completed"
+        },
+        {
+          "id": "42.4",
+          "description": "Extend LiftedNode with node_labels, node_properties, node_relationships fields",
+          "status": "completed"
+        },
+        {
+          "id": "42.5",
+          "description": "Add builder methods: with_labels(), with_properties(), with_aggregate_contributions()",
+          "status": "completed"
+        },
+        {
+          "id": "42.6",
+          "description": "Implement NodeContributor for CertificateValidity",
+          "status": "completed"
+        },
+        {
+          "id": "42.7",
+          "description": "Implement NodeContributor for KeyUsage",
+          "status": "completed"
+        },
+        {
+          "id": "42.8",
+          "description": "Implement NodeContributor for ExtendedKeyUsage",
+          "status": "completed"
+        },
+        {
+          "id": "42.9",
+          "description": "Implement NodeContributor for SubjectAlternativeName",
+          "status": "completed"
+        },
+        {
+          "id": "42.10",
+          "description": "Implement NodeContributor for BasicConstraints",
+          "status": "completed"
+        },
+        {
+          "id": "42.11",
+          "description": "Implement NodeContributor for SubjectName",
+          "status": "completed"
+        },
+        {
+          "id": "42.12",
+          "description": "Add aggregate_labels(), aggregate_properties(), aggregate_relationships() to Certificate",
+          "status": "completed"
+        },
+        {
+          "id": "42.13",
+          "description": "Implement AggregateContributions trait for Certificate",
+          "status": "completed"
+        },
+        {
+          "id": "42.14",
+          "description": "Verify all 985 tests pass",
+          "status": "completed"
+        },
+        {
+          "id": "42.15",
+          "description": "Write retrospective",
+          "status": "completed"
+        }
       ],
       "results": {
-        "new_files": ["src/value_objects/traits.rs"],
+        "new_files": [
+          "src/value_objects/traits.rs"
+        ],
         "modified_files": 8,
         "lines_added": 1081,
         "node_contributor_implementations": 6,
@@ -1461,18 +2876,66 @@
       "retrospective": "retrospectives/sprint_43.md",
       "description": "Add dual-path ActorId fields to organization events for backward-compatible migration",
       "tasks": [
-        { "id": "43.1", "description": "Add dual-path ActorId to OrganizationUpdatedEvent", "status": "completed" },
-        { "id": "43.2", "description": "Add dual-path ActorId to OrganizationalUnitCreatedEvent", "status": "completed" },
-        { "id": "43.3", "description": "Add dual-path ActorId to OrganizationalUnitUpdatedEvent", "status": "completed" },
-        { "id": "43.4", "description": "Add dual-path ActorId to OrganizationalUnitDissolvedEvent", "status": "completed" },
-        { "id": "43.5", "description": "Add dual-path ActorId to RoleCreatedEvent", "status": "completed" },
-        { "id": "43.6", "description": "Add dual-path ActorId to RoleUpdatedEvent", "status": "completed" },
-        { "id": "43.7", "description": "Add dual-path ActorId to RoleDeletedEvent", "status": "completed" },
-        { "id": "43.8", "description": "Add dual-path ActorId to PolicyCreatedEvent", "status": "completed" },
-        { "id": "43.9", "description": "Add dual-path ActorId to PolicyUpdatedEvent", "status": "completed" },
-        { "id": "43.10", "description": "Add dual-path ActorId to PolicyRevokedEvent", "status": "completed" },
-        { "id": "43.11", "description": "Verify compilation and tests pass", "status": "completed" },
-        { "id": "43.12", "description": "Write retrospective", "status": "completed" }
+        {
+          "id": "43.1",
+          "description": "Add dual-path ActorId to OrganizationUpdatedEvent",
+          "status": "completed"
+        },
+        {
+          "id": "43.2",
+          "description": "Add dual-path ActorId to OrganizationalUnitCreatedEvent",
+          "status": "completed"
+        },
+        {
+          "id": "43.3",
+          "description": "Add dual-path ActorId to OrganizationalUnitUpdatedEvent",
+          "status": "completed"
+        },
+        {
+          "id": "43.4",
+          "description": "Add dual-path ActorId to OrganizationalUnitDissolvedEvent",
+          "status": "completed"
+        },
+        {
+          "id": "43.5",
+          "description": "Add dual-path ActorId to RoleCreatedEvent",
+          "status": "completed"
+        },
+        {
+          "id": "43.6",
+          "description": "Add dual-path ActorId to RoleUpdatedEvent",
+          "status": "completed"
+        },
+        {
+          "id": "43.7",
+          "description": "Add dual-path ActorId to RoleDeletedEvent",
+          "status": "completed"
+        },
+        {
+          "id": "43.8",
+          "description": "Add dual-path ActorId to PolicyCreatedEvent",
+          "status": "completed"
+        },
+        {
+          "id": "43.9",
+          "description": "Add dual-path ActorId to PolicyUpdatedEvent",
+          "status": "completed"
+        },
+        {
+          "id": "43.10",
+          "description": "Add dual-path ActorId to PolicyRevokedEvent",
+          "status": "completed"
+        },
+        {
+          "id": "43.11",
+          "description": "Verify compilation and tests pass",
+          "status": "completed"
+        },
+        {
+          "id": "43.12",
+          "description": "Write retrospective",
+          "status": "completed"
+        }
       ],
       "results": {
         "files_modified": 1,
@@ -1490,32 +2953,78 @@
     },
     "sprint_64": {
       "name": "CIM Architecture Foundation - ViewModel/ValueObject/CID Pipeline",
-      "status": "in_progress",
+      "status": "completed",
       "started": "2026-01-07",
-      "completed": null,
-      "retrospective": null,
-      "description": "Establish proper CIM architecture: UI Elements → ViewModel (FRP) → ValueObject → CID → NATS JetStream. Use cim-domain traits, not custom abstractions.",
+      "completed": "2026-01-07",
+      "retrospective": "retrospectives/sprint_64.md",
+      "description": "Establish proper CIM architecture: UI Elements \u2192 ViewModel (FRP) \u2192 ValueObject \u2192 CID \u2192 NATS JetStream. Use cim-domain traits, not custom abstractions.",
       "methodology": {
         "no_oop_fallback": true,
-        "use_experts": ["ddd-expert", "frp-expert", "fp-expert", "cim-expert"],
-        "patterns": ["DDD", "FP", "FRP", "ACT"]
+        "use_experts": [
+          "ddd-expert",
+          "frp-expert",
+          "fp-expert",
+          "cim-expert"
+        ],
+        "patterns": [
+          "DDD",
+          "FP",
+          "FRP",
+          "ACT"
+        ]
       },
       "architecture": {
         "ui_layer": "UI Elements (TextBox, Button, etc.) - just UI, not domain",
         "viewmodel_layer": "ViewModel - FRP-bound to UI, composes ValueObjects",
         "valueobject_layer": "ValueObject - immutable, CID identity, implements cim_domain::formal_domain::ValueObject",
-        "persistence_layer": "CID → NATS JetStream - content-addressed message storage"
+        "persistence_layer": "CID \u2192 NATS JetStream - content-addressed message storage"
       },
       "tasks": [
-        { "id": "64.1", "description": "Consult DDD expert on ViewModel → ValueObject composition pattern", "status": "completed" },
-        { "id": "64.2", "description": "Consult FRP expert on UI Element → ViewModel binding", "status": "completed" },
-        { "id": "64.3", "description": "Review cim-domain formal_domain traits", "status": "pending" },
-        { "id": "64.4", "description": "Define which gui/view_state structs compose into which ValueObjects", "status": "pending" },
-        { "id": "64.5", "description": "Implement ValueObject trait for domain types", "status": "pending" },
-        { "id": "64.6", "description": "Implement ViewModel → ValueObject composition functions", "status": "pending" },
-        { "id": "64.7", "description": "Add CID generation on ValueObject persistence", "status": "pending" },
-        { "id": "64.8", "description": "Run all tests and verify", "status": "pending" },
-        { "id": "64.9", "description": "Write retrospective", "status": "pending" }
+        {
+          "id": "64.1",
+          "description": "Consult DDD expert on ViewModel \u2192 ValueObject composition pattern",
+          "status": "completed"
+        },
+        {
+          "id": "64.2",
+          "description": "Consult FRP expert on UI Element \u2192 ViewModel binding",
+          "status": "completed"
+        },
+        {
+          "id": "64.3",
+          "description": "Review cim-domain formal_domain traits",
+          "status": "completed"
+        },
+        {
+          "id": "64.4",
+          "description": "Define ViewModel \u2192 ValueObject mappings in ACL module",
+          "status": "completed"
+        },
+        {
+          "id": "64.5",
+          "description": "Implement ACL validators with NonEmptyVec error accumulation",
+          "status": "completed"
+        },
+        {
+          "id": "64.6",
+          "description": "Implement ACL translators for domain ValueObjects",
+          "status": "completed"
+        },
+        {
+          "id": "64.7",
+          "description": "Add ACL tests (48 tests passing)",
+          "status": "completed"
+        },
+        {
+          "id": "64.8",
+          "description": "Verify all ACL tests pass (48 tests)",
+          "status": "completed"
+        },
+        {
+          "id": "64.9",
+          "description": "Write retrospective",
+          "status": "completed"
+        }
       ],
       "key_principles": [
         "ValueObject: Immutable, CID identity, compared by value (cim_domain::formal_domain::ValueObject)",
@@ -1526,17 +3035,23 @@
         "CID: Content-addressed identity for persistence/NATS, not for ephemeral ViewModels"
       ],
       "results": {
-        "expert_consultations": [],
-        "valueobjects_implemented": 0,
-        "viewmodel_compositions": 0,
-        "total_tests": null
+        "expert_consultations": [
+          "ddd-expert",
+          "frp-expert"
+        ],
+        "files_created": 4,
+        "lines_added": 600,
+        "acl_tests": 48,
+        "validator_functions": 4,
+        "translator_functions": 10,
+        "validated_form_types": 4
       },
       "acceptance_criteria": [
-        "DDD/FRP expert consultations documented",
-        "ViewModel → ValueObject mapping defined",
-        "ValueObject trait implemented for domain types",
-        "CID generation on persistence",
-        "All tests pass"
+        "DDD/FRP expert consultations documented - ACHIEVED",
+        "ViewModel \u2192 ValueObject mapping defined in ACL module - ACHIEVED",
+        "Pure validation functions with NonEmptyVec error accumulation - ACHIEVED",
+        "Pure translation functions for domain ValueObjects - ACHIEVED",
+        "All 48 ACL tests pass - ACHIEVED"
       ]
     }
   }
