@@ -402,39 +402,80 @@ pub fn build_yubikey_state_machine() -> StateMachineDefinition {
 }
 
 /// Build PKI Bootstrap workflow state machine
+///
+/// State names MUST match PKIBootstrapState enum variants exactly for
+/// current_state highlighting to work correctly.
 pub fn build_pki_bootstrap_state_machine() -> StateMachineDefinition {
     StateMachineDefinition::new(StateMachineType::PkiBootstrap)
-        .with_state(StateMachineState::new("NotStarted", "Workflow not yet initiated")
+        // States match PKIBootstrapState enum variants exactly
+        .with_state(StateMachineState::new("Uninitialized", "PKI infrastructure not initialized")
             .initial()
-            .with_color(Color::from_rgb(0.6, 0.6, 0.6)))
-        .with_state(StateMachineState::new("GeneratingRootCA", "Creating Root CA")
+            .with_color(Color::from_rgb(0.5, 0.5, 0.5)))
+        .with_state(StateMachineState::new("RootCAPlanned", "Root CA planned, awaiting generation")
             .with_color(Color::from_rgb(0.9, 0.7, 0.2)))
-        .with_state(StateMachineState::new("GeneratingIntermediateCA", "Creating Intermediate CA")
-            .with_color(Color::from_rgb(0.9, 0.7, 0.2)))
-        .with_state(StateMachineState::new("GeneratingLeafCerts", "Creating leaf certificates")
-            .with_color(Color::from_rgb(0.9, 0.7, 0.2)))
-        .with_state(StateMachineState::new("ProvisioningYubiKeys", "Loading keys to YubiKeys")
-            .with_color(Color::from_rgb(0.4, 0.6, 0.8)))
-        .with_state(StateMachineState::new("Verifying", "Verifying PKI chain")
+        .with_state(StateMachineState::new("RootCAGenerated", "Root CA generated (offline ceremony complete)")
             .with_color(Color::from_rgb(0.4, 0.7, 0.4)))
-        .with_state(StateMachineState::new("Completed", "PKI bootstrap complete")
+        .with_state(StateMachineState::new("IntermediateCAPlanned", "Intermediate CA planned")
+            .with_color(Color::from_rgb(0.9, 0.7, 0.2)))
+        .with_state(StateMachineState::new("IntermediateCAGenerated", "Intermediate CA(s) generated")
+            .with_color(Color::from_rgb(0.4, 0.7, 0.4)))
+        .with_state(StateMachineState::new("LeafCertsGenerated", "Leaf certificates generated")
+            .with_color(Color::from_rgb(0.4, 0.7, 0.4)))
+        .with_state(StateMachineState::new("YubiKeysProvisioned", "YubiKeys provisioned with keys")
+            .with_color(Color::from_rgb(0.4, 0.6, 0.8)))
+        .with_state(StateMachineState::new("ExportReady", "Export manifest ready")
+            .with_color(Color::from_rgb(0.3, 0.6, 0.9)))
+        .with_state(StateMachineState::new("Bootstrapped", "PKI bootstrap complete")
             .terminal()
             .with_color(Color::from_rgb(0.2, 0.8, 0.2)))
-        .with_state(StateMachineState::new("Failed", "PKI bootstrap failed")
+        // Transitions match state machine guards
+        .with_transition(StateMachineTransition::new("Uninitialized", "RootCAPlanned", "PkiPlanRootCA"))
+        .with_transition(StateMachineTransition::new("RootCAPlanned", "RootCAGenerated", "PkiRootCAGenerationComplete"))
+        .with_transition(StateMachineTransition::new("RootCAGenerated", "IntermediateCAPlanned", "PkiPlanIntermediateCA"))
+        .with_transition(StateMachineTransition::new("IntermediateCAPlanned", "IntermediateCAGenerated", "PkiIntermediateCAGenerationComplete"))
+        .with_transition(StateMachineTransition::new("RootCAGenerated", "IntermediateCAGenerated", "PkiIntermediateCAGenerationComplete"))
+        .with_transition(StateMachineTransition::new("IntermediateCAGenerated", "LeafCertsGenerated", "PkiLeafCertGenerationComplete"))
+        .with_transition(StateMachineTransition::new("LeafCertsGenerated", "YubiKeysProvisioned", "YubiKeyProvisioningComplete"))
+        .with_transition(StateMachineTransition::new("YubiKeysProvisioned", "ExportReady", "PkiExportReady"))
+        .with_transition(StateMachineTransition::new("ExportReady", "Bootstrapped", "PkiBootstrapComplete"))
+}
+
+/// Build YubiKey Provisioning workflow state machine
+///
+/// State names MUST match YubiKeyProvisioningState enum variants exactly for
+/// current_state highlighting to work correctly.
+pub fn build_yubikey_provisioning_state_machine() -> StateMachineDefinition {
+    StateMachineDefinition::new(StateMachineType::YubiKeyProvisioning)
+        // States match YubiKeyProvisioningState enum variants exactly
+        .with_state(StateMachineState::new("Detected", "YubiKey detected, serial number read")
+            .initial()
+            .with_color(Color::from_rgb(0.5, 0.5, 0.5)))
+        .with_state(StateMachineState::new("Authenticated", "Authenticated with current PIN")
+            .with_color(Color::from_rgb(0.4, 0.7, 0.4)))
+        .with_state(StateMachineState::new("PINChanged", "PIN changed from default")
+            .with_color(Color::from_rgb(0.4, 0.7, 0.4)))
+        .with_state(StateMachineState::new("ManagementKeyRotated", "Management key rotated from default")
+            .with_color(Color::from_rgb(0.4, 0.7, 0.4)))
+        .with_state(StateMachineState::new("SlotPlanned", "Slot allocation planned")
+            .with_color(Color::from_rgb(0.9, 0.7, 0.2)))
+        .with_state(StateMachineState::new("KeysGenerated", "Keys generated in slots")
+            .with_color(Color::from_rgb(0.4, 0.6, 0.8)))
+        .with_state(StateMachineState::new("CertificatesImported", "Certificates imported to slots")
+            .with_color(Color::from_rgb(0.4, 0.6, 0.8)))
+        .with_state(StateMachineState::new("Attested", "Keys attested (verified on-device generation)")
+            .with_color(Color::from_rgb(0.3, 0.7, 0.5)))
+        .with_state(StateMachineState::new("Sealed", "Configuration sealed (final, immutable)")
             .terminal()
-            .with_color(Color::from_rgb(0.8, 0.2, 0.2)))
-        // Transitions
-        .with_transition(StateMachineTransition::new("NotStarted", "GeneratingRootCA", "StartBootstrap"))
-        .with_transition(StateMachineTransition::new("GeneratingRootCA", "GeneratingIntermediateCA", "RootCAComplete"))
-        .with_transition(StateMachineTransition::new("GeneratingIntermediateCA", "GeneratingLeafCerts", "IntermediateCAComplete"))
-        .with_transition(StateMachineTransition::new("GeneratingLeafCerts", "ProvisioningYubiKeys", "LeafCertsComplete"))
-        .with_transition(StateMachineTransition::new("ProvisioningYubiKeys", "Verifying", "ProvisioningComplete"))
-        .with_transition(StateMachineTransition::new("Verifying", "Completed", "VerificationPassed"))
-        .with_transition(StateMachineTransition::new("Verifying", "Failed", "VerificationFailed"))
-        .with_transition(StateMachineTransition::new("GeneratingRootCA", "Failed", "GenerationFailed"))
-        .with_transition(StateMachineTransition::new("GeneratingIntermediateCA", "Failed", "GenerationFailed"))
-        .with_transition(StateMachineTransition::new("GeneratingLeafCerts", "Failed", "GenerationFailed"))
-        .with_transition(StateMachineTransition::new("ProvisioningYubiKeys", "Failed", "ProvisioningFailed"))
+            .with_color(Color::from_rgb(0.2, 0.8, 0.2)))
+        // Transitions match state machine guards
+        .with_transition(StateMachineTransition::new("Detected", "Authenticated", "YubiKeyAuthenticated"))
+        .with_transition(StateMachineTransition::new("Authenticated", "PINChanged", "YubiKeyPINChanged"))
+        .with_transition(StateMachineTransition::new("PINChanged", "ManagementKeyRotated", "ManagementKeyRotated"))
+        .with_transition(StateMachineTransition::new("ManagementKeyRotated", "SlotPlanned", "SlotAllocationPlanned"))
+        .with_transition(StateMachineTransition::new("SlotPlanned", "KeysGenerated", "KeyGenerationComplete"))
+        .with_transition(StateMachineTransition::new("KeysGenerated", "CertificatesImported", "CertificatesImported"))
+        .with_transition(StateMachineTransition::new("CertificatesImported", "Attested", "AttestationComplete"))
+        .with_transition(StateMachineTransition::new("Attested", "Sealed", "ConfigurationSealed"))
 }
 
 /// Build Certificate Provisioning Saga state machine
@@ -482,6 +523,7 @@ pub fn all_state_machines() -> Vec<StateMachineDefinition> {
         build_organization_state_machine(),
         build_yubikey_state_machine(),
         build_pki_bootstrap_state_machine(),
+        build_yubikey_provisioning_state_machine(),
         build_certificate_provisioning_saga(),
     ]
 }
@@ -495,10 +537,23 @@ pub fn get_state_machine(machine_type: StateMachineType) -> StateMachineDefiniti
         StateMachineType::Organization => build_organization_state_machine(),
         StateMachineType::YubiKey => build_yubikey_state_machine(),
         StateMachineType::PkiBootstrap => build_pki_bootstrap_state_machine(),
+        StateMachineType::YubiKeyProvisioning => build_yubikey_provisioning_state_machine(),
         StateMachineType::CertificateProvisioning => build_certificate_provisioning_saga(),
         // Default to Key for unimplemented types
         _ => build_key_state_machine(),
     }
+}
+
+/// Get a state machine definition with current state set from the actual PKI state
+pub fn get_pki_bootstrap_with_current(pki_state: &crate::state_machines::workflows::PKIBootstrapState) -> StateMachineDefinition {
+    let current_state_name = pki_state.state_name();
+    build_pki_bootstrap_state_machine().with_current(current_state_name)
+}
+
+/// Get a state machine definition with current state set from the actual YubiKey state
+pub fn get_yubikey_provisioning_with_current(yubikey_state: &crate::state_machines::workflows::YubiKeyProvisioningState) -> StateMachineDefinition {
+    let current_state_name = yubikey_state.state_name();
+    build_yubikey_provisioning_state_machine().with_current(current_state_name)
 }
 
 // ============================================================================

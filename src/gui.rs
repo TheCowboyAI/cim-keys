@@ -8996,12 +8996,31 @@ impl CimKeysApp {
 
             Message::StateMachineSelected(sm_type) => {
                 self.selected_state_machine = sm_type;
-                self.state_machine_definition = state_machine_graph::get_state_machine(sm_type);
+                // Sprint 80: Use current state for PKI and YubiKey state machines
+                self.state_machine_definition = match sm_type {
+                    state_machine_graph::StateMachineType::PkiBootstrap => {
+                        state_machine_graph::get_pki_bootstrap_with_current(&self.pki_state)
+                    }
+                    state_machine_graph::StateMachineType::YubiKeyProvisioning => {
+                        // Show first YubiKey's state if any exists
+                        if let Some(yk_state) = self.yubikey_states.values().next() {
+                            state_machine_graph::get_yubikey_provisioning_with_current(yk_state)
+                        } else {
+                            state_machine_graph::get_state_machine(sm_type)
+                        }
+                    }
+                    _ => state_machine_graph::get_state_machine(sm_type),
+                };
                 self.state_machine_graph = state_machine_graph::state_machine_to_graph(
                     &self.state_machine_definition,
                     &state_machine_graph::StateMachineLayoutConfig::default(),
                 );
-                self.status_message = format!("Viewing {} state machine", sm_type.display_name());
+                let current_info = if let Some(ref current) = self.state_machine_definition.current_state {
+                    format!(" (current: {})", current)
+                } else {
+                    String::new()
+                };
+                self.status_message = format!("Viewing {} state machine{}", sm_type.display_name(), current_info);
                 Task::none()
             }
 
@@ -9009,7 +9028,20 @@ impl CimKeysApp {
                 match msg {
                     state_machine_graph::StateMachineMessage::SelectMachine(sm_type) => {
                         self.selected_state_machine = sm_type;
-                        self.state_machine_definition = state_machine_graph::get_state_machine(sm_type);
+                        // Sprint 80: Use current state for PKI and YubiKey state machines
+                        self.state_machine_definition = match sm_type {
+                            state_machine_graph::StateMachineType::PkiBootstrap => {
+                                state_machine_graph::get_pki_bootstrap_with_current(&self.pki_state)
+                            }
+                            state_machine_graph::StateMachineType::YubiKeyProvisioning => {
+                                if let Some(yk_state) = self.yubikey_states.values().next() {
+                                    state_machine_graph::get_yubikey_provisioning_with_current(yk_state)
+                                } else {
+                                    state_machine_graph::get_state_machine(sm_type)
+                                }
+                            }
+                            _ => state_machine_graph::get_state_machine(sm_type),
+                        };
                         self.state_machine_graph = state_machine_graph::state_machine_to_graph(
                             &self.state_machine_definition,
                             &state_machine_graph::StateMachineLayoutConfig::default(),
@@ -9022,7 +9054,20 @@ impl CimKeysApp {
                         self.status_message = format!("Transition: {} → {}", from, to);
                     }
                     state_machine_graph::StateMachineMessage::ResetView => {
-                        self.state_machine_definition = state_machine_graph::get_state_machine(self.selected_state_machine);
+                        // Sprint 80: Refresh with current state
+                        self.state_machine_definition = match self.selected_state_machine {
+                            state_machine_graph::StateMachineType::PkiBootstrap => {
+                                state_machine_graph::get_pki_bootstrap_with_current(&self.pki_state)
+                            }
+                            state_machine_graph::StateMachineType::YubiKeyProvisioning => {
+                                if let Some(yk_state) = self.yubikey_states.values().next() {
+                                    state_machine_graph::get_yubikey_provisioning_with_current(yk_state)
+                                } else {
+                                    state_machine_graph::get_state_machine(self.selected_state_machine)
+                                }
+                            }
+                            _ => state_machine_graph::get_state_machine(self.selected_state_machine),
+                        };
                         self.state_machine_graph = state_machine_graph::state_machine_to_graph(
                             &self.state_machine_definition,
                             &state_machine_graph::StateMachineLayoutConfig::default(),

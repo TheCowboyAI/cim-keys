@@ -196,6 +196,24 @@ impl PKIBootstrapState {
             PKIBootstrapState::Bootstrapped { .. } => "Bootstrap complete",
         }
     }
+
+    /// Get the state name for viewmodel display
+    ///
+    /// Returns the enum variant name (without data) for matching
+    /// with StateMachineDefinition state names.
+    pub fn state_name(&self) -> &'static str {
+        match self {
+            PKIBootstrapState::Uninitialized => "Uninitialized",
+            PKIBootstrapState::RootCAPlanned { .. } => "RootCAPlanned",
+            PKIBootstrapState::RootCAGenerated { .. } => "RootCAGenerated",
+            PKIBootstrapState::IntermediateCAPlanned { .. } => "IntermediateCAPlanned",
+            PKIBootstrapState::IntermediateCAGenerated { .. } => "IntermediateCAGenerated",
+            PKIBootstrapState::LeafCertsGenerated { .. } => "LeafCertsGenerated",
+            PKIBootstrapState::YubiKeysProvisioned { .. } => "YubiKeysProvisioned",
+            PKIBootstrapState::ExportReady { .. } => "ExportReady",
+            PKIBootstrapState::Bootstrapped { .. } => "Bootstrapped",
+        }
+    }
 }
 
 // ============================================================================
@@ -328,6 +346,24 @@ impl YubiKeyProvisioningState {
             YubiKeyProvisioningState::CertificatesImported { .. } => "Certificates imported",
             YubiKeyProvisioningState::Attested { .. } => "Keys attested",
             YubiKeyProvisioningState::Sealed { .. } => "Configuration sealed",
+        }
+    }
+
+    /// Get the state name for viewmodel display
+    ///
+    /// Returns the enum variant name (without data) for matching
+    /// with StateMachineDefinition state names.
+    pub fn state_name(&self) -> &'static str {
+        match self {
+            YubiKeyProvisioningState::Detected { .. } => "Detected",
+            YubiKeyProvisioningState::Authenticated { .. } => "Authenticated",
+            YubiKeyProvisioningState::PINChanged { .. } => "PINChanged",
+            YubiKeyProvisioningState::ManagementKeyRotated { .. } => "ManagementKeyRotated",
+            YubiKeyProvisioningState::SlotPlanned { .. } => "SlotPlanned",
+            YubiKeyProvisioningState::KeysGenerated { .. } => "KeysGenerated",
+            YubiKeyProvisioningState::CertificatesImported { .. } => "CertificatesImported",
+            YubiKeyProvisioningState::Attested { .. } => "Attested",
+            YubiKeyProvisioningState::Sealed { .. } => "Sealed",
         }
     }
 }
