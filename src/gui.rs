@@ -78,11 +78,12 @@ pub mod state_machine_svg;
 pub mod state_machine_view;
 pub mod graph_buttons;
 
-// Domain-bounded modules (Sprint 48-51 refactoring)
+// Domain-bounded modules (Sprint 48-52 refactoring)
 pub mod domains;
 pub mod pki;
 pub mod yubikey;
 pub mod nats;
+pub mod export;
 
 #[cfg(test)]
 mod graph_integration_tests;
@@ -93,6 +94,7 @@ use domains::OrganizationMessage;
 use pki::PkiMessage;
 use yubikey::YubiKeyMessage;
 use nats::NatsMessage;
+use export::ExportMessage;
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
 use view_model::ViewModel;
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
@@ -834,6 +836,8 @@ pub enum Message {
     YubiKey(YubiKeyMessage),
     /// Delegation to NATS bounded context
     Nats(NatsMessage),
+    /// Delegation to Export bounded context
+    Export(ExportMessage),
 
     // ============================================================================
     // Tab Navigation
@@ -2222,6 +2226,38 @@ impl CimKeysApp {
                 // Sync filter_show_nats to org_graph as well
                 self.filter_show_nats = nats_state.filter_show_nats;
                 self.org_graph.filter_show_nats = nats_state.filter_show_nats;
+
+                task
+            }
+
+            // ================================================================
+            // Export Domain Message Delegation (Sprint 52)
+            // ================================================================
+            Message::Export(export_msg) => {
+                use export::projection;
+
+                // Create export state view from app state
+                let mut export_state = export::ExportState {
+                    export_path: self.export_path.clone(),
+                    export_password: self.export_password.clone(),
+                    projection_section: self.projection_section.clone(),
+                    projections: self.projections.clone(),
+                    selected_projection: self.selected_projection.clone(),
+                    last_sdcard_export_path: None,
+                    last_cypher_export_path: None,
+                    last_nsc_export_path: None,
+                    last_graph_export_path: None,
+                };
+
+                // Delegate to Export domain update function
+                let task = projection::update(&mut export_state, export_msg);
+
+                // Sync state back from Export module
+                self.export_path = export_state.export_path;
+                self.export_password = export_state.export_password;
+                self.projection_section = export_state.projection_section;
+                self.projections = export_state.projections;
+                self.selected_projection = export_state.selected_projection;
 
                 task
             }
