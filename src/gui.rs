@@ -91,6 +91,7 @@ pub mod service_account;
 pub mod gpg;
 pub mod recovery;
 pub mod org_unit;
+pub mod multi_key;
 
 #[cfg(test)]
 mod graph_integration_tests;
@@ -109,6 +110,7 @@ use service_account::ServiceAccountMessage;
 use gpg::GpgMessage;
 use recovery::RecoveryMessage;
 use org_unit::OrgUnitMessage;
+use multi_key::MultiKeyMessage;
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
 use view_model::ViewModel;
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
@@ -866,6 +868,8 @@ pub enum Message {
     Recovery(RecoveryMessage),
     /// Delegation to Organization Unit bounded context (departments, teams)
     OrgUnit(OrgUnitMessage),
+    /// Delegation to Multi-Purpose Key bounded context (batch key generation)
+    MultiKey(MultiKeyMessage),
 
     // ============================================================================
     // Tab Navigation
@@ -2442,6 +2446,28 @@ impl CimKeysApp {
                 self.new_unit_nats_account = ou_state.new_nats_account;
                 self.new_unit_responsible_person = ou_state.new_responsible_person;
                 self.created_units = ou_state.created_units;
+
+                task
+            }
+
+            Message::MultiKey(mk_msg) => {
+                use multi_key::generation;
+
+                // Create multi-key state view from app state
+                let mut mk_state = multi_key::MultiKeyState {
+                    section_collapsed: self.multi_purpose_key_section_collapsed,
+                    selected_person: self.multi_purpose_selected_person,
+                    selected_purposes: self.multi_purpose_selected_purposes.clone(),
+                    status: None,
+                };
+
+                // Delegate to MultiKey domain update function
+                let task = generation::update(&mut mk_state, mk_msg);
+
+                // Sync state back from MultiKey module
+                self.multi_purpose_key_section_collapsed = mk_state.section_collapsed;
+                self.multi_purpose_selected_person = mk_state.selected_person;
+                self.multi_purpose_selected_purposes = mk_state.selected_purposes;
 
                 task
             }
