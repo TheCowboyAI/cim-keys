@@ -290,6 +290,7 @@ pub struct ColorPalette {
 
     // Certificate type colors
     pub cert_root_ca: Color,    // Root CA - green (same as green_success)
+    pub cert_intermediate: Color, // Intermediate CA - purple (between root and leaf)
     pub cert_leaf: Color,       // Leaf certificate - blue
 
     // Overlay/Modal colors
@@ -516,6 +517,7 @@ impl Default for ColorPalette {
 
             // Certificate type colors
             cert_root_ca: Color::from_rgb(0.2, 0.8, 0.2),     // Root CA - green
+            cert_intermediate: Color::from_rgb(0.6, 0.4, 0.8), // Intermediate CA - purple
             cert_leaf: Color::from_rgb(0.4, 0.6, 0.8),        // Leaf certificate - blue
 
             // Overlay/Modal colors

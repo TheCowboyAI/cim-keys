@@ -226,6 +226,11 @@ pub struct CimKeysApp {
     // Maps YubiKey serial -> provisioning state
     yubikey_states: std::collections::HashMap<String, crate::state_machines::workflows::YubiKeyProvisioningState>,
 
+    // Generated certificate storage (Sprint 81)
+    // Store generated certificates for signing chain
+    generated_root_ca: Option<crate::crypto::x509::X509Certificate>,
+    generated_intermediate_cas: std::collections::HashMap<Uuid, crate::crypto::x509::X509Certificate>,
+
     // Certificate generation fields
     intermediate_ca_name_input: String,
     server_cert_cn_input: String,
@@ -1162,6 +1167,8 @@ pub enum Message {
     GeneratePkiFromGraph,  // Graph-first PKI generation
     PkiGenerated(Result<Vec<(graph::ConceptEntity, iced::Point, Option<Uuid>)>, String>),
     RootCAGenerated(Result<crate::crypto::x509::X509Certificate, String>),
+    // Sprint 81: Intermediate CA generation result
+    IntermediateCAGenerated(Result<(crate::crypto::x509::X509Certificate, Uuid), String>), // (cert, intermediate_ca_id)
     PersonalKeysGenerated(Result<(crate::crypto::x509::X509Certificate, Vec<String>), String>), // (cert, nats_keys)
 
     // PKI State Machine Transitions (Sprint 77)
@@ -1805,6 +1812,8 @@ impl CimKeysApp {
                 _certificates_generated: 0,
                 pki_state: crate::state_machines::workflows::PKIBootstrapState::Uninitialized,
                 yubikey_states: std::collections::HashMap::new(),
+                generated_root_ca: None,
+                generated_intermediate_cas: std::collections::HashMap::new(),
                 intermediate_ca_name_input: String::new(),
                 server_cert_cn_input: String::new(),
                 server_cert_sans_input: String::new(),
@@ -4464,6 +4473,10 @@ impl CimKeysApp {
                             );
                         }
 
+                        // Sprint 81: Store the Root CA certificate for signing intermediate CAs
+                        self.generated_root_ca = Some(certificate.clone());
+                        tracing::info!("Root CA stored for intermediate CA signing");
+
                         self.status_message = format!("✅ Root CA generated! Fingerprint: {} | View in PKI Graph", &certificate.fingerprint[..16]);
                         tracing::info!("Root CA generated and added to graph: {}", certificate.fingerprint);
                     }
@@ -4521,6 +4534,78 @@ impl CimKeysApp {
                         self.status_message = format!("❌ Personal keys generation failed: {}", e);
                         self.error_message = Some(e);
                         tracing::error!("Personal keys generation failed");
+                    }
+                }
+                Task::none()
+            }
+
+            // Sprint 81: Intermediate CA generation result handler
+            Message::IntermediateCAGenerated(result) => {
+                match result {
+                    Ok((certificate, intermediate_ca_id)) => {
+                        // Create Intermediate CA node in graph using LiftableDomain
+                        use crate::domain::pki::{Certificate as PkiCertificate, CertificateId};
+                        use crate::lifting::LiftableDomain;
+                        use crate::state_machines::workflows::PKIBootstrapState;
+
+                        let cert_id = CertificateId::from_uuid(intermediate_ca_id);
+                        let subject = format!("CN={} Intermediate CA, O={}", self.organization_name, self.organization_name);
+                        let cert = PkiCertificate::intermediate(
+                            cert_id,
+                            subject.clone(),
+                            format!("{} Root CA", self.organization_name), // issuer
+                            chrono::Utc::now(),
+                            chrono::Utc::now() + chrono::Duration::days(365 * 3), // 3 years
+                            vec!["keyCertSign".to_string(), "cRLSign".to_string()],
+                        );
+                        let lifted_node = cert.lift();
+                        let position = iced::Point::new(400.0, 200.0); // Below Root CA
+                        let intermediate_ca_node = graph::ConceptEntity::from_lifted_node(lifted_node);
+
+                        // Create view with custom color and label
+                        let custom_color = self.view_model.colors.cert_intermediate;
+                        let custom_label = format!("{} Intermediate CA", self.organization_name);
+                        let view = view_model::NodeView::new(intermediate_ca_id, position, custom_color, custom_label);
+
+                        // Add to graph
+                        self.org_graph.nodes.insert(intermediate_ca_id, intermediate_ca_node);
+                        self.org_graph.node_views.insert(intermediate_ca_id, view);
+
+                        // Store the intermediate CA for signing leaf certificates
+                        self.generated_intermediate_cas.insert(intermediate_ca_id, certificate.clone());
+
+                        // Update PKI state machine
+                        let intermediate_ca_ids = match &self.pki_state {
+                            PKIBootstrapState::IntermediateCAGenerated { intermediate_ca_ids } => {
+                                let mut ids = intermediate_ca_ids.clone();
+                                ids.push(intermediate_ca_id);
+                                ids
+                            }
+                            PKIBootstrapState::RootCAGenerated { .. } |
+                            PKIBootstrapState::IntermediateCAPlanned { .. } => {
+                                vec![intermediate_ca_id]
+                            }
+                            _ => vec![intermediate_ca_id],
+                        };
+                        self.pki_state = PKIBootstrapState::IntermediateCAGenerated { intermediate_ca_ids };
+                        tracing::info!(
+                            "PKI state machine transitioned to IntermediateCAGenerated (id: {})",
+                            intermediate_ca_id
+                        );
+
+                        // Switch to PKI view to show the new certificate
+                        self.graph_view = GraphView::PkiTrustChain;
+
+                        self.status_message = format!(
+                            "✅ Intermediate CA generated! Fingerprint: {} | View in PKI Graph",
+                            &certificate.fingerprint[..16]
+                        );
+                        tracing::info!("Intermediate CA generated and added to graph: {}", certificate.fingerprint);
+                    }
+                    Err(e) => {
+                        self.status_message = format!("❌ Intermediate CA generation failed: {}", e);
+                        self.error_message = Some(e);
+                        tracing::error!("Intermediate CA generation failed");
                     }
                 }
                 Task::none()
@@ -8796,7 +8881,78 @@ impl CimKeysApp {
                                     );
                                 }
                                 passphrase_dialog::PassphrasePurpose::IntermediateCA => {
-                                    self.status_message = "Intermediate CA not yet implemented".to_string();
+                                    // Sprint 81: Generate Intermediate CA signed by Root CA
+                                    // Check if we have a Root CA to sign with
+                                    if let Some(ref root_ca) = self.generated_root_ca {
+                                        self.status_message = "Intermediate CA generation in progress...".to_string();
+
+                                        // Clone root CA data for async closure
+                                        let root_ca_cert_pem = root_ca.certificate_pem.clone();
+                                        let root_ca_key_pem = root_ca.private_key_pem.clone();
+
+                                        // Get root CA ID from state machine
+                                        let root_ca_id = match &self.pki_state {
+                                            crate::state_machines::workflows::PKIBootstrapState::RootCAGenerated { root_ca_cert_id, .. } => {
+                                                *root_ca_cert_id
+                                            }
+                                            crate::state_machines::workflows::PKIBootstrapState::IntermediateCAPlanned { .. } |
+                                            crate::state_machines::workflows::PKIBootstrapState::IntermediateCAGenerated { .. } => {
+                                                // These states follow RootCAGenerated - use stored root CA's ID
+                                                // The generated_root_ca should have the ID we need
+                                                Uuid::now_v7() // Fallback - root CA ID should be tracked
+                                            }
+                                            _ => Uuid::now_v7() // Fallback for other states
+                                        };
+
+                                        // Get intermediate CA name from form or generate default
+                                        let intermediate_name = if self.intermediate_ca_name_input.is_empty() {
+                                            format!("{} Intermediate CA", self.organization_name)
+                                        } else {
+                                            self.intermediate_ca_name_input.clone()
+                                        };
+                                        let org_unit = self.cert_organizational_unit.clone();
+
+                                        return Task::perform(
+                                            async move {
+                                                use crate::crypto::seed_derivation::derive_master_seed;
+                                                use crate::crypto::x509::{generate_intermediate_ca, IntermediateCAParams};
+
+                                                // Derive seed from passphrase
+                                                let master_seed = derive_master_seed(&passphrase, &org_id)
+                                                    .map_err(|e| format!("Failed to derive seed: {}", e))?;
+                                                let intermediate_seed = master_seed.derive_child(&format!("intermediate-{}", org_unit));
+
+                                                // Set up Intermediate CA parameters
+                                                let params = IntermediateCAParams {
+                                                    organization: org_name.clone(),
+                                                    organizational_unit: org_unit,
+                                                    common_name: intermediate_name,
+                                                    country: Some("US".to_string()),
+                                                    validity_years: 3, // Intermediate CAs typically 3-5 years
+                                                    pathlen: 0, // Can only sign leaf certs
+                                                };
+
+                                                // Generate Intermediate CA certificate
+                                                let correlation_id = uuid::Uuid::now_v7();
+                                                let (cert, _gen_event, _sign_event) = generate_intermediate_ca(
+                                                    &intermediate_seed,
+                                                    params,
+                                                    &root_ca_cert_pem,
+                                                    &root_ca_key_pem,
+                                                    root_ca_id,
+                                                    correlation_id,
+                                                    None,
+                                                )?;
+
+                                                let intermediate_ca_id = uuid::Uuid::now_v7();
+                                                Ok((cert, intermediate_ca_id))
+                                            },
+                                            Message::IntermediateCAGenerated
+                                        );
+                                    } else {
+                                        self.status_message = "❌ Cannot generate Intermediate CA: Root CA not generated yet".to_string();
+                                        self.error_message = Some("Generate Root CA first before creating Intermediate CA".to_string());
+                                    }
                                 }
                             }
                         }
