@@ -94,6 +94,7 @@ pub mod org_unit;
 pub mod multi_key;
 pub mod certificate;
 pub mod event_log;
+pub mod view_state;
 
 #[cfg(test)]
 mod graph_integration_tests;
