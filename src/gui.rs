@@ -226,10 +226,11 @@ pub struct CimKeysApp {
     // Maps YubiKey serial -> provisioning state
     yubikey_states: std::collections::HashMap<String, crate::state_machines::workflows::YubiKeyProvisioningState>,
 
-    // Generated certificate storage (Sprint 81)
+    // Generated certificate storage (Sprint 81, extended Sprint 82)
     // Store generated certificates for signing chain
     generated_root_ca: Option<crate::crypto::x509::X509Certificate>,
     generated_intermediate_cas: std::collections::HashMap<Uuid, crate::crypto::x509::X509Certificate>,
+    generated_leaf_certs: std::collections::HashMap<Uuid, crate::crypto::x509::X509Certificate>,
 
     // Certificate generation fields
     intermediate_ca_name_input: String,
@@ -1169,6 +1170,8 @@ pub enum Message {
     RootCAGenerated(Result<crate::crypto::x509::X509Certificate, String>),
     // Sprint 81: Intermediate CA generation result
     IntermediateCAGenerated(Result<(crate::crypto::x509::X509Certificate, Uuid), String>), // (cert, intermediate_ca_id)
+    // Sprint 82: Leaf certificate generation result
+    LeafCertGenerated(Result<(crate::crypto::x509::X509Certificate, Uuid, String), String>), // (cert, leaf_cert_id, person_name)
     PersonalKeysGenerated(Result<(crate::crypto::x509::X509Certificate, Vec<String>), String>), // (cert, nats_keys)
 
     // PKI State Machine Transitions (Sprint 77)
@@ -1814,6 +1817,7 @@ impl CimKeysApp {
                 yubikey_states: std::collections::HashMap::new(),
                 generated_root_ca: None,
                 generated_intermediate_cas: std::collections::HashMap::new(),
+                generated_leaf_certs: std::collections::HashMap::new(),
                 intermediate_ca_name_input: String::new(),
                 server_cert_cn_input: String::new(),
                 server_cert_sans_input: String::new(),
@@ -4606,6 +4610,80 @@ impl CimKeysApp {
                         self.status_message = format!("❌ Intermediate CA generation failed: {}", e);
                         self.error_message = Some(e);
                         tracing::error!("Intermediate CA generation failed");
+                    }
+                }
+                Task::none()
+            }
+
+            // Sprint 82: Leaf certificate generation result handler
+            Message::LeafCertGenerated(result) => {
+                match result {
+                    Ok((certificate, leaf_cert_id, person_name)) => {
+                        // Create Leaf Certificate node in graph using LiftableDomain
+                        use crate::domain::pki::{Certificate as PkiCertificate, CertificateId};
+                        use crate::lifting::LiftableDomain;
+                        use crate::state_machines::workflows::PKIBootstrapState;
+
+                        let cert_id = CertificateId::from_uuid(leaf_cert_id);
+                        let subject = format!("CN={}, O={}", person_name, self.organization_name);
+                        let cert = PkiCertificate::leaf(
+                            cert_id,
+                            subject.clone(),
+                            format!("{} Intermediate CA", self.organization_name), // issuer
+                            chrono::Utc::now(),
+                            chrono::Utc::now() + chrono::Duration::days(365), // 1 year
+                            vec!["digitalSignature".to_string(), "keyEncipherment".to_string()],
+                            vec![format!("{}.{}", person_name.to_lowercase().replace(' ', "."), self.organization_name.to_lowercase().replace(' ', "-"))], // SAN
+                        );
+                        let lifted_node = cert.lift();
+                        let position = iced::Point::new(500.0, 300.0); // Below Intermediate CA
+                        let leaf_cert_node = graph::ConceptEntity::from_lifted_node(lifted_node);
+
+                        // Create view with custom color and label
+                        let custom_color = self.view_model.colors.cert_leaf;
+                        let custom_label = format!("{} Certificate", person_name);
+                        let view = view_model::NodeView::new(leaf_cert_id, position, custom_color, custom_label);
+
+                        // Add to graph
+                        self.org_graph.nodes.insert(leaf_cert_id, leaf_cert_node);
+                        self.org_graph.node_views.insert(leaf_cert_id, view);
+
+                        // Store the leaf certificate
+                        self.generated_leaf_certs.insert(leaf_cert_id, certificate.clone());
+
+                        // Update PKI state machine
+                        let leaf_cert_ids = match &self.pki_state {
+                            PKIBootstrapState::LeafCertsGenerated { leaf_cert_ids } => {
+                                let mut ids = leaf_cert_ids.clone();
+                                ids.push(leaf_cert_id);
+                                ids
+                            }
+                            PKIBootstrapState::IntermediateCAGenerated { .. } => {
+                                vec![leaf_cert_id]
+                            }
+                            _ => vec![leaf_cert_id],
+                        };
+                        self.pki_state = PKIBootstrapState::LeafCertsGenerated { leaf_cert_ids };
+                        tracing::info!(
+                            "PKI state machine transitioned to LeafCertsGenerated (id: {}, person: {})",
+                            leaf_cert_id,
+                            person_name
+                        );
+
+                        // Switch to PKI view to show the new certificate
+                        self.graph_view = GraphView::PkiTrustChain;
+
+                        self.status_message = format!(
+                            "✅ Leaf certificate generated for {}! Fingerprint: {} | View in PKI Graph",
+                            person_name,
+                            &certificate.fingerprint[..16]
+                        );
+                        tracing::info!("Leaf certificate generated for {}: {}", person_name, certificate.fingerprint);
+                    }
+                    Err(e) => {
+                        self.status_message = format!("❌ Leaf certificate generation failed: {}", e);
+                        self.error_message = Some(e);
+                        tracing::error!("Leaf certificate generation failed");
                     }
                 }
                 Task::none()
@@ -8834,51 +8912,65 @@ impl CimKeysApp {
                                     );
                                 }
                                 passphrase_dialog::PassphrasePurpose::PersonalKeys => {
-                                    self.status_message = "Personal keys generation in progress...".to_string();
+                                    // Sprint 82: Generate Leaf Certificate signed by Intermediate CA
+                                    // Check if we have an Intermediate CA to sign with
+                                    if let Some((intermediate_ca_id, intermediate_ca)) = self.generated_intermediate_cas.iter().next() {
+                                        self.status_message = "Leaf certificate generation in progress...".to_string();
 
-                                    // Get person info from property card - use lifted_node downcast
-                                    let person_name = self.property_card.node_id()
-                                        .and_then(|id| self.org_graph.nodes.get(&id))
-                                        .and_then(|node| node.lifted_node.downcast::<Person>().map(|p| p.name.clone()))
-                                        .unwrap_or_else(|| "Unknown".to_string());
+                                        // Get person info from property card - use lifted_node downcast
+                                        let person_name = self.property_card.node_id()
+                                            .and_then(|id| self.org_graph.nodes.get(&id))
+                                            .and_then(|node| node.lifted_node.downcast::<Person>().map(|p| p.name.clone()))
+                                            .unwrap_or_else(|| "Unknown".to_string());
 
-                                    // Trigger async Personal Keys generation
-                                    return Task::perform(
-                                        async move {
-                                            use crate::crypto::seed_derivation::derive_master_seed;
-                                            use crate::crypto::x509::{generate_root_ca, RootCAParams};
+                                        // Clone intermediate CA data for async closure
+                                        let intermediate_ca_cert_pem = intermediate_ca.certificate_pem.clone();
+                                        let intermediate_ca_key_pem = intermediate_ca.private_key_pem.clone();
+                                        let intermediate_ca_id = *intermediate_ca_id;
+                                        let person_name_clone = person_name.clone();
 
-                                            // Derive master seed from passphrase
-                                            let seed = derive_master_seed(&passphrase, &org_id)
-                                                .map_err(|e| format!("Failed to derive seed: {}", e))?;
+                                        // Trigger async Leaf Certificate generation
+                                        return Task::perform(
+                                            async move {
+                                                use crate::crypto::seed_derivation::derive_master_seed;
+                                                use crate::crypto::x509::{generate_server_certificate, ServerCertParams};
 
-                                            // TODO: Generate proper leaf certificate signed by intermediate CA
-                                            // For now, generate a temporary self-signed cert as placeholder
-                                            let temp_cert_params = RootCAParams {
-                                                organization: org_name.clone(),
-                                                common_name: format!("{} Personal", person_name),
-                                                country: Some("US".to_string()),
-                                                state: None,
-                                                locality: None,
-                                                validity_years: 1,
-                                                pathlen: 0, // Personal cert doesn't sign other certs
-                                            };
-                                            // US-021: Generate with event emission, extract cert
-                                            let correlation_id = uuid::Uuid::now_v7();
-                                            let (cert, _event) = generate_root_ca(&seed, temp_cert_params, correlation_id, None)?;
+                                                // Derive master seed from passphrase
+                                                let leaf_seed = derive_master_seed(&passphrase, &org_id)
+                                                    .map_err(|e| format!("Failed to derive seed: {}", e))?;
 
-                                            // TODO: Generate NATS keys (Operator, Account, User)
-                                            // For now, return placeholder keys
-                                            let nats_keys = vec![
-                                                "NATS Operator Key: (placeholder)".to_string(),
-                                                "NATS Account Key: (placeholder)".to_string(),
-                                                "NATS User Key: (placeholder)".to_string(),
-                                            ];
+                                                // Create leaf certificate parameters
+                                                let leaf_cert_params = ServerCertParams {
+                                                    common_name: format!("{}", person_name_clone),
+                                                    san_entries: vec![
+                                                        format!("{}.{}", person_name_clone.to_lowercase().replace(' ', "."), org_name.to_lowercase().replace(' ', "-")),
+                                                    ],
+                                                    organization: org_name.clone(),
+                                                    organizational_unit: Some("Personal".to_string()),
+                                                    validity_days: 365, // 1 year for personal certs
+                                                };
 
-                                            Ok((cert, nats_keys))
-                                        },
-                                        Message::PersonalKeysGenerated
-                                    );
+                                                // Generate leaf certificate signed by intermediate CA
+                                                let correlation_id = uuid::Uuid::now_v7();
+                                                let leaf_cert_id = uuid::Uuid::now_v7();
+                                                let (cert, _gen_event, _sign_event) = generate_server_certificate(
+                                                    &leaf_seed,
+                                                    leaf_cert_params,
+                                                    &intermediate_ca_cert_pem,
+                                                    &intermediate_ca_key_pem,
+                                                    intermediate_ca_id,
+                                                    correlation_id,
+                                                    None,
+                                                )?;
+
+                                                Ok((cert, leaf_cert_id, person_name_clone))
+                                            },
+                                            Message::LeafCertGenerated
+                                        );
+                                    } else {
+                                        self.error_message = Some("Generate Intermediate CA first before creating leaf certificates.".to_string());
+                                        return Task::none();
+                                    }
                                 }
                                 passphrase_dialog::PassphrasePurpose::IntermediateCA => {
                                     // Sprint 81: Generate Intermediate CA signed by Root CA
