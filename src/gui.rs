@@ -219,6 +219,9 @@ pub struct CimKeysApp {
     total_keys_to_generate: usize,
     _certificates_generated: usize,  // Reserved for certificate generation tracking
 
+    // PKI Bootstrap State Machine (Sprint 77)
+    pki_state: crate::state_machines::workflows::PKIBootstrapState,
+
     // Certificate generation fields
     intermediate_ca_name_input: String,
     server_cert_cn_input: String,
@@ -1157,6 +1160,18 @@ pub enum Message {
     RootCAGenerated(Result<crate::crypto::x509::X509Certificate, String>),
     PersonalKeysGenerated(Result<(crate::crypto::x509::X509Certificate, Vec<String>), String>), // (cert, nats_keys)
 
+    // PKI State Machine Transitions (Sprint 77)
+    PkiPlanRootCA {
+        subject: crate::state_machines::workflows::CertificateSubject,
+        validity_years: u32,
+        yubikey_serial: String,
+    },
+    PkiExecuteRootCAGeneration,
+    PkiRootCAGenerationComplete {
+        root_ca_cert_id: Uuid,
+        root_ca_key_id: Uuid,
+    },
+
     // YubiKey operations
     YubiKeyDataLoaded(Vec<crate::projections::YubiKeyEntry>, Vec<crate::projections::PersonEntry>),
     ProvisionYubiKeysFromGraph,  // Graph-first YubiKey provisioning
@@ -1733,6 +1748,7 @@ impl CimKeysApp {
                 keys_generated: 0,
                 total_keys_to_generate: 0,
                 _certificates_generated: 0,
+                pki_state: crate::state_machines::workflows::PKIBootstrapState::Uninitialized,
                 intermediate_ca_name_input: String::new(),
                 server_cert_cn_input: String::new(),
                 server_cert_sans_input: String::new(),
@@ -4350,8 +4366,10 @@ impl CimKeysApp {
                         // Create Root CA node in graph using LiftableDomain
                         use crate::domain::pki::{Certificate as PkiCertificate, CertificateId};
                         use crate::lifting::LiftableDomain;
+                        use crate::state_machines::workflows::PKIBootstrapState;
 
                         let cert_id = CertificateId::new();
+                        let key_id = Uuid::now_v7(); // Key ID for state machine tracking
                         let subject = format!("CN={} Root CA, O={}", self.organization_name, self.organization_name);
                         let cert = PkiCertificate::root(
                             cert_id,
@@ -4363,23 +4381,32 @@ impl CimKeysApp {
                         let lifted_node = cert.lift();
                         let position = iced::Point::new(400.0, 100.0); // Center top of graph
                         let root_ca_node = graph::ConceptEntity::from_lifted_node(lifted_node);
-                        let cert_id = cert_id.as_uuid();
+                        let cert_id_uuid = cert_id.as_uuid();
 
                         // Create view with custom color and label
                         let custom_color = self.view_model.colors.cert_root_ca;
                         let custom_label = format!("{} Root CA", self.organization_name);
-                        let view = view_model::NodeView::new(cert_id, position, custom_color, custom_label);
+                        let view = view_model::NodeView::new(cert_id_uuid, position, custom_color, custom_label);
 
                         // Add to graph
-                        self.org_graph.nodes.insert(cert_id, root_ca_node);
-                        self.org_graph.node_views.insert(cert_id, view);
+                        self.org_graph.nodes.insert(cert_id_uuid, root_ca_node);
+                        self.org_graph.node_views.insert(cert_id_uuid, view);
 
                         // Switch to PKI view to show the new certificate
                         self.graph_view = GraphView::PkiTrustChain;
 
-                        // TODO: Store certificate PEM data in projection
-                        // TODO: Store private key securely
-                        // TODO: Emit CertificateGeneratedEvent
+                        // Sprint 77: Update PKI state machine if in RootCAPlanned state
+                        if matches!(self.pki_state, PKIBootstrapState::RootCAPlanned { .. }) {
+                            self.pki_state = PKIBootstrapState::RootCAGenerated {
+                                root_ca_cert_id: cert_id_uuid,
+                                root_ca_key_id: key_id,
+                                generated_at: chrono::Utc::now(),
+                            };
+                            tracing::info!(
+                                "PKI state machine transitioned to RootCAGenerated (cert: {}, key: {})",
+                                cert_id_uuid, key_id
+                            );
+                        }
 
                         self.status_message = format!("✅ Root CA generated! Fingerprint: {} | View in PKI Graph", &certificate.fingerprint[..16]);
                         tracing::info!("Root CA generated and added to graph: {}", certificate.fingerprint);
@@ -9419,6 +9446,100 @@ impl CimKeysApp {
             Message::RoleDragCancel => {
                 self.org_graph.cancel_role_drag();
                 self.status_message = "Drag cancelled".to_string();
+                Task::none()
+            }
+
+            // PKI State Machine Handlers (Sprint 77)
+            Message::PkiPlanRootCA { subject, validity_years, yubikey_serial } => {
+                use crate::state_machines::workflows::PKIBootstrapState;
+
+                // Validate state transition using state machine guard
+                if !self.pki_state.can_plan_root_ca() {
+                    self.error_message = Some(format!(
+                        "Cannot plan Root CA in current state: {:?}",
+                        self.pki_state
+                    ));
+                    return Task::none();
+                }
+
+                // Transition to RootCAPlanned state
+                self.pki_state = PKIBootstrapState::RootCAPlanned {
+                    subject,
+                    validity_years,
+                    yubikey_serial: yubikey_serial.clone(),
+                };
+
+                self.status_message = format!(
+                    "Root CA planned. Ready for generation (YubiKey: {})",
+                    yubikey_serial
+                );
+
+                Task::none()
+            }
+
+            Message::PkiExecuteRootCAGeneration => {
+                use crate::state_machines::workflows::PKIBootstrapState;
+
+                // Validate state transition using state machine guard
+                if !self.pki_state.can_generate_root_ca() {
+                    self.error_message = Some(format!(
+                        "Cannot generate Root CA in current state: {:?}. Plan Root CA first.",
+                        self.pki_state
+                    ));
+                    return Task::none();
+                }
+
+                // Extract planning data from current state
+                let (subject, validity_years, yubikey_serial) = match &self.pki_state {
+                    PKIBootstrapState::RootCAPlanned { subject, validity_years, yubikey_serial } => {
+                        (subject.clone(), *validity_years, yubikey_serial.clone())
+                    }
+                    _ => {
+                        self.error_message = Some("Invalid state for Root CA generation".to_string());
+                        return Task::none();
+                    }
+                };
+
+                self.status_message = "Generating Root CA (state machine driven)...".to_string();
+
+                // Show passphrase dialog for seed derivation
+                // The passphrase dialog will trigger the actual generation
+                self.passphrase_dialog.show(passphrase_dialog::PassphrasePurpose::RootCA);
+
+                // Store planning data for use after passphrase entry
+                // (The passphrase handler will need access to subject/validity)
+                tracing::info!(
+                    "PKI state machine: executing Root CA generation for {} (validity: {} years, YubiKey: {})",
+                    subject.common_name,
+                    validity_years,
+                    yubikey_serial
+                );
+
+                Task::none()
+            }
+
+            Message::PkiRootCAGenerationComplete { root_ca_cert_id, root_ca_key_id } => {
+                use crate::state_machines::workflows::PKIBootstrapState;
+                use chrono::Utc;
+
+                // Transition to RootCAGenerated state
+                self.pki_state = PKIBootstrapState::RootCAGenerated {
+                    root_ca_cert_id,
+                    root_ca_key_id,
+                    generated_at: Utc::now(),
+                };
+
+                self.status_message = format!(
+                    "Root CA generated successfully! Cert ID: {}, Key ID: {}",
+                    root_ca_cert_id,
+                    root_ca_key_id
+                );
+
+                tracing::info!(
+                    "PKI state machine: Root CA generation complete. State: {:?}",
+                    self.pki_state
+                );
+
                 Task::none()
             }
         }
