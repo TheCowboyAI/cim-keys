@@ -78,12 +78,13 @@ pub mod state_machine_svg;
 pub mod state_machine_view;
 pub mod graph_buttons;
 
-// Domain-bounded modules (Sprint 48-52 refactoring)
+// Domain-bounded modules (Sprint 48-53 refactoring)
 pub mod domains;
 pub mod pki;
 pub mod yubikey;
 pub mod nats;
 pub mod export;
+pub mod delegation;
 
 #[cfg(test)]
 mod graph_integration_tests;
@@ -95,6 +96,7 @@ use pki::PkiMessage;
 use yubikey::YubiKeyMessage;
 use nats::NatsMessage;
 use export::ExportMessage;
+use delegation::DelegationMessage;
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
 use view_model::ViewModel;
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
@@ -838,6 +840,8 @@ pub enum Message {
     Nats(NatsMessage),
     /// Delegation to Export bounded context
     Export(ExportMessage),
+    /// Delegation to Delegation bounded context (authorization)
+    Delegation(DelegationMessage),
 
     // ============================================================================
     // Tab Navigation
@@ -1495,19 +1499,8 @@ impl Default for TrustChainStatus {
     }
 }
 
-/// Entry for displaying active delegations
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DelegationEntry {
-    pub id: Uuid,
-    pub from_person_id: Uuid,
-    pub from_person_name: String,
-    pub to_person_id: Uuid,
-    pub to_person_name: String,
-    pub permissions: Vec<crate::domain::KeyPermission>,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
-    pub is_active: bool,
-}
+// DelegationEntry moved to delegation::authorization module (Sprint 53)
+pub use delegation::DelegationEntry;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NatsHierarchy {
@@ -2258,6 +2251,36 @@ impl CimKeysApp {
                 self.projection_section = export_state.projection_section;
                 self.projections = export_state.projections;
                 self.selected_projection = export_state.selected_projection;
+
+                task
+            }
+
+            // ================================================================
+            // Delegation Domain Message Delegation (Sprint 53)
+            // ================================================================
+            Message::Delegation(del_msg) => {
+                use delegation::authorization;
+
+                // Create delegation state view from app state
+                let mut del_state = delegation::DelegationState {
+                    delegation_section_collapsed: self.delegation_section_collapsed,
+                    delegation_from_person: self.delegation_from_person,
+                    delegation_to_person: self.delegation_to_person,
+                    delegation_permissions: self.delegation_permissions.clone(),
+                    delegation_expires_days: self.delegation_expires_days.clone(),
+                    active_delegations: self.active_delegations.clone(),
+                };
+
+                // Delegate to Delegation domain update function
+                let task = authorization::update(&mut del_state, del_msg);
+
+                // Sync state back from Delegation module
+                self.delegation_section_collapsed = del_state.delegation_section_collapsed;
+                self.delegation_from_person = del_state.delegation_from_person;
+                self.delegation_to_person = del_state.delegation_to_person;
+                self.delegation_permissions = del_state.delegation_permissions;
+                self.delegation_expires_days = del_state.delegation_expires_days;
+                self.active_delegations = del_state.active_delegations;
 
                 task
             }
