@@ -78,9 +78,10 @@ pub mod state_machine_svg;
 pub mod state_machine_view;
 pub mod graph_buttons;
 
-// Domain-bounded modules (Sprint 48-49 refactoring)
+// Domain-bounded modules (Sprint 48-50 refactoring)
 pub mod domains;
 pub mod pki;
+pub mod yubikey;
 
 #[cfg(test)]
 mod graph_integration_tests;
@@ -89,6 +90,7 @@ use graph::{OrganizationConcept, OrganizationIntent};
 use crate::lifting::Injection;
 use domains::OrganizationMessage;
 use pki::PkiMessage;
+use yubikey::YubiKeyMessage;
 use event_emitter::{CimEventEmitter, GuiEventSubscriber, InteractionType};
 use view_model::ViewModel;
 use cowboy_theme::{CowboyTheme, CowboyAppTheme as CowboyCustomTheme};
@@ -820,12 +822,14 @@ impl Default for GraphView {
 #[derive(Debug, Clone)]
 pub enum Message {
     // ============================================================================
-    // Domain-Bounded Message Delegation (Sprint 48-49 refactoring)
+    // Domain-Bounded Message Delegation (Sprint 48-50 refactoring)
     // ============================================================================
     /// Delegation to Organization bounded context
     Organization(OrganizationMessage),
     /// Delegation to PKI bounded context
     Pki(PkiMessage),
+    /// Delegation to YubiKey bounded context
+    YubiKey(YubiKeyMessage),
 
     // ============================================================================
     // Tab Navigation
@@ -2106,6 +2110,68 @@ impl CimKeysApp {
                 self.root_passphrase = pki_state.root_passphrase;
                 self.root_passphrase_confirm = pki_state.root_passphrase_confirm;
                 self.show_passphrase = pki_state.show_passphrase;
+
+                task
+            }
+
+            // ================================================================
+            // YubiKey Domain Message Delegation (Sprint 50)
+            // ================================================================
+            Message::YubiKey(yk_msg) => {
+                use yubikey::management;
+
+                // Create YubiKey state view from app state
+                let mut yk_state = yubikey::YubiKeyState {
+                    yubikey_serial: self.yubikey_serial.clone(),
+                    detected_yubikeys: self.detected_yubikeys.clone(),
+                    yubikey_detection_status: self.yubikey_detection_status.clone(),
+                    yubikey_configs: self.yubikey_configs.clone(),
+                    yubikey_assignments: self.yubikey_assignments.clone(),
+                    yubikey_provisioning_status: self.yubikey_provisioning_status.clone(),
+                    selected_yubikey_for_assignment: self.selected_yubikey_for_assignment.clone(),
+                    yubikey_section_collapsed: self.yubikey_section_collapsed,
+                    yubikey_slot_section_collapsed: self.yubikey_slot_section_collapsed,
+                    selected_yubikey_for_management: self.selected_yubikey_for_management.clone(),
+                    selected_piv_slot: self.selected_piv_slot,
+                    yubikey_slot_info: self.yubikey_slot_info.clone(),
+                    yubikey_slot_operation_status: self.yubikey_slot_operation_status.clone(),
+                    yubikey_attestation_result: self.yubikey_attestation_result.clone(),
+                    yubikey_pin_input: self.yubikey_pin_input.clone(),
+                    yubikey_new_pin: self.yubikey_new_pin.clone(),
+                    yubikey_pin_confirm: self.yubikey_pin_confirm.clone(),
+                    yubikey_management_key: self.yubikey_management_key.clone(),
+                    yubikey_new_management_key: self.yubikey_new_management_key.clone(),
+                    yubikey_registration_name: self.yubikey_registration_name.clone(),
+                    registered_yubikeys: self.registered_yubikeys.clone(),
+                    filter_show_yubikey: self.filter_show_yubikey,
+                };
+
+                // Delegate to YubiKey domain update function
+                let task = management::update(&mut yk_state, yk_msg);
+
+                // Sync state back from YubiKey module
+                self.yubikey_serial = yk_state.yubikey_serial;
+                self.detected_yubikeys = yk_state.detected_yubikeys;
+                self.yubikey_detection_status = yk_state.yubikey_detection_status;
+                self.yubikey_configs = yk_state.yubikey_configs;
+                self.yubikey_assignments = yk_state.yubikey_assignments;
+                self.yubikey_provisioning_status = yk_state.yubikey_provisioning_status;
+                self.selected_yubikey_for_assignment = yk_state.selected_yubikey_for_assignment;
+                self.yubikey_section_collapsed = yk_state.yubikey_section_collapsed;
+                self.yubikey_slot_section_collapsed = yk_state.yubikey_slot_section_collapsed;
+                self.selected_yubikey_for_management = yk_state.selected_yubikey_for_management;
+                self.selected_piv_slot = yk_state.selected_piv_slot;
+                self.yubikey_slot_info = yk_state.yubikey_slot_info;
+                self.yubikey_slot_operation_status = yk_state.yubikey_slot_operation_status;
+                self.yubikey_attestation_result = yk_state.yubikey_attestation_result;
+                self.yubikey_pin_input = yk_state.yubikey_pin_input;
+                self.yubikey_new_pin = yk_state.yubikey_new_pin;
+                self.yubikey_pin_confirm = yk_state.yubikey_pin_confirm;
+                self.yubikey_management_key = yk_state.yubikey_management_key;
+                self.yubikey_new_management_key = yk_state.yubikey_new_management_key;
+                self.yubikey_registration_name = yk_state.yubikey_registration_name;
+                self.registered_yubikeys = yk_state.registered_yubikeys;
+                self.filter_show_yubikey = yk_state.filter_show_yubikey;
 
                 task
             }
