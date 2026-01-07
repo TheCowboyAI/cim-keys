@@ -72,6 +72,17 @@ pub trait YubiKeyPort: Send + Sync {
     /// **Functor Mapping**: (device, pin) → bool
     async fn verify_pin(&self, serial: &str, pin: &SecureString) -> Result<bool, YubiKeyError>;
 
+    /// Change PIN
+    ///
+    /// **Functor Mapping**: (device, old_pin, new_pin) → ()
+    /// Changes the PIV PIN from old to new value
+    async fn change_pin(
+        &self,
+        serial: &str,
+        old_pin: &SecureString,
+        new_pin: &SecureString,
+    ) -> Result<(), YubiKeyError>;
+
     /// Change management key
     ///
     /// **Functor Mapping**: (device, old_key, new_key) → ()

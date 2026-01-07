@@ -101,6 +101,15 @@ impl YubiKeyPort for YubiKeyHardwareAdapter {
         Err(YubiKeyError::NotSupported("PIN verification not yet implemented - use CLI adapter".to_string()))
     }
 
+    async fn change_pin(
+        &self,
+        _serial: &str,
+        _old_pin: &SecureString,
+        _new_pin: &SecureString,
+    ) -> Result<(), YubiKeyError> {
+        Err(YubiKeyError::NotSupported("PIN change not yet implemented - use CLI adapter".to_string()))
+    }
+
     async fn change_management_key(
         &self,
         _serial: &str,

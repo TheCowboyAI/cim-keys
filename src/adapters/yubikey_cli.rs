@@ -168,6 +168,31 @@ impl YubiKeyPort for YubiKeyCliAdapter {
         Ok(output.status.success())
     }
 
+    async fn change_pin(
+        &self,
+        serial: &str,
+        old_pin: &SecureString,
+        new_pin: &SecureString,
+    ) -> Result<(), YubiKeyError> {
+        let old_pin_str = String::from_utf8_lossy(old_pin.as_bytes());
+        let new_pin_str = String::from_utf8_lossy(new_pin.as_bytes());
+
+        let output = Command::new("ykman")
+            .args(["--device", serial])
+            .args(["piv", "access", "change-pin"])
+            .args(["--pin", old_pin_str.as_ref()])
+            .args(["--new-pin", new_pin_str.as_ref()])
+            .output()
+            .map_err(|e| YubiKeyError::OperationError(format!("Failed to change PIN: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(YubiKeyError::OperationError(format!("PIN change failed: {}", stderr)));
+        }
+
+        Ok(())
+    }
+
     async fn change_management_key(
         &self,
         serial: &str,

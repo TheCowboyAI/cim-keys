@@ -253,6 +253,29 @@ impl YubiKeyPort for MockYubiKeyAdapter {
         Ok(true)
     }
 
+    /// **Functor Mapping**: (device, old_pin, new_pin) → ()
+    async fn change_pin(
+        &self,
+        serial: &str,
+        old_pin: &SecureString,
+        new_pin: &SecureString,
+    ) -> Result<(), YubiKeyError> {
+        let mut pins = self.pins.write().unwrap();
+        let stored_pin = pins
+            .get(serial)
+            .ok_or_else(|| YubiKeyError::DeviceNotFound(serial.to_string()))?;
+
+        let old_pin_str = String::from_utf8_lossy(old_pin.as_bytes());
+
+        if &old_pin_str != stored_pin {
+            return Err(YubiKeyError::InvalidPin);
+        }
+
+        let new_pin_str = String::from_utf8_lossy(new_pin.as_bytes()).to_string();
+        pins.insert(serial.to_string(), new_pin_str);
+        Ok(())
+    }
+
     /// **Functor Mapping**: (device, old_key, new_key) → ()
     async fn change_management_key(
         &self,

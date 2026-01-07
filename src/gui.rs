@@ -1224,6 +1224,25 @@ pub enum Message {
         serial: String,
     },
 
+    // Sprint 83: YubiKey Operations (trigger actual PIV operations)
+    YubiKeyStartAuthentication {
+        serial: String,
+        pin: String,
+    },
+    YubiKeyAuthenticationResult(Result<(String, u8), (String, String)>), // (serial, retries) or (serial, error)
+    YubiKeyStartPINChange {
+        serial: String,
+        old_pin: String,
+        new_pin: String,
+    },
+    YubiKeyPINChangeResult(Result<String, (String, String)>), // serial or (serial, error)
+    YubiKeyStartKeyGeneration {
+        serial: String,
+        slot: crate::ports::yubikey::PivSlot,
+        algorithm: crate::ports::yubikey::KeyAlgorithm,
+    },
+    YubiKeyKeyGenerationResult(Result<(String, crate::ports::yubikey::PivSlot, Vec<u8>), (String, String)>), // (serial, slot, pubkey) or (serial, error)
+
     // Export State Machine Transitions (Sprint 79)
     PkiPrepareExport,
     PkiExportReady {
@@ -4228,6 +4247,17 @@ impl CimKeysApp {
                                     .collect::<Vec<_>>()
                                     .join(", ")
                             );
+
+                            // Sprint 83: Update YubiKey provisioning state machine for each device
+                            // Emit YubiKeyDetected for each device to initialize state machine
+                            let tasks: Vec<_> = devices.iter().map(|d| {
+                                Task::done(Message::YubiKeyDetected {
+                                    serial: d.serial.clone(),
+                                    firmware_version: d.version.clone(),
+                                })
+                            }).collect();
+
+                            return Task::batch(tasks);
                         }
                     }
                     Err(e) => {
@@ -10235,6 +10265,165 @@ impl CimKeysApp {
                     self.pki_state
                 );
 
+                Task::none()
+            }
+
+            // Sprint 83: YubiKey Operation Handlers (actual PIV operations)
+            Message::YubiKeyStartAuthentication { serial, pin } => {
+                use crate::ports::yubikey::SecureString;
+
+                // Validate state: must be in Detected state
+                let current_state = self.yubikey_states.get(&serial);
+                if !matches!(current_state, Some(state) if state.can_authenticate()) {
+                    self.error_message = Some(format!(
+                        "Cannot authenticate YubiKey {} in current state. Detect first.",
+                        serial
+                    ));
+                    return Task::none();
+                }
+
+                self.status_message = format!("Authenticating YubiKey {}...", serial);
+                let yubikey_port = self.yubikey_port.clone();
+                let serial_for_async = serial.clone();
+                let pin_secure = SecureString::new(pin.as_bytes());
+
+                Task::perform(
+                    async move {
+                        match yubikey_port.verify_pin(&serial_for_async, &pin_secure).await {
+                            Ok(true) => Ok((serial_for_async, 3u8)), // Assume 3 retries remaining on success
+                            Ok(false) => Err((serial_for_async.clone(), "Invalid PIN".to_string())),
+                            Err(e) => Err((serial_for_async.clone(), format!("{:?}", e))),
+                        }
+                    },
+                    Message::YubiKeyAuthenticationResult
+                )
+            }
+
+            Message::YubiKeyAuthenticationResult(result) => {
+                match result {
+                    Ok((serial, pin_retries)) => {
+                        // Emit state machine transition
+                        return Task::done(Message::YubiKeyAuthenticated { serial, pin_retries });
+                    }
+                    Err((serial, error)) => {
+                        self.error_message = Some(format!("YubiKey {} authentication failed: {}", serial, error));
+                    }
+                }
+                Task::none()
+            }
+
+            Message::YubiKeyStartPINChange { serial, old_pin, new_pin } => {
+                use crate::ports::yubikey::SecureString;
+
+                // Validate state: must be in Authenticated state
+                let current_state = self.yubikey_states.get(&serial);
+                if !matches!(current_state, Some(state) if state.can_change_pin()) {
+                    self.error_message = Some(format!(
+                        "Cannot change PIN for YubiKey {} in current state. Authenticate first.",
+                        serial
+                    ));
+                    return Task::none();
+                }
+
+                self.status_message = format!("Changing PIN for YubiKey {}...", serial);
+                let yubikey_port = self.yubikey_port.clone();
+                let serial_for_async = serial.clone();
+                let old_pin_secure = SecureString::new(old_pin.as_bytes());
+                let new_pin_secure = SecureString::new(new_pin.as_bytes());
+
+                Task::perform(
+                    async move {
+                        match yubikey_port.change_pin(&serial_for_async, &old_pin_secure, &new_pin_secure).await {
+                            Ok(()) => Ok(serial_for_async),
+                            Err(e) => Err((serial_for_async.clone(), format!("{:?}", e))),
+                        }
+                    },
+                    Message::YubiKeyPINChangeResult
+                )
+            }
+
+            Message::YubiKeyPINChangeResult(result) => {
+                match result {
+                    Ok(serial) => {
+                        // Emit state machine transition
+                        return Task::done(Message::YubiKeyPINChanged { serial });
+                    }
+                    Err((serial, error)) => {
+                        self.error_message = Some(format!("YubiKey {} PIN change failed: {}", serial, error));
+                    }
+                }
+                Task::none()
+            }
+
+            Message::YubiKeyStartKeyGeneration { serial, slot, algorithm } => {
+                use crate::ports::yubikey::SecureString;
+
+                // Get PIN from config or use default management key
+                // Note: Key generation requires management key, not PIN
+                let mgmt_key = SecureString::new(&[0u8; 24]); // Default 3DES key
+
+                self.status_message = format!("Generating key in slot {:?} for YubiKey {}...", slot, serial);
+                let yubikey_port = self.yubikey_port.clone();
+                let serial_for_async = serial.clone();
+
+                Task::perform(
+                    async move {
+                        match yubikey_port.generate_key_in_slot(&serial_for_async, slot, algorithm, &mgmt_key).await {
+                            Ok(public_key) => Ok((serial_for_async, slot, public_key.data)),
+                            Err(e) => Err((serial_for_async.clone(), format!("{:?}", e))),
+                        }
+                    },
+                    Message::YubiKeyKeyGenerationResult
+                )
+            }
+
+            Message::YubiKeyKeyGenerationResult(result) => {
+                use crate::state_machines::workflows::YubiKeyProvisioningState;
+                use std::collections::HashMap;
+
+                match result {
+                    Ok((serial, slot, public_key)) => {
+                        // Update state machine to KeysGenerated
+                        // Convert ports::yubikey::PivSlot to workflows::PivSlot
+                        let workflow_slot = match slot {
+                            crate::ports::yubikey::PivSlot::Authentication => {
+                                crate::state_machines::workflows::PivSlot::Authentication
+                            }
+                            crate::ports::yubikey::PivSlot::Signature => {
+                                crate::state_machines::workflows::PivSlot::Signature
+                            }
+                            crate::ports::yubikey::PivSlot::KeyManagement => {
+                                crate::state_machines::workflows::PivSlot::KeyManagement
+                            }
+                            crate::ports::yubikey::PivSlot::CardAuth => {
+                                crate::state_machines::workflows::PivSlot::CardAuth
+                            }
+                            crate::ports::yubikey::PivSlot::Retired(n) => {
+                                crate::state_machines::workflows::PivSlot::Retired(n)
+                            }
+                        };
+
+                        let mut slot_keys = HashMap::new();
+                        slot_keys.insert(
+                            workflow_slot,
+                            public_key.clone(),
+                        );
+
+                        self.yubikey_states.insert(
+                            serial.clone(),
+                            YubiKeyProvisioningState::KeysGenerated { slot_keys },
+                        );
+
+                        self.status_message = format!(
+                            "✅ Key generated in slot {:?} for YubiKey {}",
+                            slot, serial
+                        );
+                        tracing::info!("Key generated for YubiKey {} in slot {:?}", serial, slot);
+                    }
+                    Err((serial, error)) => {
+                        self.error_message = Some(format!("YubiKey {} key generation failed: {}", serial, error));
+                    }
+                }
                 Task::none()
             }
 
