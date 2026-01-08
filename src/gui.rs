@@ -1257,6 +1257,12 @@ pub enum Message {
     },
     YubiKeyAttestationResult(Result<(String, crate::ports::yubikey::PivSlot, Vec<u8>), (String, String)>), // (serial, slot, attestation_cert) or (serial, error)
 
+    // Sprint 85: Seal Configuration (final, immutable state)
+    YubiKeyStartSeal {
+        serial: String,
+    },
+    YubiKeySealResult(Result<String, (String, String)>), // serial or (serial, error)
+
     // Export State Machine Transitions (Sprint 79)
     PkiPrepareExport,
     PkiExportReady {
@@ -10607,6 +10613,83 @@ impl CimKeysApp {
                 Task::none()
             }
 
+            // Sprint 85: Seal Configuration Handler
+            Message::YubiKeyStartSeal { serial } => {
+                use crate::state_machines::workflows::YubiKeyProvisioningState;
+                use sha2::{Sha256, Digest};
+
+                // Validate state: must be in Attested state (use can_seal guard)
+                let current_state = self.yubikey_states.get(&serial);
+                let can_seal = matches!(current_state, Some(state) if state.can_seal());
+
+                if !can_seal {
+                    self.error_message = Some(format!(
+                        "Cannot seal YubiKey {}: must be attested first. Current state: {:?}",
+                        serial, current_state
+                    ));
+                    return Task::none();
+                }
+
+                // Calculate configuration hash from current state
+                let config_data = format!(
+                    "yubikey:{}:sealed:{}",
+                    serial,
+                    chrono::Utc::now().to_rfc3339()
+                );
+                let mut hasher = Sha256::new();
+                hasher.update(config_data.as_bytes());
+                let final_config_hash = format!("{:x}", hasher.finalize());
+
+                self.status_message = format!("Sealing YubiKey {} configuration...", serial);
+
+                // Seal is a synchronous state transition (no async port call needed)
+                Task::done(Message::YubiKeySealResult(Ok(serial)))
+            }
+
+            Message::YubiKeySealResult(result) => {
+                use crate::state_machines::workflows::YubiKeyProvisioningState;
+                use sha2::{Sha256, Digest};
+
+                match result {
+                    Ok(serial) => {
+                        // Calculate configuration hash
+                        let sealed_at = chrono::Utc::now();
+                        let config_data = format!(
+                            "yubikey:{}:sealed:{}",
+                            serial,
+                            sealed_at.to_rfc3339()
+                        );
+                        let mut hasher = Sha256::new();
+                        hasher.update(config_data.as_bytes());
+                        let final_config_hash = format!("{:x}", hasher.finalize());
+
+                        // Transition to Sealed state
+                        self.yubikey_states.insert(
+                            serial.clone(),
+                            YubiKeyProvisioningState::Sealed {
+                                sealed_at,
+                                final_config_hash: final_config_hash.clone(),
+                            },
+                        );
+
+                        self.status_message = format!(
+                            "✅ YubiKey {} sealed. Configuration hash: {}...{}",
+                            serial,
+                            &final_config_hash[..8],
+                            &final_config_hash[final_config_hash.len()-8..]
+                        );
+                        tracing::info!(
+                            "YubiKey {} sealed at {}. Hash: {}",
+                            serial, sealed_at, final_config_hash
+                        );
+                    }
+                    Err((serial, error)) => {
+                        self.error_message = Some(format!("YubiKey {} seal failed: {}", serial, error));
+                    }
+                }
+                Task::none()
+            }
+
             // Export State Machine Handlers (Sprint 79)
             Message::PkiPrepareExport => {
                 use crate::state_machines::workflows::PKIBootstrapState;
@@ -12926,6 +13009,7 @@ impl CimKeysApp {
                             // Sprint 84: Add operation buttons based on state
                             let yubikey_state = self.yubikey_states.get(&serial);
                             let serial_for_attest = serial.clone();
+                            let serial_for_seal = serial.clone();
 
                             let operations_row: Element<'_, Message> = if device.piv_enabled {
                                 let mut ops = row![].spacing(self.view_model.spacing_sm);
@@ -12940,6 +13024,27 @@ impl CimKeysApp {
                                             })
                                             .padding(self.view_model.padding_sm)
                                             .style(CowboyCustomTheme::glass_button())
+                                    );
+                                }
+
+                                // Sprint 85: Seal button - available after attestation
+                                if yubikey_state.map(|s| s.can_seal()).unwrap_or(false) {
+                                    ops = ops.push(
+                                        button("Seal Configuration")
+                                            .on_press(Message::YubiKeyStartSeal {
+                                                serial: serial_for_seal,
+                                            })
+                                            .padding(self.view_model.padding_sm)
+                                            .style(CowboyCustomTheme::security_button())
+                                    );
+                                }
+
+                                // Show sealed status with lock icon
+                                if yubikey_state.map(|s| s.is_sealed()).unwrap_or(false) {
+                                    ops = ops.push(
+                                        text("🔒 Sealed")
+                                            .size(self.view_model.text_normal)
+                                            .color(self.view_model.colors.green_success)
                                     );
                                 }
 
