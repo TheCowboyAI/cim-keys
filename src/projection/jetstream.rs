@@ -238,6 +238,7 @@ impl EventsToMessagesProjection {
         let (aggregate, event_type) = match event {
             DE::Key(e) => ("key", e.event_type()),
             DE::Certificate(e) => ("certificate", e.event_type()),
+            DE::CertificateImport(e) => ("certificate.import", e.event_type()),
             DE::Person(e) => ("person", e.event_type()),
             DE::Location(e) => ("location", e.event_type()),
             DE::Delegation(e) => ("delegation", e.event_type()),
@@ -278,6 +279,7 @@ impl EventsToMessagesProjection {
         match event {
             DE::Key(e) => Some(e.aggregate_id()),
             DE::Certificate(e) => Some(e.aggregate_id()),
+            DE::CertificateImport(e) => Some(e.aggregate_id()),
             DE::Person(e) => Some(e.aggregate_id()),
             DE::Location(e) => Some(e.aggregate_id()),
             DE::Delegation(e) => Some(e.aggregate_id()),
@@ -299,6 +301,7 @@ impl EventsToMessagesProjection {
         match event {
             DE::Key(e) => e.event_type(),
             DE::Certificate(e) => e.event_type(),
+            DE::CertificateImport(e) => e.event_type(),
             DE::Person(e) => e.event_type(),
             DE::Location(e) => e.event_type(),
             DE::Delegation(e) => e.event_type(),

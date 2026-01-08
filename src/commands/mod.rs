@@ -23,6 +23,7 @@ pub mod nsc_export;
 pub mod person;
 pub mod location;
 pub mod certificate;
+pub mod certificate_import;
 pub mod key;
 pub mod nats_operator;
 pub mod nats_account;

@@ -306,6 +306,7 @@ impl NatsClientAdapter {
         match event {
             DomainEvent::Key(_) => "key",
             DomainEvent::Certificate(_) => "certificate",
+            DomainEvent::CertificateImport(_) => "certificate.import",
             DomainEvent::YubiKey(_) => "yubikey",
             DomainEvent::Delegation(_) => "delegation",
             DomainEvent::NatsOperator(_) => "nats.operator",

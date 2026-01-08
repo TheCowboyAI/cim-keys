@@ -232,6 +232,14 @@ pub struct CimKeysApp {
     generated_intermediate_cas: std::collections::HashMap<Uuid, crate::crypto::x509::X509Certificate>,
     generated_leaf_certs: std::collections::HashMap<Uuid, crate::crypto::x509::X509Certificate>,
 
+    // Sprint 88: Certificate selection for import
+    // Selected leaf certificate ID for YubiKey import
+    selected_leaf_cert_for_import: Option<Uuid>,
+    // Cache of RFC 5280 validation results for each certificate
+    certificate_validations: std::collections::HashMap<Uuid, crate::crypto::rfc5280::Rfc5280ValidationResult>,
+    // Certificate import state machine - tracks import workflow per YubiKey
+    certificate_import_states: std::collections::HashMap<String, crate::state_machines::CertificateImportState>,
+
     // Sprint 86: Attestation certificate storage
     // Maps (serial, slot) -> attestation certificate bytes (DER/PEM)
     attestation_certs: std::collections::HashMap<(String, crate::ports::yubikey::PivSlot), Vec<u8>>,
@@ -1267,6 +1275,13 @@ pub enum Message {
     },
     YubiKeySealResult(Result<String, (String, String)>), // serial or (serial, error)
 
+    // Sprint 87: YubiKey PIN dialog for certificate import
+    ShowYubiKeyPinDialog {
+        serial: String,
+        slot: crate::ports::yubikey::PivSlot,
+        certificate: Vec<u8>,
+    },
+
     // Export State Machine Transitions (Sprint 79)
     PkiPrepareExport,
     PkiExportReady {
@@ -1861,6 +1876,9 @@ impl CimKeysApp {
                 generated_root_ca: None,
                 generated_intermediate_cas: std::collections::HashMap::new(),
                 generated_leaf_certs: std::collections::HashMap::new(),
+                selected_leaf_cert_for_import: None,
+                certificate_validations: std::collections::HashMap::new(),
+                certificate_import_states: std::collections::HashMap::new(),
                 attestation_certs: std::collections::HashMap::new(),
                 intermediate_ca_name_input: String::new(),
                 server_cert_cn_input: String::new(),
@@ -3085,6 +3103,37 @@ impl CimKeysApp {
                     // === Loading ===
                     CertificateMessage::CertificatesLoaded(certificates) => {
                         self.loaded_certificates = certificates;
+                        Task::none()
+                    }
+
+                    // === Sprint 88: Certificate Selection for Import ===
+                    CertificateMessage::SelectLeafCertForImport(cert_id) => {
+                        self.selected_leaf_cert_for_import = cert_id;
+
+                        // If a certificate is selected, validate it
+                        if let Some(id) = cert_id {
+                            if let Some(cert) = self.generated_leaf_certs.get(&id) {
+                                // Perform RFC 5280 validation
+                                let pem_bytes = cert.certificate_pem.as_bytes();
+                                if let Ok(validation_result) = crate::crypto::rfc5280::validate_certificate(pem_bytes) {
+                                    self.certificate_validations.insert(id, validation_result);
+                                }
+                                // If validation fails to parse, we still allow selection but won't have validation data
+                            }
+                        }
+                        Task::none()
+                    }
+                    CertificateMessage::ValidateCertificate(cert_id) => {
+                        if let Some(cert) = self.generated_leaf_certs.get(&cert_id) {
+                            let pem_bytes = cert.certificate_pem.as_bytes();
+                            if let Ok(validation_result) = crate::crypto::rfc5280::validate_certificate(pem_bytes) {
+                                self.certificate_validations.insert(cert_id, validation_result);
+                            }
+                        }
+                        Task::none()
+                    }
+                    CertificateMessage::CertificateValidated { cert_id, result } => {
+                        self.certificate_validations.insert(cert_id, result);
                         Task::none()
                     }
                 }
@@ -4705,6 +4754,12 @@ impl CimKeysApp {
 
                         // Store the leaf certificate
                         self.generated_leaf_certs.insert(leaf_cert_id, certificate.clone());
+
+                        // Sprint 88: Validate certificate for RFC 5280 compliance immediately
+                        let pem_bytes = certificate.certificate_pem.as_bytes();
+                        if let Ok(validation_result) = crate::crypto::rfc5280::validate_certificate(pem_bytes) {
+                            self.certificate_validations.insert(leaf_cert_id, validation_result);
+                        }
 
                         // Update PKI state machine
                         let leaf_cert_ids = match &self.pki_state {
@@ -9101,6 +9156,21 @@ impl CimKeysApp {
                                         self.error_message = Some("Generate Root CA first before creating Intermediate CA".to_string());
                                     }
                                 }
+                                // Sprint 87: YubiKey PIN for certificate import
+                                passphrase_dialog::PassphrasePurpose::YubiKeyImportCert { serial, slot, certificate } => {
+                                    // PIN collected, trigger the actual certificate import
+                                    self.status_message = format!("Importing certificate to YubiKey {}...", serial);
+
+                                    // Use the PIN entered in the dialog (Zeroizing<String> -> String)
+                                    let pin: String = (*passphrase).clone();
+
+                                    return Task::done(Message::YubiKeyStartCertificateImport {
+                                        serial,
+                                        slot,
+                                        certificate,
+                                        pin,
+                                    });
+                                }
                             }
                         }
                     }
@@ -10697,6 +10767,18 @@ impl CimKeysApp {
                         self.error_message = Some(format!("YubiKey {} seal failed: {}", serial, error));
                     }
                 }
+                Task::none()
+            }
+
+            // Sprint 87: Show YubiKey PIN dialog for certificate import
+            Message::ShowYubiKeyPinDialog { serial, slot, certificate } => {
+                // Show passphrase dialog configured for YubiKey PIN entry
+                self.passphrase_dialog.show(passphrase_dialog::PassphrasePurpose::YubiKeyImportCert {
+                    serial: serial.clone(),
+                    slot,
+                    certificate,
+                });
+                self.status_message = format!("Enter PIN to import certificate to YubiKey {}", serial);
                 Task::none()
             }
 
@@ -13022,28 +13104,114 @@ impl CimKeysApp {
                             let serial_for_attest = serial.clone();
                             let serial_for_seal = serial.clone();
 
-                            // Sprint 86: Get first available leaf certificate for import
-                            let available_leaf_cert = self.generated_leaf_certs.values().next().cloned();
+                            // Sprint 88: Certificate selection with RFC 5280 validation
+                            // Get selected or first available leaf certificate
+                            let selected_cert = self.selected_leaf_cert_for_import
+                                .and_then(|id| self.generated_leaf_certs.get(&id).cloned())
+                                .or_else(|| self.generated_leaf_certs.values().next().cloned());
 
                             let operations_row: Element<'_, Message> = if device.piv_enabled {
                                 let mut ops = row![].spacing(self.view_model.spacing_sm);
 
-                                // Sprint 86: Import Certificate button - available after keys generated
+                                // Sprint 86/87/88: Import Certificate with selection
                                 if yubikey_state.map(|s| s.can_import_certs()).unwrap_or(false) {
-                                    if let Some(leaf_cert) = &available_leaf_cert {
-                                        // We have a certificate to import
-                                        let cert_pem_bytes = leaf_cert.certificate_pem.as_bytes().to_vec();
+                                    // Build certificate selection UI if multiple certs available
+                                    if self.generated_leaf_certs.len() > 1 {
+                                        // Create certificate labels for display and a map for lookup
+                                        let cert_ids: Vec<Uuid> = self.generated_leaf_certs.keys().copied().collect();
+                                        let cert_labels: Vec<String> = cert_ids.iter()
+                                            .map(|id| {
+                                                if let Some(validation) = self.certificate_validations.get(id) {
+                                                    if let Some(ref meta) = validation.metadata {
+                                                        let status = if validation.is_valid() { "✓" } else { "✗" };
+                                                        format!("{} {} ({})", status,
+                                                            meta.subject_cn.clone().unwrap_or_else(|| "Unknown".to_string()),
+                                                            &id.to_string()[..8])
+                                                    } else {
+                                                        format!("Cert {}", &id.to_string()[..8])
+                                                    }
+                                                } else {
+                                                    format!("Cert {}", &id.to_string()[..8])
+                                                }
+                                            })
+                                            .collect();
+
+                                        // Find selected label
+                                        let selected_idx = self.selected_leaf_cert_for_import
+                                            .and_then(|sel_id| cert_ids.iter().position(|id| *id == sel_id));
+                                        let selected_label = selected_idx
+                                            .and_then(|idx| cert_labels.get(idx))
+                                            .cloned();
+
+                                        // Clone for closure
+                                        let cert_ids_for_closure = cert_ids.clone();
+                                        let cert_labels_for_closure = cert_labels.clone();
+
                                         ops = ops.push(
-                                            button("Import Certificate")
-                                                .on_press(Message::YubiKeyStartCertificateImport {
-                                                    serial: serial_for_import.clone(),
-                                                    slot: crate::ports::yubikey::PivSlot::Authentication,
-                                                    certificate: cert_pem_bytes,
-                                                    pin: "123456".to_string(), // Default PIN - should use passphrase dialog
-                                                })
-                                                .padding(self.view_model.padding_sm)
-                                                .style(CowboyCustomTheme::primary_button())
+                                            pick_list(
+                                                cert_labels,
+                                                selected_label,
+                                                move |selected: String| {
+                                                    // Find the UUID for this label
+                                                    let idx = cert_labels_for_closure.iter()
+                                                        .position(|label| *label == selected);
+                                                    let cert_id = idx.and_then(|i| cert_ids_for_closure.get(i).copied());
+                                                    Message::Certificate(CertificateMessage::SelectLeafCertForImport(cert_id))
+                                                }
+                                            )
+                                            .text_size(self.view_model.text_small)
+                                            .padding(self.view_model.padding_sm)
                                         );
+                                    }
+
+                                    // Show validation status for selected certificate
+                                    if let Some(cert_id) = self.selected_leaf_cert_for_import.or_else(|| self.generated_leaf_certs.keys().next().copied()) {
+                                        if let Some(validation) = self.certificate_validations.get(&cert_id) {
+                                            let (status_text, status_color) = if validation.is_valid() {
+                                                ("RFC 5280 ✓", self.view_model.colors.green_success)
+                                            } else {
+                                                let err_count = validation.errors().len();
+                                                (format!("RFC 5280 ✗ ({})", err_count).leak() as &'static str, self.view_model.colors.red_error)
+                                            };
+                                            ops = ops.push(
+                                                text(status_text)
+                                                    .size(self.view_model.text_small)
+                                                    .color(status_color)
+                                            );
+                                        }
+                                    }
+
+                                    // Import button uses selected certificate
+                                    if let Some(leaf_cert) = &selected_cert {
+                                        let cert_pem_bytes = leaf_cert.certificate_pem.as_bytes().to_vec();
+                                        let serial_clone = serial_for_import.clone();
+
+                                        // Check if certificate is RFC 5280 valid before allowing import
+                                        let cert_id = self.selected_leaf_cert_for_import
+                                            .or_else(|| self.generated_leaf_certs.keys().next().copied());
+                                        let is_valid = cert_id
+                                            .and_then(|id| self.certificate_validations.get(&id))
+                                            .map(|v| v.is_valid())
+                                            .unwrap_or(true); // Allow if not yet validated
+
+                                        if is_valid {
+                                            ops = ops.push(
+                                                button("Import Certificate")
+                                                    .on_press(Message::ShowYubiKeyPinDialog {
+                                                        serial: serial_clone,
+                                                        slot: crate::ports::yubikey::PivSlot::Authentication,
+                                                        certificate: cert_pem_bytes,
+                                                    })
+                                                    .padding(self.view_model.padding_sm)
+                                                    .style(CowboyCustomTheme::primary_button())
+                                            );
+                                        } else {
+                                            ops = ops.push(
+                                                text("Fix validation errors")
+                                                    .size(self.view_model.text_small)
+                                                    .color(self.view_model.colors.red_error)
+                                            );
+                                        }
                                     } else {
                                         // No certificate available yet
                                         ops = ops.push(
@@ -15648,6 +15816,7 @@ impl CimKeysApp {
                                                             crate::events::DomainEvent::Organization(_) => "Organization",
                                                             crate::events::DomainEvent::Location(_) => "Location",
                                                             crate::events::DomainEvent::Certificate(_) => "Certificate",
+                                                            crate::events::DomainEvent::CertificateImport(_) => "CertImport",
                                                             crate::events::DomainEvent::Key(_) => "Key",
                                                             crate::events::DomainEvent::Delegation(_) => "Delegation",
                                                             crate::events::DomainEvent::NatsOperator(_) => "NatsOperator",

@@ -30,6 +30,13 @@ pub enum PassphrasePurpose {
     RootCA,
     IntermediateCA,
     PersonalKeys,
+    /// Sprint 87: YubiKey PIN for certificate import
+    /// Contains (serial, slot, certificate_bytes) for the pending import operation
+    YubiKeyImportCert {
+        serial: String,
+        slot: crate::ports::yubikey::PivSlot,
+        certificate: Vec<u8>,
+    },
 }
 
 impl PassphrasePurpose {
@@ -38,6 +45,7 @@ impl PassphrasePurpose {
             PassphrasePurpose::RootCA => "Root CA Passphrase",
             PassphrasePurpose::IntermediateCA => "Intermediate CA Passphrase",
             PassphrasePurpose::PersonalKeys => "Personal Keys Passphrase",
+            PassphrasePurpose::YubiKeyImportCert { .. } => "YubiKey PIN",
         }
     }
 
@@ -46,6 +54,21 @@ impl PassphrasePurpose {
             PassphrasePurpose::RootCA => "This passphrase protects your organization's root certificate authority. Keep it secure!",
             PassphrasePurpose::IntermediateCA => "This passphrase protects the intermediate signing certificate.",
             PassphrasePurpose::PersonalKeys => "This passphrase protects your personal keys.",
+            PassphrasePurpose::YubiKeyImportCert { .. } => {
+                // Note: This returns a static str, so we can't include the serial dynamically
+                // The dialog title and status message show the serial
+                "Enter your YubiKey PIN to import the certificate."
+            }
+        }
+    }
+
+    /// Returns true if this purpose requires PIN confirmation (double entry)
+    pub fn requires_confirmation(&self) -> bool {
+        match self {
+            PassphrasePurpose::RootCA => true,
+            PassphrasePurpose::IntermediateCA => true,
+            PassphrasePurpose::PersonalKeys => true,
+            PassphrasePurpose::YubiKeyImportCert { .. } => false, // PIN doesn't need confirmation
         }
     }
 }
@@ -121,9 +144,22 @@ impl PassphraseDialog {
 
     /// Check if the entered passphrase is valid
     pub fn is_valid(&self) -> bool {
-        !self.passphrase.is_empty()
-            && self.passphrase == self.passphrase_confirm
-            && self.passphrase.len() >= 12
+        if self.passphrase.is_empty() {
+            return false;
+        }
+
+        // Different validation rules based on purpose
+        match &self.purpose {
+            PassphrasePurpose::YubiKeyImportCert { .. } => {
+                // YubiKey PIN: 6-8 digits, no confirmation needed
+                self.passphrase.len() >= 6 && self.passphrase.len() <= 8
+            }
+            _ => {
+                // Standard passphrase: 12+ chars, must match confirmation
+                self.passphrase == self.passphrase_confirm
+                    && self.passphrase.len() >= 12
+            }
+        }
     }
 
     /// Calculate passphrase strength (0.0 to 1.0)
@@ -243,17 +279,23 @@ impl PassphraseDialog {
                 })
         );
 
-        // Passphrase input
+        // Determine placeholder and label based on purpose
+        let (input_label, input_placeholder) = match &self.purpose {
+            PassphrasePurpose::YubiKeyImportCert { .. } => ("PIN:", "Enter YubiKey PIN (6-8 digits)"),
+            _ => ("Passphrase:", "Enter passphrase (min 12 characters)"),
+        };
+
+        // Passphrase/PIN input
         let passphrase_input = if self.show_passphrase {
-            text_input("Enter passphrase (min 12 characters)", &self.passphrase)
+            text_input(input_placeholder, &self.passphrase)
         } else {
-            text_input("Enter passphrase (min 12 characters)", &self.passphrase)
+            text_input(input_placeholder, &self.passphrase)
                 .secure(true)
         };
 
         content = content.push(
             column![
-                text("Passphrase:").size(vm.text_small),
+                text(input_label).size(vm.text_small),
                 passphrase_input
                     .on_input(PassphraseDialogMessage::PassphraseChanged)
                     .width(Length::Fill),
@@ -261,47 +303,51 @@ impl PassphraseDialog {
             .spacing(vm.padding_xs)
         );
 
-        // Confirm passphrase input
-        let confirm_input = if self.show_passphrase {
-            text_input("Confirm passphrase", &self.passphrase_confirm)
-        } else {
-            text_input("Confirm passphrase", &self.passphrase_confirm)
-                .secure(true)
-        };
-
-        content = content.push(
-            column![
-                text("Confirm:").size(vm.text_small),
-                confirm_input
-                    .on_input(PassphraseDialogMessage::PassphraseConfirmChanged)
-                    .width(Length::Fill),
-            ]
-            .spacing(vm.padding_xs)
-        );
-
-        // Passphrase match indicator
-        if !self.passphrase.is_empty() && !self.passphrase_confirm.is_empty() {
-            let match_color = if self.passphrase == self.passphrase_confirm {
-                vm.colors.green_success
+        // Only show confirmation field if this purpose requires it
+        if self.purpose.requires_confirmation() {
+            // Confirm passphrase input
+            let confirm_input = if self.show_passphrase {
+                text_input("Confirm passphrase", &self.passphrase_confirm)
             } else {
-                vm.colors.red_error
+                text_input("Confirm passphrase", &self.passphrase_confirm)
+                    .secure(true)
             };
-            let match_text = if self.passphrase == self.passphrase_confirm {
-                "✓ Passphrases match"
-            } else {
-                "✗ Passphrases do not match"
-            };
+
             content = content.push(
-                text(match_text)
-                    .size(vm.text_small)
-                    .style(move |_theme: &Theme| text::Style {
-                        color: Some(match_color),
-                    })
+                column![
+                    text("Confirm:").size(vm.text_small),
+                    confirm_input
+                        .on_input(PassphraseDialogMessage::PassphraseConfirmChanged)
+                        .width(Length::Fill),
+                ]
+                .spacing(vm.padding_xs)
             );
+
+            // Passphrase match indicator
+            if !self.passphrase.is_empty() && !self.passphrase_confirm.is_empty() {
+                let match_color = if self.passphrase == self.passphrase_confirm {
+                    vm.colors.green_success
+                } else {
+                    vm.colors.red_error
+                };
+                let match_text = if self.passphrase == self.passphrase_confirm {
+                    "✓ Passphrases match"
+                } else {
+                    "✗ Passphrases do not match"
+                };
+                content = content.push(
+                    text(match_text)
+                        .size(vm.text_small)
+                        .style(move |_theme: &Theme| text::Style {
+                            color: Some(match_color),
+                        })
+                );
+            }
         }
 
-        // Strength indicator
-        if !self.passphrase.is_empty() {
+        // Strength indicator (only for passphrases, not PINs)
+        let is_pin_entry = matches!(self.purpose, PassphrasePurpose::YubiKeyImportCert { .. });
+        if !is_pin_entry && !self.passphrase.is_empty() {
             let strength = self.strength();
             let strength_color = vm.colors.strength_color(strength);
             let strength_bar_bg = vm.colors.strength_bar_background;
@@ -337,19 +383,34 @@ impl PassphraseDialog {
             );
         }
 
-        // Options row
+        // Options row - different for PIN vs passphrase
         let text_normal = vm.text_normal;
-        content = content.push(
-            row![
-                checkbox("Show passphrase", self.show_passphrase)
-                    .on_toggle(PassphraseDialogMessage::ToggleVisibility)
-                    .size(text_normal),
-                button(text("Generate Random").size(text_normal))
-                    .on_press(PassphraseDialogMessage::GenerateRandom)
-            ]
-            .spacing(vm.spacing_lg)
-            .align_y(iced::Alignment::Center)
-        );
+        let show_label = if is_pin_entry { "Show PIN" } else { "Show passphrase" };
+        if is_pin_entry {
+            // PIN entry: only show visibility toggle
+            content = content.push(
+                row![
+                    checkbox(show_label, self.show_passphrase)
+                        .on_toggle(PassphraseDialogMessage::ToggleVisibility)
+                        .size(text_normal),
+                ]
+                .spacing(vm.spacing_lg)
+                .align_y(iced::Alignment::Center)
+            );
+        } else {
+            // Passphrase entry: show visibility toggle and generate random
+            content = content.push(
+                row![
+                    checkbox(show_label, self.show_passphrase)
+                        .on_toggle(PassphraseDialogMessage::ToggleVisibility)
+                        .size(text_normal),
+                    button(text("Generate Random").size(text_normal))
+                        .on_press(PassphraseDialogMessage::GenerateRandom)
+                ]
+                .spacing(vm.spacing_lg)
+                .align_y(iced::Alignment::Center)
+            );
+        }
 
         // Action buttons - using ontological color mapping
         let text_normal = vm.text_normal;

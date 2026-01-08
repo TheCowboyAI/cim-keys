@@ -207,6 +207,50 @@ impl<P: JetStreamPort> EventPublisher<P> {
                     YubiKeyEvents::CertificateImportedToSlot(_) => "keys.events.yubikey.cert-imported".to_string(),
                 }
             }
+            DomainEvent::CertificateImport(import_event) => {
+                use crate::events::CertificateImportEvents;
+                match import_event {
+                    CertificateImportEvents::CertificateSelectedForImport(_) => {
+                        "keys.events.certificate.import.selected".to_string()
+                    }
+                    CertificateImportEvents::CertificateDeselected(_) => {
+                        "keys.events.certificate.import.deselected".to_string()
+                    }
+                    CertificateImportEvents::CertificateValidationStarted(_) => {
+                        "keys.events.certificate.import.validation-started".to_string()
+                    }
+                    CertificateImportEvents::CertificateValidationSucceeded(_) => {
+                        "keys.events.certificate.import.validation-succeeded".to_string()
+                    }
+                    CertificateImportEvents::CertificateValidationFailed(_) => {
+                        "keys.events.certificate.import.validation-failed".to_string()
+                    }
+                    CertificateImportEvents::PinEntryRequested(_) => {
+                        "keys.events.certificate.import.pin-requested".to_string()
+                    }
+                    CertificateImportEvents::PinVerified(_) => {
+                        "keys.events.certificate.import.pin-verified".to_string()
+                    }
+                    CertificateImportEvents::PinEntryFailed(_) => {
+                        "keys.events.certificate.import.pin-failed".to_string()
+                    }
+                    CertificateImportEvents::CertificateImportStarted(_) => {
+                        "keys.events.certificate.import.started".to_string()
+                    }
+                    CertificateImportEvents::CertificateImportSucceeded(_) => {
+                        "keys.events.certificate.import.succeeded".to_string()
+                    }
+                    CertificateImportEvents::CertificateImportFailed(_) => {
+                        "keys.events.certificate.import.failed".to_string()
+                    }
+                    CertificateImportEvents::CertificateImportAborted(_) => {
+                        "keys.events.certificate.import.aborted".to_string()
+                    }
+                    CertificateImportEvents::WorkflowReset(_) => {
+                        "keys.events.certificate.import.workflow-reset".to_string()
+                    }
+                }
+            }
             DomainEvent::NatsOperator(_) => events::nats_operator_created().as_str(),
             DomainEvent::NatsAccount(_) => events::nats_account_created().as_str(),
             DomainEvent::NatsUser(_) => events::nats_user_created().as_str(),

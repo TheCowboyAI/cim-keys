@@ -25,6 +25,7 @@ pub mod person;
 pub mod organization;
 pub mod location;
 pub mod certificate;
+pub mod certificate_import;
 pub mod key;
 pub mod delegation;
 pub mod nats_operator;
@@ -40,6 +41,7 @@ pub use person::PersonEvents;
 pub use organization::OrganizationEvents;
 pub use location::LocationEvents;
 pub use certificate::CertificateEvents;
+pub use certificate_import::CertificateImportEvents;
 pub use key::KeyEvents;
 pub use delegation::DelegationEvents;
 pub use nats_operator::NatsOperatorEvents;
@@ -84,6 +86,7 @@ pub enum DomainEvent {
     Organization(OrganizationEvents),
     Location(LocationEvents),
     Certificate(CertificateEvents),
+    CertificateImport(CertificateImportEvents),
     Key(KeyEvents),
     Delegation(DelegationEvents),
     NatsOperator(NatsOperatorEvents),
@@ -302,6 +305,7 @@ impl EventEnvelope {
             DomainEvent::Organization(_) => "cim.organization.event".to_string(),
             DomainEvent::Location(_) => "cim.location.event".to_string(),
             DomainEvent::Certificate(_) => "cim.certificate.event".to_string(),
+            DomainEvent::CertificateImport(_) => "cim.certificate.import.event".to_string(),
             DomainEvent::Key(_) => "cim.key.event".to_string(),
             DomainEvent::Delegation(_) => "cim.delegation.event".to_string(),
             DomainEvent::NatsOperator(_) => "cim.nats.operator.event".to_string(),
@@ -321,6 +325,7 @@ impl EventEnvelope {
             DomainEvent::Organization(_) => "Organization",
             DomainEvent::Location(_) => "Location",
             DomainEvent::Certificate(_) => "Certificate",
+            DomainEvent::CertificateImport(_) => "CertificateImport",
             DomainEvent::Key(_) => "Key",
             DomainEvent::Delegation(_) => "Delegation",
             DomainEvent::NatsOperator(_) => "NatsOperator",

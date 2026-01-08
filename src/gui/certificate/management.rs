@@ -83,6 +83,17 @@ pub enum CertificateMessage {
     // === Loading ===
     /// Certificates loaded from manifest
     CertificatesLoaded(Vec<CertificateEntry>),
+
+    // === Sprint 88: Certificate Selection for Import ===
+    /// Select a leaf certificate for YubiKey import
+    SelectLeafCertForImport(Option<Uuid>),
+    /// Validate a certificate for RFC 5280 compliance
+    ValidateCertificate(Uuid),
+    /// Certificate validation completed
+    CertificateValidated {
+        cert_id: Uuid,
+        result: crate::crypto::rfc5280::Rfc5280ValidationResult,
+    },
 }
 
 /// Parse SANs from comma-separated string
