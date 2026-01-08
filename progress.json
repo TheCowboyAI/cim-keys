@@ -3462,6 +3462,83 @@
         "tests_added": 6,
         "tests_passing": 1095
       }
+    },
+    "sprint_90": {
+      "name": "YubiKeyProvisioningState Transition Methods",
+      "status": "completed",
+      "started": "2026-01-08",
+      "completed": "2026-01-08",
+      "retrospective": "retrospectives/sprint_90.md",
+      "description": "Add can_transition_to and transition methods to YubiKeyProvisioningState workflow state machine",
+      "context": "Part of 4-sprint plan to complete workflow state machine transitions (Sprints 89-92)",
+      "tasks": [
+        {
+          "id": "90.1",
+          "description": "Add is_terminal() and is_complete() methods",
+          "status": "completed"
+        },
+        {
+          "id": "90.2",
+          "description": "Add can_transition_to() method with 8 valid transitions",
+          "status": "completed"
+        },
+        {
+          "id": "90.3",
+          "description": "Add 8 transition methods (authenticate, change_pin, rotate_management_key, plan_slots, generate_keys, import_certificates, attest_keys, seal)",
+          "status": "completed"
+        },
+        {
+          "id": "90.4",
+          "description": "Add YubiKeyProvisioningError enum",
+          "status": "completed"
+        },
+        {
+          "id": "90.5",
+          "description": "Add 6 unit tests for state machine",
+          "status": "completed"
+        },
+        {
+          "id": "90.6",
+          "description": "Update mod.rs exports",
+          "status": "completed"
+        },
+        {
+          "id": "90.7",
+          "description": "Write retrospective",
+          "status": "completed"
+        }
+      ],
+      "architecture": {
+        "pattern": "Linear workflow state machine (no self-loops, no skip paths)",
+        "transitions": [
+          "Detected → Authenticated",
+          "Authenticated → PINChanged",
+          "PINChanged → ManagementKeyRotated",
+          "ManagementKeyRotated → SlotsPlanned",
+          "SlotsPlanned → KeysGenerated",
+          "KeysGenerated → CertificatesImported",
+          "CertificatesImported → KeysAttested",
+          "KeysAttested → Sealed (terminal)"
+        ],
+        "terminal_state": "Sealed",
+        "workflow_type": "Linear YubiKey initialization sequence"
+      },
+      "acceptance_criteria": [
+        "can_transition_to() validates all state pairs - ACHIEVED",
+        "Transition methods return Result<State, Error> - ACHIEVED",
+        "Invalid transitions return YubiKeyProvisioningError::InvalidTransition - ACHIEVED",
+        "Validation errors return YubiKeyProvisioningError::ValidationFailed - ACHIEVED",
+        "All 6 new tests pass - ACHIEVED",
+        "All 12 workflow tests pass (6 PKI + 6 YubiKey) - ACHIEVED"
+      ],
+      "results": {
+        "lines_added": 280,
+        "methods_added": 11,
+        "error_variants": 3,
+        "tests_added": 6,
+        "workflow_tests_passing": 12,
+        "library_tests_passing": 1101
+      }
     }
   }
 }

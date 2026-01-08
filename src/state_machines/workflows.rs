@@ -618,6 +618,269 @@ impl YubiKeyProvisioningState {
             YubiKeyProvisioningState::Sealed { .. } => "Sealed",
         }
     }
+
+    // ========================================================================
+    // Terminal State Detection
+    // ========================================================================
+
+    /// Is the provisioning in a terminal state?
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, YubiKeyProvisioningState::Sealed { .. })
+    }
+
+    /// Is the provisioning complete?
+    pub fn is_complete(&self) -> bool {
+        matches!(self, YubiKeyProvisioningState::Sealed { .. })
+    }
+
+    // ========================================================================
+    // State Transition Validation
+    // ========================================================================
+
+    /// Validate if a transition to the target state is allowed
+    pub fn can_transition_to(&self, target: &YubiKeyProvisioningState) -> bool {
+        match (self, target) {
+            // Detected → Authenticated
+            (
+                YubiKeyProvisioningState::Detected { .. },
+                YubiKeyProvisioningState::Authenticated { .. },
+            ) => true,
+
+            // Authenticated → PINChanged
+            (
+                YubiKeyProvisioningState::Authenticated { .. },
+                YubiKeyProvisioningState::PINChanged { .. },
+            ) => true,
+
+            // PINChanged → ManagementKeyRotated
+            (
+                YubiKeyProvisioningState::PINChanged { .. },
+                YubiKeyProvisioningState::ManagementKeyRotated { .. },
+            ) => true,
+
+            // ManagementKeyRotated → SlotPlanned
+            (
+                YubiKeyProvisioningState::ManagementKeyRotated { .. },
+                YubiKeyProvisioningState::SlotPlanned { .. },
+            ) => true,
+
+            // SlotPlanned → KeysGenerated
+            (
+                YubiKeyProvisioningState::SlotPlanned { .. },
+                YubiKeyProvisioningState::KeysGenerated { .. },
+            ) => true,
+
+            // KeysGenerated → CertificatesImported
+            (
+                YubiKeyProvisioningState::KeysGenerated { .. },
+                YubiKeyProvisioningState::CertificatesImported { .. },
+            ) => true,
+
+            // CertificatesImported → Attested
+            (
+                YubiKeyProvisioningState::CertificatesImported { .. },
+                YubiKeyProvisioningState::Attested { .. },
+            ) => true,
+
+            // Attested → Sealed
+            (
+                YubiKeyProvisioningState::Attested { .. },
+                YubiKeyProvisioningState::Sealed { .. },
+            ) => true,
+
+            // All other transitions are invalid
+            _ => false,
+        }
+    }
+
+    // ========================================================================
+    // State Transition Methods
+    // ========================================================================
+
+    /// Authenticate to the YubiKey
+    pub fn authenticate(
+        &self,
+        pin_retries_remaining: u8,
+    ) -> Result<YubiKeyProvisioningState, YubiKeyProvisioningError> {
+        if !self.can_authenticate() {
+            return Err(YubiKeyProvisioningError::InvalidTransition {
+                current: self.state_name().to_string(),
+                event: "Authenticate".to_string(),
+                reason: "Can only authenticate from Detected state".to_string(),
+            });
+        }
+
+        Ok(YubiKeyProvisioningState::Authenticated {
+            pin_retries_remaining,
+        })
+    }
+
+    /// Change the PIN
+    pub fn change_pin(
+        &self,
+        new_pin_hash: String,
+    ) -> Result<YubiKeyProvisioningState, YubiKeyProvisioningError> {
+        if !self.can_change_pin() {
+            return Err(YubiKeyProvisioningError::InvalidTransition {
+                current: self.state_name().to_string(),
+                event: "ChangePIN".to_string(),
+                reason: "Can only change PIN from Authenticated state".to_string(),
+            });
+        }
+
+        if new_pin_hash.is_empty() {
+            return Err(YubiKeyProvisioningError::ValidationFailed(
+                "PIN hash cannot be empty".to_string(),
+            ));
+        }
+
+        Ok(YubiKeyProvisioningState::PINChanged { new_pin_hash })
+    }
+
+    /// Rotate the management key
+    pub fn rotate_management_key(
+        &self,
+        algorithm: PivAlgorithm,
+    ) -> Result<YubiKeyProvisioningState, YubiKeyProvisioningError> {
+        if !self.can_rotate_management_key() {
+            return Err(YubiKeyProvisioningError::InvalidTransition {
+                current: self.state_name().to_string(),
+                event: "RotateManagementKey".to_string(),
+                reason: "Can only rotate management key from PINChanged state".to_string(),
+            });
+        }
+
+        Ok(YubiKeyProvisioningState::ManagementKeyRotated { algorithm })
+    }
+
+    /// Plan slot allocation
+    pub fn plan_slots(
+        &self,
+        slot_plan: HashMap<PivSlot, SlotPlan>,
+    ) -> Result<YubiKeyProvisioningState, YubiKeyProvisioningError> {
+        if !self.can_plan_slots() {
+            return Err(YubiKeyProvisioningError::InvalidTransition {
+                current: self.state_name().to_string(),
+                event: "PlanSlots".to_string(),
+                reason: "Can only plan slots from ManagementKeyRotated state".to_string(),
+            });
+        }
+
+        if slot_plan.is_empty() {
+            return Err(YubiKeyProvisioningError::ValidationFailed(
+                "At least one slot must be planned".to_string(),
+            ));
+        }
+
+        Ok(YubiKeyProvisioningState::SlotPlanned { slot_plan })
+    }
+
+    /// Generate keys in slots
+    pub fn generate_keys(
+        &self,
+        slot_keys: HashMap<PivSlot, Vec<u8>>,
+    ) -> Result<YubiKeyProvisioningState, YubiKeyProvisioningError> {
+        if !self.can_generate_keys() {
+            return Err(YubiKeyProvisioningError::InvalidTransition {
+                current: self.state_name().to_string(),
+                event: "GenerateKeys".to_string(),
+                reason: "Can only generate keys from SlotPlanned state".to_string(),
+            });
+        }
+
+        if slot_keys.is_empty() {
+            return Err(YubiKeyProvisioningError::ValidationFailed(
+                "At least one key must be generated".to_string(),
+            ));
+        }
+
+        Ok(YubiKeyProvisioningState::KeysGenerated { slot_keys })
+    }
+
+    /// Import certificates to slots
+    pub fn import_certificates(
+        &self,
+        slot_certs: HashMap<PivSlot, Uuid>,
+    ) -> Result<YubiKeyProvisioningState, YubiKeyProvisioningError> {
+        if !self.can_import_certs() {
+            return Err(YubiKeyProvisioningError::InvalidTransition {
+                current: self.state_name().to_string(),
+                event: "ImportCertificates".to_string(),
+                reason: "Can only import certificates from KeysGenerated state".to_string(),
+            });
+        }
+
+        if slot_certs.is_empty() {
+            return Err(YubiKeyProvisioningError::ValidationFailed(
+                "At least one certificate must be imported".to_string(),
+            ));
+        }
+
+        Ok(YubiKeyProvisioningState::CertificatesImported { slot_certs })
+    }
+
+    /// Attest keys
+    pub fn attest_keys(
+        &self,
+        attestation_chain_verified: bool,
+        attestation_cert_ids: Vec<Uuid>,
+    ) -> Result<YubiKeyProvisioningState, YubiKeyProvisioningError> {
+        if !self.can_attest() {
+            return Err(YubiKeyProvisioningError::InvalidTransition {
+                current: self.state_name().to_string(),
+                event: "AttestKeys".to_string(),
+                reason: "Can only attest keys from CertificatesImported state".to_string(),
+            });
+        }
+
+        Ok(YubiKeyProvisioningState::Attested {
+            attestation_chain_verified,
+            attestation_cert_ids,
+        })
+    }
+
+    /// Seal the configuration (terminal state)
+    pub fn seal(
+        &self,
+        sealed_at: DateTime<Utc>,
+        final_config_hash: String,
+    ) -> Result<YubiKeyProvisioningState, YubiKeyProvisioningError> {
+        if !self.can_seal() {
+            return Err(YubiKeyProvisioningError::InvalidTransition {
+                current: self.state_name().to_string(),
+                event: "Seal".to_string(),
+                reason: "Can only seal from Attested state".to_string(),
+            });
+        }
+
+        if final_config_hash.is_empty() {
+            return Err(YubiKeyProvisioningError::ValidationFailed(
+                "Configuration hash cannot be empty".to_string(),
+            ));
+        }
+
+        Ok(YubiKeyProvisioningState::Sealed {
+            sealed_at,
+            final_config_hash,
+        })
+    }
+}
+
+/// Errors for YubiKey provisioning state transitions
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum YubiKeyProvisioningError {
+    #[error("Invalid state transition from {current} on event {event}: {reason}")]
+    InvalidTransition {
+        current: String,
+        event: String,
+        reason: String,
+    },
+
+    #[error("Terminal state reached: {0}")]
+    TerminalState(String),
+
+    #[error("State validation failed: {0}")]
+    ValidationFailed(String),
 }
 
 /// Slot configuration plan
@@ -941,5 +1204,167 @@ mod tests {
         let state = PKIBootstrapState::Uninitialized;
         assert_eq!(state.description(), "PKI infrastructure not initialized");
         assert_eq!(state.state_name(), "Uninitialized");
+    }
+
+    // ========================================================================
+    // YubiKeyProvisioningState Tests
+    // ========================================================================
+
+    #[test]
+    fn test_yubikey_provisioning_initial_state() {
+        let state = YubiKeyProvisioningState::Detected {
+            serial: "12345678".to_string(),
+            firmware_version: "5.4.3".to_string(),
+        };
+        assert!(state.can_authenticate());
+        assert!(!state.can_change_pin());
+        assert!(!state.is_terminal());
+    }
+
+    #[test]
+    fn test_yubikey_provisioning_can_transition_to() {
+        let detected = YubiKeyProvisioningState::Detected {
+            serial: "12345678".to_string(),
+            firmware_version: "5.4.3".to_string(),
+        };
+        let authenticated = YubiKeyProvisioningState::Authenticated {
+            pin_retries_remaining: 3,
+        };
+
+        // Valid transitions
+        assert!(detected.can_transition_to(&authenticated));
+
+        // Invalid transitions - can't skip steps
+        let sealed = YubiKeyProvisioningState::Sealed {
+            sealed_at: Utc::now(),
+            final_config_hash: "abc123".to_string(),
+        };
+        assert!(!detected.can_transition_to(&sealed));
+    }
+
+    #[test]
+    fn test_yubikey_provisioning_full_workflow() {
+        // Start with detected YubiKey
+        let state = YubiKeyProvisioningState::Detected {
+            serial: "12345678".to_string(),
+            firmware_version: "5.4.3".to_string(),
+        };
+
+        // Authenticate
+        let state = state.authenticate(3).expect("Should authenticate");
+        assert!(matches!(
+            state,
+            YubiKeyProvisioningState::Authenticated { .. }
+        ));
+
+        // Change PIN
+        let state = state
+            .change_pin("sha256:newpinhash".to_string())
+            .expect("Should change PIN");
+        assert!(matches!(state, YubiKeyProvisioningState::PINChanged { .. }));
+
+        // Rotate management key
+        let state = state
+            .rotate_management_key(PivAlgorithm::EcdsaP256)
+            .expect("Should rotate management key");
+        assert!(matches!(
+            state,
+            YubiKeyProvisioningState::ManagementKeyRotated { .. }
+        ));
+
+        // Plan slots
+        let mut slot_plan = HashMap::new();
+        slot_plan.insert(
+            PivSlot::Signature,
+            SlotPlan {
+                purpose: KeyPurpose::Signing,
+                algorithm: KeyAlgorithm::Ed25519,
+                pin_policy: PinPolicy::Once,
+                touch_policy: TouchPolicy::Always,
+            },
+        );
+        let state = state.plan_slots(slot_plan).expect("Should plan slots");
+        assert!(matches!(
+            state,
+            YubiKeyProvisioningState::SlotPlanned { .. }
+        ));
+
+        // Generate keys
+        let mut slot_keys = HashMap::new();
+        slot_keys.insert(PivSlot::Signature, vec![1, 2, 3, 4]);
+        let state = state
+            .generate_keys(slot_keys)
+            .expect("Should generate keys");
+        assert!(matches!(
+            state,
+            YubiKeyProvisioningState::KeysGenerated { .. }
+        ));
+
+        // Import certificates
+        let mut slot_certs = HashMap::new();
+        slot_certs.insert(PivSlot::Signature, Uuid::now_v7());
+        let state = state
+            .import_certificates(slot_certs)
+            .expect("Should import certs");
+        assert!(matches!(
+            state,
+            YubiKeyProvisioningState::CertificatesImported { .. }
+        ));
+
+        // Attest keys
+        let state = state
+            .attest_keys(true, vec![Uuid::now_v7()])
+            .expect("Should attest");
+        assert!(matches!(state, YubiKeyProvisioningState::Attested { .. }));
+
+        // Seal
+        let state = state
+            .seal(Utc::now(), "sha256:finalconfig".to_string())
+            .expect("Should seal");
+        assert!(matches!(state, YubiKeyProvisioningState::Sealed { .. }));
+        assert!(state.is_terminal());
+        assert!(state.is_complete());
+        assert!(state.is_sealed());
+    }
+
+    #[test]
+    fn test_yubikey_provisioning_invalid_transition() {
+        let state = YubiKeyProvisioningState::Detected {
+            serial: "12345678".to_string(),
+            firmware_version: "5.4.3".to_string(),
+        };
+
+        // Can't change PIN without authenticating first
+        let result = state.change_pin("newhash".to_string());
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            YubiKeyProvisioningError::InvalidTransition { .. }
+        ));
+    }
+
+    #[test]
+    fn test_yubikey_provisioning_validation_errors() {
+        // Can't seal with empty hash
+        let state = YubiKeyProvisioningState::Attested {
+            attestation_chain_verified: true,
+            attestation_cert_ids: vec![Uuid::now_v7()],
+        };
+        let result = state.seal(Utc::now(), "".to_string());
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            YubiKeyProvisioningError::ValidationFailed(_)
+        ));
+    }
+
+    #[test]
+    fn test_yubikey_provisioning_state_descriptions() {
+        let state = YubiKeyProvisioningState::Detected {
+            serial: "12345678".to_string(),
+            firmware_version: "5.4.3".to_string(),
+        };
+        assert_eq!(state.description(), "YubiKey detected");
+        assert_eq!(state.state_name(), "Detected");
     }
 }
