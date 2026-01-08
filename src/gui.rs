@@ -232,6 +232,10 @@ pub struct CimKeysApp {
     generated_intermediate_cas: std::collections::HashMap<Uuid, crate::crypto::x509::X509Certificate>,
     generated_leaf_certs: std::collections::HashMap<Uuid, crate::crypto::x509::X509Certificate>,
 
+    // Sprint 86: Attestation certificate storage
+    // Maps (serial, slot) -> attestation certificate bytes (DER/PEM)
+    attestation_certs: std::collections::HashMap<(String, crate::ports::yubikey::PivSlot), Vec<u8>>,
+
     // Certificate generation fields
     intermediate_ca_name_input: String,
     server_cert_cn_input: String,
@@ -1857,6 +1861,7 @@ impl CimKeysApp {
                 generated_root_ca: None,
                 generated_intermediate_cas: std::collections::HashMap::new(),
                 generated_leaf_certs: std::collections::HashMap::new(),
+                attestation_certs: std::collections::HashMap::new(),
                 intermediate_ca_name_input: String::new(),
                 server_cert_cn_input: String::new(),
                 server_cert_sans_input: String::new(),
@@ -10595,7 +10600,12 @@ impl CimKeysApp {
                                 },
                             );
                         }
-                        // Note: attestation_cert bytes could be stored elsewhere if needed
+
+                        // Sprint 86: Store attestation certificate bytes for verification
+                        self.attestation_certs.insert(
+                            (serial.clone(), slot),
+                            attestation_cert.clone(),
+                        );
 
                         self.status_message = format!(
                             "✅ Attestation retrieved for slot {:?} on YubiKey {} ({} bytes)",
@@ -13008,11 +13018,41 @@ impl CimKeysApp {
 
                             // Sprint 84: Add operation buttons based on state
                             let yubikey_state = self.yubikey_states.get(&serial);
+                            let serial_for_import = serial.clone();
                             let serial_for_attest = serial.clone();
                             let serial_for_seal = serial.clone();
 
+                            // Sprint 86: Get first available leaf certificate for import
+                            let available_leaf_cert = self.generated_leaf_certs.values().next().cloned();
+
                             let operations_row: Element<'_, Message> = if device.piv_enabled {
                                 let mut ops = row![].spacing(self.view_model.spacing_sm);
+
+                                // Sprint 86: Import Certificate button - available after keys generated
+                                if yubikey_state.map(|s| s.can_import_certs()).unwrap_or(false) {
+                                    if let Some(leaf_cert) = &available_leaf_cert {
+                                        // We have a certificate to import
+                                        let cert_pem_bytes = leaf_cert.certificate_pem.as_bytes().to_vec();
+                                        ops = ops.push(
+                                            button("Import Certificate")
+                                                .on_press(Message::YubiKeyStartCertificateImport {
+                                                    serial: serial_for_import.clone(),
+                                                    slot: crate::ports::yubikey::PivSlot::Authentication,
+                                                    certificate: cert_pem_bytes,
+                                                    pin: "123456".to_string(), // Default PIN - should use passphrase dialog
+                                                })
+                                                .padding(self.view_model.padding_sm)
+                                                .style(CowboyCustomTheme::primary_button())
+                                        );
+                                    } else {
+                                        // No certificate available yet
+                                        ops = ops.push(
+                                            text("Generate leaf cert first")
+                                                .size(self.view_model.text_small)
+                                                .color(self.view_model.colors.orange_warning)
+                                        );
+                                    }
+                                }
 
                                 // Attestation button - available after certificates imported
                                 if yubikey_state.map(|s| s.can_attest()).unwrap_or(false) {
