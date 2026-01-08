@@ -54,9 +54,9 @@ pub mod yubikey;
 
 // Re-export workflow state machines
 pub use workflows::{
-    ArtifactType, CertificateSubject, ExportWorkflowState, GenerationProgress,
-    PKIBootstrapError, PKIBootstrapState, PinPolicy, PivAlgorithm, PivSlot, SlotPlan,
-    TouchPolicy, YubiKeyProvisioningError, YubiKeyProvisioningState,
+    ArtifactType, CertificateSubject, ExportWorkflowError, ExportWorkflowState,
+    GenerationProgress, PKIBootstrapError, PKIBootstrapState, PinPolicy, PivAlgorithm,
+    PivSlot, SlotPlan, TouchPolicy, YubiKeyProvisioningError, YubiKeyProvisioningState,
 };
 
 // Re-export aggregate state machines

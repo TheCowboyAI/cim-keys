@@ -3539,6 +3539,91 @@
         "workflow_tests_passing": 12,
         "library_tests_passing": 1101
       }
+    },
+    "sprint_91": {
+      "name": "ExportWorkflowState Transition Methods",
+      "status": "completed",
+      "started": "2026-01-08",
+      "completed": "2026-01-08",
+      "retrospective": "retrospectives/sprint_91.md",
+      "description": "Add can_transition_to and transition methods to ExportWorkflowState workflow state machine",
+      "context": "Part of 4-sprint plan to complete workflow state machine transitions (Sprints 89-92)",
+      "tasks": [
+        {
+          "id": "91.1",
+          "description": "Add is_terminal() method (both Completed and Failed are terminal)",
+          "status": "completed"
+        },
+        {
+          "id": "91.2",
+          "description": "Add state_name() method for error messages",
+          "status": "completed"
+        },
+        {
+          "id": "91.3",
+          "description": "Add can_transition_to() method with 10 valid transitions (5 happy path + 5 error paths)",
+          "status": "completed"
+        },
+        {
+          "id": "91.4",
+          "description": "Add 6 transition methods (start_generating, start_encrypting, start_writing, start_verifying, complete, fail)",
+          "status": "completed"
+        },
+        {
+          "id": "91.5",
+          "description": "Add ExportWorkflowError enum",
+          "status": "completed"
+        },
+        {
+          "id": "91.6",
+          "description": "Add 7 unit tests for state machine",
+          "status": "completed"
+        },
+        {
+          "id": "91.7",
+          "description": "Update mod.rs exports",
+          "status": "completed"
+        },
+        {
+          "id": "91.8",
+          "description": "Write retrospective",
+          "status": "completed"
+        }
+      ],
+      "architecture": {
+        "pattern": "Linear workflow with error path from any non-terminal state",
+        "transitions": [
+          "Planning → Generating (happy path)",
+          "Generating → Encrypting (happy path)",
+          "Encrypting → Writing (happy path)",
+          "Writing → Verifying (happy path)",
+          "Verifying → Completed (happy path, terminal)",
+          "Planning → Failed (error path)",
+          "Generating → Failed (error path)",
+          "Encrypting → Failed (error path)",
+          "Writing → Failed (error path)",
+          "Verifying → Failed (error path, terminal)"
+        ],
+        "terminal_states": ["Completed", "Failed"],
+        "workflow_type": "Data export pipeline with encryption and verification"
+      },
+      "acceptance_criteria": [
+        "can_transition_to() validates all state pairs - ACHIEVED",
+        "Transition methods return Result<State, Error> - ACHIEVED",
+        "Invalid transitions return ExportWorkflowError::InvalidTransition - ACHIEVED",
+        "Terminal states block further transitions - ACHIEVED",
+        "Validation errors return ExportWorkflowError::ValidationFailed - ACHIEVED",
+        "All 7 new tests pass - ACHIEVED",
+        "All 19 workflow tests pass (6 PKI + 6 YubiKey + 7 Export) - ACHIEVED"
+      ],
+      "results": {
+        "lines_added": 260,
+        "methods_added": 8,
+        "error_variants": 3,
+        "tests_added": 7,
+        "workflow_tests_passing": 19,
+        "library_tests_passing": 1108
+      }
     }
   }
 }

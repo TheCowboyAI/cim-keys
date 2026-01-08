@@ -1028,6 +1028,232 @@ impl ExportWorkflowState {
             ExportWorkflowState::Failed { .. } => "Export failed",
         }
     }
+
+    /// Get state name for error messages
+    pub fn state_name(&self) -> &str {
+        match self {
+            ExportWorkflowState::Planning { .. } => "Planning",
+            ExportWorkflowState::Generating { .. } => "Generating",
+            ExportWorkflowState::Encrypting { .. } => "Encrypting",
+            ExportWorkflowState::Writing { .. } => "Writing",
+            ExportWorkflowState::Verifying { .. } => "Verifying",
+            ExportWorkflowState::Completed { .. } => "Completed",
+            ExportWorkflowState::Failed { .. } => "Failed",
+        }
+    }
+
+    // ========================================================================
+    // Terminal State Detection
+    // ========================================================================
+
+    /// Is the export in a terminal state?
+    /// Both Completed and Failed are terminal states
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            ExportWorkflowState::Completed { .. } | ExportWorkflowState::Failed { .. }
+        )
+    }
+
+    // ========================================================================
+    // State Transition Validation
+    // ========================================================================
+
+    /// Validate if a transition to the target state is allowed
+    pub fn can_transition_to(&self, target: &ExportWorkflowState) -> bool {
+        match (self, target) {
+            // Planning → Generating
+            (ExportWorkflowState::Planning { .. }, ExportWorkflowState::Generating { .. }) => true,
+
+            // Generating → Encrypting
+            (ExportWorkflowState::Generating { .. }, ExportWorkflowState::Encrypting { .. }) => true,
+
+            // Encrypting → Writing
+            (ExportWorkflowState::Encrypting { .. }, ExportWorkflowState::Writing { .. }) => true,
+
+            // Writing → Verifying
+            (ExportWorkflowState::Writing { .. }, ExportWorkflowState::Verifying { .. }) => true,
+
+            // Verifying → Completed
+            (ExportWorkflowState::Verifying { .. }, ExportWorkflowState::Completed { .. }) => true,
+
+            // Any non-terminal state → Failed (error path)
+            (current, ExportWorkflowState::Failed { .. }) if !current.is_terminal() => true,
+
+            // All other transitions are invalid
+            _ => false,
+        }
+    }
+
+    // ========================================================================
+    // State Transition Methods
+    // ========================================================================
+
+    /// Start generating artifacts
+    pub fn start_generating(
+        &self,
+        artifacts: &[ArtifactType],
+    ) -> Result<ExportWorkflowState, ExportWorkflowError> {
+        if !self.can_generate() {
+            return Err(ExportWorkflowError::InvalidTransition {
+                current: self.state_name().to_string(),
+                event: "StartGenerating".to_string(),
+                reason: "Can only start generating from Planning state".to_string(),
+            });
+        }
+
+        if artifacts.is_empty() {
+            return Err(ExportWorkflowError::ValidationFailed(
+                "Artifacts list cannot be empty".to_string(),
+            ));
+        }
+
+        let progress: HashMap<ArtifactType, GenerationProgress> = artifacts
+            .iter()
+            .map(|a| (*a, GenerationProgress::Pending))
+            .collect();
+
+        Ok(ExportWorkflowState::Generating { progress })
+    }
+
+    /// Start encrypting sensitive data
+    pub fn start_encrypting(
+        &self,
+        encryption_key_id: Uuid,
+    ) -> Result<ExportWorkflowState, ExportWorkflowError> {
+        if !self.can_encrypt() {
+            return Err(ExportWorkflowError::InvalidTransition {
+                current: self.state_name().to_string(),
+                event: "StartEncrypting".to_string(),
+                reason: "Can only start encrypting from Generating state".to_string(),
+            });
+        }
+
+        Ok(ExportWorkflowState::Encrypting {
+            encryption_key_id,
+            progress_percent: 0,
+        })
+    }
+
+    /// Start writing to target location
+    pub fn start_writing(
+        &self,
+        total_bytes: u64,
+    ) -> Result<ExportWorkflowState, ExportWorkflowError> {
+        if !self.can_write() {
+            return Err(ExportWorkflowError::InvalidTransition {
+                current: self.state_name().to_string(),
+                event: "StartWriting".to_string(),
+                reason: "Can only start writing from Encrypting state".to_string(),
+            });
+        }
+
+        if total_bytes == 0 {
+            return Err(ExportWorkflowError::ValidationFailed(
+                "Total bytes cannot be zero".to_string(),
+            ));
+        }
+
+        Ok(ExportWorkflowState::Writing {
+            bytes_written: 0,
+            total_bytes,
+        })
+    }
+
+    /// Start verifying checksums
+    pub fn start_verifying(
+        &self,
+        checksums: HashMap<String, String>,
+    ) -> Result<ExportWorkflowState, ExportWorkflowError> {
+        if !self.can_verify() {
+            return Err(ExportWorkflowError::InvalidTransition {
+                current: self.state_name().to_string(),
+                event: "StartVerifying".to_string(),
+                reason: "Can only start verifying from Writing state".to_string(),
+            });
+        }
+
+        if checksums.is_empty() {
+            return Err(ExportWorkflowError::ValidationFailed(
+                "Checksums map cannot be empty".to_string(),
+            ));
+        }
+
+        Ok(ExportWorkflowState::Verifying { checksums })
+    }
+
+    /// Complete the export successfully
+    pub fn complete(
+        &self,
+        manifest_checksum: String,
+        exported_at: DateTime<Utc>,
+    ) -> Result<ExportWorkflowState, ExportWorkflowError> {
+        match self {
+            ExportWorkflowState::Verifying { .. } => {
+                if manifest_checksum.is_empty() {
+                    return Err(ExportWorkflowError::ValidationFailed(
+                        "Manifest checksum cannot be empty".to_string(),
+                    ));
+                }
+
+                Ok(ExportWorkflowState::Completed {
+                    manifest_checksum,
+                    exported_at,
+                })
+            }
+            _ if self.is_terminal() => Err(ExportWorkflowError::TerminalState(format!(
+                "Export is already in terminal state: {}",
+                self.state_name()
+            ))),
+            _ => Err(ExportWorkflowError::InvalidTransition {
+                current: self.state_name().to_string(),
+                event: "Complete".to_string(),
+                reason: "Can only complete from Verifying state".to_string(),
+            }),
+        }
+    }
+
+    /// Fail the export with an error
+    pub fn fail(
+        &self,
+        error: String,
+        failed_at: DateTime<Utc>,
+    ) -> Result<ExportWorkflowState, ExportWorkflowError> {
+        if self.is_terminal() {
+            return Err(ExportWorkflowError::TerminalState(format!(
+                "Export is already in terminal state: {}",
+                self.state_name()
+            )));
+        }
+
+        if error.is_empty() {
+            return Err(ExportWorkflowError::ValidationFailed(
+                "Error message cannot be empty".to_string(),
+            ));
+        }
+
+        Ok(ExportWorkflowState::Failed { error, failed_at })
+    }
+}
+
+/// Errors that can occur during export workflow state transitions
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum ExportWorkflowError {
+    /// Invalid state transition attempted
+    #[error("Invalid state transition from {current} on event {event}: {reason}")]
+    InvalidTransition {
+        current: String,
+        event: String,
+        reason: String,
+    },
+
+    /// Terminal state reached
+    #[error("Terminal state reached: {0}")]
+    TerminalState(String),
+
+    /// State validation failed
+    #[error("State validation failed: {0}")]
+    ValidationFailed(String),
 }
 
 /// Type of artifact to export
@@ -1366,5 +1592,251 @@ mod tests {
         };
         assert_eq!(state.description(), "YubiKey detected");
         assert_eq!(state.state_name(), "Detected");
+    }
+
+    // ========================================================================
+    // ExportWorkflowState Tests
+    // ========================================================================
+
+    #[test]
+    fn test_export_workflow_initial_state() {
+        let state = ExportWorkflowState::Planning {
+            artifacts_to_export: vec![ArtifactType::RootCACertificate],
+            target_location: Uuid::now_v7(),
+        };
+        assert!(state.can_generate());
+        assert!(!state.can_encrypt());
+        assert!(!state.is_terminal());
+        assert!(!state.is_complete());
+        assert!(!state.has_failed());
+    }
+
+    #[test]
+    fn test_export_workflow_can_transition_to() {
+        let planning = ExportWorkflowState::Planning {
+            artifacts_to_export: vec![ArtifactType::RootCACertificate],
+            target_location: Uuid::now_v7(),
+        };
+        let generating = ExportWorkflowState::Generating {
+            progress: HashMap::new(),
+        };
+        let encrypting = ExportWorkflowState::Encrypting {
+            encryption_key_id: Uuid::now_v7(),
+            progress_percent: 0,
+        };
+        let writing = ExportWorkflowState::Writing {
+            bytes_written: 0,
+            total_bytes: 1000,
+        };
+        let verifying = ExportWorkflowState::Verifying {
+            checksums: HashMap::new(),
+        };
+        let completed = ExportWorkflowState::Completed {
+            manifest_checksum: "abc123".to_string(),
+            exported_at: Utc::now(),
+        };
+        let failed = ExportWorkflowState::Failed {
+            error: "Test error".to_string(),
+            failed_at: Utc::now(),
+        };
+
+        // Valid transitions
+        assert!(planning.can_transition_to(&generating));
+        assert!(generating.can_transition_to(&encrypting));
+        assert!(encrypting.can_transition_to(&writing));
+        assert!(writing.can_transition_to(&verifying));
+        assert!(verifying.can_transition_to(&completed));
+
+        // Error path: any non-terminal can transition to Failed
+        assert!(planning.can_transition_to(&failed));
+        assert!(generating.can_transition_to(&failed));
+        assert!(encrypting.can_transition_to(&failed));
+        assert!(writing.can_transition_to(&failed));
+        assert!(verifying.can_transition_to(&failed));
+
+        // Invalid transitions
+        assert!(!planning.can_transition_to(&completed)); // Must go through workflow
+        assert!(!generating.can_transition_to(&writing)); // Must encrypt first
+        assert!(!completed.can_transition_to(&failed)); // Terminal can't transition
+        assert!(!failed.can_transition_to(&completed)); // Terminal can't transition
+    }
+
+    #[test]
+    fn test_export_workflow_full_workflow() {
+        // Start in Planning
+        let state = ExportWorkflowState::Planning {
+            artifacts_to_export: vec![ArtifactType::RootCACertificate],
+            target_location: Uuid::now_v7(),
+        };
+
+        // Planning → Generating
+        let artifacts = vec![ArtifactType::RootCACertificate, ArtifactType::Manifest];
+        let state = state.start_generating(&artifacts).unwrap();
+        assert!(matches!(state, ExportWorkflowState::Generating { .. }));
+
+        // Generating → Encrypting
+        let encryption_key_id = Uuid::now_v7();
+        let state = state.start_encrypting(encryption_key_id).unwrap();
+        assert!(matches!(state, ExportWorkflowState::Encrypting { .. }));
+
+        // Encrypting → Writing
+        let state = state.start_writing(1024).unwrap();
+        assert!(matches!(state, ExportWorkflowState::Writing { .. }));
+
+        // Writing → Verifying
+        let mut checksums = HashMap::new();
+        checksums.insert("manifest.json".to_string(), "sha256:abc123".to_string());
+        let state = state.start_verifying(checksums).unwrap();
+        assert!(matches!(state, ExportWorkflowState::Verifying { .. }));
+
+        // Verifying → Completed
+        let state = state
+            .complete("sha256:final".to_string(), Utc::now())
+            .unwrap();
+        assert!(state.is_complete());
+        assert!(state.is_terminal());
+    }
+
+    #[test]
+    fn test_export_workflow_fail_from_any_state() {
+        // Test failure from each non-terminal state
+        let states = vec![
+            ExportWorkflowState::Planning {
+                artifacts_to_export: vec![ArtifactType::RootCACertificate],
+                target_location: Uuid::now_v7(),
+            },
+            ExportWorkflowState::Generating {
+                progress: HashMap::new(),
+            },
+            ExportWorkflowState::Encrypting {
+                encryption_key_id: Uuid::now_v7(),
+                progress_percent: 50,
+            },
+            ExportWorkflowState::Writing {
+                bytes_written: 512,
+                total_bytes: 1024,
+            },
+            ExportWorkflowState::Verifying {
+                checksums: HashMap::new(),
+            },
+        ];
+
+        for state in states {
+            let failed = state.fail("Disk full".to_string(), Utc::now());
+            assert!(failed.is_ok());
+            assert!(failed.unwrap().has_failed());
+        }
+    }
+
+    #[test]
+    fn test_export_workflow_invalid_transitions() {
+        // Try to encrypt from Planning (should fail)
+        let state = ExportWorkflowState::Planning {
+            artifacts_to_export: vec![ArtifactType::RootCACertificate],
+            target_location: Uuid::now_v7(),
+        };
+        let result = state.start_encrypting(Uuid::now_v7());
+        assert!(matches!(
+            result,
+            Err(ExportWorkflowError::InvalidTransition { .. })
+        ));
+
+        // Try to complete from a terminal state
+        let completed = ExportWorkflowState::Completed {
+            manifest_checksum: "abc123".to_string(),
+            exported_at: Utc::now(),
+        };
+        let result = completed.fail("Should not work".to_string(), Utc::now());
+        assert!(matches!(
+            result,
+            Err(ExportWorkflowError::TerminalState(_))
+        ));
+    }
+
+    #[test]
+    fn test_export_workflow_validation_errors() {
+        // Empty artifacts list
+        let state = ExportWorkflowState::Planning {
+            artifacts_to_export: vec![ArtifactType::RootCACertificate],
+            target_location: Uuid::now_v7(),
+        };
+        let result = state.start_generating(&[]);
+        assert!(matches!(
+            result,
+            Err(ExportWorkflowError::ValidationFailed(_))
+        ));
+
+        // Zero bytes for writing
+        let state = ExportWorkflowState::Encrypting {
+            encryption_key_id: Uuid::now_v7(),
+            progress_percent: 100,
+        };
+        let result = state.start_writing(0);
+        assert!(matches!(
+            result,
+            Err(ExportWorkflowError::ValidationFailed(_))
+        ));
+
+        // Empty checksums
+        let state = ExportWorkflowState::Writing {
+            bytes_written: 1024,
+            total_bytes: 1024,
+        };
+        let result = state.start_verifying(HashMap::new());
+        assert!(matches!(
+            result,
+            Err(ExportWorkflowError::ValidationFailed(_))
+        ));
+
+        // Empty manifest checksum
+        let state = ExportWorkflowState::Verifying {
+            checksums: {
+                let mut m = HashMap::new();
+                m.insert("file.txt".to_string(), "sha256:xyz".to_string());
+                m
+            },
+        };
+        let result = state.complete(String::new(), Utc::now());
+        assert!(matches!(
+            result,
+            Err(ExportWorkflowError::ValidationFailed(_))
+        ));
+
+        // Empty error message
+        let state = ExportWorkflowState::Planning {
+            artifacts_to_export: vec![ArtifactType::RootCACertificate],
+            target_location: Uuid::now_v7(),
+        };
+        let result = state.fail(String::new(), Utc::now());
+        assert!(matches!(
+            result,
+            Err(ExportWorkflowError::ValidationFailed(_))
+        ));
+    }
+
+    #[test]
+    fn test_export_workflow_state_descriptions() {
+        let state = ExportWorkflowState::Planning {
+            artifacts_to_export: vec![ArtifactType::RootCACertificate],
+            target_location: Uuid::now_v7(),
+        };
+        assert_eq!(state.description(), "Planning export");
+        assert_eq!(state.state_name(), "Planning");
+
+        let state = ExportWorkflowState::Completed {
+            manifest_checksum: "abc".to_string(),
+            exported_at: Utc::now(),
+        };
+        assert_eq!(state.description(), "Export complete");
+        assert_eq!(state.state_name(), "Completed");
+        assert!(state.is_terminal());
+
+        let state = ExportWorkflowState::Failed {
+            error: "Test".to_string(),
+            failed_at: Utc::now(),
+        };
+        assert_eq!(state.description(), "Export failed");
+        assert_eq!(state.state_name(), "Failed");
+        assert!(state.is_terminal());
     }
 }
