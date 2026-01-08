@@ -3384,6 +3384,84 @@
         "factory_calls_added": 2,
         "tests_passing": 1069
       }
+    },
+    "sprint_89": {
+      "name": "PKIBootstrapState Transition Methods",
+      "status": "completed",
+      "started": "2026-01-08",
+      "completed": "2026-01-08",
+      "retrospective": "retrospectives/sprint_89.md",
+      "description": "Add can_transition_to and transition methods to PKIBootstrapState workflow state machine",
+      "context": "Part of 4-sprint plan to complete workflow state machine transitions (Sprints 89-92)",
+      "tasks": [
+        {
+          "id": "89.1",
+          "description": "Add is_terminal() and is_complete() methods",
+          "status": "completed"
+        },
+        {
+          "id": "89.2",
+          "description": "Add can_transition_to() method with 10 valid transitions",
+          "status": "completed"
+        },
+        {
+          "id": "89.3",
+          "description": "Add 8 transition methods (plan_root_ca, generate_root_ca, etc.)",
+          "status": "completed"
+        },
+        {
+          "id": "89.4",
+          "description": "Add PKIBootstrapError enum",
+          "status": "completed"
+        },
+        {
+          "id": "89.5",
+          "description": "Add 6 unit tests for state machine",
+          "status": "completed"
+        },
+        {
+          "id": "89.6",
+          "description": "Update mod.rs exports",
+          "status": "completed"
+        },
+        {
+          "id": "89.7",
+          "description": "Write retrospective",
+          "status": "completed"
+        }
+      ],
+      "architecture": {
+        "pattern": "Matches aggregate state machine pattern used by KeyState, CertificateState, etc.",
+        "transitions": [
+          "Uninitialized → RootCAPlanned",
+          "RootCAPlanned → RootCAGenerated",
+          "RootCAGenerated → IntermediateCAPlanned",
+          "RootCAGenerated → IntermediateCAGenerated",
+          "IntermediateCAPlanned → IntermediateCAGenerated",
+          "IntermediateCAGenerated → LeafCertsGenerated",
+          "LeafCertsGenerated → LeafCertsGenerated (add more)",
+          "LeafCertsGenerated → YubiKeysProvisioned",
+          "YubiKeysProvisioned → YubiKeysProvisioned (add more)",
+          "YubiKeysProvisioned → ExportReady",
+          "ExportReady → Bootstrapped (terminal)"
+        ],
+        "terminal_state": "Bootstrapped"
+      },
+      "acceptance_criteria": [
+        "can_transition_to() validates all state pairs - ACHIEVED",
+        "Transition methods return Result<State, Error> - ACHIEVED",
+        "Invalid transitions return PKIBootstrapError::InvalidTransition - ACHIEVED",
+        "Validation errors (empty lists) return PKIBootstrapError::ValidationFailed - ACHIEVED",
+        "All 6 new tests pass - ACHIEVED",
+        "All 1095 library tests pass - ACHIEVED"
+      ],
+      "results": {
+        "lines_added": 280,
+        "methods_added": 11,
+        "error_variants": 3,
+        "tests_added": 6,
+        "tests_passing": 1095
+      }
     }
   }
 }

@@ -40,6 +40,7 @@ pub mod workflows;
 // Aggregate lifecycle state machines (per-aggregate)
 pub mod key;
 pub mod certificate;
+pub mod certificate_import;
 pub mod policy;
 pub mod person;
 pub mod organization;
@@ -54,8 +55,8 @@ pub mod yubikey;
 // Re-export workflow state machines
 pub use workflows::{
     ArtifactType, CertificateSubject, ExportWorkflowState, GenerationProgress,
-    PKIBootstrapState, PinPolicy, PivAlgorithm, PivSlot, SlotPlan, TouchPolicy,
-    YubiKeyProvisioningState,
+    PKIBootstrapError, PKIBootstrapState, PinPolicy, PivAlgorithm, PivSlot, SlotPlan,
+    TouchPolicy, YubiKeyProvisioningState,
 };
 
 // Re-export aggregate state machines
@@ -73,3 +74,4 @@ pub use nats_operator::NatsOperatorState;
 pub use nats_account::{NatsAccountState, NatsPermissions};
 pub use nats_user::{NatsUserState, NatsUserPermissions};
 pub use yubikey::{YubiKeyState, RetirementReason};
+pub use certificate_import::{CertificateImportState, CertificateImportError};
