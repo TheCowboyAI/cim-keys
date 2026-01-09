@@ -877,6 +877,186 @@ impl Default for GraphView {
     }
 }
 
+// ============================================================================
+// Workflow Dashboard Types
+// ============================================================================
+
+/// Action that can be taken from a workflow state
+#[derive(Debug, Clone)]
+pub struct WorkflowAction {
+    /// Button text
+    pub label: String,
+    /// Description for tooltip
+    pub description: String,
+    /// True if this just navigates, false if it executes an action
+    pub is_navigation: bool,
+}
+
+impl WorkflowAction {
+    pub fn navigate(label: impl Into<String>, description: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            description: description.into(),
+            is_navigation: true,
+        }
+    }
+
+    pub fn execute(label: impl Into<String>, description: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            description: description.into(),
+            is_navigation: false,
+        }
+    }
+}
+
+/// Get valid actions for PKI Bootstrap workflow based on current state
+pub fn get_pki_actions(state: &crate::state_machines::workflows::PKIBootstrapState) -> Vec<(WorkflowAction, Message)> {
+    use crate::state_machines::workflows::PKIBootstrapState;
+
+    match state {
+        PKIBootstrapState::Uninitialized => vec![
+            (WorkflowAction::navigate("Plan Root CA →", "Configure Root CA parameters"),
+             Message::TabSelected(Tab::Keys)),
+        ],
+        PKIBootstrapState::RootCAPlanned { .. } => vec![
+            (WorkflowAction::execute("Generate Root CA", "Generate Root CA key pair and certificate"),
+             Message::Pki(PkiMessage::GenerateRootCA)),
+        ],
+        PKIBootstrapState::RootCAGenerated { .. } => vec![
+            (WorkflowAction::navigate("Plan Intermediate CA →", "Configure Intermediate CA parameters"),
+             Message::TabSelected(Tab::Keys)),
+            (WorkflowAction::execute("Generate Intermediate CA", "Skip planning and generate directly"),
+             Message::Pki(PkiMessage::GenerateIntermediateCA)),
+        ],
+        PKIBootstrapState::IntermediateCAPlanned { .. } => vec![
+            (WorkflowAction::execute("Generate Intermediate CA", "Generate Intermediate CA certificate"),
+             Message::Pki(PkiMessage::GenerateIntermediateCA)),
+        ],
+        PKIBootstrapState::IntermediateCAGenerated { .. } => vec![
+            (WorkflowAction::execute("Generate Leaf Certs", "Generate leaf certificates for users"),
+             Message::Pki(PkiMessage::GenerateAllKeys)),
+        ],
+        PKIBootstrapState::LeafCertsGenerated { .. } => vec![
+            (WorkflowAction::navigate("Provision YubiKeys →", "Go to YubiKey provisioning"),
+             Message::TabSelected(Tab::Keys)),
+        ],
+        PKIBootstrapState::YubiKeysProvisioned { .. } => vec![
+            (WorkflowAction::navigate("Prepare Export →", "Go to export tab"),
+             Message::TabSelected(Tab::Projections)),
+        ],
+        PKIBootstrapState::ExportReady { .. } => vec![
+            (WorkflowAction::execute("Export Domain", "Export to encrypted storage"),
+             Message::Export(ExportMessage::ExportToSDCard)),
+        ],
+        PKIBootstrapState::Bootstrapped { .. } => vec![
+            // Terminal state - no actions
+        ],
+    }
+}
+
+/// Get valid actions for YubiKey Provisioning workflow based on current state
+pub fn get_yubikey_provisioning_actions(
+    state: &crate::state_machines::workflows::YubiKeyProvisioningState,
+    serial: &str,
+) -> Vec<(WorkflowAction, Message)> {
+    use crate::state_machines::workflows::YubiKeyProvisioningState;
+
+    match state {
+        YubiKeyProvisioningState::Detected { .. } => vec![
+            (WorkflowAction::execute("Verify PIN", "Authenticate to YubiKey with PIN"),
+             Message::YubiKey(YubiKeyMessage::VerifyYubiKeyPin(serial.to_string()))),
+        ],
+        YubiKeyProvisioningState::Authenticated { .. } => vec![
+            (WorkflowAction::navigate("Change PIN →", "Navigate to change default PIN"),
+             Message::TabSelected(Tab::Keys)),
+        ],
+        YubiKeyProvisioningState::PINChanged { .. } => vec![
+            (WorkflowAction::execute("Rotate Mgmt Key", "Rotate the management key"),
+             Message::YubiKey(YubiKeyMessage::ChangeYubiKeyManagementKey(serial.to_string()))),
+        ],
+        YubiKeyProvisioningState::ManagementKeyRotated { .. } => vec![
+            (WorkflowAction::navigate("Plan Slots →", "Configure PIV slot allocation"),
+             Message::TabSelected(Tab::Keys)),
+        ],
+        YubiKeyProvisioningState::SlotPlanned { .. } => vec![
+            (WorkflowAction::navigate("Generate Keys →", "Generate keys in planned slots"),
+             Message::TabSelected(Tab::Keys)),
+        ],
+        YubiKeyProvisioningState::KeysGenerated { .. } => vec![
+            (WorkflowAction::navigate("Import Certs →", "Import certificates to slots"),
+             Message::TabSelected(Tab::Keys)),
+        ],
+        YubiKeyProvisioningState::CertificatesImported { .. } => vec![
+            (WorkflowAction::navigate("Attest Keys →", "Verify on-device key generation"),
+             Message::TabSelected(Tab::Keys)),
+        ],
+        YubiKeyProvisioningState::Attested { .. } => vec![
+            (WorkflowAction::navigate("Seal Device →", "Lock YubiKey configuration"),
+             Message::TabSelected(Tab::Keys)),
+        ],
+        YubiKeyProvisioningState::Sealed { .. } => vec![
+            // Terminal state - no actions
+        ],
+    }
+}
+
+/// Get valid actions for Certificate Import workflow based on current state
+pub fn get_cert_import_actions(
+    state: &crate::state_machines::CertificateImportState,
+    _serial: &str,
+) -> Vec<(WorkflowAction, Message)> {
+    use crate::state_machines::CertificateImportState;
+
+    match state {
+        CertificateImportState::NoCertificateSelected => vec![
+            (WorkflowAction::navigate("Select Certificate →", "Choose a certificate to import"),
+             Message::TabSelected(Tab::Keys)),
+        ],
+        CertificateImportState::CertificateSelected { cert_id, .. } => vec![
+            (WorkflowAction::execute("Validate RFC 5280", "Validate certificate compliance"),
+             Message::Certificate(CertificateMessage::ValidateCertificate(*cert_id))),
+        ],
+        CertificateImportState::Validating { .. } => vec![
+            // In progress - no actions
+        ],
+        CertificateImportState::ValidationFailed { .. } => vec![
+            (WorkflowAction::navigate("Select Different →", "Choose a different certificate"),
+             Message::TabSelected(Tab::Keys)),
+        ],
+        CertificateImportState::Validated { .. } => vec![
+            (WorkflowAction::navigate("Enter PIN →", "Provide YubiKey PIN"),
+             Message::TabSelected(Tab::Keys)),
+        ],
+        CertificateImportState::AwaitingPin { .. } => vec![
+            // Waiting for user input via dialog
+        ],
+        CertificateImportState::PinFailed { attempts_remaining, .. } => {
+            if *attempts_remaining > 0 {
+                vec![
+                    (WorkflowAction::navigate("Retry PIN →", "Try entering PIN again"),
+                     Message::TabSelected(Tab::Keys)),
+                ]
+            } else {
+                vec![
+                    (WorkflowAction::navigate("Start Over →", "Reset and select new certificate"),
+                     Message::TabSelected(Tab::Keys)),
+                ]
+            }
+        },
+        CertificateImportState::Importing { .. } => vec![
+            // In progress - no actions
+        ],
+        CertificateImportState::ImportFailed { .. } => vec![
+            (WorkflowAction::navigate("Try Again →", "Start import process over"),
+             Message::TabSelected(Tab::Keys)),
+        ],
+        CertificateImportState::Imported { .. } => vec![
+            // Terminal state - no actions
+        ],
+    }
+}
+
 /// Messages for the application
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -5432,6 +5612,8 @@ impl CimKeysApp {
             }
 
             Message::YubiKeyManagementKeyChanged2(result) => {
+                use crate::state_machines::workflows::YubiKeyProvisioningState;
+
                 match result {
                     Ok(serial) => {
                         self.yubikey_slot_operation_status = Some(format!("✅ Management key changed for YubiKey {}", serial));
@@ -5439,6 +5621,22 @@ impl CimKeysApp {
                         // Clear the key inputs
                         self.yubikey_management_key.clear();
                         self.yubikey_new_management_key.clear();
+
+                        // Advance workflow state to ManagementKeyRotated
+                        let current_state = self.yubikey_states.get(&serial);
+                        if matches!(current_state, Some(state) if state.can_rotate_management_key()) {
+                            use crate::state_machines::workflows::PivAlgorithm;
+                            self.yubikey_states.insert(
+                                serial.clone(),
+                                YubiKeyProvisioningState::ManagementKeyRotated {
+                                    algorithm: PivAlgorithm::EcdsaP256, // Default algorithm
+                                },
+                            );
+                            tracing::info!(
+                                "YubiKey {} workflow advanced to ManagementKeyRotated",
+                                serial
+                            );
+                        }
                     }
                     Err(e) => {
                         self.yubikey_slot_operation_status = Some(format!("❌ Failed to change management key: {}", e));
@@ -5555,6 +5753,9 @@ impl CimKeysApp {
             }
 
             Message::GenerateKeyInSlot { serial, slot } => {
+                use crate::state_machines::workflows::{YubiKeyProvisioningState, SlotPlan, PivSlot as WorkflowPivSlot, PinPolicy, TouchPolicy};
+                use crate::events::{KeyPurpose, KeyAlgorithm as WorkflowKeyAlgorithm};
+
                 // Check if the slot is already occupied
                 if let Some(slot_infos) = self.yubikey_slot_info.get(&serial) {
                     if let Some(slot_info) = slot_infos.iter().find(|si| si.slot == slot) {
@@ -5566,6 +5767,31 @@ impl CimKeysApp {
                             return Task::none();
                         }
                     }
+                }
+
+                // If state is ManagementKeyRotated, transition to SlotPlanned first
+                let current_state = self.yubikey_states.get(&serial);
+                if matches!(current_state, Some(YubiKeyProvisioningState::ManagementKeyRotated { .. })) {
+                    // Create a slot plan for this slot
+                    let workflow_slot = match slot {
+                        crate::ports::yubikey::PivSlot::Authentication => WorkflowPivSlot::Authentication,
+                        crate::ports::yubikey::PivSlot::Signature => WorkflowPivSlot::Signature,
+                        crate::ports::yubikey::PivSlot::KeyManagement => WorkflowPivSlot::KeyManagement,
+                        crate::ports::yubikey::PivSlot::CardAuth => WorkflowPivSlot::CardAuth,
+                        _ => WorkflowPivSlot::Authentication, // Default for retired slots
+                    };
+                    let mut slot_plan = std::collections::HashMap::new();
+                    slot_plan.insert(workflow_slot, SlotPlan {
+                        purpose: KeyPurpose::Signing,
+                        algorithm: WorkflowKeyAlgorithm::Ecdsa { curve: "P-256".to_string() },
+                        pin_policy: PinPolicy::Once,
+                        touch_policy: TouchPolicy::Never,
+                    });
+                    self.yubikey_states.insert(
+                        serial.clone(),
+                        YubiKeyProvisioningState::SlotPlanned { slot_plan },
+                    );
+                    tracing::info!("YubiKey {} workflow advanced to SlotPlanned", serial);
                 }
 
                 self.yubikey_slot_operation_status = Some(format!("⏳ Generating key in slot {:?}...", slot));
@@ -5602,10 +5828,32 @@ impl CimKeysApp {
             }
 
             Message::KeyInSlotGenerated(result) => {
+                use crate::state_machines::workflows::{YubiKeyProvisioningState, PivSlot as WorkflowPivSlot};
+
                 match result {
                     Ok((serial, slot, key_info)) => {
                         self.yubikey_slot_operation_status = Some(format!("✅ Key generated in slot {:?}: {}", slot, key_info));
                         self.status_message = format!("Key generated in {:?} on YubiKey {}", slot, serial);
+
+                        // Transition to KeysGenerated if in SlotPlanned state
+                        let current_state = self.yubikey_states.get(&serial);
+                        if matches!(current_state, Some(YubiKeyProvisioningState::SlotPlanned { .. })) {
+                            let workflow_slot = match slot {
+                                crate::ports::yubikey::PivSlot::Authentication => WorkflowPivSlot::Authentication,
+                                crate::ports::yubikey::PivSlot::Signature => WorkflowPivSlot::Signature,
+                                crate::ports::yubikey::PivSlot::KeyManagement => WorkflowPivSlot::KeyManagement,
+                                crate::ports::yubikey::PivSlot::CardAuth => WorkflowPivSlot::CardAuth,
+                                _ => WorkflowPivSlot::Authentication,
+                            };
+                            let mut slot_keys = std::collections::HashMap::new();
+                            slot_keys.insert(workflow_slot, key_info.as_bytes().to_vec());
+                            self.yubikey_states.insert(
+                                serial.clone(),
+                                YubiKeyProvisioningState::KeysGenerated { slot_keys },
+                            );
+                            tracing::info!("YubiKey {} workflow advanced to KeysGenerated", serial);
+                        }
+
                         // Re-query slots to update display
                         return Task::done(Message::QueryYubiKeySlots(serial));
                     }
@@ -16640,201 +16888,580 @@ impl CimKeysApp {
     }
 
     fn view_workflow(&self) -> Element<'_, Message> {
-        self.workflow_view.view().map(Message::WorkflowMessage)
-    }
+        // Predictive Workflow Dashboard
+        // Shows only 4 workflow types with current state highlighted and valid next actions
+        use crate::state_machines::workflows::PKIBootstrapState;
 
-    fn view_state_machines(&self) -> Element<'_, Message> {
-        use state_machine_graph::StateMachineType;
+        let mut content: Vec<Element<'_, Message>> = vec![];
 
-        // Create state machine type selector
-        let machine_types = vec![
-            StateMachineType::Key,
-            StateMachineType::Certificate,
-            StateMachineType::Person,
-            StateMachineType::Organization,
-            StateMachineType::YubiKey,
-            StateMachineType::PkiBootstrap,
-            StateMachineType::CertificateProvisioning,
-        ];
-
-        let machine_buttons: Vec<Element<'_, Message>> = machine_types
-            .into_iter()
-            .map(|sm_type| {
-                let is_selected = self.selected_state_machine == sm_type;
-                let btn_style = CowboyCustomTheme::glass_menu_button(is_selected);
-
-                button(text(sm_type.display_name()).size(self.view_model.text_small))
-                    .on_press(Message::StateMachineSelected(sm_type))
-                    .style(btn_style)
-                    .into()
-            })
-            .collect();
-
-        let machine_selector = row(machine_buttons)
-            .spacing(self.view_model.spacing_sm)
-            .padding(self.view_model.padding_md);
-
-        // Current state machine info (uses stored definition to avoid lifetime issues)
-        let state_count = self.state_machine_definition.states.len();
-        let transition_count = self.state_machine_definition.transitions.len();
-        let terminal_count = self.state_machine_definition.states.iter().filter(|s| s.is_terminal).count();
-
-        let info_text = text(format!(
-            "{} | {} states | {} transitions | {} terminal states",
-            self.selected_state_machine.display_name(),
-            state_count,
-            transition_count,
-            terminal_count
-        ))
-        .size(self.view_model.text_small)
-        .color(CowboyTheme::text_secondary());
-
-        // Category badge
-        let category_text = text(format!("Category: {}", self.selected_state_machine.category()))
-            .size(self.view_model.text_small)
-            .color(self.view_model.colors.accent);
-
-        // State list (compact for side panel)
-        let state_items: Vec<Element<'_, Message>> = self.state_machine_definition.states.iter().map(|state| {
-            let state_color = if state.is_terminal {
-                Color::from_rgb(0.8, 0.2, 0.2)
-            } else if state.is_initial {
-                Color::from_rgb(0.2, 0.8, 0.2)
-            } else {
-                state.color
-            };
-
-            let suffix = if state.is_terminal {
-                " ◉"
-            } else if state.is_initial {
-                " ◐"
-            } else {
-                ""
-            };
-
-            row![
-                container(text("●").color(state_color))
-                    .width(Length::Fixed(16.0)),
-                text(format!("{}{}", state.name, suffix))
-                    .size(self.view_model.text_tiny),
-            ]
-            .spacing(4)
-            .into()
-        }).collect();
-
-        // Transition list (compact)
-        let transition_items: Vec<Element<'_, Message>> = self.state_machine_definition.transitions.iter().map(|trans| {
-            let arrow = if trans.from == trans.to {
-                format!("{} ↻", trans.from)
-            } else {
-                format!("{} → {}", trans.from, trans.to)
-            };
-            text(format!("{} [{}]", arrow, trans.label))
-                .size(self.view_model.text_tiny)
-                .color(CowboyTheme::text_secondary())
-                .into()
-        }).collect();
-
-        // Graph canvas - renders the actual Mealy state machine diagram
-        let graph_canvas: Element<'_, Message> = Canvas::new(StateMachineCanvasProgram {
-            definition: &self.state_machine_definition,
-            vm: &self.view_model,
-        })
-        .width(Length::Fill)
-        .height(Length::Fixed(450.0))
-        .into();
-
-        let content = column![
-            // Header
+        // Header
+        content.push(
             container(
                 column![
-                    text("Mealy State Machine Visualization")
+                    text("Workflow Dashboard")
                         .size(self.view_model.text_large)
                         .color(CowboyTheme::text_primary()),
-                    text("States as objects, transitions as morphisms in a small category")
+                    text("Active workflows with next available actions")
                         .size(self.view_model.text_small)
                         .color(CowboyTheme::text_secondary()),
                 ]
                 .spacing(4)
             )
-            .padding(self.view_model.padding_md),
+            .padding(self.view_model.padding_md)
+            .into()
+        );
 
-            // Machine selector
-            container(machine_selector)
-                .style(CowboyCustomTheme::pastel_teal_card()),
+        // PKI Bootstrap Workflow Card
+        content.push(self.view_pki_workflow_card());
 
-            // Info bar
-            container(
-                row![info_text, horizontal_space(), category_text]
-                    .align_y(Alignment::Center)
-            )
-            .padding(self.view_model.padding_sm),
+        // YubiKey Provisioning Cards (one per device)
+        for (serial, state) in &self.yubikey_states {
+            content.push(self.view_yubikey_workflow_card(serial, state));
+        }
 
-            // Main content: Graph on left, details on right
-            row![
-                // Graph canvas (primary view)
-                container(graph_canvas)
+        // Certificate Import Cards (only show if in progress)
+        for (serial, state) in &self.certificate_import_states {
+            if !matches!(state, crate::state_machines::CertificateImportState::NoCertificateSelected) {
+                content.push(self.view_cert_import_card(serial, state));
+            }
+        }
+
+        // If no YubiKeys or cert imports, show placeholder
+        if self.yubikey_states.is_empty() && self.certificate_import_states.is_empty() {
+            // Check if we should show cert import card based on PKI state
+            if matches!(self.pki_state, PKIBootstrapState::LeafCertsGenerated { .. }
+                | PKIBootstrapState::YubiKeysProvisioned { .. })
+            {
+                content.push(
+                    container(
+                        column![
+                            text("Certificate Import")
+                                .size(self.view_model.text_medium)
+                                .color(CowboyTheme::text_primary()),
+                            text("No import in progress. Select a certificate from the Keys tab.")
+                                .size(self.view_model.text_small)
+                                .color(CowboyTheme::text_secondary()),
+                        ]
+                        .spacing(4)
+                    )
+                    .padding(self.view_model.padding_md)
                     .style(CowboyCustomTheme::card_container())
-                    .padding(self.view_model.padding_sm)
-                    .width(Length::FillPortion(3)),
+                    .into()
+                );
+            }
+        }
 
-                // Details panel (states + transitions)
-                container(
-                    column![
-                        text("States")
-                            .size(self.view_model.text_small)
-                            .color(CowboyTheme::text_primary()),
-                        scrollable(
-                            column(state_items).spacing(2)
-                        )
-                        .height(Length::Fixed(180.0)),
-
-                        vertical_space().height(Length::Fixed(8.0)),
-
-                        text("Transitions")
-                            .size(self.view_model.text_small)
-                            .color(CowboyTheme::text_primary()),
-                        scrollable(
-                            column(transition_items).spacing(1)
-                        )
-                        .height(Length::Fixed(200.0)),
-                    ]
-                    .spacing(self.view_model.spacing_xs)
-                )
-                .padding(self.view_model.padding_sm)
-                .style(CowboyCustomTheme::card_container())
-                .width(Length::FillPortion(1)),
-            ]
-            .spacing(self.view_model.spacing_md),
-
-            // Legend
+        // Legend
+        content.push(
             container(
                 row![
-                    text("◐").color(Color::from_rgb(0.2, 0.8, 0.2)),
-                    text(" Initial").size(self.view_model.text_tiny),
+                    text("✓").color(Color::from_rgb(0.2, 0.8, 0.2)),
+                    text(" Completed").size(self.view_model.text_tiny),
                     horizontal_space().width(Length::Fixed(15.0)),
-                    text("◉").color(Color::from_rgb(0.8, 0.2, 0.2)),
-                    text(" Terminal").size(self.view_model.text_tiny),
+                    text("●").color(self.view_model.colors.accent),
+                    text(" Current").size(self.view_model.text_tiny),
                     horizontal_space().width(Length::Fixed(15.0)),
-                    text("●").color(Color::from_rgb(0.5, 0.6, 0.7)),
-                    text(" State").size(self.view_model.text_tiny),
+                    text("○").color(Color::from_rgb(0.5, 0.6, 0.7)),
+                    text(" Pending").size(self.view_model.text_tiny),
                     horizontal_space().width(Length::Fixed(15.0)),
-                    text("→").color(Color::from_rgb(0.5, 0.6, 0.7)),
-                    text(" Transition").size(self.view_model.text_tiny),
+                    text("→").color(self.view_model.colors.accent),
+                    text(" Navigation").size(self.view_model.text_tiny),
                     horizontal_space().width(Length::Fixed(15.0)),
-                    text("↻").color(Color::from_rgb(0.5, 0.6, 0.7)),
-                    text(" Self-loop").size(self.view_model.text_tiny),
+                    text("⚡").color(Color::from_rgb(0.9, 0.6, 0.1)),
+                    text(" Action").size(self.view_model.text_tiny),
                 ]
                 .spacing(4)
                 .align_y(Alignment::Center)
             )
             .padding(self.view_model.padding_sm)
-            .style(CowboyCustomTheme::pastel_mint_card()),
-        ]
-        .spacing(self.view_model.spacing_sm)
-        .padding(self.view_model.padding_md);
+            .style(CowboyCustomTheme::pastel_mint_card())
+            .into()
+        );
 
-        scrollable(content).into()
+        scrollable(column(content).spacing(self.view_model.spacing_md).padding(self.view_model.padding_md)).into()
+    }
+
+    /// State Machines Reference View - shows all state machine types with their full graphs
+    fn view_state_machines(&self) -> Element<'_, Message> {
+        // Group state machines by category
+        let categories = [
+            ("Security", vec![
+                state_machine_graph::StateMachineType::Key,
+                state_machine_graph::StateMachineType::Certificate,
+                state_machine_graph::StateMachineType::Policy,
+            ]),
+            ("Domain", vec![
+                state_machine_graph::StateMachineType::Person,
+                state_machine_graph::StateMachineType::Organization,
+                state_machine_graph::StateMachineType::Location,
+                state_machine_graph::StateMachineType::Relationship,
+            ]),
+            ("Infrastructure", vec![
+                state_machine_graph::StateMachineType::Manifest,
+                state_machine_graph::StateMachineType::NatsOperator,
+                state_machine_graph::StateMachineType::NatsAccount,
+                state_machine_graph::StateMachineType::NatsUser,
+                state_machine_graph::StateMachineType::YubiKey,
+            ]),
+            ("Workflows", vec![
+                state_machine_graph::StateMachineType::PkiBootstrap,
+                state_machine_graph::StateMachineType::YubiKeyProvisioning,
+                state_machine_graph::StateMachineType::ExportWorkflow,
+                state_machine_graph::StateMachineType::CertificateImport,
+            ]),
+            ("Sagas", vec![
+                state_machine_graph::StateMachineType::CertificateProvisioning,
+                state_machine_graph::StateMachineType::PersonOnboarding,
+                state_machine_graph::StateMachineType::CompleteBootstrap,
+            ]),
+        ];
+
+        let mut content: Vec<Element<'_, Message>> = vec![];
+
+        // Header
+        content.push(
+            container(
+                column![
+                    text("State Machine Reference")
+                        .size(self.view_model.text_large)
+                        .color(CowboyTheme::text_primary()),
+                    text("All state machines with states and transitions")
+                        .size(self.view_model.text_small)
+                        .color(CowboyTheme::text_secondary()),
+                ]
+                .spacing(4)
+            )
+            .padding(self.view_model.padding_md)
+            .into()
+        );
+
+        // Currently selected state machine canvas (uses pre-computed definition from model)
+        let canvas_element: Element<'_, Message> = canvas::Canvas::new(StateMachineCanvasProgram {
+            definition: &self.state_machine_definition,
+            vm: &self.view_model,
+        })
+        .width(Length::Fill)
+        .height(Length::Fixed(350.0))
+        .into();
+
+        content.push(
+            container(canvas_element)
+                .style(CowboyCustomTheme::card_container())
+                .padding(self.view_model.padding_sm)
+                .into()
+        );
+
+        // State machine selector by category
+        for (category_name, machines) in categories {
+            let category_buttons: Vec<Element<'_, Message>> = machines.iter().map(|sm| {
+                let is_selected = *sm == self.selected_state_machine;
+                let display_name = sm.display_name();
+
+                if is_selected {
+                    button(text(display_name).size(self.view_model.text_tiny))
+                        .on_press(Message::StateMachineSelected(*sm))
+                        .style(CowboyCustomTheme::action_button())
+                        .padding([4, 8])
+                        .into()
+                } else {
+                    button(text(display_name).size(self.view_model.text_tiny))
+                        .on_press(Message::StateMachineSelected(*sm))
+                        .style(CowboyCustomTheme::navigation_button())
+                        .padding([4, 8])
+                        .into()
+                }
+            }).collect();
+
+            content.push(
+                container(
+                    column![
+                        text(category_name)
+                            .size(self.view_model.text_small)
+                            .color(self.view_model.colors.accent),
+                        row(category_buttons).spacing(4).wrap(),
+                    ]
+                    .spacing(4)
+                )
+                .padding(self.view_model.padding_sm)
+                .into()
+            );
+        }
+
+        // Legend
+        content.push(
+            container(
+                row![
+                    container(Space::new(12, 12))
+                        .style(|_theme: &Theme| container::Style {
+                            background: Some(iced::Background::Color(Color::from_rgb(0.2, 0.5, 0.3))),
+                            border: iced::Border { radius: 6.0.into(), ..Default::default() },
+                            ..Default::default()
+                        }),
+                    text(" Initial").size(self.view_model.text_tiny),
+                    horizontal_space().width(Length::Fixed(15.0)),
+                    container(Space::new(12, 12))
+                        .style(|_theme: &Theme| container::Style {
+                            background: Some(iced::Background::Color(Color::from_rgb(0.25, 0.35, 0.45))),
+                            border: iced::Border { radius: 6.0.into(), ..Default::default() },
+                            ..Default::default()
+                        }),
+                    text(" Normal").size(self.view_model.text_tiny),
+                    horizontal_space().width(Length::Fixed(15.0)),
+                    container(Space::new(12, 12))
+                        .style(|_theme: &Theme| container::Style {
+                            background: Some(iced::Background::Color(Color::from_rgb(0.6, 0.2, 0.2))),
+                            border: iced::Border { radius: 6.0.into(), ..Default::default() },
+                            ..Default::default()
+                        }),
+                    text(" Terminal").size(self.view_model.text_tiny),
+                ]
+                .spacing(4)
+                .align_y(Alignment::Center)
+            )
+            .padding(self.view_model.padding_sm)
+            .style(CowboyCustomTheme::pastel_mint_card())
+            .into()
+        );
+
+        scrollable(column(content).spacing(self.view_model.spacing_md).padding(self.view_model.padding_md)).into()
+    }
+
+    /// Render PKI Bootstrap workflow card
+    fn view_pki_workflow_card(&self) -> Element<'_, Message> {
+        use crate::state_machines::workflows::PKIBootstrapState;
+
+        let state = &self.pki_state;
+        let actions = get_pki_actions(state);
+
+        // Build progress indicator showing completed/current/pending
+        let stages = [
+            ("Root CA", matches!(state, PKIBootstrapState::RootCAGenerated { .. }
+                | PKIBootstrapState::IntermediateCAPlanned { .. }
+                | PKIBootstrapState::IntermediateCAGenerated { .. }
+                | PKIBootstrapState::LeafCertsGenerated { .. }
+                | PKIBootstrapState::YubiKeysProvisioned { .. }
+                | PKIBootstrapState::ExportReady { .. }
+                | PKIBootstrapState::Bootstrapped { .. })),
+            ("Intermediate", matches!(state, PKIBootstrapState::IntermediateCAGenerated { .. }
+                | PKIBootstrapState::LeafCertsGenerated { .. }
+                | PKIBootstrapState::YubiKeysProvisioned { .. }
+                | PKIBootstrapState::ExportReady { .. }
+                | PKIBootstrapState::Bootstrapped { .. })),
+            ("Leaf Certs", matches!(state, PKIBootstrapState::LeafCertsGenerated { .. }
+                | PKIBootstrapState::YubiKeysProvisioned { .. }
+                | PKIBootstrapState::ExportReady { .. }
+                | PKIBootstrapState::Bootstrapped { .. })),
+            ("Provisioned", matches!(state, PKIBootstrapState::YubiKeysProvisioned { .. }
+                | PKIBootstrapState::ExportReady { .. }
+                | PKIBootstrapState::Bootstrapped { .. })),
+            ("Exported", matches!(state, PKIBootstrapState::Bootstrapped { .. })),
+        ];
+
+        let progress_items: Vec<Element<'_, Message>> = stages.iter().map(|(name, done)| {
+            let (icon, color) = if *done {
+                ("✓", Color::from_rgb(0.2, 0.8, 0.2))
+            } else {
+                ("○", Color::from_rgb(0.5, 0.6, 0.7))
+            };
+            row![
+                text(icon).color(color),
+                text(*name).size(self.view_model.text_tiny).color(color),
+            ]
+            .spacing(2)
+            .into()
+        }).collect();
+
+        // Build action buttons
+        let action_buttons: Vec<Element<'_, Message>> = actions.into_iter().map(|(action, msg)| {
+            let icon = if action.is_navigation { "→" } else { "⚡" };
+            let label = action.label.clone();
+
+            if action.is_navigation {
+                button(
+                    row![
+                        text(icon),
+                        text(label).size(self.view_model.text_small),
+                    ]
+                    .spacing(4)
+                )
+                .on_press(msg)
+                .style(CowboyCustomTheme::navigation_button())
+                .padding([6, 12])
+                .into()
+            } else {
+                button(
+                    row![
+                        text(icon),
+                        text(label).size(self.view_model.text_small),
+                    ]
+                    .spacing(4)
+                )
+                .on_press(msg)
+                .style(CowboyCustomTheme::action_button())
+                .padding([6, 12])
+                .into()
+            }
+        }).collect();
+
+        container(
+            column![
+                row![
+                    text("PKI Bootstrap")
+                        .size(self.view_model.text_medium)
+                        .color(CowboyTheme::text_primary()),
+                    horizontal_space(),
+                    text(state.state_name())
+                        .size(self.view_model.text_small)
+                        .color(self.view_model.colors.accent),
+                ]
+                .align_y(Alignment::Center),
+
+                row(progress_items).spacing(12),
+
+                text(state.description())
+                    .size(self.view_model.text_small)
+                    .color(CowboyTheme::text_secondary()),
+
+                row(action_buttons).spacing(8),
+            ]
+            .spacing(8)
+        )
+        .padding(self.view_model.padding_md)
+        .style(CowboyCustomTheme::card_container())
+        .into()
+    }
+
+    /// Render YubiKey provisioning workflow card
+    fn view_yubikey_workflow_card<'a>(
+        &self,
+        serial: &str,
+        state: &'a crate::state_machines::workflows::YubiKeyProvisioningState,
+    ) -> Element<'a, Message> {
+        use crate::state_machines::workflows::YubiKeyProvisioningState;
+
+        let actions = get_yubikey_provisioning_actions(state, serial);
+
+        // Build progress indicator
+        let stages = [
+            ("Detected", true),  // Always true if we have state
+            ("Auth", matches!(state, YubiKeyProvisioningState::Authenticated { .. }
+                | YubiKeyProvisioningState::PINChanged { .. }
+                | YubiKeyProvisioningState::ManagementKeyRotated { .. }
+                | YubiKeyProvisioningState::SlotPlanned { .. }
+                | YubiKeyProvisioningState::KeysGenerated { .. }
+                | YubiKeyProvisioningState::CertificatesImported { .. }
+                | YubiKeyProvisioningState::Attested { .. }
+                | YubiKeyProvisioningState::Sealed { .. })),
+            ("PIN", matches!(state, YubiKeyProvisioningState::PINChanged { .. }
+                | YubiKeyProvisioningState::ManagementKeyRotated { .. }
+                | YubiKeyProvisioningState::SlotPlanned { .. }
+                | YubiKeyProvisioningState::KeysGenerated { .. }
+                | YubiKeyProvisioningState::CertificatesImported { .. }
+                | YubiKeyProvisioningState::Attested { .. }
+                | YubiKeyProvisioningState::Sealed { .. })),
+            ("Keys", matches!(state, YubiKeyProvisioningState::KeysGenerated { .. }
+                | YubiKeyProvisioningState::CertificatesImported { .. }
+                | YubiKeyProvisioningState::Attested { .. }
+                | YubiKeyProvisioningState::Sealed { .. })),
+            ("Certs", matches!(state, YubiKeyProvisioningState::CertificatesImported { .. }
+                | YubiKeyProvisioningState::Attested { .. }
+                | YubiKeyProvisioningState::Sealed { .. })),
+            ("Sealed", matches!(state, YubiKeyProvisioningState::Sealed { .. })),
+        ];
+
+        let progress_items: Vec<Element<'_, Message>> = stages.iter().map(|(name, done)| {
+            let (icon, color) = if *done {
+                ("✓", Color::from_rgb(0.2, 0.8, 0.2))
+            } else {
+                ("○", Color::from_rgb(0.5, 0.6, 0.7))
+            };
+            row![
+                text(icon).color(color),
+                text(*name).size(self.view_model.text_tiny).color(color),
+            ]
+            .spacing(2)
+            .into()
+        }).collect();
+
+        // Build action buttons
+        let action_buttons: Vec<Element<'_, Message>> = actions.into_iter().map(|(action, msg)| {
+            let icon = if action.is_navigation { "→" } else { "⚡" };
+            let label = action.label.clone();
+
+            if action.is_navigation {
+                button(
+                    row![
+                        text(icon),
+                        text(label).size(self.view_model.text_small),
+                    ]
+                    .spacing(4)
+                )
+                .on_press(msg)
+                .style(CowboyCustomTheme::navigation_button())
+                .padding([6, 12])
+                .into()
+            } else {
+                button(
+                    row![
+                        text(icon),
+                        text(label).size(self.view_model.text_small),
+                    ]
+                    .spacing(4)
+                )
+                .on_press(msg)
+                .style(CowboyCustomTheme::action_button())
+                .padding([6, 12])
+                .into()
+            }
+        }).collect();
+
+        container(
+            column![
+                row![
+                    text(format!("YubiKey: {}", serial))
+                        .size(self.view_model.text_medium)
+                        .color(CowboyTheme::text_primary()),
+                    horizontal_space(),
+                    text(state.state_name())
+                        .size(self.view_model.text_small)
+                        .color(self.view_model.colors.accent),
+                ]
+                .align_y(Alignment::Center),
+
+                row(progress_items).spacing(12),
+
+                text(state.description())
+                    .size(self.view_model.text_small)
+                    .color(CowboyTheme::text_secondary()),
+
+                row(action_buttons).spacing(8),
+            ]
+            .spacing(8)
+        )
+        .padding(self.view_model.padding_md)
+        .style(CowboyCustomTheme::card_container())
+        .into()
+    }
+
+    /// Render certificate import workflow card
+    fn view_cert_import_card<'a>(
+        &self,
+        serial: &str,
+        state: &'a crate::state_machines::CertificateImportState,
+    ) -> Element<'a, Message> {
+        use crate::state_machines::CertificateImportState;
+
+        let actions = get_cert_import_actions(state, serial);
+
+        // Build progress indicator
+        let stages = [
+            ("Selected", !matches!(state, CertificateImportState::NoCertificateSelected)),
+            ("Validated", matches!(state, CertificateImportState::Validated { .. }
+                | CertificateImportState::AwaitingPin { .. }
+                | CertificateImportState::Importing { .. }
+                | CertificateImportState::Imported { .. })),
+            ("PIN", matches!(state, CertificateImportState::Importing { .. }
+                | CertificateImportState::Imported { .. })),
+            ("Imported", matches!(state, CertificateImportState::Imported { .. })),
+        ];
+
+        let progress_items: Vec<Element<'_, Message>> = stages.iter().map(|(name, done)| {
+            let (icon, color) = if *done {
+                ("✓", Color::from_rgb(0.2, 0.8, 0.2))
+            } else {
+                ("○", Color::from_rgb(0.5, 0.6, 0.7))
+            };
+            row![
+                text(icon).color(color),
+                text(*name).size(self.view_model.text_tiny).color(color),
+            ]
+            .spacing(2)
+            .into()
+        }).collect();
+
+        // Build action buttons
+        let action_buttons: Vec<Element<'_, Message>> = actions.into_iter().map(|(action, msg)| {
+            let icon = if action.is_navigation { "→" } else { "⚡" };
+            let label = action.label.clone();
+
+            if action.is_navigation {
+                button(
+                    row![
+                        text(icon),
+                        text(label).size(self.view_model.text_small),
+                    ]
+                    .spacing(4)
+                )
+                .on_press(msg)
+                .style(CowboyCustomTheme::navigation_button())
+                .padding([6, 12])
+                .into()
+            } else {
+                button(
+                    row![
+                        text(icon),
+                        text(label).size(self.view_model.text_small),
+                    ]
+                    .spacing(4)
+                )
+                .on_press(msg)
+                .style(CowboyCustomTheme::action_button())
+                .padding([6, 12])
+                .into()
+            }
+        }).collect();
+
+        // Get current state description
+        let description = match state {
+            CertificateImportState::NoCertificateSelected => "No certificate selected",
+            CertificateImportState::CertificateSelected { .. } => "Certificate selected, awaiting validation",
+            CertificateImportState::Validating { .. } => "Validating RFC 5280 compliance...",
+            CertificateImportState::ValidationFailed { .. } => "Validation failed - select a different certificate",
+            CertificateImportState::Validated { .. } => "Certificate validated, ready for import",
+            CertificateImportState::AwaitingPin { .. } => "Waiting for YubiKey PIN",
+            CertificateImportState::PinFailed { .. } => "PIN verification failed",
+            CertificateImportState::Importing { .. } => "Importing certificate...",
+            CertificateImportState::ImportFailed { .. } => "Import failed",
+            CertificateImportState::Imported { .. } => "Certificate successfully imported",
+        };
+
+        container(
+            column![
+                row![
+                    text(format!("Certificate Import: {}", serial))
+                        .size(self.view_model.text_medium)
+                        .color(CowboyTheme::text_primary()),
+                    horizontal_space(),
+                    text(match state {
+                        CertificateImportState::NoCertificateSelected => "Ready",
+                        CertificateImportState::CertificateSelected { .. } => "Selected",
+                        CertificateImportState::Validating { .. } => "Validating",
+                        CertificateImportState::ValidationFailed { .. } => "Failed",
+                        CertificateImportState::Validated { .. } => "Validated",
+                        CertificateImportState::AwaitingPin { .. } => "Awaiting PIN",
+                        CertificateImportState::PinFailed { .. } => "PIN Failed",
+                        CertificateImportState::Importing { .. } => "Importing",
+                        CertificateImportState::ImportFailed { .. } => "Failed",
+                        CertificateImportState::Imported { .. } => "Complete",
+                    })
+                        .size(self.view_model.text_small)
+                        .color(self.view_model.colors.accent),
+                ]
+                .align_y(Alignment::Center),
+
+                row(progress_items).spacing(12),
+
+                text(description)
+                    .size(self.view_model.text_small)
+                    .color(CowboyTheme::text_secondary()),
+
+                row(action_buttons).spacing(8),
+            ]
+            .spacing(8)
+        )
+        .padding(self.view_model.padding_md)
+        .style(CowboyCustomTheme::card_container())
+        .into()
     }
 }
 

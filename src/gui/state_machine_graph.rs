@@ -45,6 +45,7 @@ pub enum StateMachineType {
     PkiBootstrap,
     YubiKeyProvisioning,
     ExportWorkflow,
+    CertificateImport,
     // Saga state machines
     CertificateProvisioning,
     PersonOnboarding,
@@ -70,6 +71,7 @@ impl StateMachineType {
             Self::PkiBootstrap,
             Self::YubiKeyProvisioning,
             Self::ExportWorkflow,
+            Self::CertificateImport,
             Self::CertificateProvisioning,
             Self::PersonOnboarding,
             Self::CompleteBootstrap,
@@ -94,6 +96,7 @@ impl StateMachineType {
             Self::PkiBootstrap => "PKI Bootstrap Workflow",
             Self::YubiKeyProvisioning => "YubiKey Provisioning Workflow",
             Self::ExportWorkflow => "Export Workflow",
+            Self::CertificateImport => "Certificate Import Workflow",
             Self::CertificateProvisioning => "Certificate Provisioning Saga",
             Self::PersonOnboarding => "Person Onboarding Saga",
             Self::CompleteBootstrap => "Complete Bootstrap Saga",
@@ -107,7 +110,7 @@ impl StateMachineType {
             Self::Person | Self::Organization | Self::Location | Self::Relationship => "Domain",
             Self::NatsOperator | Self::NatsAccount | Self::NatsUser | Self::Manifest => "Infrastructure",
             Self::YubiKey | Self::YubiKeyProvisioning => "Hardware",
-            Self::PkiBootstrap | Self::ExportWorkflow |
+            Self::PkiBootstrap | Self::ExportWorkflow | Self::CertificateImport |
             Self::CertificateProvisioning | Self::PersonOnboarding | Self::CompleteBootstrap => "Workflow",
         }
     }
@@ -514,16 +517,286 @@ pub fn build_certificate_provisioning_saga() -> StateMachineDefinition {
         .with_transition(StateMachineTransition::new("Compensating", "Failed", "CompensationComplete"))
 }
 
+/// Build PolicyState machine definition
+pub fn build_policy_state_machine() -> StateMachineDefinition {
+    StateMachineDefinition::new(StateMachineType::Policy)
+        .with_state(StateMachineState::new("Draft", "Policy created but not yet activated")
+            .initial()
+            .with_color(Color::from_rgb(0.4, 0.7, 0.4)))
+        .with_state(StateMachineState::new("Active", "Policy is active and enforced")
+            .with_color(Color::from_rgb(0.2, 0.8, 0.2)))
+        .with_state(StateMachineState::new("Modified", "Policy has been modified, awaiting activation")
+            .with_color(Color::from_rgb(0.9, 0.7, 0.2)))
+        .with_state(StateMachineState::new("Suspended", "Policy temporarily suspended")
+            .with_color(Color::from_rgb(0.8, 0.5, 0.2)))
+        .with_state(StateMachineState::new("Revoked", "Policy permanently revoked")
+            .terminal()
+            .with_color(Color::from_rgb(0.8, 0.2, 0.2)))
+        // Transitions
+        .with_transition(StateMachineTransition::new("Draft", "Active", "PolicyActivated"))
+        .with_transition(StateMachineTransition::new("Active", "Modified", "PolicyUpdated"))
+        .with_transition(StateMachineTransition::new("Modified", "Active", "ChangesApplied"))
+        .with_transition(StateMachineTransition::new("Active", "Suspended", "PolicySuspended"))
+        .with_transition(StateMachineTransition::new("Suspended", "Active", "PolicyReactivated"))
+        .with_transition(StateMachineTransition::new("Draft", "Revoked", "PolicyRevoked"))
+        .with_transition(StateMachineTransition::new("Active", "Revoked", "PolicyRevoked"))
+        .with_transition(StateMachineTransition::new("Modified", "Revoked", "PolicyRevoked"))
+        .with_transition(StateMachineTransition::new("Suspended", "Revoked", "PolicyRevoked"))
+}
+
+/// Build LocationState machine definition
+pub fn build_location_state_machine() -> StateMachineDefinition {
+    StateMachineDefinition::new(StateMachineType::Location)
+        .with_state(StateMachineState::new("Planned", "Location planned but not yet operational")
+            .initial()
+            .with_color(Color::from_rgb(0.4, 0.7, 0.4)))
+        .with_state(StateMachineState::new("Active", "Location is operational, can store assets")
+            .with_color(Color::from_rgb(0.2, 0.8, 0.2)))
+        .with_state(StateMachineState::new("Decommissioned", "Location decommissioned, no new assets")
+            .with_color(Color::from_rgb(0.8, 0.5, 0.2)))
+        .with_state(StateMachineState::new("Archived", "Location archived, all assets removed")
+            .terminal()
+            .with_color(Color::from_rgb(0.5, 0.5, 0.5)))
+        // Transitions
+        .with_transition(StateMachineTransition::new("Planned", "Active", "LocationActivated"))
+        .with_transition(StateMachineTransition::new("Active", "Decommissioned", "LocationDecommissioned"))
+        .with_transition(StateMachineTransition::new("Decommissioned", "Archived", "LocationArchived"))
+}
+
+/// Build RelationshipState machine definition
+pub fn build_relationship_state_machine() -> StateMachineDefinition {
+    StateMachineDefinition::new(StateMachineType::Relationship)
+        .with_state(StateMachineState::new("Proposed", "Relationship proposed, awaiting acceptance")
+            .initial()
+            .with_color(Color::from_rgb(0.4, 0.7, 0.4)))
+        .with_state(StateMachineState::new("Active", "Relationship is active and valid")
+            .with_color(Color::from_rgb(0.2, 0.8, 0.2)))
+        .with_state(StateMachineState::new("Modified", "Relationship has been modified")
+            .with_color(Color::from_rgb(0.9, 0.7, 0.2)))
+        .with_state(StateMachineState::new("Suspended", "Relationship temporarily suspended")
+            .with_color(Color::from_rgb(0.8, 0.5, 0.2)))
+        .with_state(StateMachineState::new("Terminated", "Relationship permanently terminated")
+            .with_color(Color::from_rgb(0.8, 0.3, 0.3)))
+        .with_state(StateMachineState::new("Archived", "Relationship archived for retention")
+            .terminal()
+            .with_color(Color::from_rgb(0.5, 0.5, 0.5)))
+        // Transitions
+        .with_transition(StateMachineTransition::new("Proposed", "Active", "RelationshipAccepted"))
+        .with_transition(StateMachineTransition::new("Active", "Modified", "RelationshipModified"))
+        .with_transition(StateMachineTransition::new("Modified", "Active", "ChangesApplied"))
+        .with_transition(StateMachineTransition::new("Active", "Suspended", "RelationshipSuspended"))
+        .with_transition(StateMachineTransition::new("Suspended", "Active", "RelationshipReactivated"))
+        .with_transition(StateMachineTransition::new("Active", "Terminated", "RelationshipTerminated"))
+        .with_transition(StateMachineTransition::new("Modified", "Terminated", "RelationshipTerminated"))
+        .with_transition(StateMachineTransition::new("Suspended", "Terminated", "RelationshipTerminated"))
+        .with_transition(StateMachineTransition::new("Terminated", "Archived", "RelationshipArchived"))
+}
+
+/// Build ManifestState machine definition
+pub fn build_manifest_state_machine() -> StateMachineDefinition {
+    StateMachineDefinition::new(StateMachineType::Manifest)
+        .with_state(StateMachineState::new("Planning", "Manifest being planned, selecting artifacts")
+            .initial()
+            .with_color(Color::from_rgb(0.4, 0.7, 0.4)))
+        .with_state(StateMachineState::new("Generating", "Artifacts being generated")
+            .with_color(Color::from_rgb(0.9, 0.7, 0.2)))
+        .with_state(StateMachineState::new("Ready", "All artifacts generated, ready for export")
+            .with_color(Color::from_rgb(0.4, 0.6, 0.8)))
+        .with_state(StateMachineState::new("Exported", "Manifest exported to target location")
+            .with_color(Color::from_rgb(0.3, 0.7, 0.5)))
+        .with_state(StateMachineState::new("Verified", "Export verified, checksums validated")
+            .terminal()
+            .with_color(Color::from_rgb(0.2, 0.8, 0.2)))
+        .with_state(StateMachineState::new("Failed", "Export failed")
+            .terminal()
+            .with_color(Color::from_rgb(0.8, 0.2, 0.2)))
+        // Transitions
+        .with_transition(StateMachineTransition::new("Planning", "Generating", "GenerationStarted"))
+        .with_transition(StateMachineTransition::new("Generating", "Ready", "GenerationComplete"))
+        .with_transition(StateMachineTransition::new("Ready", "Exported", "ManifestExported"))
+        .with_transition(StateMachineTransition::new("Exported", "Verified", "ExportVerified"))
+        .with_transition(StateMachineTransition::new("Planning", "Failed", "Error"))
+        .with_transition(StateMachineTransition::new("Generating", "Failed", "Error"))
+        .with_transition(StateMachineTransition::new("Ready", "Failed", "Error"))
+        .with_transition(StateMachineTransition::new("Exported", "Failed", "VerificationFailed"))
+}
+
+/// Build NatsOperatorState machine definition
+pub fn build_nats_operator_state_machine() -> StateMachineDefinition {
+    StateMachineDefinition::new(StateMachineType::NatsOperator)
+        .with_state(StateMachineState::new("Created", "Operator created, awaiting key generation")
+            .initial()
+            .with_color(Color::from_rgb(0.4, 0.7, 0.4)))
+        .with_state(StateMachineState::new("KeysGenerated", "Signing keys generated, ready for activation")
+            .with_color(Color::from_rgb(0.9, 0.7, 0.2)))
+        .with_state(StateMachineState::new("Active", "Operator active, can sign account JWTs")
+            .with_color(Color::from_rgb(0.2, 0.8, 0.2)))
+        .with_state(StateMachineState::new("Suspended", "Operator temporarily suspended")
+            .with_color(Color::from_rgb(0.8, 0.5, 0.2)))
+        .with_state(StateMachineState::new("Revoked", "Operator permanently revoked")
+            .terminal()
+            .with_color(Color::from_rgb(0.8, 0.2, 0.2)))
+        // Transitions
+        .with_transition(StateMachineTransition::new("Created", "KeysGenerated", "KeysGenerated"))
+        .with_transition(StateMachineTransition::new("KeysGenerated", "Active", "OperatorActivated"))
+        .with_transition(StateMachineTransition::new("Active", "Suspended", "OperatorSuspended"))
+        .with_transition(StateMachineTransition::new("Suspended", "Active", "OperatorReactivated"))
+        .with_transition(StateMachineTransition::new("Active", "Revoked", "OperatorRevoked"))
+        .with_transition(StateMachineTransition::new("Suspended", "Revoked", "OperatorRevoked"))
+}
+
+/// Build NatsAccountState machine definition
+pub fn build_nats_account_state_machine() -> StateMachineDefinition {
+    StateMachineDefinition::new(StateMachineType::NatsAccount)
+        .with_state(StateMachineState::new("Created", "Account created, awaiting permissions")
+            .initial()
+            .with_color(Color::from_rgb(0.4, 0.7, 0.4)))
+        .with_state(StateMachineState::new("Active", "Account active with permissions")
+            .with_color(Color::from_rgb(0.2, 0.8, 0.2)))
+        .with_state(StateMachineState::new("Suspended", "Account temporarily suspended")
+            .with_color(Color::from_rgb(0.8, 0.5, 0.2)))
+        .with_state(StateMachineState::new("Reactivated", "Account reactivated after suspension")
+            .with_color(Color::from_rgb(0.4, 0.7, 0.4)))
+        .with_state(StateMachineState::new("Deleted", "Account permanently deleted")
+            .terminal()
+            .with_color(Color::from_rgb(0.8, 0.2, 0.2)))
+        // Transitions
+        .with_transition(StateMachineTransition::new("Created", "Active", "AccountActivated"))
+        .with_transition(StateMachineTransition::new("Active", "Suspended", "AccountSuspended"))
+        .with_transition(StateMachineTransition::new("Suspended", "Reactivated", "AccountReactivated"))
+        .with_transition(StateMachineTransition::new("Reactivated", "Active", "AccountActivated"))
+        .with_transition(StateMachineTransition::new("Active", "Deleted", "AccountDeleted"))
+        .with_transition(StateMachineTransition::new("Suspended", "Deleted", "AccountDeleted"))
+        .with_transition(StateMachineTransition::new("Reactivated", "Deleted", "AccountDeleted"))
+}
+
+/// Build NatsUserState machine definition
+pub fn build_nats_user_state_machine() -> StateMachineDefinition {
+    StateMachineDefinition::new(StateMachineType::NatsUser)
+        .with_state(StateMachineState::new("Created", "User created, awaiting permissions")
+            .initial()
+            .with_color(Color::from_rgb(0.4, 0.7, 0.4)))
+        .with_state(StateMachineState::new("Active", "User active, can connect and pub/sub")
+            .with_color(Color::from_rgb(0.2, 0.8, 0.2)))
+        .with_state(StateMachineState::new("Suspended", "User temporarily suspended")
+            .with_color(Color::from_rgb(0.8, 0.5, 0.2)))
+        .with_state(StateMachineState::new("Reactivated", "User reactivated after suspension")
+            .with_color(Color::from_rgb(0.4, 0.7, 0.4)))
+        .with_state(StateMachineState::new("Deleted", "User permanently deleted")
+            .terminal()
+            .with_color(Color::from_rgb(0.8, 0.2, 0.2)))
+        // Transitions
+        .with_transition(StateMachineTransition::new("Created", "Active", "UserActivated"))
+        .with_transition(StateMachineTransition::new("Active", "Suspended", "UserSuspended"))
+        .with_transition(StateMachineTransition::new("Suspended", "Reactivated", "UserReactivated"))
+        .with_transition(StateMachineTransition::new("Reactivated", "Active", "UserActivated"))
+        .with_transition(StateMachineTransition::new("Active", "Deleted", "UserDeleted"))
+        .with_transition(StateMachineTransition::new("Suspended", "Deleted", "UserDeleted"))
+        .with_transition(StateMachineTransition::new("Reactivated", "Deleted", "UserDeleted"))
+}
+
+/// Build ExportWorkflowState machine definition
+pub fn build_export_workflow_state_machine() -> StateMachineDefinition {
+    StateMachineDefinition::new(StateMachineType::ExportWorkflow)
+        .with_state(StateMachineState::new("Planning", "Export workflow being planned")
+            .initial()
+            .with_color(Color::from_rgb(0.4, 0.7, 0.4)))
+        .with_state(StateMachineState::new("Generating", "Generating export artifacts")
+            .with_color(Color::from_rgb(0.9, 0.7, 0.2)))
+        .with_state(StateMachineState::new("Encrypting", "Encrypting export data")
+            .with_color(Color::from_rgb(0.4, 0.6, 0.8)))
+        .with_state(StateMachineState::new("Writing", "Writing to target storage")
+            .with_color(Color::from_rgb(0.3, 0.6, 0.9)))
+        .with_state(StateMachineState::new("Verifying", "Verifying checksums")
+            .with_color(Color::from_rgb(0.3, 0.7, 0.5)))
+        .with_state(StateMachineState::new("Completed", "Export completed successfully")
+            .terminal()
+            .with_color(Color::from_rgb(0.2, 0.8, 0.2)))
+        .with_state(StateMachineState::new("Failed", "Export failed")
+            .terminal()
+            .with_color(Color::from_rgb(0.8, 0.2, 0.2)))
+        // Happy path transitions
+        .with_transition(StateMachineTransition::new("Planning", "Generating", "StartGenerating"))
+        .with_transition(StateMachineTransition::new("Generating", "Encrypting", "StartEncrypting"))
+        .with_transition(StateMachineTransition::new("Encrypting", "Writing", "StartWriting"))
+        .with_transition(StateMachineTransition::new("Writing", "Verifying", "StartVerifying"))
+        .with_transition(StateMachineTransition::new("Verifying", "Completed", "ExportComplete"))
+        // Error path transitions (any non-terminal → Failed)
+        .with_transition(StateMachineTransition::new("Planning", "Failed", "Error"))
+        .with_transition(StateMachineTransition::new("Generating", "Failed", "Error"))
+        .with_transition(StateMachineTransition::new("Encrypting", "Failed", "Error"))
+        .with_transition(StateMachineTransition::new("Writing", "Failed", "Error"))
+        .with_transition(StateMachineTransition::new("Verifying", "Failed", "VerificationFailed"))
+}
+
+/// Build CertificateImportState machine definition
+pub fn build_certificate_import_state_machine() -> StateMachineDefinition {
+    StateMachineDefinition::new(StateMachineType::CertificateImport)
+        .with_state(StateMachineState::new("NoCertificateSelected", "No certificate selected for import")
+            .initial()
+            .with_color(Color::from_rgb(0.5, 0.5, 0.5)))
+        .with_state(StateMachineState::new("CertificateSelected", "Certificate selected, awaiting validation")
+            .with_color(Color::from_rgb(0.4, 0.7, 0.4)))
+        .with_state(StateMachineState::new("Validating", "RFC 5280 validation in progress")
+            .with_color(Color::from_rgb(0.9, 0.7, 0.2)))
+        .with_state(StateMachineState::new("ValidationFailed", "Validation failed - cannot proceed")
+            .with_color(Color::from_rgb(0.8, 0.4, 0.4)))
+        .with_state(StateMachineState::new("Validated", "Certificate validated, ready for PIN")
+            .with_color(Color::from_rgb(0.4, 0.6, 0.8)))
+        .with_state(StateMachineState::new("AwaitingPin", "Awaiting PIN entry from user")
+            .with_color(Color::from_rgb(0.9, 0.7, 0.2)))
+        .with_state(StateMachineState::new("PinFailed", "PIN verification failed")
+            .with_color(Color::from_rgb(0.8, 0.5, 0.2)))
+        .with_state(StateMachineState::new("Importing", "Import operation in progress")
+            .with_color(Color::from_rgb(0.3, 0.6, 0.9)))
+        .with_state(StateMachineState::new("ImportFailed", "Import failed")
+            .with_color(Color::from_rgb(0.8, 0.3, 0.3)))
+        .with_state(StateMachineState::new("Imported", "Certificate successfully imported")
+            .terminal()
+            .with_color(Color::from_rgb(0.2, 0.8, 0.2)))
+        // Transitions
+        .with_transition(StateMachineTransition::new("NoCertificateSelected", "CertificateSelected", "CertificateSelectedForImport"))
+        .with_transition(StateMachineTransition::new("CertificateSelected", "Validating", "ValidationStarted"))
+        .with_transition(StateMachineTransition::new("Validating", "ValidationFailed", "ValidationFailed"))
+        .with_transition(StateMachineTransition::new("Validating", "Validated", "ValidationSucceeded"))
+        .with_transition(StateMachineTransition::new("ValidationFailed", "NoCertificateSelected", "CertificateDeselected"))
+        .with_transition(StateMachineTransition::new("ValidationFailed", "CertificateSelected", "NewCertificateSelected"))
+        .with_transition(StateMachineTransition::new("Validated", "AwaitingPin", "PinRequested"))
+        .with_transition(StateMachineTransition::new("AwaitingPin", "PinFailed", "PinEntryFailed"))
+        .with_transition(StateMachineTransition::new("AwaitingPin", "Importing", "PinVerified"))
+        .with_transition(StateMachineTransition::new("PinFailed", "AwaitingPin", "RetryPin"))
+        .with_transition(StateMachineTransition::new("PinFailed", "NoCertificateSelected", "ImportAborted"))
+        .with_transition(StateMachineTransition::new("Importing", "ImportFailed", "ImportFailed"))
+        .with_transition(StateMachineTransition::new("Importing", "Imported", "ImportSucceeded"))
+        .with_transition(StateMachineTransition::new("ImportFailed", "NoCertificateSelected", "WorkflowReset"))
+        .with_transition(StateMachineTransition::new("Imported", "NoCertificateSelected", "WorkflowReset"))
+}
+
 /// Get all state machine definitions
 pub fn all_state_machines() -> Vec<StateMachineDefinition> {
     vec![
+        // Security
         build_key_state_machine(),
         build_certificate_state_machine(),
+        build_policy_state_machine(),
+        // Domain
         build_person_state_machine(),
         build_organization_state_machine(),
+        build_location_state_machine(),
+        build_relationship_state_machine(),
+        // Infrastructure
+        build_manifest_state_machine(),
+        build_nats_operator_state_machine(),
+        build_nats_account_state_machine(),
+        build_nats_user_state_machine(),
+        // Hardware
         build_yubikey_state_machine(),
+        // Workflow
         build_pki_bootstrap_state_machine(),
         build_yubikey_provisioning_state_machine(),
+        build_export_workflow_state_machine(),
+        build_certificate_import_state_machine(),
+        // Saga
         build_certificate_provisioning_saga(),
     ]
 }
@@ -531,16 +804,31 @@ pub fn all_state_machines() -> Vec<StateMachineDefinition> {
 /// Get a state machine definition by type
 pub fn get_state_machine(machine_type: StateMachineType) -> StateMachineDefinition {
     match machine_type {
+        // Security
         StateMachineType::Key => build_key_state_machine(),
         StateMachineType::Certificate => build_certificate_state_machine(),
+        StateMachineType::Policy => build_policy_state_machine(),
+        // Domain
         StateMachineType::Person => build_person_state_machine(),
         StateMachineType::Organization => build_organization_state_machine(),
+        StateMachineType::Location => build_location_state_machine(),
+        StateMachineType::Relationship => build_relationship_state_machine(),
+        // Infrastructure
+        StateMachineType::Manifest => build_manifest_state_machine(),
+        StateMachineType::NatsOperator => build_nats_operator_state_machine(),
+        StateMachineType::NatsAccount => build_nats_account_state_machine(),
+        StateMachineType::NatsUser => build_nats_user_state_machine(),
+        // Hardware
         StateMachineType::YubiKey => build_yubikey_state_machine(),
+        // Workflow
         StateMachineType::PkiBootstrap => build_pki_bootstrap_state_machine(),
         StateMachineType::YubiKeyProvisioning => build_yubikey_provisioning_state_machine(),
+        StateMachineType::ExportWorkflow => build_export_workflow_state_machine(),
+        StateMachineType::CertificateImport => build_certificate_import_state_machine(),
+        // Saga
         StateMachineType::CertificateProvisioning => build_certificate_provisioning_saga(),
-        // Default to Key for unimplemented types
-        _ => build_key_state_machine(),
+        // Placeholder sagas - use key state machine as placeholder for now
+        StateMachineType::PersonOnboarding | StateMachineType::CompleteBootstrap => build_key_state_machine(),
     }
 }
 

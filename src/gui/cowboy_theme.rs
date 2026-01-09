@@ -382,6 +382,88 @@ impl CowboyAppTheme {
         }
     }
 
+    /// Navigation button style (for workflow actions that navigate to other tabs)
+    pub fn navigation_button() -> impl Fn(&iced::Theme, button::Status) -> button::Style {
+        |_theme, status| {
+            let (background, border_color, shadow) = match status {
+                button::Status::Active => (
+                    Background::Color(Color::from_rgba(0.2, 0.4, 0.8, 0.2)),  // Blue tint
+                    Color::from_rgba(0.3, 0.5, 0.9, 0.6),
+                    Shadow::default(),
+                ),
+                button::Status::Hovered => (
+                    Background::Color(Color::from_rgba(0.2, 0.4, 0.8, 0.35)),
+                    Color::from_rgba(0.3, 0.5, 0.9, 0.9),
+                    CowboyTheme::glow_shadow(),
+                ),
+                button::Status::Pressed => (
+                    Background::Color(Color::from_rgba(0.2, 0.4, 0.8, 0.15)),
+                    Color::from_rgba(0.3, 0.5, 0.9, 0.6),
+                    Shadow::default(),
+                ),
+                button::Status::Disabled => (
+                    Background::Color(Color::from_rgba(0.5, 0.5, 0.5, 0.1)),
+                    Color::from_rgba(0.5, 0.5, 0.5, 0.2),
+                    Shadow::default(),
+                ),
+            };
+
+            button::Style {
+                background: Some(background),
+                text_color: CowboyTheme::text_primary(),
+                border: Border {
+                    color: border_color,
+                    width: 1.0,
+                    radius: 12.0.into(),
+                },
+                shadow,
+            }
+        }
+    }
+
+    /// Action button style (for workflow actions that execute operations)
+    pub fn action_button() -> impl Fn(&iced::Theme, button::Status) -> button::Style {
+        |_theme, status| {
+            let (background, border_color, shadow) = match status {
+                button::Status::Active => (
+                    Background::Color(Color::from_rgba(0.9, 0.6, 0.1, 0.25)),  // Orange/gold tint
+                    Color::from_rgba(0.9, 0.6, 0.1, 0.6),
+                    CowboyTheme::button_shadow(),
+                ),
+                button::Status::Hovered => (
+                    Background::Color(Color::from_rgba(0.9, 0.6, 0.1, 0.4)),
+                    Color::from_rgba(0.95, 0.7, 0.2, 0.9),
+                    Shadow {
+                        color: Color::from_rgba(0.9, 0.6, 0.1, 0.3),
+                        offset: iced::Vector::new(0.0, 4.0),
+                        blur_radius: 12.0,
+                    },
+                ),
+                button::Status::Pressed => (
+                    Background::Color(Color::from_rgba(0.9, 0.6, 0.1, 0.2)),
+                    Color::from_rgba(0.9, 0.6, 0.1, 0.6),
+                    Shadow::default(),
+                ),
+                button::Status::Disabled => (
+                    Background::Color(Color::from_rgba(0.5, 0.5, 0.5, 0.1)),
+                    Color::from_rgba(0.5, 0.5, 0.5, 0.2),
+                    Shadow::default(),
+                ),
+            };
+
+            button::Style {
+                background: Some(background),
+                text_color: CowboyTheme::text_primary(),
+                border: Border {
+                    color: border_color,
+                    width: 1.0,
+                    radius: 12.0.into(),
+                },
+                shadow,
+            }
+        }
+    }
+
     /// Light checkbox style for dark backgrounds
     pub fn light_checkbox() -> impl Fn(&iced::Theme, checkbox::Status) -> checkbox::Style {
         |_theme, _status| checkbox::Style {
